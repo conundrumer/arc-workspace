@@ -521,15 +521,16 @@ fn moves_of(pattern: &[(i32, i32, u8)], grid: &GridFacts) -> Vec<(i32, i32)> {
     out
 }
 
-/// Whether some image of a colored pattern under D4 occurs in a grid.
-fn occurs_turned(pattern: &[(i32, i32, u8)], grid: &GridFacts) -> bool {
+/// Whether some image of a colored pattern under D4, other than the pattern itself, occurs in a grid.
+/// Images equal to the pattern or to an earlier image are skipped.
+fn occurs_turned_images(pattern: &[(i32, i32, u8)], grid: &GridFacts) -> bool {
     let r1 = pattern.iter().map(|cell| cell.0).max().unwrap_or(0);
     let c1 = pattern.iter().map(|cell| cell.1).max().unwrap_or(0);
-    (0..8).any(|which| {
-        let image: Vec<(i32, i32, u8)> = pattern.iter().map(|cell| {
+    let mut seen: Vec<Vec<(i32, i32, u8)>> = vec![pattern.to_vec()];
+    (1..8).any(|which| {
+        let mut image: Vec<(i32, i32, u8)> = pattern.iter().map(|cell| {
             let (r, c) = (cell.0, cell.1);
             let (y, z) = match which {
-                0 => (r, c),
                 1 => (r, c1 - c),
                 2 => (r1 - r, c),
                 3 => (r1 - r, c1 - c),
@@ -540,7 +541,13 @@ fn occurs_turned(pattern: &[(i32, i32, u8)], grid: &GridFacts) -> bool {
             };
             (y, z, cell.2)
         }).collect();
-        !moves_of(&image, grid).is_empty()
+        image.sort_unstable();
+        if seen.contains(&image) {
+            return false;
+        }
+        let found = !moves_of(&image, grid).is_empty();
+        seen.push(image);
+        found
     })
 }
 
@@ -650,9 +657,6 @@ fn occurrences(view: &mut View<'_>, pos: &Pos, color: Option<usize>) {
         group.clone_from(&view.dense[x].0);
         groups = view.dense[x].1;
     }
-    if groups > MAX_GROUPS {
-        return;
-    }
     let mut patterns: Vec<Vec<(i32, i32, u8)>> = vec![Vec::new(); groups as usize];
     for row in 0..t.rows {
         let cell = t.at(row, p);
@@ -675,10 +679,33 @@ fn occurrences(view: &mut View<'_>, pos: &Pos, color: Option<usize>) {
             return;
         }
     }
-    let moves: Vec<Vec<(i32, i32)>> = patterns.iter().map(|pattern| moves_of(pattern, output)).collect();
-    let of = moves.len() as u32;
-    let in_place = moves.iter().filter(|held| held.contains(&(0, 0))).count() as u32;
-    let elsewhere = if pos.on_output { moves.iter().filter(|held| held.iter().any(|m| *m != (0, 0))).count() } else { moves.iter().filter(|held| !held.is_empty()).count() } as u32;
+    let of = patterns.len() as u32;
+    // Equal patterns are searched once, each with the number of groups that hold it.
+    let mut distinct: std::collections::BTreeMap<Vec<(i32, i32, u8)>, u32> = std::collections::BTreeMap::new();
+    for pattern in patterns {
+        *distinct.entry(pattern).or_insert(0) += 1;
+    }
+    let (mut in_place, mut elsewhere, mut turned) = (0u32, 0u32, 0u32);
+    let mut common: Option<Vec<(i32, i32)>> = None;
+    for (pattern, weight) in &distinct {
+        let mut moves = moves_of(pattern, output);
+        moves.sort_unstable();
+        if moves.binary_search(&(0, 0)).is_ok() {
+            in_place += weight;
+        }
+        let other = if pos.on_output { moves.iter().any(|m| *m != (0, 0)) } else { !moves.is_empty() };
+        if other {
+            elsewhere += weight;
+        }
+        // A one-cell pattern is its own image under every turn and reflection.
+        if !moves.is_empty() || (pattern.len() > 1 && occurs_turned_images(pattern, output)) {
+            turned += weight;
+        }
+        common = Some(match common {
+            None => moves,
+            Some(held) => held.into_iter().filter(|m| moves.binary_search(m).is_ok()).collect(),
+        });
+    }
     let names = if color.is_some() {
         ["C,C occurs in the output in place, proportion", "C,C occurs elsewhere in the output, proportion", "C,C one translation takes them all into the output", "C,C occurs in the output up to rotation and reflection, proportion"]
     } else {
@@ -689,13 +716,10 @@ fn occurrences(view: &mut View<'_>, pos: &Pos, color: Option<usize>) {
         view.put(names[0], &holes, Value::Share(in_place, of));
     }
     view.put(names[1], &holes, Value::Share(elsewhere, of));
-    if moves.len() >= 2 {
-        let common: Vec<(i32, i32)> = moves[0].iter().copied().filter(|m| moves[1..].iter().all(|held| held.contains(m))).collect();
+    if of >= 2 {
+        let common = common.unwrap_or_default();
         let found = if pos.on_output { common.iter().any(|m| *m != (0, 0)) } else { !common.is_empty() };
         view.put(names[2], &holes, Value::Bool(found));
     }
-    if patterns.len() <= 20 {
-        let turned = patterns.iter().filter(|pattern| occurs_turned(pattern, output)).count() as u32;
-        view.put(names[3], &holes, Value::Share(turned, of));
-    }
+    view.put(names[3], &holes, Value::Share(turned, of));
 }
