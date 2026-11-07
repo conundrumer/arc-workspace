@@ -318,6 +318,9 @@ impl PartStep {
 
 /// A value's rows in the order of its columns.
 pub fn flat(value: &Val) -> Option<Arc<Table>> {
+    if let Val::Boxes(boxes) = value {
+        return flat(&boxes.written());
+    }
     let Val::Rows(parts) = value else { return Some(Table::new(1, Vec::new())) };
     if let [one] = parts.as_slice() {
         if one.columns.iter().enumerate().all(|(at, column)| usize::from(*column) == at) {
@@ -1524,7 +1527,40 @@ impl PartStep {
         self.run(&first, children).unwrap_or(Val::None)
     }
 
-    fn run(&self, t: &Arc<Table>, children: &[&Val]) -> Option<Val> {
+    /// Whether the part reads the rows of `inside` through their first `width` columns alone, which are the relation's, and gives what it gives where a row stands once however many cells its box holds.
+    pub(crate) fn reads_boxes(&self, width: u16) -> bool {
+        match self {
+            PartStep::Count { keys } => keys.iter().all(|key| *key < width),
+            PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => *f < width && keys.iter().all(|key| *key < width),
+            _ => false,
+        }
+    }
+
+    /// What the part gives over the rows of `inside`, where `reads_boxes` holds of it: a count of rows counts the cells of each box.
+    pub(crate) fn read_boxes(&self, boxes: &crate::boxes::Boxes, children: &[&Val]) -> Option<Val> {
+        let t = boxes.support();
+        match self {
+            PartStep::Count { keys } => {
+                let at = usize::from(boxes.at());
+                let (grouping, first) = key_ids(&t, keys);
+                let mut counts = vec![0u64; first.len()];
+                for (row, id) in t.rows().zip(&grouping.0) {
+                    counts[*id as usize] += boxes.area(row[at]);
+                }
+                let mut out = Vec::new();
+                for (count, head) in counts.iter().zip(&first) {
+                    // A count past a number's range has no value.
+                    let Ok(count) = i32::try_from(*count) else { return Some(Val::None) };
+                    push_key(&mut out, head, keys);
+                    out.push(number_bits(i64::from(count)));
+                }
+                Some(Val::of_table(Table::new(keys.len() + 1, out)))
+            }
+            _ => Some(self.run(&t, children).unwrap_or(Val::None)),
+        }
+    }
+
+    pub(crate) fn run(&self, t: &Arc<Table>, children: &[&Val]) -> Option<Val> {
         let e = encoding();
         Some(match self {
             PartStep::DiffRows { p, output, on } => {
@@ -1950,50 +1986,8 @@ impl PartStep {
             }
             PartStep::Inside { b } => {
                 let grid = grid_of(children[1])?;
-                let at = usize::from(*b);
-                // The rows and columns of a box that lie in the grid.
-                let span = |held: Cell| {
-                    let m = margins_of(held);
-                    (m[0].max(0), grid.h - 1 - m[1].max(0), m[2].max(0), grid.w - 1 - m[3].max(0))
-                };
-                let size = |held: Cell| {
-                    let (r0, r1, c0, c1) = span(held);
-                    ((r1 - r0 + 1).max(0) * (c1 - c0 + 1).max(0)) as usize
-                };
-                // The rows are written once each, so the table can be as large as the other tables are allowed to be.
-                let total: usize = t.rows().map(|row| size(row[at])).sum();
-                if total.saturating_mul(t.arity + 2) > crate::native::CELL_CAP {
-                    crate::bounds::mark(crate::bounds::Bound::InsideCells);
-                    return None;
-                }
-                // A box's cells with their colors, in the order of their `P`: by column from the last, then by row from the last. Each box is read once.
-                let mut tails: FastMap<Cell, Vec<Cell>> = FastMap::default();
-                for row in t.rows() {
-                    tails.entry(row[at]).or_insert_with_key(|held| {
-                        let (r0, r1, c0, c1) = span(*held);
-                        let mut tail = Vec::with_capacity(2 * size(*held));
-                        for c in (c0..=c1).rev() {
-                            for r in (r0..=r1).rev() {
-                                tail.push(box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c));
-                                tail.push(grid.colors[(r * grid.w + c) as usize]);
-                            }
-                        }
-                        tail
-                    });
-                }
-                let mut out: Vec<Cell> = Vec::with_capacity(total * (t.arity + 2));
-                for row in t.rows() {
-                    for cell in tails[&row[at]].chunks_exact(2) {
-                        out.extend_from_slice(row);
-                        out.extend_from_slice(cell);
-                    }
-                }
-                // Where the rows come in order, so do these: no row repeats, and a sort is not needed.
-                if t.rows().is_sorted_by(|a, b| a < b) {
-                    Val::of_table(Table::new(t.arity + 2, out))
-                } else {
-                    Val::of_table(Table::distinct(t.arity + 2, out))
-                }
+                // The rows stand as their boxes, and are written where an operator reads a cell.
+                crate::boxes::Boxes::of(t, *b, grid, children[1].hash())
             }
             PartStep::Occurs { keys, p, v, turned } => {
                 let grid = grid_of(children[1])?;

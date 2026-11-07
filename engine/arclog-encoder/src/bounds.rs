@@ -33,7 +33,7 @@ pub enum Bound {
     Flat,
     /// A walk has passed 100,000,000 cells of values.
     Walk,
-    /// The rows that `inside` writes pass `CELL_CAP` cells.
+    /// The rows of `inside` that an operator reads cell by cell pass `CELL_CAP` cells.
     InsideCells,
     /// `complement` reads a box of more than 4096 cells.
     ComplementArea,

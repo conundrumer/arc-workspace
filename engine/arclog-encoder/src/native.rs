@@ -7,6 +7,8 @@
 //! An empty relation has no parts to read, and each operator states what it gives
 //! on one: most give an empty relation, `antijoin` with an empty right side gives
 //! its left, and a component runs on its empty input.
+//!
+//! The rows of `inside` stand as their boxes ([`Val::Boxes`]) until an operator reads a cell.
 
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
@@ -310,9 +312,20 @@ pub enum Val {
     /// The product of the parts, each with a row. No parts is the one row of
     /// no columns.
     Rows(Arc<Vec<Part>>),
+    /// The rows of `inside`, as the relation and the grid they come from. An operator that reads
+    /// a cell of a box writes them out; the others, and the count of rows, read the boxes.
+    Boxes(Arc<crate::boxes::Boxes>),
 }
 
 impl Val {
+    /// The value with any `inside` rows written out: no value where they pass `CELL_CAP` cells.
+    pub fn written(&self) -> Val {
+        match self {
+            Val::Boxes(boxes) => boxes.written(),
+            other => other.clone(),
+        }
+    }
+
     fn of_parts(parts: Vec<Part>) -> Val {
         Val::Rows(Arc::new(parts))
     }
@@ -341,6 +354,7 @@ impl Val {
         match self {
             Val::None => 1,
             Val::Empty => 2,
+            Val::Boxes(boxes) => boxes.hash(),
             Val::Rows(parts) => {
                 let mut hash = hash_words([parts.len() as u64 + 3]);
                 for part in parts.iter() {
@@ -354,6 +368,9 @@ impl Val {
 
     /// The rows, each in the order of the value's columns; `None` past `cap`.
     pub fn rows(&self, arity: usize, cap: usize) -> Option<Vec<Vec<Cell>>> {
+        if let Val::Boxes(boxes) = self {
+            return boxes.written().rows(arity, cap);
+        }
         let Val::Rows(parts) = self else { return Some(Vec::new()) };
         let total: usize = parts.iter().map(|part| part.table.len).try_fold(1usize, |total, len| total.checked_mul(len))?;
         if total > cap {
@@ -519,6 +536,17 @@ impl<'a> Evaluator<'a> {
         if children.iter().any(|child| matches!(child, Val::None)) {
             return Val::None;
         }
+        if children.iter().any(|child| matches!(child, Val::Boxes(_))) {
+            // The rows of `inside` serve an operator that reads no cell of a box as they are. Any other reads them written out.
+            if let Val::Boxes(boxes) = children[0] {
+                if let Some(value) = boxes.read(step, children) {
+                    return value;
+                }
+            }
+            let written: Vec<Val> = children.iter().map(|child| child.written()).collect();
+            let held: Vec<&Val> = written.iter().collect();
+            return self.apply(step, &held);
+        }
         match step {
             Step::Project { columns } => project(children[0], columns),
             Step::Select { at, op, other, drop } => select(children[0], *at, *op, *other, *drop).unwrap_or(Val::None),
@@ -544,6 +572,9 @@ impl<'a> Evaluator<'a> {
     pub fn count(&mut self, step: &Step, children: &[&Val]) -> Option<Option<u64>> {
         if children.iter().any(|child| matches!(child, Val::None)) {
             return Some(None);
+        }
+        if children.iter().any(|child| matches!(child, Val::Boxes(_))) {
+            return None;
         }
         let parts = |at: usize| -> Option<&Arc<Vec<Part>>> {
             match children.get(at) {
@@ -1083,7 +1114,11 @@ impl<'a> Evaluator<'a> {
     /// their masks. `names` says which positions hold a lib name.
     pub fn words(&mut self, value: &Val, invariant: &[u16], names: &[bool], out: &mut Vec<u64>) {
         let masks = (1u32 << invariant.len().min(12)) - 1;
+        if let Val::Boxes(boxes) = value {
+            return self.words(&boxes.written(), invariant, names, out);
+        }
         match value {
+            Val::Boxes(_) => {}
             Val::None => out.extend(std::iter::repeat_n(0, 2 + masks as usize)),
             Val::Empty => {
                 out.push(WORD_NONEMPTY);
@@ -1380,7 +1415,7 @@ fn merge<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
     Some(Merged { columns, cells: std::borrow::Cow::Owned(cells) })
 }
 
-fn project(value: &Val, columns: &[u16]) -> Val {
+pub(crate) fn project(value: &Val, columns: &[u16]) -> Val {
     let Val::Rows(parts) = value else { return value.clone() };
     let mut out = Vec::with_capacity(parts.len());
     for part in parts.iter() {
@@ -1423,7 +1458,7 @@ fn holds(op: Op, a: Cell, b: Cell) -> bool {
     }
 }
 
-fn select(value: &Val, at: u16, op: Op, other: Option<u16>, drop: Option<u16>) -> Option<Val> {
+pub(crate) fn select(value: &Val, at: u16, op: Op, other: Option<u16>, drop: Option<u16>) -> Option<Val> {
     let Val::Rows(parts) = value else { return Some(value.clone()) };
     let mut positions = vec![at];
     positions.extend(other);

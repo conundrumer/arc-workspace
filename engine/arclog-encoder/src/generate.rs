@@ -2352,6 +2352,8 @@ pub struct Walker<'a> {
     group_counts: FastMap<(u32, u32, u128, u32), u32>,
     /// The cells that `values` holds.
     held_cells: usize,
+    /// The cells of `inside` rows that the walk in progress has written out.
+    written_cells: usize,
     /// The count of examples of a task-wide walk.
     pub examples: u32,
     /// The cells and the memo entries it holds at most between walks.
@@ -2374,6 +2376,7 @@ fn rows_of(value: &Val) -> Option<u64> {
     match value {
         Val::None => None,
         Val::Empty => Some(0),
+        Val::Boxes(boxes) => Some(boxes.rows()),
         Val::Rows(parts) => Some(parts.iter().fold(1u64, |count, part| count.saturating_mul(part.table.len as u64))),
     }
 }
@@ -2419,7 +2422,7 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Opti
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, examples: 0, budget: (HELD_CELLS, HELD_MEMO) }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, examples: 0, budget: (HELD_CELLS, HELD_MEMO) }
     }
 
     /// A walker that holds more between walks than [`Walker::new`], for many related tables.
@@ -2454,7 +2457,7 @@ impl<'a> Walker<'a> {
         match value {
             Val::None => 0,
             Val::Empty => 1,
-            Val::Rows(_) => {
+            Val::Rows(_) | Val::Boxes(_) => {
                 let hash = value.hash();
                 if let Some(found) = self.value_index.get(&hash) {
                     return *found;
@@ -2470,8 +2473,32 @@ impl<'a> Walker<'a> {
         }
     }
 
+    /// The id of the value at `id` with the rows of `inside` written out, unless `step` reads them as the boxes they come from: the id of no value where they pass `CELL_CAP` cells.
+    fn written_id(&mut self, step: &Step, id: u32, first: bool) -> u32 {
+        let Val::Boxes(boxes) = &self.values[id as usize] else { return id };
+        if first && boxes.reads(step) {
+            return id;
+        }
+        let value = boxes.written();
+        let before = self.held_cells;
+        let written = self.value_id(value);
+        self.written_cells += self.held_cells - before;
+        written
+    }
+
+    /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` that `step` would write out past `CELL_CAP` cells.
+    fn has_no_value(&self, step: &Step, id: u32) -> bool {
+        match &self.values[id as usize] {
+            Val::None => true,
+            Val::Boxes(boxes) => !boxes.reads(step) && !boxes.fits(),
+            _ => false,
+        }
+    }
+
     fn apply(&mut self, step: &Step, a: u32, b: u32) -> Val {
         crate::bounds::begin();
+        let a = self.written_id(step, a, true);
+        let b = if b == NO_TERM { b } else { self.written_id(step, b, false) };
         let first = self.values[a as usize].clone();
         let value = if b == NO_TERM {
             self.eval.apply(step, &[&first])
@@ -2489,20 +2516,22 @@ impl<'a> Walker<'a> {
             let value = &self.values[*found as usize];
             return (count_of(value), if number { number_word(value) } else { 0 });
         }
-        if let (Some((part, keys)), Val::Rows(parts)) = (steps.grouped[at], &self.values[id as usize]) {
+        // A part that reads cells of `inside` runs on the rows written out, once per grouping.
+        let written = if steps.grouped[at].is_some() { self.written_id(step, id, true) } else { id };
+        if let (Some((part, keys)), Val::Rows(parts)) = (steps.grouped[at], &self.values[written as usize]) {
             // Keys that group the rows alike give one count, so a part runs once per grouping.
             if let [one] = parts.as_slice() {
                 if one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) {
                     let table = one.table.clone();
-                    let (grouping, groups) = *self.groupings.entry((id, keys)).or_insert_with(|| crate::gen_parts::grouping_signature(&table, &steps.keys[keys as usize]));
+                    let (grouping, groups) = *self.groupings.entry((written, keys)).or_insert_with(|| crate::gen_parts::grouping_signature(&table, &steps.keys[keys as usize]));
                     if part == PROJECT {
                         return (groups, 0);
                     }
-                    let key = (part, id, grouping, b);
+                    let key = (part, written, grouping, b);
                     if let Some(found) = self.group_counts.get(&key) {
                         return (*found, 0);
                     }
-                    let found = count_of(&self.apply(step, id, b));
+                    let found = count_of(&self.apply(step, written, b));
                     self.group_counts.insert(key, found);
                     return (found, 0);
                 }
@@ -2536,6 +2565,7 @@ impl<'a> Walker<'a> {
         }
         let mut table = RootTable { stride: instances, ..RootTable::default() };
         let mut walk_cells = 0usize;
+        self.written_cells = 0;
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
             if let Some(head) = family.bound_heads.get(at) {
                 crate::bounds::set_head(*head);
@@ -2550,14 +2580,15 @@ impl<'a> Walker<'a> {
             let extended = term.used;
             let mut own = Vec::new();
             let on_no_rows = matches!(step, Step::Part(part) if part.gives_rows_on_no_rows());
-            let idle = (!on_no_rows && first[..scope].iter().all(|id| *id == 1)) || first[..scope].iter().all(|id| *id == 0) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
+            // A term whose first relation has no value, or the rows of `inside` that `step` cannot write, has no value at any instance.
+            let idle = (!on_no_rows && first[..scope].iter().all(|id| *id == 1)) || first[..scope].iter().all(|id| self.has_no_value(step, *id)) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
             if extended {
                 own.reserve(instances);
-                if walk_cells > WALK_CELLS {
+                if walk_cells + self.written_cells > WALK_CELLS {
                     crate::bounds::skipped(crate::bounds::Bound::Walk, scope as u64);
                 }
                 // Past the bound, what a term gives has no value, so a walk's memory stays bounded.
-                for pair in 0..if walk_cells > WALK_CELLS { 0 } else { scope } {
+                for pair in 0..if walk_cells + self.written_cells > WALK_CELLS { 0 } else { scope } {
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
                     let key = (step_id, first[pair], b);
                     let id = match self.memo.get(&key) {
@@ -2814,7 +2845,7 @@ impl Walker<'_> {
         let mut out = Vec::new();
         for (at, held) in ids.iter().enumerate().skip(FIRST_CONSTANT as usize) {
             if chosen(at) {
-                out.push((at, held.iter().map(|id| self.values[*id as usize].clone()).collect()));
+                out.push((at, held.iter().map(|id| self.values[*id as usize].written()).collect()));
             }
         }
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
@@ -2835,7 +2866,7 @@ impl Walker<'_> {
             }
             own.resize(pairs, 0);
             if picked {
-                out.push((at, own.iter().map(|id| self.values[*id as usize].clone()).collect()));
+                out.push((at, own.iter().map(|id| self.values[*id as usize].written()).collect()));
             }
             ids.push(own);
         }
