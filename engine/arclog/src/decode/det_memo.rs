@@ -104,7 +104,15 @@ const TERM_SHARE: usize = 16;
 
 /// The fraction of the session's byte bound that the kept computations of
 /// entries ([`crate::eval::carry`]) may hold, in both their tiers.
-const CARRY_SHARE: usize = 16;
+///
+/// A kept computation holds the relations its entry reads and gives, so it
+/// takes megabytes, and a tier turns, and drops what it holds that no walk has
+/// asked for since, each time the walks have kept a tier's share of bytes. A
+/// walk that asks for a computation after more bytes of later computations than
+/// the two tiers hold computes it again. These bytes stand outside the walks'
+/// ledger, so beside the session's bound the process holds the share of
+/// [`KEPT_SHARE`] and this one.
+const CARRY_SHARE: usize = 4;
 
 /// The most computations kept for one key, each with its own lookups.
 const PER_KEY: usize = 4;
