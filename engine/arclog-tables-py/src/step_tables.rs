@@ -455,7 +455,7 @@ pub(crate) fn atom_verdicts<'py>(py: Python<'py>) -> Bound<'py, PyBytes> {
 /// Adds the verdicts that `atom_verdicts` gave, and gives the count of them.
 #[pyfunction]
 pub(crate) fn add_atom_verdicts(bytes: &[u8]) -> PyResult<usize> {
-    arclog::decode::add_atom_verdicts(bytes).ok_or_else(|| PyValueError::new_err("the atom verdicts are not whole"))
+    arclog::decode::add_atom_verdicts(bytes).ok_or_else(|| PyValueError::new_err("the atom verdicts are not whole, or another build of the engine gave them"))
 }
 
 /// The columns that the `OUT` form at which `decoder` ended selects: one

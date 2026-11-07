@@ -45,6 +45,9 @@ struct Tokens {
 /// fact relations.
 const SHARED_VERDICTS: usize = 1 << 22;
 
+/// A hash of the engine's sources and its lib, in 16 digits.
+const SOURCES_HASH: &str = env!("ARCLOG_SOURCES_HASH");
+
 /// The verdicts of the atoms of the lib's relations and of the fact relations,
 /// which read no program and no task: the sessions of the process share them.
 /// A verdict that may read a task's rows stands apart ([`Decoder::atom_place_walk`]).
@@ -54,10 +57,12 @@ fn shared_verdicts() -> &'static std::sync::Mutex<crate::hash::StableHashMap<u12
 }
 
 /// The verdicts that the process holds for the lib's relations and the fact
-/// relations, as bytes for [`add_atom_verdicts`] in a process of the same engine.
+/// relations, as bytes for [`add_atom_verdicts`] in a process of the same build
+/// of the engine, which the bytes name.
 pub fn atom_verdicts() -> Vec<u8> {
     let held = shared_verdicts().lock().expect("the atom verdicts are not poisoned");
-    let mut bytes = Vec::with_capacity(held.len() * 18);
+    let mut bytes = Vec::with_capacity(16 + held.len() * 18);
+    bytes.extend_from_slice(SOURCES_HASH.as_bytes());
     for (key, verdict) in held.iter() {
         bytes.extend_from_slice(&key.to_le_bytes());
         match verdict {
@@ -72,11 +77,15 @@ pub fn atom_verdicts() -> Vec<u8> {
     bytes
 }
 
-/// Adds the verdicts that [`atom_verdicts`] gave, and gives the count of them,
-/// or `None` where the bytes are not whole.
+/// Adds the verdicts that [`atom_verdicts`] gave in this build of the engine, and
+/// gives the count of them. `None` where the bytes are not whole or another
+/// build gave them, since a verdict holds for the checks that gave it.
 pub fn add_atom_verdicts(bytes: &[u8]) -> Option<usize> {
+    if bytes.get(..SOURCES_HASH.len())? != SOURCES_HASH.as_bytes() {
+        return None;
+    }
     let mut held = shared_verdicts().lock().expect("the atom verdicts are not poisoned");
-    let mut at = 0;
+    let mut at = SOURCES_HASH.len();
     let mut count = 0;
     let take = |at: &mut usize, len: usize| -> Option<&[u8]> {
         let found = bytes.get(*at..*at + len)?;
