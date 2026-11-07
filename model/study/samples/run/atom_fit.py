@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""atom_fit.py convert OUT ROOT | fit OUT ARM [--threads T] | report OUT ARM...: a softmax over a decision's candidate atoms, read against the token tree on the same candidates.
+"""atom_fit.py convert OUT ROOT... | fit OUT ARM [--threads T] | report OUT ARM...: a softmax over a decision's candidate atoms, read against the token tree on the same candidates.
 
-ROOT holds train_* and dev_* folders of atom_rows.py. Each decision's first candidate is the positive. A decision whose positive is outside the tree's top TOP atoms is left out, and each other is cut to those atoms, so a set holds what a live set holds. Arms: nt, the point, the relation token and the atom's structure, with no table of the atom; t, those and the body table with the atom added, and its difference from the body before. report prints dev bits per decision, over a decision's candidates, for each arm and for the tree (the sum of its token bits over a candidate's path, as a softmax over these candidates), by source and by kind."""
-import argparse, base64, collections, glob, io, json, pickle, sys, time
+A ROOT holds train_* and dev_* folders of atom_rows.py. Each decision's first candidate is the positive. A decision whose positive is outside the tree's top TOP atoms is left out, and each other is cut to those atoms, so a set holds what a live set holds. Arms: nt, the point, the first token and the atom's structure, with no table of the atom; t, those and the body table with the atom added, and its difference from the body before; b, only the tree's bits for the atom and their gap to the set's best; nb and tb, nt and t with those bits; nbs and tbs, those with the candidate's place in its set (set_columns), and tbs also with its table's difference from the set's mean. With --gen FOLDER, convert keeps the tasks that have generated lists there, read by the tg_read.py beside FOLDER, and the arms read them: tg, nb with the lists; tg_null, nb with the control's lists; tgt, tb with the lists. report prints dev bits per decision, over a decision's candidates, for each arm and for the tree (the sum of its token bits over a candidate's path, as a softmax over these candidates), by source and by kind."""
+import argparse, base64, collections, glob, io, json, os, pickle, sys, time
 from pathlib import Path
 import numpy as np
 import zstandard
@@ -22,6 +22,19 @@ def lines(path):
     return io.TextIOWrapper(zstandard.ZstdDecompressor().stream_reader(open(path, 'rb'), read_across_frames=True), encoding='utf-8')
 
 
+SET_NAMES = ['atom:bits_rank', 'atom:bits_share', 'atom:same_first', 'atom:first_share']
+
+
+def set_columns(bits, first):
+    """A candidate's place in its set: its rank by the tree's bits, its share of the set's mass, the candidates with its first token, and their share. n x len(SET_NAMES)."""
+    share = 2.0 ** -(bits - bits.min())
+    share = share / share.sum()
+    rank = np.argsort(np.argsort(bits, kind='stable'), kind='stable')
+    first = np.asarray(first)
+    same = (first[:, None] == first[None, :])
+    return np.stack([rank, share, same.sum(1), (same * share[None, :]).sum(1)], 1).astype(np.float32)
+
+
 def dump(path, value):
     with zstandard.ZstdCompressor(level=3).stream_writer(open(path, 'wb')) as sink:
         pickle.dump(value, sink, protocol=5)
@@ -37,21 +50,42 @@ def arr(text, shape=None):
     return x.reshape(shape) if shape else x
 
 
-def convert(out, root):
-    out, root = Path(out), Path(root)
+def convert(out, roots, gen_root=None):
+    out = Path(out)
+    tg_read = None
+    if gen_root:  # the reader of the lists stands beside their folder
+        sys.path.insert(0, str(Path(gen_root).parent))
+        import tg_read
+    index = tg_read.Index() if gen_root else None
     (out / 'blocks').mkdir(parents=True, exist_ok=True)
     block_fit.BlockMatrix.folder = out / 'blocks'
     head = None
     for split in ('train', 'dev'):
-        point, cand, table = block_fit.BlockMatrix(), block_fit.BlockMatrix(), block_fit.BlockMatrix()
+        point, cand, table, rel = block_fit.BlockMatrix(), block_fit.BlockMatrix(), block_fit.BlockMatrix(), block_fit.BlockMatrix()
+        gen, gen_null = block_fit.BlockMatrix(), block_fit.BlockMatrix()
+        gen_of, gen_null_of = [], []
+        gen_rows, gen_null_rows = 0, 0
         at_table = {}
         points, labels, starts, of_point, table_of, tree_bits = [], [], [0], [], [], []
         ranks = collections.defaultdict(list)
         decisions = []
         t0 = time.time()
-        files = sorted(root.glob(f'{split}_*/*.atoms.zst'))
+        found = {}  # the first root that holds a task's rows of a source gives them
+        for root in map(Path, roots):
+            for path in sorted(root.glob(f'{split}_*/*.atoms.zst')):
+                found.setdefault((path.parent.name, path.name), path)
+        files = [found[k] for k in sorted(found)]
         for done, path in enumerate(files, 1):
             source = path.parent.name.split('_', 1)[1]
+            lists, null_lists, at_gen, at_gen_null = None, {}, {}, {}
+            if gen_root:
+                gen_path = Path(gen_root) / path.parent.name / (path.name.split('.')[0] + '.gen.zst')
+                if not gen_path.exists():
+                    continue
+                lists = {d.decision: d for d in tg_read.decisions(gen_path)}
+                null_path = gen_path.with_name(path.name.split('.')[0] + '.null.zst')
+                if null_path.exists():
+                    null_lists = {d.decision: d for d in tg_read.decisions(null_path)}
             with lines(path) as f:
                 head_here = json.loads(f.readline())
                 head = head or head_here
@@ -60,6 +94,8 @@ def convert(out, root):
                 for line in f:
                     r = json.loads(line)
                     n = r['n']
+                    if lists is not None and r['decision'] not in lists:
+                        continue
                     bits = np.array(r['bits'], np.float64)
                     by = np.argsort(bits, kind='stable')
                     rank = int(np.flatnonzero(by == 0)[0])
@@ -74,8 +110,39 @@ def convert(out, root):
                     at = np.flatnonzero(vp != 0)
                     point.add(at, vp[at])
                     tok = arr(r['tok'], (n, n_tok))[chosen]; st = arr(r['struct'], (n, n_struct))[chosen]; av = arr(r['av'], (n, n_av))[chosen]; de = arr(r['delta'], (n, n_av))[chosen]
-                    rows = np.concatenate([tok, st, np.array(r['defined'], np.float32)[chosen, None]], 1)
+                    kept_bits = bits[chosen]
+                    extra = set_columns(kept_bits, [r['tokens'][i][0] for i in chosen])
+                    rows = np.concatenate([tok, st, np.array(r['defined'], np.float32)[chosen, None], kept_bits[:, None].astype(np.float32), (kept_bits - kept_bits.min())[:, None].astype(np.float32), extra], 1)
+                    against = av - av.mean(0, keepdims=True)
+                    for i in range(len(chosen)):
+                        here = np.flatnonzero(against[i] != 0)
+                        rel.add(here, against[i][here])
                     n = len(chosen)
+                    if lists is not None:
+                        d, nd = lists[r['decision']], null_lists.get(r['decision'])
+                        body_null = None if nd is None else tg_read.null_list(d.body, nd.body, nd.reads_output)
+                        here_gen, here_null = np.zeros(n, np.uint32), np.zeros(n, np.uint32)
+                        for k, i in enumerate(chosen.tolist()):
+                            key = (id(d.cands[i]), id(d.body))
+                            place = at_gen.get(key)
+                            if place is None:
+                                place = at_gen[key] = gen_rows
+                                gen_rows += 1
+                                c, v = tg_read.columns(d.cands[i], d.body, index)
+                                gen.add(c, v)
+                            here_gen[k] = place
+                            place = at_gen_null.get(key)
+                            if place is None:
+                                place = at_gen_null[key] = gen_null_rows
+                                gen_null_rows += 1
+                                if nd is None:
+                                    c, v = tg_read.columns(d.cands[i], d.body, index)
+                                else:
+                                    c, v = tg_read.columns(tg_read.null_list(d.cands[i], nd.cands[i], nd.reads_output), body_null, index)
+                                gen_null.add(c, v)
+                            here_null[k] = place
+                        gen_of.append(here_gen)
+                        gen_null_of.append(here_null)
                     where = np.zeros(n, np.uint32)
                     for i in range(n):
                         here = np.flatnonzero(rows[i] != 0)
@@ -95,8 +162,10 @@ def convert(out, root):
                     points.append(dict(task=task, source=source, kind=r['kind'], first=[t[0] for t in r['tokens'][:1]], n=n))
             if done % 25 == 0 or done == len(files):
                 print(f'{split} {done}/{len(files)}, {done / (time.time() - t0):.1f}/s, decisions {len(points)}, rows {starts[-1]}, tables {len(at_table)}', flush=True)
-        point.write(out / 'blocks' / f'{split}.point.zst'); cand.write(out / 'blocks' / f'{split}.cand.zst'); table.write(out / 'blocks' / f'{split}.table.zst')
-        dump(out / f'{split}.pkl.zst', dict(points=points, labels=np.concatenate(labels), starts=np.array(starts, np.uint32), of_point=np.concatenate(of_point), table_of=np.concatenate(table_of), tables=len(at_table), tree_bits=np.concatenate(tree_bits), head=head, decisions=decisions))
+        point.write(out / 'blocks' / f'{split}.point.zst'); cand.write(out / 'blocks' / f'{split}.cand.zst'); table.write(out / 'blocks' / f'{split}.table.zst'); rel.write(out / 'blocks' / f'{split}.rel.zst')
+        if gen_root:
+            gen.write(out / 'blocks' / f'{split}.gen.zst'); gen_null.write(out / 'blocks' / f'{split}.gen_null.zst')
+        dump(out / f'{split}.pkl.zst', dict(points=points, labels=np.concatenate(labels), starts=np.array(starts, np.uint32), of_point=np.concatenate(of_point), table_of=np.concatenate(table_of), tables=len(at_table), tree_bits=np.concatenate(tree_bits), head=head, decisions=decisions, gen_of=np.concatenate(gen_of) if gen_of else None, gen_null_of=np.concatenate(gen_null_of) if gen_null_of else None, gen_rows=gen_rows, gen_null_rows=gen_null_rows, gen_width=index.width() if index else 0))
         print(split, 'written', len(points), 'decisions', starts[-1], 'rows', collections.Counter(p['source'] for p in points), flush=True)
         for key in sorted(ranks):
             x = np.array(ranks[key])
@@ -109,21 +178,43 @@ def plan_of(out, split, work, data, arm):
     head = data['head']
     plan.map('point', data['of_point'], len(data['points']))
     plan.map('row', np.arange(rows, dtype=np.uint32), rows)
-    plan.add('point', len(head['point_names']), 'point', np.arange(len(head['point_names'])), head['point_names'])
-    names = head['tok_names'] + ['atom:' + x for x in head['struct_names']] + ['atom:defined']
-    keep = np.array([i for i, n in enumerate(names) if arm == 't' or not (n == 'atom:defined' or n.startswith('pq:body'))])
+    if arm != 'b':
+        plan.add('point', len(head['point_names']), 'point', np.arange(len(head['point_names'])), head['point_names'])
+    names = head['tok_names'] + ['atom:' + x for x in head['struct_names']] + ['atom:defined', 'atom:bits', 'atom:bits_gap'] + SET_NAMES
+    tree_only = arm == 'b'  # the tree's bits alone
+    with_bits = arm in ('b', 'nb', 'tb', 'nbs', 'tbs', 'tg', 'tg_null', 'tgt', 'nt_gen')
+    with_table = arm in ('t', 'tb', 'tbs', 'tgt')
+    with_set = arm in ('nbs', 'tbs')
+    with_gen = arm in ('tg', 'tg_null', 'tgt')
+    def wanted(n):
+        if n in SET_NAMES:
+            return with_set
+        if n in ('atom:bits', 'atom:bits_gap'):
+            return with_bits
+        if tree_only:
+            return False
+        return with_table or n != 'atom:defined'
+    keep = np.array([i for i, n in enumerate(names) if wanted(n)])
     plan.add('cand', len(names), 'row', keep, [names[i] for i in keep])
-    if arm == 't':
+    if with_table:
         plan.map('table', data['table_of'], data['tables'])
         av = head['av_names']
         table_names = av + ['d' + x[1:] for x in av]
         plan.add('table', len(table_names), 'table', np.arange(len(table_names)), table_names)
+        if with_set:
+            plan.add('rel', len(av), 'row', np.arange(len(av)), ['r' + x[1:] for x in av])
+    if with_gen:
+        block, of, rows = ('gen_null', data['gen_null_of'], data['gen_null_rows']) if arm == 'tg_null' else ('gen', data['gen_of'], data['gen_rows'])
+        plan.map(block, of, rows)
+        width = data['gen_width_all']
+        plan.add(block, width, block, np.arange(width), [f'g{i}' for i in range(width)])
     return plan
 
 
 def fit(out, arm, threads):
     out = Path(out)
     train, dev = load(out / 'train.pkl.zst'), load(out / 'dev.pkl.zst')
+    train['gen_width_all'] = dev['gen_width_all'] = max(train.get('gen_width', 0), dev.get('gen_width', 0))
     work = out / 'work' / arm
     plan = plan_of(out, 'train', work, train, arm)
     labels = plan.labels
@@ -149,8 +240,17 @@ def fit(out, arm, threads):
     print(json.loads((work / 'fits' / 'result.json').read_text()), flush=True)
 
 
-def query_bits(dev, scores):
-    """(median and mean bits per query by source and kind): the token tree's, and for each arm what the live writer gives. A query is a run of a sample's decisions along which the length grows. At a decision whose true atom is in the set, the arm's chance is the set's mass under the token tree times the arm's share of it. From a decision outside the set, the rest of the query goes by tokens, at the mass outside the set and then the token tree's bits."""
+def escape_share(train):
+    """The share of the tree's mass outside a set that fits the train decisions best: the one that gives the true atom's place, in or out of the set, the fewest bits."""
+    outside = np.array([1.0 - d['mass'] for d in train['decisions']])
+    missed = np.array([d['kept'] < 0 for d in train['decisions']])
+    grid = np.arange(0.01, 1.001, 0.01)
+    loss = [-(missed.sum() * np.log2(s) + np.log2(1.0 - s * outside[~missed]).sum()) for s in grid]
+    return float(grid[int(np.argmin(loss))])
+
+
+def query_bits(dev, scores, escape):
+    """(median and mean bits per query by source and kind): the token tree's, and for each arm what the live writer gives. A query is a run of a sample's decisions along which the length grows. At a decision whose true atom is in the set, the arm's chance is the mass that the live writer gives the set times the arm's share of it. From a decision outside the set, the rest of the query goes by tokens: the chance is the escape share times the token tree's chance, since a path that writes a proposed atom by tokens dies at its close."""
     starts = dev['starts'].astype(np.int64)
     share = {}
     for name, s in scores.items():
@@ -181,10 +281,10 @@ def query_bits(dev, scores):
                 if tokens:
                     total += d['gold']
                 elif d['kept'] < 0:
-                    total += -np.log2(max(1.0 - d['mass'], 1e-3)) + d['gold']
+                    total += -np.log2(escape) + d['gold']
                     tokens = True
                 else:
-                    total += -np.log2(max(d['mass'], 1e-9)) + share[name][d['kept']]
+                    total += -np.log2(1.0 - escape * (1.0 - d['mass'])) + share[name][d['kept']]
             for key in ('all', q[0]['source'], q[0]['source'] + ' ' + q[0]['kind']):
                 table[key][name].append(total)
     print('bits per query, median (mean):')
@@ -213,14 +313,16 @@ def report(out, arms):
             table[k][name] = (len(v), float(np.mean([a for a, _ in v])), float(np.mean([c for _, c in v])))
     for k in sorted(table):
         print('%-16s %6d  ' % (k, table[k]['tree'][0]) + '  '.join('%s %.3f bits, top %.3f' % (name, v[1], v[2]) for name, v in table[k].items()))
-    query_bits(dev, {name: s for name, s in scores.items() if name != 'tree'})
+    escape = escape_share(load(out / 'train.pkl.zst'))
+    print('the share of the mass outside a set that stays with tokens, from train rows:', escape)
+    query_bits(dev, {name: s for name, s in scores.items() if name != 'tree'}, escape)
 
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser(); ap.add_argument('command'); ap.add_argument('out'); ap.add_argument('arms', nargs='*'); ap.add_argument('--threads', type=int, default=3)
+    ap = argparse.ArgumentParser(); ap.add_argument('command'); ap.add_argument('out'); ap.add_argument('arms', nargs='*'); ap.add_argument('--threads', type=int, default=3); ap.add_argument('--gen')
     a = ap.parse_args()
     if a.command == 'convert':
-        convert(a.out, a.arms[0])
+        convert(a.out, a.arms, a.gen)
     elif a.command == 'fit':
         fit(a.out, a.arms[0], a.threads)
     else:
