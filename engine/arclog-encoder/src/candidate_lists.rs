@@ -660,27 +660,9 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
     }
     if lists_of == ListsOf::Named && !only_output {
         lists.push(named_of("ex_output".into(), &Stored::of_grids(&grids.outputs), &grids, families, examples, only_output));
-        let input_table = Stored::of_grids(&grids.inputs);
-        let mut claims: FastMap<usize, Vec<Option<crate::catalog_lists::Claims>>> = FastMap::default();
-        let mut sets = crate::candidate_progress::ValueSets::default();
-        let changed: Vec<Option<usize>> = grids.facts.iter().map(|fact| fact.same.then(|| fact.changed.count() as usize)).chain(grids.test_facts.iter().map(|_| None)).collect();
         for (at, members) in query_numbers.iter().enumerate() {
-            let form = candidates[at].0;
             for (member, numbers) in members.iter().enumerate() {
-                let (table, parents) = &candidates[at].1[member];
-                let mut upstream: Vec<usize> = relations(&nodes, form, parents).into_iter().filter(|(_, relation)| matches!(relation, Relation::Parent | Relation::Ancestor)).filter_map(|(node, _)| prefix.get(&node.name).copied()).collect();
-                upstream.sort_unstable();
-                upstream.dedup();
-                for index in upstream.iter().chain([table]) {
-                    claims.entry(*index).or_insert_with(|| crate::catalog_lists::claims_of(&stored[*index], &grids.facts, &grids.test_facts, &grids.input_facts));
-                }
-                let before: Vec<&[Option<crate::catalog_lists::Claims>]> = upstream.iter().filter(|index| *index != table).map(|index| claims[index].as_slice()).collect();
-                let mut shapes = crate::candidate_progress::progress_shapes(&claims[table], &before, grids.train, &changed);
-                let up: Vec<&Stored> = upstream.iter().filter(|index| *index != table).map(|index| &stored[*index]).collect();
-                let direct: Vec<&Stored> = parents.iter().filter_map(|name| prefix.get(name)).map(|index| &stored[*index]).collect();
-                let reads_input = numbers.iter().any(|(name, value)| name == "reads the input grid" && *value != 0.0);
-                shapes.extend(crate::candidate_progress::structure_shapes(&stored[*table], &up, &direct, &input_table, reads_input, &mut sets));
-                lists.push(written_shapes(format!("{at}/{member}/query").into(), shapes, "query", numbers, &grids, families, examples, false));
+                lists.push(written_shapes(format!("{at}/{member}/query").into(), Vec::new(), "query", numbers, &grids, families, examples, false));
             }
         }
     }

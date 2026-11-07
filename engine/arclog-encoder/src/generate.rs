@@ -1443,7 +1443,7 @@ impl Generated {
 
     /// How the table and another stand to each other as words: their columns as sets, their counts, the groups of their cells, and their colors at shared cells. A column of cells is a Position column, or a Box column whose values are the cells of one frame.
     fn pair_words(&mut self, t_keys: &[bool], u_keys: &[bool]) {
-        use crate::gen_parts::{AgreeRelation, Measure, SetRelation};
+        use crate::gen_parts::{AgreeRelation, SetRelation};
         let u_leaf = self.terms.iter().position(|term| term.flags & READS_SECOND != 0).expect("a second relation") as u32;
         let (own, theirs) = (self.terms[LEAF_TABLE as usize].columns.clone(), self.terms[u_leaf as usize].columns.clone());
         let u_text = self.terms[u_leaf as usize].text.clone();
@@ -1463,23 +1463,33 @@ impl Generated {
         let keys_text = |keys: &[u16], columns: &[Column]| -> String {
             format!("(T*:{})", keys.iter().map(|at| columns[usize::from(*at)].name.as_str()).collect::<Vec<_>>().join(","))
         };
-        let words = [(SetRelation::Equal, "equal"), (SetRelation::Subset, "subset"), (SetRelation::Superset, "superset"), (SetRelation::Overlap, "overlap"), (SetRelation::Disjoint, "disjoint")];
-        let cell_words: Vec<(SetRelation, &str)> = words.iter().copied().chain([(SetRelation::Complement, "complement")]).collect();
+        // Each word over a pair of columns, in each direction where the word has one.
+        let words = |this: &mut Self, l: u32, l_text: &str, a: u16, x: &str, r: u32, r_text: &str, b: u16, y: &str, cells: bool| {
+            let mut put = |word: SetRelation, first: (u32, &str, u16, &str), second: (u32, &str, u16, &str)| {
+                let text = format!("({} {} {} {} {})", word.fragment(cells), first.1, second.1, first.3, second.3);
+                this.push_forced(Step::Part(Box::new(PartStep::SetWord { a: first.2, b: second.2, cells, word })), first.0, second.0, Vec::new(), 2, text, RootKind::Holds);
+            };
+            let (left, right) = ((l, l_text, a, x), (r, r_text, b, y));
+            put(SetRelation::Subset, left, right);
+            put(SetRelation::Subset, right, left);
+            put(SetRelation::Overlap, left, right);
+            put(SetRelation::Disjoint, left, right);
+            if cells {
+                put(SetRelation::Complement, left, right);
+            }
+        };
         for (a, x) in own.iter().enumerate() {
             for (b, y) in theirs.iter().enumerate() {
                 let (a, b) = (a as u16, b as u16);
                 let alike = (x.ty == y.ty && !matches!(x.ty, ValueType::Ident(_) | ValueType::Example | ValueType::Position)) || (is_number(&x.ty) && is_number(&y.ty));
                 if alike {
-                    for (word, name) in words {
-                        self.push_forced(Step::Part(Box::new(PartStep::SetWord { a, b, cells: false, word })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(set-word T {u_text} {} {} {name})", x.name, y.name), RootKind::Holds);
-                    }
+                    words(self, LEAF_TABLE, "T", a, &x.name, u_leaf, &u_text, b, &y.name, false);
                 }
                 if is_cells(&x.ty) && is_cells(&y.ty) {
-                    for (word, name) in &cell_words {
-                        self.push_forced(Step::Part(Box::new(PartStep::SetWord { a, b, cells: true, word: *word })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(cell-word T {u_text} {} {} {name})", x.name, y.name), RootKind::Holds);
-                    }
+                    words(self, LEAF_TABLE, "T", a, &x.name, u_leaf, &u_text, b, &y.name, true);
                     // A Position column against a Position column already has these.
                     if x.ty == ValueType::Box || y.ty == ValueType::Box {
+                        self.push_forced(Step::Part(Box::new(PartStep::SameValues { a, b })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(same-values T {u_text} {} {})", x.name, y.name), RootKind::Holds);
                         for (turned, head) in [(false, "same-shape"), (true, "same-shape-d4")] {
                             self.push_forced(Step::Part(Box::new(PartStep::SameShape { keys: Box::new([]), a, others: Box::new([]), b, turned })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("({head} T {u_text} () {} () {})", x.name, y.name), RootKind::Rows);
                         }
@@ -1487,35 +1497,59 @@ impl Generated {
                 }
             }
         }
-        let compare = [(-1i8, "<"), (0, "="), (1, ">")];
-        let mut counts: Vec<(Measure, Measure, String)> = vec![(Measure::Rows, Measure::Rows, "rows rows".to_string())];
+        // A column's values, as the relation that counts them.
+        let values_of = |this: &mut Self, leaf: u32, text: &str, at: u16, column: &Column| -> Option<u32> {
+            let own_text = format!("(project {text} {})", column.name);
+            let found = this.terms.iter().rposition(|term| term.text == own_text).map(|held| held as u32);
+            found.or_else(|| this.push_forced(Step::Project { columns: vec![at].into_boxed_slice() }, leaf, NO_TERM, vec![column.clone()], 1, own_text, RootKind::Rows))
+        };
+        let groups_of = |this: &mut Self, leaf: u32, text: &str, keys: &[u16], columns: &[Column], key_text: String| -> Option<u32> {
+            let count_text = format!("(count {text} {key_text})");
+            let found = this.terms.iter().rposition(|term| term.text == count_text).map(|held| held as u32);
+            let mut held: Vec<Column> = keys.iter().map(|at| columns[usize::from(*at)].clone()).collect();
+            held.push(Column { name: unique("N", columns), ty: ValueType::Nat, source: 0 });
+            found.or_else(|| this.push_forced(Step::Part(Box::new(PartStep::Count { keys: keys.to_vec().into_boxed_slice() })), leaf, NO_TERM, held, 1, count_text, RootKind::Rows))
+        };
+        let compare = |this: &mut Self, l: u32, r: u32| {
+            let (l_text, r_text) = (this.terms[l as usize].text.clone(), this.terms[r as usize].text.clone());
+            this.push_forced(Step::Part(Box::new(PartStep::CountWord { less: true })), l, r, Vec::new(), 2, format!("(count-less {l_text} {r_text})"), RootKind::Holds);
+            this.push_forced(Step::Part(Box::new(PartStep::CountWord { less: true })), r, l, Vec::new(), 2, format!("(count-less {r_text} {l_text})"), RootKind::Holds);
+            this.push_forced(Step::Part(Box::new(PartStep::CountWord { less: false })), l, r, Vec::new(), 2, format!("(count-equal {l_text} {r_text})"), RootKind::Holds);
+        };
+        compare(self, LEAF_TABLE, u_leaf);
         for (a, x) in &own_cells {
             for (b, y) in &their_cells {
-                counts.push((Measure::Values(*a), Measure::Values(*b), format!("(cells {x}) (cells {y})")));
+                if let (Some(l), Some(r)) = (values_of(self, LEAF_TABLE, "T", *a, &own[usize::from(*a)]), values_of(self, u_leaf, &u_text, *b, &theirs[usize::from(*b)])) {
+                    let _ = (x, y);
+                    compare(self, l, r);
+                }
+            }
+        }
+        let their_groups = if their_group.is_empty() { None } else { groups_of(self, u_leaf, &u_text, &their_group, &theirs, keys_text(&their_group, &theirs)) };
+        if let (false, Some(r)) = (own_group.is_empty(), their_groups) {
+            if let Some(l) = groups_of(self, LEAF_TABLE, "T", &own_group, &own, keys_text(&own_group, &own)) {
+                compare(self, l, r);
             }
         }
         for (a, x) in own.iter().enumerate().filter(|(_, column)| is_number(&column.ty)) {
-            counts.push((Measure::Greatest(a as u16), Measure::Rows, format!("(greatest {}) rows", x.name)));
-            if !their_group.is_empty() {
-                counts.push((Measure::Greatest(a as u16), Measure::Groups(their_group.clone().into_boxed_slice()), format!("(greatest {}) (groups {})", x.name, keys_text(&their_group, &theirs))));
-            }
-        }
-        if !own_group.is_empty() && !their_group.is_empty() {
-            counts.push((Measure::Groups(own_group.clone().into_boxed_slice()), Measure::Groups(their_group.clone().into_boxed_slice()), format!("(groups {}) (groups {})", keys_text(&own_group, &own), keys_text(&their_group, &theirs))));
-        }
-        for (left, right, text) in counts {
-            for (word, name) in compare {
-                self.push_forced(Step::Part(Box::new(PartStep::CountWord { left: left.clone(), right: right.clone(), word })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(count-word T {u_text} {text} {name})"), RootKind::Holds);
+            for (other, other_text) in [Some((u_leaf, u_text.clone())), their_groups.map(|term| (term, self.terms[term as usize].text.clone()))].into_iter().flatten() {
+                for (word, name) in [(-1i8, "less"), (0, "equal"), (1, "more")] {
+                    self.push_forced(Step::Part(Box::new(PartStep::GreatestCount { a: a as u16, word })), LEAF_TABLE, other, Vec::new(), 2, format!("(greatest-{name}-count T {} {other_text})", x.name), RootKind::Holds);
+                }
             }
         }
         if !own_group.is_empty() && !their_group.is_empty() {
             for (p, x) in &own_cells {
                 for (q, y) in &their_cells {
-                    for (shapes, head) in [(false, "groups-word"), (true, "shapes-word")] {
-                        for (word, name) in words {
-                            let step = PartStep::GroupsWord { p: *p, left: own_group.clone().into_boxed_slice(), q: *q, right: their_group.clone().into_boxed_slice(), shapes, word };
-                            self.push_forced(Step::Part(Box::new(step)), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("({head} T {u_text} {} {x} {} {y} {name})", keys_text(&own_group, &own), keys_text(&their_group, &theirs)), RootKind::Holds);
-                        }
+                    let (l_keys, r_keys) = (keys_text(&own_group, &own), keys_text(&their_group, &theirs));
+                    for (shapes, head) in [(false, "groups"), (true, "shapes")] {
+                        let step = |word| Step::Part(Box::new(PartStep::GroupsWord { p: *p, left: own_group.clone().into_boxed_slice(), q: *q, right: their_group.clone().into_boxed_slice(), shapes, word }));
+                        let back = Step::Part(Box::new(PartStep::GroupsWord { p: *q, left: their_group.clone().into_boxed_slice(), q: *p, right: own_group.clone().into_boxed_slice(), shapes, word: SetRelation::Subset }));
+                        self.push_forced(step(SetRelation::Equal), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("({head}-equal T {u_text} {l_keys} {x} {r_keys} {y})"), RootKind::Holds);
+                        self.push_forced(step(SetRelation::Subset), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("({head}-subset T {u_text} {l_keys} {x} {r_keys} {y})"), RootKind::Holds);
+                        self.push_forced(back, u_leaf, LEAF_TABLE, Vec::new(), 1, format!("({head}-subset {u_text} T {r_keys} {y} {l_keys} {x})"), RootKind::Holds);
+                        self.push_forced(step(SetRelation::Overlap), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("({head}-overlap T {u_text} {l_keys} {x} {r_keys} {y})"), RootKind::Holds);
+                        self.push_forced(step(SetRelation::Disjoint), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("({head}-disjoint T {u_text} {l_keys} {x} {r_keys} {y})"), RootKind::Holds);
                     }
                 }
             }
@@ -1525,29 +1559,27 @@ impl Generated {
                 for (q, m) in &their_cells {
                     for (y, d) in &their_colors {
                         for (word, name) in [(AgreeRelation::EveryOne, "every"), (AgreeRelation::None, "none"), (AgreeRelation::Some, "some")] {
-                            self.push_forced(Step::Part(Box::new(PartStep::AgreeWord { p: *p, x: *x, q: *q, y: *y, word })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(agree-word T {u_text} {n} {c} {m} {d} {name})"), RootKind::Holds);
+                            self.push_forced(Step::Part(Box::new(PartStep::AgreeWord { p: *p, x: *x, q: *q, y: *y, word })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(colors-agree-{name} T {u_text} {n} {c} {m} {d})"), RootKind::Holds);
                         }
                     }
                 }
             }
         }
-        let own_type = |at: u16| own[usize::from(at)].ty.clone();
         for (a, x) in &own_cells {
             let own_text = format!("(project T {x})");
-            let found = self.terms.iter().rposition(|term| term.text == own_text).map(|at| at as u32);
-            let Some(values) = found.or_else(|| self.push_forced(Step::Project { columns: vec![*a].into_boxed_slice() }, LEAF_TABLE, NO_TERM, vec![own[usize::from(*a)].clone()], 1, own_text.clone(), RootKind::Rows)) else { continue };
+            let Some(values) = values_of(self, LEAF_TABLE, "T", *a, &own[usize::from(*a)]) else { continue };
             let own_column = self.terms[values as usize].columns.clone();
             for (b, y) in &their_cells {
-                self.push_forced(Step::Part(Box::new(PartStep::LeastDistance { a: *a, b: *b })), LEAF_TABLE, u_leaf, vec![Column { name: "K".to_string(), ty: ValueType::Nat, source: 0 }], 1, format!("(least-distance T {u_text} {x} {y})"), RootKind::Number);
+                if let Some(term) = self.push_forced(Step::Part(Box::new(PartStep::LeastDistance { a: *a, b: *b })), LEAF_TABLE, u_leaf, vec![Column { name: "K".to_string(), ty: ValueType::Nat, source: 0 }], 1, format!("(least-distance T {u_text} {x} {y})"), RootKind::Number) {
+                    self.refined[term as usize].count_follows = true;
+                }
                 self.push_forced(Step::Part(Box::new(PartStep::OnBoundary { b: *b })), values, u_leaf, own_column.clone(), 2, format!("(on-boundary {own_text} {u_text} {y})"), RootKind::Share);
                 let mut neighbor = own_column.clone();
-                neighbor.push(Column { name: "Q".to_string(), ty: own_type(*a), source: 0 });
+                neighbor.push(Column { name: "Q".to_string(), ty: own[usize::from(*a)].ty.clone(), source: 0 });
                 self.push_forced(Step::Part(Box::new(PartStep::NeighborsIn { b: *b })), values, u_leaf, neighbor, 2, format!("(neighbors-in {own_text} {u_text} {y})"), RootKind::Share);
             }
             for (b, y) in &their_boxes {
-                for (some, head) in [(false, "inside-the-box"), (true, "inside-some-box")] {
-                    self.push_forced(Step::Part(Box::new(PartStep::InsideBoxWord { a: *a, b: *b, some })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("({head} T {u_text} {x} {y})"), RootKind::Holds);
-                }
+                self.push_forced(Step::Part(Box::new(PartStep::InsideBoxes { a: 0, b: *b })), values, u_leaf, own_column.clone(), 2, format!("(inside-boxes {own_text} {u_text} {x} {y})"), RootKind::Share);
                 self.push_forced(Step::Part(Box::new(PartStep::OnBorder { b: *b })), values, u_leaf, own_column.clone(), 2, format!("(on-border {own_text} {u_text} {y})"), RootKind::Share);
             }
             for (w, d) in &own_ways {
@@ -1569,23 +1601,24 @@ impl Generated {
                 let found = self.terms.iter().rposition(|term| term.text == derived_text).map(|at| at as u32);
                 let Some(derived) = found.or_else(|| self.push_forced(Step::Part(Box::new(part)), u_leaf, NO_TERM, vec![Column { name: name.clone(), ty: ValueType::Position, source: 0 }], 2, derived_text.clone(), RootKind::Rows)) else { continue };
                 for (a, x) in &own_cells {
-                    for (relation, relation_name) in &cell_words {
-                        self.push_forced(Step::Part(Box::new(PartStep::SetWord { a: *a, b: 0, cells: true, word: *relation })), LEAF_TABLE, derived, Vec::new(), 2, format!("(cell-word T {derived_text} {x} {name} {relation_name})"), RootKind::Holds);
-                    }
+                    words(self, LEAF_TABLE, "T", *a, x, derived, &derived_text, 0, &name, true);
+                    self.push_forced(Step::Part(Box::new(PartStep::SameValues { a: *a, b: 0 })), LEAF_TABLE, derived, Vec::new(), 2, format!("(same-values T {derived_text} {x} {name})"), RootKind::Holds);
                 }
             }
             let input_leaf = self.terms.iter().position(|term| term.text == "input").expect("the input") as u32;
             let color = || vec![Column { name: "Col".to_string(), ty: ValueType::Color, source: 0 }];
-            let under_text = format!("(colors-under {u_text} {y})");
+            let under_text = format!("(colors-under {u_text} {y} input)");
             let found = self.terms.iter().rposition(|term| term.text == under_text).map(|at| at as u32);
             let Some(under) = found.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::ColorsUnder { p: *b })), u_leaf, input_leaf, color(), 2, under_text.clone(), RootKind::Rows)) else { continue };
-            let top_text = format!("(top-colors-under {u_text} {y})");
+            let top_text = format!("(most-colors-under {u_text} {y} input)");
             let Some(top) = self.push_forced(Step::Part(Box::new(PartStep::TopColorsUnder { p: *b })), u_leaf, input_leaf, color(), 2, top_text.clone(), RootKind::Rows) else { continue };
             for (a, x) in &own_colors {
-                for (relation, relation_name) in words {
-                    self.push_forced(Step::Part(Box::new(PartStep::SetWord { a: *a, b: 0, cells: false, word: relation })), LEAF_TABLE, under, Vec::new(), 2, format!("(set-word T {under_text} {x} Col {relation_name})"), RootKind::Holds);
+                words(self, LEAF_TABLE, "T", *a, x, under, &under_text, 0, "Col", false);
+                self.push_forced(Step::Part(Box::new(PartStep::SameValues { a: *a, b: 0 })), LEAF_TABLE, under, Vec::new(), 2, format!("(same-values T {under_text} {x} Col)"), RootKind::Holds);
+                if let Some(values) = values_of(self, LEAF_TABLE, "T", *a, &own[usize::from(*a)]) {
+                    let own_column = self.terms[values as usize].columns.clone();
+                    self.push_forced(Step::Semijoin { left: Box::new([0]), right: Box::new([0]) }, values, top, own_column, 2, format!("(semijoin (project T {x}) {top_text} ({x} Col))"), RootKind::Share);
                 }
-                self.push_forced(Step::Part(Box::new(PartStep::SharesValue { a: *a, b: 0 })), LEAF_TABLE, top, Vec::new(), 2, format!("(shares-value T {top_text} {x} Col)"), RootKind::Holds);
             }
         }
     }
@@ -1741,60 +1774,72 @@ impl Generated {
         out
     }
 
-    /// What one column says as a whole: its cells as a set, its values as a list, and how its two most frequent values, or its two greatest numbers, stand to each other.
+    /// What one column says as a whole: its cells' frame and how they fill it, its values as a list, and the rows that its two greatest numbers count.
     fn column_measures(&mut self) {
-        use crate::gen_parts::{CellMeasureKind::*, ColumnMeasureKind::*};
-        let cell_measures = [
-            (Components, "components"), (Components4, "components-4"), (FullLines, "full-lines"), (PerLineMax, "per-line-max"), (Symmetry, "symmetry"), (Enclosed, "enclosed"),
-            (SpacingMin, "spacing-min"), (SpacingMax, "spacing-max"), (Cells, "cells"), (Covers, "covers"), (OnOneLine, "on-one-line"), (TouchesEdge, "touches-edge"),
-            (ComplementConnected, "complement-connected"), (EveryStraight, "every-straight"), (Fills, "fills"), (Outline, "outline"),
-        ];
+        use crate::gen_parts::ColumnMeasureKind::*;
         let columns = self.terms[LEAF_TABLE as usize].columns.clone();
         let number = || vec![Column { name: "N".to_string(), ty: ValueType::Nat, source: 0 }];
+        let counted = |this: &mut Self, leaf: u32, at: u16, name: &str, text: &str| {
+            let rows = || vec![Column { name: "K".to_string(), ty: ValueType::Int, source: 0 }];
+            let (top_text, next_text) = (format!("(first-number-rows {text} {name})"), format!("(second-number-rows {text} {name})"));
+            let top = this.push_forced(Step::Part(Box::new(PartStep::CountedByValue { a: at, second: false })), leaf, NO_TERM, rows(), 1, top_text.clone(), RootKind::Rows);
+            let next = this.push_forced(Step::Part(Box::new(PartStep::CountedByValue { a: at, second: true })), leaf, NO_TERM, rows(), 1, next_text.clone(), RootKind::Rows);
+            if let (Some(top), Some(next)) = (top, next) {
+                this.push_forced(Step::Part(Box::new(PartStep::Same)), top, next, Vec::new(), 2, format!("{top_text} {next_text}"), RootKind::Against);
+            }
+        };
         for (place, column) in columns.iter().enumerate() {
             let (at, name) = (place as u16, column.name.clone());
             let holds = |this: &mut Self, measure, word: &str| {
-                this.push_forced(Step::Part(Box::new(PartStep::ColumnMeasure { a: at, measure })), LEAF_TABLE, NO_TERM, Vec::new(), 1, format!("(column-measure T {name} {word})"), RootKind::Holds);
+                this.push_forced(Step::Part(Box::new(PartStep::ColumnMeasure { a: at, measure })), LEAF_TABLE, NO_TERM, Vec::new(), 1, format!("({word} T {name})"), RootKind::Holds);
             };
             match column.ty {
                 ValueType::Position | ValueType::Box => {
-                    for (measure, word) in cell_measures {
-                        let text = format!("(cell-measure T {name} {word})");
-                        let step = Step::Part(Box::new(PartStep::CellMeasure { p: at, measure }));
-                        if measure.counts() {
-                            if let Some(term) = self.push_forced(step, LEAF_TABLE, NO_TERM, number(), 1, text, RootKind::Number) {
-                                self.refined[term as usize].count_follows = true;
-                            }
-                        } else {
-                            self.push_forced(step, LEAF_TABLE, NO_TERM, Vec::new(), 1, text, RootKind::Holds);
+                    let P = |this: &Self| vec![Column { name: unique("P", &this.terms[LEAF_TABLE as usize].columns), ty: ValueType::Position, source: 0 }];
+                    if let Some(term) = self.push_forced(Step::Part(Box::new(PartStep::ComplementParts { p: at })), LEAF_TABLE, NO_TERM, number(), 1, format!("(complement-parts T {name})"), RootKind::Number) {
+                        self.refined[term as usize].count_follows = true;
+                    }
+                    self.push_forced(Step::Part(Box::new(PartStep::EveryPartStraight { p: at })), LEAF_TABLE, NO_TERM, Vec::new(), 1, format!("(every-part-straight T {name})"), RootKind::Holds);
+                    self.push_forced(Step::Part(Box::new(PartStep::OutlinesBox { p: at })), LEAF_TABLE, NO_TERM, Vec::new(), 1, format!("(outlines-box T {name})"), RootKind::Holds);
+                    // How much of its frame it fills, and its bounding box fills.
+                    let frame_text = format!("(frame-cells T {name})");
+                    let own_text = format!("(project T {name})");
+                    let cell = P(self);
+                    let found = self.terms.iter().rposition(|term| term.text == own_text).map(|held| held as u32);
+                    let values = found.or_else(|| self.push_forced(Step::Project { columns: vec![at].into_boxed_slice() }, LEAF_TABLE, NO_TERM, vec![column.clone()], 1, own_text.clone(), RootKind::Rows));
+                    let box_text = format!("(box-cells T {name})");
+                    let found = self.terms.iter().rposition(|term| term.text == box_text).map(|held| held as u32);
+                    let in_box = found.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::BoxCells { p: at, outside: false })), LEAF_TABLE, NO_TERM, cell.clone(), 1, box_text.clone(), RootKind::Rows));
+                    if let Some(frame) = self.push_forced(Step::Part(Box::new(PartStep::FrameCells { p: at })), LEAF_TABLE, NO_TERM, cell, 1, frame_text.clone(), RootKind::Rows) {
+                        if let Some(values) = values {
+                            self.push_forced(Step::Part(Box::new(PartStep::Same)), values, frame, Vec::new(), 2, format!("{own_text} {frame_text}"), RootKind::Against);
+                        }
+                        if let Some(in_box) = in_box {
+                            self.push_forced(Step::Part(Box::new(PartStep::Same)), in_box, frame, Vec::new(), 2, format!("{box_text} {frame_text}"), RootKind::Against);
                         }
                     }
-                    if let Some(term) = self.push_forced(Step::Part(Box::new(PartStep::ColumnMeasure { a: at, measure: ExtentsDistinct })), LEAF_TABLE, NO_TERM, number(), 1, format!("(column-measure T {name} extents-distinct)"), RootKind::Number) {
+                    if let Some(term) = self.push_forced(Step::Part(Box::new(PartStep::ColumnMeasure { a: at, measure: ExtentsDistinct })), LEAF_TABLE, NO_TERM, number(), 1, format!("(extents-distinct T {name})"), RootKind::Number) {
                         self.refined[term as usize].count_follows = true;
                     }
                 }
                 ValueType::Nat | ValueType::Int => {
-                    holds(self, Consecutive, "consecutive");
-                    holds(self, Arithmetic, "arithmetic");
-                    let numbers = || vec![Column { name: "K".to_string(), ty: ValueType::Int, source: 0 }];
-                    let (top_text, next_text) = (format!("(counted-by-value T {name} first)"), format!("(counted-by-value T {name} second)"));
-                    let top = self.push_forced(Step::Part(Box::new(PartStep::CountedByValue { a: at, second: false })), LEAF_TABLE, NO_TERM, numbers(), 1, top_text.clone(), RootKind::Rows);
-                    let next = self.push_forced(Step::Part(Box::new(PartStep::CountedByValue { a: at, second: true })), LEAF_TABLE, NO_TERM, numbers(), 1, next_text.clone(), RootKind::Rows);
-                    if let (Some(top), Some(next)) = (top, next) {
-                        self.push_forced(Step::Part(Box::new(PartStep::Same)), top, next, Vec::new(), 2, format!("{top_text} {next_text}"), RootKind::Against);
-                    }
+                    holds(self, Consecutive, "values-consecutive");
+                    holds(self, Arithmetic, "values-arithmetic");
+                    counted(self, LEAF_TABLE, at, &name, "T");
                 }
                 ValueType::Dir | ValueType::Dir8 | ValueType::DiagDir => {
-                    holds(self, OnOneAxis, "on-one-axis");
-                    holds(self, OppositePair, "opposite-pair");
+                    holds(self, OnOneAxis, "directions-on-one-axis");
+                    holds(self, OppositePair, "directions-opposite-pair");
                 }
-                ValueType::Offset => holds(self, OneLength, "one-length"),
+                ValueType::Offset => holds(self, OneLength, "offsets-one-length"),
                 ValueType::Color => {
-                    let (top_text, next_text) = (format!("(frequent-value-rows T {name} first)"), format!("(frequent-value-rows T {name} second)"));
-                    let top = self.push_forced(Step::Part(Box::new(PartStep::FrequentValueRows { a: at, second: false })), LEAF_TABLE, NO_TERM, columns.clone(), 1, top_text.clone(), RootKind::Rows);
-                    let next = self.push_forced(Step::Part(Box::new(PartStep::FrequentValueRows { a: at, second: true })), LEAF_TABLE, NO_TERM, columns.clone(), 1, next_text.clone(), RootKind::Rows);
-                    if let (Some(top), Some(next)) = (top, next) {
-                        self.push_forced(Step::Part(Box::new(PartStep::Same)), top, next, Vec::new(), 2, format!("{top_text} {next_text}"), RootKind::Against);
+                    // How many rows each color has, and the two greatest of those.
+                    let text = format!("(count T ({name}))");
+                    let n = unique("N", &columns);
+                    let found = self.terms.iter().rposition(|term| term.text == text).map(|held| held as u32);
+                    let per_color = found.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::Count { keys: vec![at].into_boxed_slice() })), LEAF_TABLE, NO_TERM, vec![column.clone(), Column { name: n.clone(), ty: ValueType::Nat, source: 0 }], 1, text.clone(), RootKind::Rows));
+                    if let Some(per_color) = per_color {
+                        counted(self, per_color, 1, &n, &text);
                     }
                 }
                 _ => {}
@@ -1804,74 +1849,61 @@ impl Generated {
 
     /// What a set of boxes says together: the bounding box of a column's cells, the bounding boxes of its groups, and a Box column's boxes in a grid's frame.
     fn box_measures(&mut self, one_group: bool) {
-        use crate::gen_parts::BoxMeasureKind::*;
-        let measures = [
-            (Distinct, "distinct", true),
-            (LeastMargin, "least-margin", true),
-            (EdgesTouchedMax, "edges-touched-max", true),
-            (EdgesTouchedMin, "edges-touched-min", true),
-            (CenteredAxesMax, "centered-axes-max", true),
-            (ShorterSideMin, "shorter-side-min", true),
-            (LongerSideMax, "longer-side-max", true),
-            (Aligned, "aligned", false),
-            (OneSize, "one-size", false),
-            (SomeOverlap, "some-overlap", false),
-            (Nested, "nested", false),
-            (CoverGrid, "cover-grid", false),
-            (EvenlySpaced, "evenly-spaced", false),
-            (EverySquare, "every-square", false),
-            (MoreThanOneCell, "more-than-one-cell", false),
-            (WholeGrid, "whole-grid", false),
-        ];
+        use crate::gen_parts::BoxMeasureKind;
         let columns = self.terms[LEAF_TABLE as usize].columns.clone();
         let number = || vec![Column { name: "N".to_string(), ty: ValueType::Nat, source: 0 }];
         let cell = || vec![Column { name: "P".to_string(), ty: ValueType::Position, source: 0 }];
         self.one_group = one_group;
         let options: Vec<Vec<(Box<[u16]>, String)>> = (0..columns.len()).map(|place| self.keys_of(&columns, &[place])).collect();
         self.one_group = false;
+        let measures = |this: &mut Self, boxes: u32, b: u16, b_name: &str, boxes_text: &str, frame: u32, f: u16, f_name: &str, frame_text: &str| {
+            for measure in BoxMeasureKind::ALL {
+                let text = format!("({} {boxes_text} {b_name} {frame_text} {f_name})", measure.fragment());
+                let step = Step::Part(Box::new(PartStep::BoxMeasure { b, f, measure }));
+                if measure.is_number() {
+                    if let Some(term) = this.push_forced(step, boxes, frame, number(), 2, text, RootKind::Number) {
+                        this.refined[term as usize].count_follows = true;
+                    }
+                } else {
+                    this.push_forced(step, boxes, frame, Vec::new(), 2, text, RootKind::Holds);
+                }
+            }
+            let one_text = format!("(one-box-cells {boxes_text} {b_name} {frame_text} {f_name})");
+            this.push_forced(Step::Part(Box::new(PartStep::OneBoxCells { b, f })), boxes, frame, cell(), 2, one_text, RootKind::Rows)
+        };
         for (place, column) in columns.iter().enumerate() {
             if !matches!(column.ty, ValueType::Position | ValueType::Box) {
                 continue;
             }
             let (p, name) = (place as u16, column.name.clone());
             let frame_text = format!("(frame-cells T {name})");
-            let mut frame = None;
             for (keys, key_text) in &options[place] {
                 let grouped = key_text.starts_with("(T*");
                 let one_column = grouped && !key_text.contains(',');
                 if !(keys.is_empty() || grouped) || (one_group && !one_column) {
                     continue;
                 }
-                for (measure, word, is_number) in measures {
-                    let text = format!("(box-measure T {key_text} {name} {word})");
-                    let step = Step::Part(Box::new(PartStep::BoxMeasure { keys: keys.clone(), p, measure }));
-                    let at = if is_number { self.push_forced(step, LEAF_TABLE, NO_TERM, number(), 1, text, RootKind::Number) } else { self.push_forced(step, LEAF_TABLE, NO_TERM, Vec::new(), 1, text, RootKind::Holds) };
-                    if let (true, Some(at)) = (is_number, at) {
-                        self.refined[at as usize].count_follows = true;
-                    }
-                }
-                let one_text = format!("(one-box-cells T {key_text} {name})");
-                let Some(one) = self.push_forced(Step::Part(Box::new(PartStep::OneBoxCells { keys: keys.clone(), p })), LEAF_TABLE, NO_TERM, cell(), 1, one_text.clone(), RootKind::Rows) else { continue };
-                if frame.is_none() {
-                    frame = self.push_forced(Step::Part(Box::new(PartStep::FrameCells { p })), LEAF_TABLE, NO_TERM, cell(), 1, frame_text.clone(), RootKind::Rows);
-                }
-                if let Some(frame) = frame {
-                    self.push_forced(Step::Part(Box::new(PartStep::Same)), one, frame, Vec::new(), 2, format!("{one_text} {frame_text}"), RootKind::Against);
+                let box_name = unique("B", &columns);
+                let boxes_text = format!("(box-of T {key_text} {name})");
+                let found = self.terms.iter().rposition(|term| term.text == boxes_text).map(|held| held as u32);
+                let mut own: Vec<Column> = keys.iter().map(|key| columns[usize::from(*key)].clone()).collect();
+                own.push(Column { name: box_name.clone(), ty: ValueType::Box, source: 0 });
+                let Some(boxes) = found.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::BoxOf { keys: keys.clone(), p })), LEAF_TABLE, NO_TERM, own, 1, boxes_text.clone(), RootKind::Rows)) else { continue };
+                let one = measures(self, boxes, keys.len() as u16, &box_name, &boxes_text, LEAF_TABLE, p, &name, "T");
+                let frame = self.terms.iter().rposition(|term| term.text == frame_text).map(|held| held as u32);
+                let frame = frame.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::FrameCells { p })), LEAF_TABLE, NO_TERM, cell(), 1, frame_text.clone(), RootKind::Rows));
+                if let (Some(one), Some(frame)) = (one, frame) {
+                    let one_text = format!("(one-box-cells {boxes_text} {box_name} T {name})");
+                    self.push_forced(Step::Part(Box::new(PartStep::Same)), one, frame, Vec::new(), 3, format!("{one_text} {frame_text}"), RootKind::Against);
                 }
             }
             if column.ty == ValueType::Box && !one_group {
                 for (grid, label) in [(LEAF_INPUT, "input"), (LEAF_OUTPUT, "output")] {
-                    for (measure, word, is_number) in measures {
-                        let text = format!("(box-set-measure T {name} {label} {word})");
-                        let step = Step::Part(Box::new(PartStep::BoxSetMeasure { p, measure }));
-                        let at = if is_number { self.push_forced(step, LEAF_TABLE, grid, number(), 1, text, RootKind::Number) } else { self.push_forced(step, LEAF_TABLE, grid, Vec::new(), 1, text, RootKind::Holds) };
-                        if let (true, Some(at)) = (is_number, at) {
-                            self.refined[at as usize].count_follows = true;
-                        }
+                    let one = measures(self, LEAF_TABLE, p, &name, "T", grid, 0, "P", label);
+                    if let Some(one) = one {
+                        let one_text = format!("(one-box-cells T {name} {label} P)");
+                        self.push_forced(Step::Part(Box::new(PartStep::Same)), one, grid, Vec::new(), 3, format!("{one_text} {label}"), RootKind::Against);
                     }
-                    let one_text = format!("(one-box-set-cells T {name} {label})");
-                    let Some(one) = self.push_forced(Step::Part(Box::new(PartStep::OneBoxSetCells { p })), LEAF_TABLE, grid, cell(), 1, one_text.clone(), RootKind::Rows) else { continue };
-                    self.push_forced(Step::Part(Box::new(PartStep::Same)), one, grid, Vec::new(), 2, format!("{one_text} {label}"), RootKind::Against);
                 }
             }
         }
@@ -1958,6 +1990,11 @@ impl Generated {
                 add(PartStep::CornerDist { p }, NO_TERM, with(&[("Diag", ValueType::DiagDir, 0), ("K", ValueType::Int, 0)]), format!("(corner-dist {text} {name})"), RootKind::Rows);
                 add(PartStep::Parity { p }, NO_TERM, with(&[("Diag", ValueType::DiagDir, 0), ("K", ValueType::Nat, 0)]), format!("(parity {text} {name})"), RootKind::Rows);
                 add(PartStep::BorderDistance { p }, NO_TERM, with(&[("K", ValueType::Int, 0)]), format!("(border-distance {text} {name})"), RootKind::Rows);
+                if at == LEAF_TABLE {
+                    add(PartStep::LineSpacings { p }, NO_TERM, vec![one("A", ValueType::Axis, 0), one("N", ValueType::Nat, 0)], format!("(line-spacings {text} {name})"), RootKind::Rows);
+                }
+            }
+            if matches!(column.ty, ValueType::Position | ValueType::Box) {
                 for (keys, key_text) in self.keys_of(&columns, &[place]) {
                     let heads = key_columns(&keys);
                     let extended = |extra: Vec<Column>| -> Vec<Column> { heads.iter().cloned().chain(extra).collect() };

@@ -682,7 +682,6 @@ fn add_column_numbers(out: &mut BTreeMap<String, f64>, detail: &TableColumns, fa
     }
     let facts_read = ["input", "ex_input", "ex_output"];
     out.insert("tables before it".to_string(), before.iter().filter(|name| !facts_read.contains(*name) && **name != own).count() as f64);
-    out.insert("reads the input grid".to_string(), f64::from(u8::from(graph.get(&own).is_some_and(|reads| reads.contains("input")))));
     if let Some(body) = &detail.body {
         out.insert("reads one table twice".to_string(), f64::from(u8::from(body.reads_one_table_twice)));
         for (word, count) in [("relation atoms", body.relation_atoms), ("lib atoms", body.lib_atoms), ("comparisons", body.comparisons), ("NOTs", body.nots), ("ALLs", body.alls), ("ORs", body.ors), ("joined variables", body.joined_variables), ("variables not at a column", body.variables_not_at_a_column)] {

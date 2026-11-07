@@ -477,9 +477,8 @@ impl GridFacts {
         {
             let cells = foreground;
             roles[ROLE_ENCLOSED] = walk_in(&self.all.minus(&cells), h, w);
-            // A line crosses where the foreground holds three quarters of it.
-            let rows: Vec<usize> = (0..h).filter(|r| 4 * (0..w).filter(|c| cells.get(r * w + c)).count() >= 3 * w).collect();
-            let cols: Vec<usize> = (0..w).filter(|c| 4 * (0..h).filter(|r| cells.get(r * w + c)).count() >= 3 * h).collect();
+            let rows: Vec<usize> = (0..h).filter(|r| (0..w).all(|c| cells.get(r * w + c))).collect();
+            let cols: Vec<usize> = (0..w).filter(|c| (0..h).all(|r| cells.get(r * w + c))).collect();
             for r in &rows {
                 for c in &cols {
                     roles[ROLE_CROSSING].set(r * w + c);
@@ -515,9 +514,10 @@ impl GridFacts {
     fn least_move(&self, along_rows: bool) -> usize {
         let (n, m) = if along_rows { (self.h, self.w) } else { (self.w, self.h) };
         let cell = |line: usize, place: usize| if along_rows { self.color[line * self.w + place] } else { self.color[place * self.w + line] };
-        for p in 1..=n / 2 {
-            let kept = (0..n - p).map(|a| (0..m).filter(|place| cell(a, *place) == cell(a + p, *place)).count()).sum::<usize>();
-            if kept as f64 >= 0.9 * (n - p) as f64 * m as f64 {
+        for p in 1..n {
+            let lines = n - p;
+            let broken = (0..lines).filter(|a| (0..m).any(|place| cell(*a, place) != cell(*a + p, place))).count();
+            if broken <= lines - broken {
                 return p;
             }
         }
@@ -536,15 +536,7 @@ impl GridFacts {
                 counts[class(r, c)][self.color[r * w + c] as usize] += 1;
             }
         }
-        // Classes that share one most frequent color say only that the grid is mostly one color.
-        let tops = counts.iter().fold(0u16, |mask, held| {
-            let most = held.iter().copied().max().unwrap_or(0);
-            (0..10).filter(|col| most > 0 && held[*col] == most).fold(mask, |mask, col| mask | 1 << col)
-        });
         let mut out = Bits::EMPTY;
-        if tops.count_ones() < 2 {
-            return out;
-        }
         for r in 0..h {
             for c in 0..w {
                 let held = &counts[class(r, c)];
@@ -561,8 +553,9 @@ impl GridFacts {
         let mut out = [0u16; COLOR_ROLES];
         let per_pieces: Vec<u32> = (0..10).map(|col| self.pieces.iter().filter(|piece| piece.color == col as u8).count() as u32).collect();
         let most_pieces = per_pieces.iter().copied().max().unwrap_or(0);
-        // Under a tie, no color is background.
-        let foreground_largest = self.pieces.iter().filter(|piece| Some(piece.color) != self.background).map(|piece| piece.size).max();
+        // Under a tie, every most common color is background.
+        let most_cells = self.counts.iter().copied().max().unwrap_or(0);
+        let foreground_largest = self.pieces.iter().filter(|piece| self.counts[piece.color as usize] != most_cells).map(|piece| piece.size).max();
         let full_rows: Vec<bool> = self.line_colors[0].iter().map(|mask| mask.count_ones() == 1).collect();
         let full_cols: Vec<bool> = self.line_colors[1].iter().map(|mask| mask.count_ones() == 1).collect();
         let inside: Vec<Option<Bits>> = (0..10).map(|col| (self.counts[col] > 0).then(|| walk_in(&self.all.minus(&self.by_color[col]), h, w))).collect();
@@ -601,7 +594,7 @@ impl GridFacts {
             if own.iter().all(|piece| piece.size as usize == (piece.span[1] - piece.span[0] + 1) as usize * (piece.span[3] - piece.span[2] + 1) as usize) {
                 out[COLOR_FILLS_BOXES] |= bit;
             }
-            if Some(col as u8) != self.background && foreground_largest.is_some_and(|size| own.iter().any(|piece| piece.size == size)) {
+            if self.counts[col] != most_cells && foreground_largest.is_some_and(|size| own.iter().any(|piece| piece.size == size)) {
                 out[COLOR_LARGEST] |= bit;
             }
             if per_pieces[col] == most_pieces {
