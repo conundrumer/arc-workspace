@@ -99,6 +99,48 @@ def name_lines(folder):
             continue
 
 
+HEX_VALUE = np.full(256, 255, dtype=np.uint8)
+HEX_VALUE[np.frombuffer(b'0123456789abcdef', dtype=np.uint8)] = np.arange(16, dtype=np.uint8)
+HEX_SHIFT = np.arange(60, -4, -4, dtype=np.uint64)
+
+
+def names_in(folder, wanted):
+    """The fields of each wanted id's line in a folder's names files, and the id of `(cardinality T)` where the folder has it. A line starts with its id in 16 hex digits and a
+    tab, so a file's ids are read as arrays and only a wanted line is split. A run still going or stopped leaves its file with an unfinished end."""
+    table = np.array(sorted(wanted), dtype=np.uint64)
+    held = {}
+    rows_key = None
+    for path in sorted(folder.glob('names*.tsv.zst')):
+        pieces = []
+        with path.open('rb') as raw:
+            reader = zstandard.ZstdDecompressor().stream_reader(raw, read_across_frames=True)
+            try:
+                while piece := reader.read(1 << 24):
+                    pieces.append(piece)
+            except zstandard.ZstdError:
+                pass
+        data = b''.join(pieces)
+        del pieces
+        marked = data.find(b'\t(cardinality T)\t')
+        if marked >= 16:
+            rows_key = int(data[marked - 16:marked], 16)
+        text = np.frombuffer(data, dtype=np.uint8)
+        ends = np.flatnonzero(text == 10)
+        starts = np.concatenate(([0], ends[:-1] + 1)) if len(ends) else ends
+        starts, ends = starts[ends - starts > 17], ends[ends - starts > 17]
+        for first in range(0, len(starts), 1 << 20):
+            at, end = starts[first:first + (1 << 20)], ends[first:first + (1 << 20)]
+            digits = HEX_VALUE[text[at[:, None] + np.arange(16)]]
+            good = (digits != 255).all(axis=1) & (text[at + 16] == 9)
+            keys = (digits.astype(np.uint64) << HEX_SHIFT).sum(axis=1, dtype=np.uint64)
+            for line_at, line_end in zip(at[good & place(keys, table)[1]].tolist(), end[good & place(keys, table)[1]].tolist()):
+                parts = data[line_at:line_end].decode().split('\t')
+                key = int(parts[0], 16)
+                if len(parts) == 4 and key not in held:
+                    held[key] = parts
+    return held, rows_key
+
+
 class Tally:
     """How many of the arrays given hold each id, with a bound on what stands unmerged."""
 
@@ -132,16 +174,16 @@ class Tally:
 def every_entry(held, other):
     """A table's active shapes in order, with the least, the mean and the greatest of each."""
     ids = np.concatenate((held[0], other[0]))
-    order = np.argsort(ids)
+    order = np.argsort(ids, kind='stable')
     return ids[order], {channel: np.concatenate((held[1], other[at]))[order] for at, channel in ((1, 'least'), (2, 'mean'), (3, 'most'))}
 
 
 def told_apart(gold, mutant):
     """The shapes whose mean differs on two tables, where a shape only one of them has counts as differing."""
-    _, in_gold, in_mutant = np.intersect1d(gold[0], mutant[0], assume_unique=True, return_indices=True)
-    ours, theirs = gold[1]['mean'][in_gold], mutant[1]['mean'][in_mutant]
+    in_mutant, hit = place(gold[0], mutant[0])
+    ours, theirs = gold[1]['mean'][hit], mutant[1]['mean'][in_mutant[hit]]
     differs = (ours != theirs) & ~(np.isnan(ours) & np.isnan(theirs))
-    return np.concatenate((np.setxor1d(gold[0], mutant[0], assume_unique=True), gold[0][in_gold[differs]]))
+    return np.concatenate((gold[0][~hit], mutant[0][~place(mutant[0], gold[0])[1]], gold[0][hit][differs]))
 
 
 def with_named(lists, others, folder, name, items):
@@ -163,16 +205,17 @@ def with_named(lists, others, folder, name, items):
             lists[owner], others[owner] = held, named_others[owner]
             continue
         ids = np.concatenate((lists[owner][0], held[0]))
-        order = np.argsort(ids)
-        if len(np.unique(ids)) != len(ids):
+        order = np.argsort(ids, kind='stable')
+        ids = ids[order]
+        if (ids[1:] == ids[:-1]).any():
             raise ValueError(f'{folder} repeats a shape of {name} at {owner}')
-        lists[owner] = (ids[order], np.concatenate((lists[owner][1], held[1]))[order])
+        lists[owner] = (ids, np.concatenate((lists[owner][1], held[1]))[order])
         own, theirs = others[owner], named_others[owner]
         if not len(theirs[0]):
             continue
         ids = np.concatenate((own[0], theirs[0]))
-        order = np.argsort(ids)
-        if len(np.unique(ids)) != len(ids):
+        order = np.argsort(ids, kind='stable')
+        if (ids[order][1:] == ids[order][:-1]).any():
             raise ValueError(f'{folder} repeats a shape of {name} at {owner}')
         # A list of the train outputs has only the train pairs, and a named shape is 0 past those.
         pairs = own[4].size // len(own[0]) if len(own[0]) else theirs[4].shape[1]
@@ -236,11 +279,11 @@ QV_NAMES = ('active', 'stable', 'stable_share', 'new_stable', 'new_stable_share'
             'same_entries_share:max', 'same_entries_share:min', 'rows_over_use:max', 'rows_over_use:min')
 
 
-def share_same(own, use):
-    """The share of a table's entries that another table has with the same numbers."""
+def share_same(own, use, there, hit):
+    """The share of a table's entries that another table has with the same numbers, where `there` and `hit` are `place` of its ids in the other's."""
     if not len(own[0]):
         return 0.0
-    _, here, there = np.intersect1d(own[0], use[0], assume_unique=True, return_indices=True)
+    here, there = np.flatnonzero(hit), there[hit]
     same = np.ones(len(here), dtype=bool)
     for channel in ('least', 'mean', 'most'):
         a, b = own[1][channel][here], use[1][channel][there]
@@ -252,9 +295,9 @@ def relation_numbers(own, stable_count, new_stable, uses, read_tables, rows_key,
     """QV_NAMES's values for one candidate. `uses` holds the entries of the input and of each table its query reads,
     and `read_tables` those of the tables alone."""
     active = len(own[0])
-    seen = np.unique(np.concatenate([use[0] for use in uses])) if uses else np.zeros(0, dtype=np.uint64)
-    new_active = len(np.setdiff1d(own[0], seen, assume_unique=True))
-    shares = [share_same(own, use) for use in uses]
+    placed = [place(own[0], use[0]) for use in uses]
+    new_active = active - int(np.logical_or.reduce([hit for _, hit in placed]).sum()) if uses else active
+    shares = [share_same(own, use, there, hit) for use, (there, hit) in zip(uses, placed)]
     own_rows = rows_of(own, rows_key)
     ratios = [own_rows / rows for rows in (rows_of(table, rows_key) for table in read_tables) if rows]
     return (active, stable_count, stable_count / active if active else 0.0, new_stable, new_stable / stable_count if stable_count else 0.0, new_active, new_active / active if active else 0.0,
@@ -315,7 +358,8 @@ def build(root, out):
                 for kind, held, other in (('stable', lists, others), ('null', null_lists, null_others)):
                     a, b = held.get(gold), held.get(mutant['table'])
                     if a is not None and b is not None:
-                        seen[kind].append(np.setxor1d(a[0], b[0], assume_unique=True))
+                        seen[kind].append(a[0][~place(a[0], b[0])[1]])
+                        seen[kind].append(b[0][~place(b[0], a[0])[1]])
                         if len(other[gold][0]) or len(other[mutant['table']][0]):
                             seen['graded' if kind == 'stable' else 'null_graded'].append(told_apart(every_entry(a, other[gold]), every_entry(b, other[mutant['table']])))
         for kind, held in seen.items():
@@ -366,43 +410,33 @@ def build(root, out):
     names, flags, sizes = {}, {}, {}
     rows_key = 0
     wanted = set(columns.tolist())
-    for folder in (root / 'lists', named_root / 'lists', more_root / 'lists'):
-        for line in name_lines(folder):
-            parts_line = line.rstrip('\n').split('\t')
-            if len(parts_line) != 4:
-                continue
-            key = int(parts_line[0], 16)
+    wanted_family = set(family_columns['input'].tolist()) | set(family_columns['output'].tolist())
+    wanted_query = set(query_columns.tolist())
+    held_on, found_key = names_in(root / 'lists', wanted | wanted_family)
+    held_named, named_key = names_in(named_root / 'lists', wanted | wanted_query)
+    held_more, more_key = names_in(more_root / 'lists', wanted)
+    rows_key = next((key for key in (found_key, named_key, more_key) if key is not None), 0)
+    for held in (held_on, held_named, held_more):
+        for key, parts_line in held.items():
             if key in wanted:
                 names[key], flags[key], sizes[key] = parts_line[1], int(parts_line[2]), int(parts_line[3])
-            if parts_line[1] == '(cardinality T)':
-                rows_key = key
     print('names found', len(names), 'of', len(wanted), flush=True)
-    wanted_family = set(family_columns['input'].tolist()) | set(family_columns['output'].tolist())
     family_names, family_flags = {}, {}
-    for line in name_lines(root / 'lists'):
-        parts_line = line.rstrip('\n').split('\t')
-        if len(parts_line) == 4 and int(parts_line[0], 16) in wanted_family:
-            family_names[int(parts_line[0], 16)] = parts_line[1]
-            family_flags[int(parts_line[0], 16)] = int(parts_line[2])
+    for key, parts_line in held_on.items():
+        if key in wanted_family:
+            family_names[key], family_flags[key] = parts_line[1], int(parts_line[2])
     wanted_state = set(family_columns['pairs'].tolist()) | set(graph_columns.tolist()) | set(relation_columns.tolist())
     if state_root.exists():
-        for line in name_lines(state_root / 'lists'):
-            parts_line = line.rstrip('\n').split('\t')
-            if len(parts_line) == 4 and int(parts_line[0], 16) in wanted_state:
-                family_names[int(parts_line[0], 16)] = parts_line[1]
-                family_flags[int(parts_line[0], 16)] = int(parts_line[2])
-    wanted_query = set(query_columns.tolist())
-    for line in name_lines(named_root / 'lists'):
-        parts_line = line.rstrip('\n').split('\t')
-        if len(parts_line) == 4 and int(parts_line[0], 16) in wanted_query:
-            family_names[int(parts_line[0], 16)] = parts_line[1]
+        for key, parts_line in names_in(state_root / 'lists', wanted_state)[0].items():
+            family_names[key], family_flags[key] = parts_line[1], int(parts_line[2])
+    for key, parts_line in held_named.items():
+        if key in wanted_query:
+            family_names[key] = parts_line[1]
     wanted_wide = set(wide_columns.tolist()) | set(pair_columns.tolist())
     wide_names, wide_flags = {}, {}
     if wide_root.exists():
-        for line in name_lines(wide_root / 'lists'):
-            parts_line = line.rstrip('\n').split('\t')
-            if len(parts_line) == 4 and int(parts_line[0], 16) in wanted_wide:
-                wide_names[int(parts_line[0], 16)], wide_flags[int(parts_line[0], 16)] = parts_line[1], int(parts_line[2])
+        for key, parts_line in names_in(wide_root / 'lists', wanted_wide)[0].items():
+            wide_names[key], wide_flags[key] = parts_line[1], int(parts_line[2])
     base_vocab = {}
     context_vocab = {}
     data = {}
