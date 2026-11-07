@@ -1753,6 +1753,10 @@ impl State {
         match self.label_token(token, in_key, forced) {
             Some(label) => {
                 let site = top!(self, Frame::Site);
+                // A column of a fixed type takes one label (`docs/arclog/arclog.md#sites`), as at a head site.
+                if !type_parameter(&site.column) && !site.args.is_empty() {
+                    return Err("a column of a fixed type takes one label");
+                }
                 site.args.push(bare_arg(&site.column, label));
                 Ok(Offer::Taken)
             }
