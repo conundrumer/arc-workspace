@@ -280,14 +280,14 @@ def kept_columns(directory, labels, min_data):
 
 def fit(out, meta, sets, filters, threads, fraction, seeds):
     from gate_lists import FILTERS, boot, per_pair, score_items, selected, write_importance
-    import pickle
+    from common import read_pickle
     out = Path(out)
 
     def loaded(split):
         return dict(
-            rows=pickle.load((out / f'{split}.rows.pkl').open('rb')),
-            example_of=pickle.load((out / f'{split}.example_of.pkl').open('rb')),
-            index=pickle.load((out / f'{split}.index.pkl').open('rb')))
+            rows=read_pickle(out / f'{split}.rows.pkl'),
+            example_of=read_pickle(out / f'{split}.example_of.pkl'),
+            index=read_pickle(out / f'{split}.index.pkl'))
 
     train, dev = loaded('train'), loaded('dev')
     print('train rows', len(train['rows']), 'columns', len(meta['columns']), flush=True)
