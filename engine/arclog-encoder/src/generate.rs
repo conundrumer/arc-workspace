@@ -336,8 +336,9 @@ impl Generated {
         family.push(Step::Part(Box::new(PartStep::Same)), LEAF_TABLE, NO_TERM, own_columns, 0, "T".to_string(), RootKind::Rows);
         let own_rows = family.terms.len() as u32 - 1;
         if one_group {
-            // The table's own count is the first pass's.
+            // The table's own count and value set are the first pass's.
             family.refined[own_rows as usize].count_follows = true;
+            family.terms[own_rows as usize].root = RootKind::Rows;
             family.one_group = true;
             family.parts_of(LEAF_TABLE, 1);
             family.one_group = false;
