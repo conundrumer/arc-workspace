@@ -2405,9 +2405,9 @@ pub struct Walker<'a> {
     group_counts: FastMap<(u32, u32, u128, u32), (u32, Forced)>,
     /// The cells that `values` holds.
     held_cells: usize,
-    /// The cells of the rows of lazy values that the walk in progress has written out, each lazy value once.
+    /// The cells of the rows of lazy values that the term in progress has written out, each lazy value once.
     written_cells: usize,
-    /// The lazy values that the walk in progress has charged for, by id.
+    /// The lazy values that the term in progress has charged for, by id.
     charged: FastMap<u32, ()>,
     /// The lazy values, with the cells of their written rows, that the evaluations in progress have forced, in order.
     forced: Vec<(u32, usize)>,
@@ -2417,7 +2417,7 @@ pub struct Walker<'a> {
     pub examples: u32,
     /// The cells and the memo entries it holds at most between walks.
     budget: (usize, usize),
-    /// Whether the last walk passed `WALK_CELLS` cells of values, so that the terms it extends after that point, and every term that reads one, have no value.
+    /// Whether the last walk stopped a term that passed `WALK_CELLS` cells of its own, so that the term, and every term that reads it, have no value.
     pub over_budget: bool,
 }
 
@@ -2427,7 +2427,7 @@ type Forced = Option<Arc<[(u32, usize)]>>;
 /// What a walker holds at most between walks.
 const HELD_CELLS: usize = 3_000_000;
 const HELD_MEMO: usize = 250_000;
-/// The cells that the terms one walk extends can give, counted at each instance.
+/// The cells that one term's evaluation can give in a walk, counted at each instance, with the cells of the rows of each lazy value it forces once.
 const WALK_CELLS: usize = 100_000_000;
 /// A count past this stands for "no value": a bound stopped the term.
 const NO_COUNT: u32 = u32::MAX;
@@ -2747,10 +2747,7 @@ impl<'a> Walker<'a> {
             ids.push(held);
         }
         let mut table = RootTable { stride: instances, ..RootTable::default() };
-        let mut walk_cells = 0usize;
         let mut left_out = false;
-        self.written_cells = 0;
-        self.charged.clear();
         self.forced.clear();
         // Per term, whether the walk's stop left it unevaluated, or it reads a term so left. Such a term has no value, and so has each root over it.
         let mut stopped: Vec<bool> = vec![false; leaves.len()];
@@ -2768,6 +2765,10 @@ impl<'a> Walker<'a> {
             if let Some(head) = family.bound_heads.get(at) {
                 crate::bounds::set_head(*head);
             }
+            // A term's cost is its own: the cells of its results and of the rows of each lazy value it forces, so that its value or stop does not depend on the terms walked before it.
+            let mut term_cells = 0usize;
+            self.written_cells = 0;
+            self.charged.clear();
             let step_id = steps.ids[at];
             let first = std::mem::take(&mut ids[term.a as usize]);
             let second = if term.b == NO_TERM { Vec::new() } else if term.b == term.a { first.clone() } else { std::mem::take(&mut ids[term.b as usize]) };
@@ -2785,19 +2786,21 @@ impl<'a> Walker<'a> {
             let idle = first_empty || first_cut || second_empty;
             // A first relation that a bound cut off, at an instance, leaves the term with no value there: a stop, which spreads to the terms that read it.
             let cut_by_bound = first_cut && first[..scope].iter().any(|id| self.cut_by_cap(step, *id));
-            let past_bound = extended && walk_cells + self.written_cells > WALK_CELLS;
-            let is_stopped = past_bound || cut_by_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]);
+            let inherited = stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]);
+            let mut past_bound = false;
             if extended {
                 own.reserve(instances);
-                if past_bound {
-                    self.over_budget = true;
-                    crate::bounds::skipped(crate::bounds::Bound::Walk, scope as u64);
-                }
-                // Past the bound, what a term gives has no value, so a walk's memory stays bounded.
-                for pair in 0..if past_bound { 0 } else { scope } {
+                for pair in 0..scope {
+                    // Past the bound, what a term gives has no value, so a walk's memory stays bounded.
+                    if term_cells + self.written_cells > WALK_CELLS {
+                        past_bound = true;
+                        self.over_budget = true;
+                        crate::bounds::skipped(crate::bounds::Bound::Walk, (scope - pair) as u64);
+                        break;
+                    }
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
                     let key = (step_id, first[pair], b);
-                    // A memo hit charges the lazy values that the evaluation forced when it ran, as a fresh evaluation does, those that the walk has not charged.
+                    // A memo hit charges the lazy values that the evaluation forced when it ran, as a fresh evaluation does, those that the term has not charged.
                     let mark = self.forced.len();
                     let id = match self.memo.get(&key).cloned() {
                         Some((found, forced)) => {
@@ -2814,15 +2817,19 @@ impl<'a> Walker<'a> {
                     };
                     self.forced.truncate(mark);
                     if let Val::Rows(parts) = &self.values[id as usize] {
-                        walk_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
+                        term_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
                     }
                     own.push(id);
                 }
+                if past_bound {
+                    own.clear();
+                }
                 own.resize(instances, 0);
             }
+            let is_stopped = past_bound || cut_by_bound || inherited;
             if wanted && is_stopped && listed != 0 {
                 // A root over a stopped term has no value at any instance, which is not its default.
-                let counted = cut_by_bound && !(past_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]));
+                let counted = cut_by_bound && !(past_bound || inherited);
                 for (place, (hash, of)) in term.roots.iter().enumerate() {
                     if listed & (1 << place) != 0 {
                         if counted {
