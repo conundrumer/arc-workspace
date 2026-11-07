@@ -134,6 +134,12 @@ class Totals:
             self.examples.setdefault(k, v)
 
 
+
+def prefix_hash(tokens):
+    """16 hex digits that name a point's token prefix (the kind token on), so that a later filter finds the point without walking its path again."""
+    import hashlib
+    return hashlib.blake2b(','.join(str(int(t)) for t in tokens).encode(), digest_size=8).hexdigest()
+
 def why(e: BaseException) -> str:
     text = str(e).strip().splitlines()
     return f'{type(e).__name__}: {text[0][:90] if text else ""}'
@@ -633,10 +639,10 @@ def process_sample(env: Env, sample: dict, queries: dict[str, dict]) -> None:
             tot.counts['points with no positive'] += not pos
             tot.counts['points with one positive'] += len(pos) == 1
             if env.vector_names is not None:
-                env.sink.f.write(f'{{"record":"point","sample":"{sample["id"]}","kind":"{kind}","length":{len(p.tokens)},"ids":{p.ids_text},"vp":"{p.vp}","vo":"{p.vo}",'
+                env.sink.f.write(f'{{"record":"point","sample":"{sample["id"]}","kind":"{kind}","length":{len(p.tokens)},"prefix":"{prefix_hash(p.tokens)}","ids":{p.ids_text},"vp":"{p.vp}","vo":"{p.vo}",'
                                  f'"positive":{json.dumps(pos, separators=(",", ":"))},"live":{p.live}{drawn_field}}}\n')
                 continue
-            env.sink.f.write(f'{{"record":"point","sample":"{sample["id"]}","kind":"{kind}","length":{len(p.tokens)},"ids":{p.ids_text},"option":{p.option_text},'
+            env.sink.f.write(f'{{"record":"point","sample":"{sample["id"]}","kind":"{kind}","length":{len(p.tokens)},"prefix":"{prefix_hash(p.tokens)}","ids":{p.ids_text},"option":{p.option_text},'
                              f'"table":{json.dumps(p.table, separators=(",", ":"))},"point":{p.point_text},"positive":{json.dumps(pos, separators=(",", ":"))},"live":{p.live}{drawn_field}}}\n')
         tot.seconds['labels and writing'] += time.perf_counter() - t1
 
