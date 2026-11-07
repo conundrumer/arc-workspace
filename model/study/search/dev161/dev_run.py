@@ -39,9 +39,9 @@ from study_paths import DATA_ROOT, MAIN_ROOT  # noqa: E402
 DATASET = MAIN_ROOT / 'work/synth-kaggle/kernel-writer-dry8/dataset'  # the v9 bundle's dataset: models, policy model, supervisor
 PY = MAIN_ROOT / 'work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python'
 TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
-ARMS = {'tree': {'WRITER_TREE': None}, 'hand': {}, 'tree_reads': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
+ARMS = {'tree': {'WRITER_TREE': None}, 'tok': {'WRITER_TREE': None}, 'fast': {'WRITER_TREE': None}, 'hand': {}, 'tree_reads': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
         'tree_fp': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '4'}, 'tree_first_fp': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst', 'FIRST_PASS_SECONDS': '4'},
-        'tree_any': {'WRITER_TREE': None, 'SEARCH_PARTITION': '1', 'FIRST_PASS_SECONDS': '4'}}  # WRITER_TREE None: --tree; the checks of the ReadsScope rules
+        'tree_any': {'WRITER_TREE': None, 'SEARCH_PARTITION': '1', 'FIRST_PASS_SECONDS': '4'}}  # WRITER_TREE None: --tree; the checks of the ReadsScope rules; tok and fast: tree under other names, so that two runs of different kits or sites pair by reach.py's --arms
 RSS_LIMIT_MIB = 2888
 STOP_AFTER = 4  # the run stops where its first STOP_AFTER jobs all die with no draw
 LOCK = threading.Lock()
