@@ -318,9 +318,6 @@ pub struct TableColumns {
     pub capped: Vec<u8>,
     /// The TableVector of each row, `arclog_features::FEATURES.len()` values.
     pub features: Vec<f32>,
-    /// The rows of each row's table in the engine's cell encoding, for the reader that walks the table's shapes: one for each row of the export by assignment,
-    /// and none for a row whose summary holds no rows. The columns of any other export hold none.
-    pub shape_rows: Vec<Option<Arc<crate::shape_rows::ShapeRows>>>,
 }
 
 /// One row for each entry of a table on an example, in the order of the
@@ -1007,7 +1004,6 @@ fn by_assignment(mut columns:CaseColumns,summaries:&[TableSummary],queries:&[Opt
         tables.unhashed_reason.push(held.reason.clone());
         tables.capped.push(u8::from(summary.capped));
         if held.features.len()==features {tables.features.extend(held.features.iter());} else {tables.features.extend(std::iter::repeat_n(0.0,features));}
-        tables.shape_rows.push(held.shape_rows.clone());
         for (place,(det,primary)) in held.dets.iter().enumerate() {
             let value = if variant==0 {primary} else {&held.more[variant-1][place]};
             columns.assignments.table.push(row);

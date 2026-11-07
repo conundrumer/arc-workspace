@@ -30,7 +30,6 @@ pub mod corpus;
 pub mod extents;
 pub mod flows;
 pub mod identity;
-pub mod shape_rows;
 pub mod split;
 pub mod structure;
 pub mod summary;
