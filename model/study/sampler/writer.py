@@ -1865,9 +1865,25 @@ def write(start, plan, rng, cache=None, on_atom=None):
     (rng.hash) at the start of the body; it may raise to end the path."""
     pt = start
     body, ctx = pt.track.body, getattr(rng, 'hash', 0)
+    atoms = None
+    if os.environ.get('WRITER_ATOM_TREE') or os.environ.get('WRITER_ATOM_SOCKET'):
+        import atom_writer as atoms
+    whole = atoms is not None  # whether the writer chooses whole atoms here: until a choice gives the rest of the body to the tokens
     while True:
         if pt.track.where == 'done':
             return finish(pt)
+        if whole and atoms.decision(pt):
+            got = atoms.choose(pt, plan, rng)
+            if got is None:
+                whole = False
+            else:
+                before = len(pt.track.texts)
+                pt = got
+                if pt.track.body != body:
+                    body, ctx = pt.track.body, getattr(rng, 'hash', 0)
+                if on_atom is not None and len(pt.track.texts) > before:
+                    on_atom(ctx, pt)
+                continue
         ids, fac, reason = options(pt, plan)
         if reason:
             return Ended(reason)
@@ -1882,5 +1898,6 @@ def write(start, plan, rng, cache=None, on_atom=None):
         pt = step_point(pt, int(ids[j]), cache)
         if pt.track.body != body:
             body, ctx = pt.track.body, getattr(rng, 'hash', 0)
+            whole = atoms is not None
         if on_atom is not None and len(pt.track.texts) > before:
             on_atom(ctx, pt)

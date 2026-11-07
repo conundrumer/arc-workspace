@@ -39,6 +39,7 @@ passes SECONDS keeps the token.
 import bisect
 import collections
 import dataclasses
+import os
 import time
 from typing import Any
 
@@ -54,7 +55,7 @@ STAR, CARET, END, NOT, OR_TOK, ZERO = M.STAR, M.CARET, M.END, M.NOT, M.OR, M.ZER
 EQ = M.CMP[0]
 CMP = frozenset(M.CMP)
 SYMMETRIC = (M.CMP[0], M.CMP[1])
-SECONDS = 2.0  # the budget of one test at a close
+SECONDS = float(os.environ.get('WRITER_ROW_TEST_SECONDS', 2.0))  # the budget of one test at a close, on the wall clock: rows lift it, so that load moves no candidate
 
 
 class _List:
