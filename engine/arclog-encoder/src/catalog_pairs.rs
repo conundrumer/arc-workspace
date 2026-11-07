@@ -433,6 +433,8 @@ fn patterns(view: &mut View<'_>, pos: &Pos) {
             target.push((r as i32, c as i32, output.at(r, c)));
         }
     }
+    // A pattern is the output up to rotation and reflection exactly when it is one of the output's images.
+    let turned_targets = d4_forms(&target);
     let colors: Vec<Option<usize>> = std::iter::once(None).chain((0..t.kinds.len()).filter(|x| *x != p && t.kinds[*x] == Kind::Color).map(Some)).collect();
     for color in colors {
         if color.is_none() && !extents.contains(&(f.input.h as i32, f.input.w as i32)) {
@@ -443,7 +445,7 @@ fn patterns(view: &mut View<'_>, pos: &Pos) {
                 continue;
             }
             let count = view.dense[g].1;
-            if !(2..=200).contains(&count) {
+            if count < 2 {
                 continue;
             }
             let ids = view.dense[g].0.clone();
@@ -493,9 +495,7 @@ fn patterns(view: &mut View<'_>, pos: &Pos) {
             view.put(names[0], &holes, Value::Bool(some));
             view.put(names[1], &holes, Value::Bool(top));
             view.put(names[2], &holes, Value::Bool(bottom));
-            if count <= 30 {
-                view.put(names[3], &holes, Value::Bool(held.iter().any(|pattern| d4_forms(pattern).contains(&target))));
-            }
+            view.put(names[3], &holes, Value::Bool(turned_targets.iter().any(|form| counts.contains_key(form))));
         }
     }
 }
@@ -608,7 +608,7 @@ pub(crate) fn shape_kinds(view: &mut View<'_>, pos: &Pos, group_of: &[u32], grou
         view.put("C bounding box crop of the input is the output up to rotation and reflection", &[p], Value::Bool(crops[1]));
         view.put("C bounding box crop of the input maps onto the output by a color map", &[p], Value::Bool(crops[2]));
     }
-    if pos.frame_input && groups > 1 && groups <= 200 && !pos.set_input.is_empty() {
+    if pos.frame_input && groups > 1 && !pos.set_input.is_empty() {
         let mut places: Vec<Vec<(i32, i32)>> = vec![Vec::new(); groups as usize];
         for row in 0..t.rows {
             let cell = t.at(row, p);

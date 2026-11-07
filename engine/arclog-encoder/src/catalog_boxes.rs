@@ -10,6 +10,9 @@ pub(crate) fn crop_tests(spans: &[[i32; 4]], f: &PairFacts) -> [bool; 3] {
     let (input, output) = (&f.input, &f.output);
     let (mut exact, mut turned, mut mapped) = (false, false, false);
     for span in spans {
+        if exact && turned && mapped {
+            break;
+        }
         let [r0, r1, c0, c1] = *span;
         if !(0 <= r0 && r0 <= r1 && (r1 as usize) < input.h && 0 <= c0 && c0 <= c1 && (c1 as usize) < input.w) {
             continue;
@@ -17,18 +20,23 @@ pub(crate) fn crop_tests(spans: &[[i32; 4]], f: &PairFacts) -> [bool; 3] {
         let (h, w) = ((r1 - r0 + 1) as usize, (c1 - c0 + 1) as usize);
         let at = |r: usize, c: usize| input.at(r0 as usize + r, c0 as usize + c);
         if (h, w) == (output.h, output.w) {
-            let mut same = true;
+            // A test that an earlier box already met is not read again, and the read stops where neither test can hold.
+            let (mut same, mut function) = (!exact, !mapped);
             let mut map = [255u8; 10];
-            let mut function = true;
-            for r in 0..h {
+            'cells: for r in 0..h {
                 for c in 0..w {
                     let (from, to) = (at(r, c), output.at(r, c));
                     same &= from == to;
-                    let held = &mut map[from as usize];
-                    if *held == 255 {
-                        *held = to;
-                    } else if *held != to {
-                        function = false;
+                    if function {
+                        let held = &mut map[from as usize];
+                        if *held == 255 {
+                            *held = to;
+                        } else if *held != to {
+                            function = false;
+                        }
+                    }
+                    if !same && !function {
+                        break 'cells;
                     }
                 }
             }
@@ -92,7 +100,7 @@ pub(crate) fn input_borders(view: &mut View<'_>, b: usize) {
     spans.sort_unstable();
     spans.dedup();
     spans.retain(|s| 0 <= s[0] && s[0] <= s[1] && s[1] < h && 0 <= s[2] && s[2] <= s[3] && s[3] < w);
-    if spans.is_empty() || spans.len() > 200 {
+    if spans.is_empty() {
         return;
     }
     let one = spans.iter().filter(|s| {
@@ -117,9 +125,6 @@ pub(crate) fn box_column(view: &mut View<'_>, b: usize) {
     // `some box has the output size` reads every box.
     let sized = spans.iter().any(|span| ((span[1] - span[0] + 1) as usize, (span[3] - span[2] + 1) as usize) == (output.h, output.w));
     view.put("C some box has the output size", &[b], Value::Bool(sized));
-    if spans.len() > 200 {
-        return;
-    }
     let crops = crop_tests(&spans, f);
     view.put("C some box crop of the input is the output", &[b], Value::Bool(crops[0]));
     view.put("C some box crop of the input is the output up to rotation and reflection", &[b], Value::Bool(crops[1]));
@@ -128,7 +133,9 @@ pub(crate) fn box_column(view: &mut View<'_>, b: usize) {
         return;
     }
     let (h, w) = (output.h as i32, output.w as i32);
-    let hits = spans.iter().filter(|span| output.pieces.iter().any(|piece| [i32::from(piece.span[0]), i32::from(piece.span[1]), i32::from(piece.span[2]), i32::from(piece.span[3])] == **span)).count() as u32;
+    let mut piece_spans: Vec<Span> = output.pieces.iter().map(|piece| piece.span.map(i32::from)).collect();
+    piece_spans.sort_unstable();
+    let hits = spans.iter().filter(|span| piece_spans.binary_search(span).is_ok()).count() as u32;
     view.put("C boxes that are the box of a component in the output, proportion", &[b], share(hits, spans.len() as u32));
     // Each box cut to the grid.
     let cut = |span: &Span| -> Option<[usize; 4]> {
@@ -136,7 +143,7 @@ pub(crate) fn box_column(view: &mut View<'_>, b: usize) {
         (r0 <= r1 && c0 <= c1).then_some([r0 as usize, r1 as usize, c0 as usize, c1 as usize])
     };
     let real: Vec<[usize; 4]> = spans.iter().filter_map(cut).collect();
-    if real.is_empty() || real.iter().map(|s| (s[1] - s[0] + 1) * (s[3] - s[2] + 1)).sum::<usize>() > 20000 {
+    if real.is_empty() {
         return;
     }
     let colors: Vec<u16> = real.iter().map(|s| output.colors_in(s[0], s[1], s[2], s[3])).collect();
@@ -145,21 +152,39 @@ pub(crate) fn box_column(view: &mut View<'_>, b: usize) {
     view.put("C output colors inside its boxes distinct", &[b], Value::Num(i64::from(colors.iter().fold(0u16, |held, mask| held | mask).count_ones())));
     if !f.changed.is_empty() {
         let width = output.w;
-        let mut inside = 0;
-        let mut holding = vec![false; real.len()];
-        f.changed.each(|at| {
-            let (r, c) = (at / width, at % width);
-            let mut any = false;
-            for (place, s) in real.iter().enumerate() {
-                if s[0] <= r && r <= s[1] && s[2] <= c && c <= s[3] {
-                    any = true;
-                    holding[place] = true;
+        let columns = width + 1;
+        // The changed cells over the rectangles from the top left, and the number of boxes that cover each cell, both by prefix sums.
+        let mut changed_to = vec![0u32; (output.h + 1) * columns];
+        let mut covered_by = vec![0i32; (output.h + 1) * columns];
+        f.changed.each(|at| changed_to[(at / width + 1) * columns + at % width + 1] += 1);
+        for s in &real {
+            covered_by[s[0] * columns + s[2]] += 1;
+            covered_by[s[0] * columns + s[3] + 1] -= 1;
+            covered_by[(s[1] + 1) * columns + s[2]] -= 1;
+            covered_by[(s[1] + 1) * columns + s[3] + 1] += 1;
+        }
+        for r in 0..=output.h {
+            for c in 0..=width {
+                let at = r * columns + c;
+                if r > 0 {
+                    changed_to[at] += changed_to[at - columns];
+                    covered_by[at] += covered_by[at - columns];
+                }
+                if c > 0 {
+                    changed_to[at] += changed_to[at - 1];
+                    covered_by[at] += covered_by[at - 1];
+                    if r > 0 {
+                        changed_to[at] -= changed_to[at - columns - 1];
+                        covered_by[at] -= covered_by[at - columns - 1];
+                    }
                 }
             }
-            inside += u32::from(any);
-        });
+        }
+        let holding = real.iter().filter(|s| changed_to[(s[1] + 1) * columns + s[3] + 1] + changed_to[s[0] * columns + s[2]] > changed_to[s[0] * columns + s[3] + 1] + changed_to[(s[1] + 1) * columns + s[2]]).count() as u32;
+        let mut inside = 0;
+        f.changed.each(|at| inside += u32::from(covered_by[(at / width) * columns + at % width] > 0));
         view.put("C changed cells inside its boxes, proportion", &[b], Value::Share(inside, f.changed.count()));
-        view.put("C boxes holding a changed cell, proportion", &[b], Value::Share(holding.iter().filter(|held| **held).count() as u32, real.len() as u32));
+        view.put("C boxes holding a changed cell, proportion", &[b], Value::Share(holding, real.len() as u32));
         if let Some(span) = f.changed_span {
             let whole = [span[0] as usize, span[1] as usize, span[2] as usize, span[3] as usize];
             view.put("C some box is the box of the changed cells", &[b], Value::Bool(real.contains(&whole)));
