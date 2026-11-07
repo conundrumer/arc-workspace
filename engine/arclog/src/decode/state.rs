@@ -1907,6 +1907,7 @@ impl State {
     /// token and a label, then the record's `END`; then the column's `END`.
     fn offer_head_site(&mut self, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
         let demonstrated = self.instance().demonstrated;
+        let counted = self.last_of_a_counted_head();
         let site = top!(self, Frame::HeadSite);
         if let Some(field) = site.field {
             let label = self.label_token(token, false, forced).ok_or("a field's column token is followed by its label")?;
@@ -1924,6 +1925,9 @@ impl State {
                 if record && !site.record_ended {
                     site.record_ended = true;
                     return Ok(Offer::Taken);
+                }
+                if counted && site.args.is_empty() {
+                    return Err("the head of a `Cardinality` instance's `member` input, or of an `Excess` instance's `plus` or `minus` input, holds a site, since such an input of no column holds at most one row at each key, so the count of its rows is 0 or 1");
                 }
                 Ok(Offer::Close { consumed: true })
             }
@@ -1944,6 +1948,19 @@ impl State {
                 Ok(Offer::Taken)
             }
         }
+    }
+
+    /// Whether the projection on top is the last of an input of
+    /// [`COUNTED_INPUTS`] whose head holds no site yet, so that the `END` of
+    /// an empty projection leaves the head with no site.
+    fn last_of_a_counted_head(&self) -> bool {
+        let Some(Frame::Input(input)) = self.stack.iter().rev().nth(1) else { return false };
+        if input.column + 1 != input.columns.len() || !input.head.is_empty() {
+            return false;
+        }
+        let instance = self.instance();
+        let counted = |component: &LibName| COUNTED_INPUTS.iter().any(|(name, port)| *name == &*component.0 && *port == &*input.name.0);
+        !instance.demonstrated && instance.component.as_ref().is_some_and(counted)
     }
 
     fn offer_choose(&mut self, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
@@ -2751,6 +2768,11 @@ fn demo_rule(index: usize, fields: &[LabelId], forms: Vec<(Form, bool)>) -> Demo
     let fields = fields.iter().enumerate().map(|(at, label)| RelationColumn { name: field_name(at), label: *label }).collect();
     DemoRule { name: rule_name(index), fields, text: None, forms: forms.into_iter().collect() }
 }
+
+/// The inputs whose rows their component counts, each by its component and
+/// its name. Such an input whose head holds no site has no column, so it
+/// holds at most one row at each key, and the count of its rows is 0 or 1.
+const COUNTED_INPUTS: [(&str, &str); 3] = [("Cardinality", "member"), ("Excess", "plus"), ("Excess", "minus")];
 
 /// The refusal of a `ONE` mark whose key, as a set of labels, an earlier
 /// mark of its clause names in every completion of the mark.
