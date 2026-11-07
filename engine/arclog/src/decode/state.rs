@@ -1122,21 +1122,7 @@ impl State {
         match self.stack.last() {
             None => self.open_form(token, forced),
             Some(Frame::Clause(_)) => self.offer_clause(token),
-            Some(Frame::One(_)) => match token {
-                Token::Label(id) if *id < self.labels => {
-                    // A mark names key columns of its relation (`docs/arclog/constraints.md#one`): the labels that
-                    // the clause's body keeps, which the body, complete before its marks, fixes.
-                    if let Some(Frame::Clause(ClauseFrame { stage: ClauseStage::Marks { body, .. }, .. })) = self.stack.iter().rev().nth(1) {
-                        if !made_labels(body.value()).contains(&LabelId(*id)) {
-                            return Err("a `ONE` mark names only columns of its clause, the labels that its body keeps");
-                        }
-                    }
-                    top!(self, Frame::One).push(LabelId(*id));
-                    Ok(Offer::Taken)
-                }
-                Token::Control(Control::End) => Ok(Offer::Close { consumed: true }),
-                _ => Err("a `ONE` mark holds labels seen, then its `END`"),
-            },
+            Some(Frame::One(_)) => self.offer_one(token),
             Some(Frame::Body(_)) => self.offer_body(context, token),
             Some(Frame::Atom(_)) => match token {
                 Token::Column(position) => {
@@ -1252,12 +1238,55 @@ impl State {
                 *set = true;
                 Ok(Offer::Taken)
             }
-            (ClauseStage::Marks { .. }, Token::Control(Control::One)) => {
+            (ClauseStage::Marks { body, ones, .. }, Token::Control(Control::One)) => {
+                if !new_key(&[], &made_labels(body.value()), ones, false) {
+                    return Err(ONE_KEY_TWICE);
+                }
                 self.stack.push(Frame::One(Vec::new()));
                 Ok(Offer::Taken)
             }
             (ClauseStage::Marks { .. }, Token::Control(Control::End)) => Ok(Offer::Close { consumed: true }),
             _ => Err("a clause's marks end with its `END`"),
+        }
+    }
+
+    /// A `ONE` mark's key labels, then its `END`. A mark names key columns
+    /// of its relation (`docs/arclog/constraints.md#one`): the labels that
+    /// the clause's body keeps, which the body, complete before its marks,
+    /// fixes. A label that the mark names already adds nothing to its key,
+    /// and a mark whose labels, as a set, an earlier mark of the clause
+    /// names keeps the rows that the earlier mark keeps, so the mark is
+    /// refused at its first token after which every completion of it names
+    /// a label twice or the labels of an earlier mark, as [`new_key`] gives.
+    fn offer_one(&mut self, token: &Token) -> Result<Offer, Unexpected> {
+        let marks = match self.stack.iter().rev().nth(1) {
+            Some(Frame::Clause(ClauseFrame { stage: ClauseStage::Marks { body, ones, .. }, .. })) => Some((made_labels(body.value()), ones)),
+            _ => None,
+        };
+        let Some(Frame::One(held)) = self.stack.last() else { unreachable!("a `ONE` mark stands on top") };
+        match token {
+            Token::Label(id) if *id < self.labels => {
+                let label = LabelId(*id);
+                if let Some((columns, ones)) = marks {
+                    if !columns.contains(&label) {
+                        return Err("a `ONE` mark names only columns of its clause, the labels that its body keeps");
+                    }
+                    if held.contains(&label) {
+                        return Err("a `ONE` mark names each label once, since a label named twice adds nothing to its key");
+                    }
+                    let held: Vec<LabelId> = held.iter().copied().chain([label]).collect();
+                    if !new_key(&held, &columns, ones, false) {
+                        return Err(ONE_KEY_TWICE);
+                    }
+                }
+                top!(self, Frame::One).push(label);
+                Ok(Offer::Taken)
+            }
+            Token::Control(Control::End) => match marks {
+                Some((columns, ones)) if !new_key(held, &columns, ones, true) => Err(ONE_KEY_TWICE),
+                _ => Ok(Offer::Close { consumed: true }),
+            },
+            _ => Err("a `ONE` mark holds labels seen, then its `END`"),
         }
     }
 
@@ -2717,6 +2746,35 @@ fn demo_rule(index: usize, fields: &[LabelId], forms: Vec<(Form, bool)>) -> Demo
     use crate::stream::demonstrated::{field_name, rule_name};
     let fields = fields.iter().enumerate().map(|(at, label)| RelationColumn { name: field_name(at), label: *label }).collect();
     DemoRule { name: rule_name(index), fields, text: None, forms: forms.into_iter().collect() }
+}
+
+/// The refusal of a `ONE` mark whose key, as a set of labels, an earlier
+/// mark of its clause names in every completion of the mark.
+const ONE_KEY_TWICE: Unexpected = "no two `ONE` marks of a clause name the same labels, since a second mark of a key keeps the rows that the first keeps";
+
+/// Whether a `ONE` mark that holds `held`, columns of its clause each named
+/// once, has a completion whose key, as a set of labels, no mark of `ones`,
+/// the clause's earlier marks, names: `held` itself where `closed` holds,
+/// and otherwise `held` with any of the other labels of `columns`, the
+/// clause's columns. Marks of one key keep the rows that one of them keeps
+/// (`docs/arclog/constraints.md#one`).
+fn new_key(held: &[LabelId], columns: &[LabelId], ones: &[OneMark], closed: bool) -> bool {
+    fn key_of(labels: impl Iterator<Item = LabelId>) -> Vec<u32> {
+        let mut key: Vec<u32> = labels.map(|label| label.0).collect();
+        key.sort_unstable();
+        key.dedup();
+        key
+    }
+    let named: Vec<Vec<u32>> = ones.iter().map(|mark| key_of(mark.key.iter().copied())).collect();
+    let rest: Vec<LabelId> = if closed { Vec::new() } else { columns.iter().filter(|label| !held.contains(label)).copied().collect() };
+    // Each set of labels of `rest` added to `held` gives a key, so fewer earlier marks than such sets leave a key free.
+    if rest.len() >= usize::BITS as usize || named.len() < (1usize << rest.len()) {
+        return true;
+    }
+    (0..1usize << rest.len()).any(|chosen| {
+        let added = rest.iter().enumerate().filter(|(at, _)| (chosen >> at) & 1 == 1).map(|(_, label)| *label);
+        !named.contains(&key_of(held.iter().copied().chain(added)))
+    })
 }
 
 fn empty() -> Node<Body> {
