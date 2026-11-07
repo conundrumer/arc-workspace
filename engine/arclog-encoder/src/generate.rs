@@ -2015,7 +2015,7 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Opti
             }
             // One member gives a number, and any other set gives no value, which here is the
             // default of a set with no member.
-            (number > 0).then(|| (Number::whole(i64::from(number) - 1), WORD_SET | u64::from(number))).or(Some((Number::whole(0), 0)))
+            (number > 0).then(|| (Number::whole(number_of_word(number)), WORD_SET | u64::from(number))).or(Some((Number::whole(0), 0)))
         }
     }
 }
@@ -2034,7 +2034,7 @@ impl<'a> Walker<'a> {
 
     /// The memo entries and the cells it holds.
     pub fn held(&self) -> (usize, usize) {
-        (self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len(), self.held_cells)
+        (self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len() + self.values.len(), self.held_cells)
     }
 
     /// Drops the values and the memos where they pass the budget. A later walk computes again
@@ -2441,9 +2441,24 @@ impl Walker<'_> {
 fn number_word(value: &Val) -> u32 {
     let Some(table) = flat(value) else { return 0 };
     if table.len == 1 && table.arity == 1 {
-        (number_of(table.cells[0]) + 1).clamp(0, i64::from(u32::MAX - 1)) as u32
+        // 0 stands for no number. A number from 0 up stands one above itself, and one below 0 in two's complement, which is the word's top half.
+        let number = number_of(table.cells[0]);
+        if number >= 0 {
+            (number + 1).min(i64::from(i32::MAX)) as u32
+        } else {
+            number.max(i64::from(i32::MIN)) as i32 as u32
+        }
     } else {
         0
+    }
+}
+
+/// The number that a word of [`number_word`] stands for, where it stands for one.
+fn number_of_word(word: u32) -> i64 {
+    if word > i32::MAX as u32 {
+        i64::from(word as i32)
+    } else {
+        i64::from(word) - 1
     }
 }
 
@@ -2597,6 +2612,8 @@ pub struct Generators {
     pub term_limit: usize,
     /// Whether [`Generators::get`] gives [`Generated::one_group`].
     pub one_group: bool,
+    /// The terms that the cache holds at most where families stand on file, where it is not 0, in place of [`SAVED_CACHED_TERMS`]. Threads share what the cache holds, and each holds its own copy of what it read after the cache let it go.
+    pub saved_limit: usize,
 }
 
 impl Generators {
@@ -2617,7 +2634,7 @@ impl Generators {
             built
         }));
         // A family on file costs a read to get back, so memory holds fewer of them.
-        let limit = if self.saved.is_some() { SAVED_CACHED_TERMS } else if self.term_limit == 0 { CACHED_TERMS } else { self.term_limit };
+        let limit = if self.saved.is_some() { if self.saved_limit == 0 { SAVED_CACHED_TERMS } else { self.saved_limit } } else if self.term_limit == 0 { CACHED_TERMS } else { self.term_limit };
         let mut held = self.held.lock().expect("no panic");
         let (cache, clock) = &mut *held;
         *clock += 1;

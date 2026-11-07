@@ -24,6 +24,8 @@ const ASSIGNMENT_CAP: usize = 16;
 /// What the walkers of a task hold at most. Past either bound, they start over.
 const HELD_ENTRIES: usize = 4_000_000;
 const HELD_CELLS: usize = 20_000_000;
+/// The keys of second relations that a thread holds at most.
+const HELD_KEYS: usize = 12_000_000;
 
 fn base64(bytes: &[u8]) -> String {
     const LETTERS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -190,10 +192,9 @@ fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &Hash
     Ok(Some(Stored::of_rows(&types, rows)))
 }
 
-/// What one file's walks hold. The walkers stand before the families, so they leave memory first.
+/// What one file's walks hold. The walkers stand before the families, so they leave memory first. A walker's memos are keyed by content, so one serves real and permuted outputs, and a term that reads no output runs once.
 struct Walkers {
     real: HashMap<String, Walker<'static>>,
-    null: HashMap<String, Walker<'static>>,
     families: HashMap<String, Arc<Generated>>,
 }
 
@@ -257,7 +258,6 @@ impl TaskRun<'_> {
         let vector = table_vector(walker, &stored, &self.grids, self.examples, false);
         real.push(self.real.list(at, &vector));
         if let Some(grids) = &self.null_grids {
-            let walker = Walkers::walker(&mut self.walkers.null, &mut self.walkers.families, self.generators, &stored, self.d);
             let vector = table_vector(walker, &stored, grids, self.examples, true);
             null.push(self.null.list(at, &vector));
         }
@@ -300,7 +300,7 @@ fn lists_of_file(input: &Path, out: &Path, task_dir: &Path, generators: &Generat
                     real: Sink::new(out.join(format!("{name}.gen.zst")), &header)?,
                     null: Sink::new(out.join(format!("{name}.null.zst")), &null_header)?,
                     table_at: HashMap::new(),
-                    walkers: Walkers { real: HashMap::new(), null: HashMap::new(), families: HashMap::new() },
+                    walkers: Walkers { real: HashMap::new(), families: HashMap::new() },
                     generators,
                     d,
                     walks: 0,
@@ -319,9 +319,8 @@ fn lists_of_file(input: &Path, out: &Path, task_dir: &Path, generators: &Generat
                 run.real.line(&line_of(real_shapes, real))?;
                 run.null.line(&line_of(null_shapes, null))?;
                 decisions += 1;
-                if Walkers::over_budget(&run.walkers.real) || Walkers::over_budget(&run.walkers.null) {
+                if Walkers::over_budget(&run.walkers.real) || crate::gen_parts::keys_held() > HELD_KEYS {
                     run.walkers.real.clear();
-                    run.walkers.null.clear();
                     crate::gen_parts::clear_views();
                 }
             }
