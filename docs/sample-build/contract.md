@@ -46,7 +46,6 @@ A feature's value stands at one level, and a level above it combines the values 
 - Level 2 comes first because a constraint model has no identity across ARC examples.
 - `least`, `mean` and `most` are taken over an entry's scope: the train ARC examples where the entry reads the output, and every ARC example otherwise. `stable` is an entry's value where it has one value at every ARC example of its scope and that value is not the default.
 - The assignment min, assignment mean and assignment max are taken over the assignments of a parameterized table. Code writes them as the suffixes `:min`, `:mean` and `:max` (`assignment_vector_names()` in `model/study/sampler/writer.py` and the `delta:` columns of [Training rows](training-rows.md)), and those suffixes mean over assignments wherever they stand.
-- `TableVector` and `TableHash` are code identifiers. A `TableVector` holds levels 1 to 3 of one parameterized table at one assignment, and a `TableHash` hashes the set of its tables at one assignment.
 
 ## Primitive types
 
@@ -131,7 +130,7 @@ The tables of each parameterized table at each assignment, for feature developme
 
 ## `TableVector`
 
-The features of one parameterized table at one assignment, keyed by (`QueryHash`, `Name`, `Assignment`), or of one base table, keyed by its `BaseName`. A parameterized table has one vector for each of its assignments. It holds levels 1 to 3 of [Levels](#levels). The engine computes it at export, from the full tables and the base tables of the task, and the learned model and the state search take it.
+The features of one parameterized table at one assignment, keyed by (`QueryHash`, `Name`, `Assignment`), or of one base table, keyed by its `BaseName`. A parameterized table has one vector for each of its assignments. The name is the code identifier. It holds levels 1 to 3 of [Levels](#levels), not the features of one table. The engine computes it at export, from the full tables and the base tables of the task, and the learned model and the state search take it.
 
 A feature is defined in arclog. An implementation that runs faster is checked against the definition, as a native lib element is.
 
