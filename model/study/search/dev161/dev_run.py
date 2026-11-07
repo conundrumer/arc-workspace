@@ -158,7 +158,7 @@ def parity_gate(a, out, arm, tasks):
     settings = sorted((k, v) for k, v in os.environ.items() if k.startswith('WRITER_') and k not in ('WRITER_ATOM_LOG_DIR', 'WRITER_PARITY_DIR'))
     code = hashlib.sha256(b''.join(p.read_bytes() for p in sorted(samp.glob('*.py')))).hexdigest()  # a change to the sampler's code needs a new check
     tree = arm_tree(a, arm)
-    key = hashlib.sha256(json.dumps([a.site, str(tree), a.plan, settings, code]).encode()).hexdigest()[:16]
+    key = hashlib.sha256(json.dumps([a.site, str(tree), a.plan, settings, code] + ([a.lookahead] if a.lookahead and arm != 'base' else [])).encode()).hexdigest()[:16]
     stamp = Path(a.code) / 'parity' / (key + '.json')
     if stamp.exists():
         return
@@ -193,6 +193,8 @@ def job_env(a, w, arm, seed):
     for k in POPPED:
         env.pop(k, None)
     env.update({k: v if v is not None else str(arm_tree(a, arm)) for k, v in ARMS[arm].items()}, WRITER_PLAN=a.plan)
+    if a.lookahead and 'WRITER_TREE' in ARMS[arm] and arm != 'base':
+        env['WRITER_LOOKAHEAD'] = a.lookahead
     return env
 
 
@@ -280,6 +282,7 @@ def main():
     ap.add_argument('--site', required=True)
     ap.add_argument('--models', default=str(DATASET))
     ap.add_argument('--tree', default=str(TREE))
+    ap.add_argument('--lookahead', help='the writer\'s lookahead components for the tree arms other than base (WRITER_LOOKAHEAD), such as legal,GrammarOneValue; the search\'s default where not given')
     ap.add_argument('--base-tree', help='the tree of the arm base, which runs beside the other arms under one load; --tree where not given')
     ap.add_argument('--skip', default='')
     ap.add_argument('--arms', default='tree,hand')
