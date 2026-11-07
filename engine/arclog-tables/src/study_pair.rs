@@ -29,6 +29,9 @@ pub mod prefix;
 #[path = "study_judgement.rs"]
 mod judgement;
 
+#[path = "study_form_memo.rs"]
+pub mod form_memo;
+
 
 /// Per-session study budget: 16 workers share the pipeline's 8 GiB memory
 /// alert allowance. Callers can explicitly choose another session bound.
@@ -131,6 +134,9 @@ pub struct PairCache {
     held: Option<HeldProgram>,
     prefix: Option<PrefixMemo>,
     columns: Option<(Vec<u32>,crate::columns::CaseColumnPrefix)>,
+    /// The walks of tables that the programs of the task share. A case's end
+    /// does not release them ([`form_memo::FormMemo`]).
+    forms: form_memo::FormMemo,
     source: Option<(Arc<CheckedProgram>,Arc<arclog::stream::WrittenStream>)>,
     pub compact: bool,
     cache_bytes: usize,
@@ -215,9 +221,20 @@ impl Default for PairCache { fn default()->Self {Self::new(false)} }
 impl PairCache {
     pub fn new(compact:bool)->Self {Self::with_byte_bound(compact,STUDY_SESSION_BYTES)}
     pub fn with_byte_bound(compact:bool,bytes:usize)->Self {
-        Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),held:None,prefix:None,columns:None,source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
+        Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),held:None,prefix:None,columns:None,forms:form_memo::FormMemo::new(bytes/8),source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
     }
     pub fn set_observation_start(&mut self,sequence:u64) {self.sequence=sequence;}
+    /// Whether the walks of tables are kept from one program to the next.
+    pub fn set_form_cache(&mut self,on:bool) {self.forms.set_on(on);}
+    /// Release the kept walks of tables.
+    pub fn clear_form_cache(&mut self) {self.forms.clear();}
+    /// The work count of the request that the calls after this one belong to
+    /// ([`form_memo::FormMemo::set_request_work`]).
+    pub fn set_request_work(&mut self,work:Option<TableWork>) {self.forms.set_request_work(work);}
+    pub fn form_cache_stats(&self)->Value {
+        let stats=self.forms.stats();
+        json!({"entries":stats.entries,"bytes":stats.bytes,"bound_bytes":self.forms.bound(),"hits":stats.hits,"kept":stats.kept,"bypassed":stats.bypassed,"declined":stats.declined,"evicted":stats.evicted})
+    }
     /// End a case even when ingestion or a pair faults. Release allocations,
     /// including hash-map capacities, rather than leaving them at task high-water.
     /// Observation sequence numbers remain unique within the evaluator.
@@ -265,7 +282,7 @@ impl PairCache {
         }}}
         bytes
     }
-    pub fn stats(&self)->Value {json!({"assignment_receipt_bytes_estimate":self.assignment_receipt_bytes(),"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"gold_entries":self.gold.len(),"prefix_entries":usize::from(self.prefix.is_some()),"prefix_bytes_estimate":self.prefix.as_ref().map_or(0,|memo|memo.row_bytes),"prefix_hits":self.prefix_hits,"column_prefix_entries":usize::from(self.columns.is_some()),"column_prefix_bytes":self.columns.as_ref().map_or(0,|(_,columns)|columns.retained_bytes()),"cache_byte_bound":self.cache_bytes})}
+    pub fn stats(&self)->Value {json!({"assignment_receipt_bytes_estimate":self.assignment_receipt_bytes(),"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"gold_entries":self.gold.len(),"prefix_entries":usize::from(self.prefix.is_some()),"prefix_bytes_estimate":self.prefix.as_ref().map_or(0,|memo|memo.row_bytes),"prefix_hits":self.prefix_hits,"column_prefix_entries":usize::from(self.columns.is_some()),"column_prefix_bytes":self.columns.as_ref().map_or(0,|(_,columns)|columns.retained_bytes()),"cache_byte_bound":self.cache_bytes,"form_cache":self.form_cache_stats()})}
 }
 
 fn fault(message: impl Into<Box<str>>, form: &NodePath) -> RunFault {
@@ -293,20 +310,29 @@ fn source_stream(program:&StudyProgram,decoder:&Decoder<'_>,cache:&PairCache)->O
 /// The tables of `form` of `program`, after the tables `earlier`, with the
 /// stops of a table's rows that `skipping` holds where it is given: then a
 /// table's rows count under [`TABLE_ROW_WORK`].
-fn form_relations(program:&StudyProgram,written:&arclog::stream::WrittenStream,form:&arclog::stream::write::WrittenForm,skipping:Option<&TooLarge>,decoder:&Decoder<'_>,earlier:&[&Table])->Outcome<Vec<(usize,Table)>> {
+fn form_relations(program:&StudyProgram,written:&arclog::stream::WrittenStream,form:&arclog::stream::write::WrittenForm,skipping:Option<&TooLarge>,decoder:&Decoder<'_>,earlier:&[&Table],mut memo:Option<(&mut form_memo::FormMemo,&form_memo::TopHashes<'_>)>)->Outcome<Vec<(usize,Table)>> {
     let checked=program.checked();
     let mut held:Vec<(usize,Table)>=Vec::new();
+    let mut outputs:Vec<String>=Vec::new();
     for slot in materialized_slots(program.program().value(),written,form) {
         let declared=&written.relations[slot];
         let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;
         let dets=relation_dets(checked,relation.node);
         let work=if skipping.is_some() {TableWork::new(TABLE_ROW_WORK)} else {decoder.query_work()};
-        let examples=match skipping {
-            Some(too_large)=>relation_examples_skipping(decoder,checked,&relation,&dets,&work,too_large),
-            None=>relation_examples(decoder,checked,&relation,&dets,&work),
+        let output=output_name(program.program().value(),&form.path,declared);
+        let ordinal=outputs.iter().filter(|seen|**seen==output).count();
+        outputs.push(output.clone());
+        let examples=match (skipping,memo.as_mut()) {
+            (Some(too_large),Some((memo,tops)))=>{
+                let probe=form_memo::Probe {checked,tops:*tops,form:&form.path,output:&output,ordinal,dets:&dets};
+                let (_,session,_)=decoder.evaluation_inputs();
+                memo.examples(&probe,session,too_large,&work,||relation_examples_skipping(decoder,checked,&relation,&dets,&work,too_large))
+            }
+            (Some(too_large),None)=>relation_examples_skipping(decoder,checked,&relation,&dets,&work,too_large),
+            (None,_)=>relation_examples(decoder,checked,&relation,&dets,&work),
         };
         let contents=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples).map(|c| {
-            let c=Contents {name:relation_spelled(declared),output_name:output_name(program.program().value(),&form.path,declared),keys:checked.program.column_keys(relation.node),..c};
+            let c=Contents {name:relation_spelled(declared),output_name:output,keys:checked.program.column_keys(relation.node),..c};
             let seen=earlier.iter().copied().chain(held.iter().map(|(_,t)|t)).collect::<Vec<_>>();
             made(decoder,&seen,checked,&relation,c)
         });
@@ -344,6 +370,7 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
         }
     }
     let too_large=TooLarge::default();
+    let hashes=form_memo::TopHashes::new(checked);
     let (_,session,_)=decoder.evaluation_inputs();
     let mut starts=Vec::new();
     for form in forms.iter().skip(start) {
@@ -353,7 +380,7 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
             session.results.mark(top as u32);
         }
         let seen=tables.iter().map(|(_,t)|t).collect::<Vec<_>>();
-        let held=form_relations(program,written,form,until.is_none().then_some(&too_large),decoder,&seen)?;
+        let held=form_relations(program,written,form,until.is_none().then_some(&too_large),decoder,&seen,until.is_none().then(||(&mut cache.forms,&hashes)))?;
         tables.extend(held);
     }
     if until.is_none() && start==0 {
@@ -1237,7 +1264,7 @@ pub fn form_tables(program:&StudyProgram,form:usize,task:&Task,session:&TaskSess
         let mut result:Outcome<()>=Ok(());
         for written_form in written.forms.iter().filter(|written_form|(same..=form).contains(&top_of(written_form))) {
             let seen=earlier.iter().copied().chain(made.iter().map(|(_,table)|table)).collect::<Vec<_>>();
-            match form_relations(program,&written,written_form,Some(&too_large),&decoder,&seen) {
+            match form_relations(program,&written,written_form,Some(&too_large),&decoder,&seen,None) {
                 Ok(tables)=>made.extend(tables),
                 Err(fault)=>{result=Err(fault);break},
             }
@@ -1257,7 +1284,7 @@ pub fn form_tables(program:&StudyProgram,form:usize,task:&Task,session:&TaskSess
     let mut made:Vec<(usize,Table)>=Vec::new();
     for written_form in written.forms.iter().filter(|written_form|top_of(written_form)<=form) {
         let seen=made.iter().map(|(_,table)|table).collect::<Vec<_>>();
-        match form_relations(program,&written,written_form,Some(&too_large),&decoder,&seen) {
+        match form_relations(program,&written,written_form,Some(&too_large),&decoder,&seen,None) {
             Ok(tables)=>made.extend(tables),
             Err(fault)=>return finish(Err(fault),"full",form+1),
         }

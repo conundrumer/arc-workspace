@@ -115,14 +115,15 @@ impl PyStudyTaskEvaluator {
 #[pymethods]
 impl PyStudyTaskEvaluator {
     #[new]
-    #[pyo3(signature=(task,tasks,settings,session_bytes=None,compact=true,observation_start=0))]
-    fn new(py:Python<'_>,task:&str,tasks:&str,settings:arclog_bindings::PyDecodeSettings,session_bytes:Option<usize>,compact:bool,observation_start:u64)->PyResult<Self> {
+    #[pyo3(signature=(task,tasks,settings,session_bytes=None,compact=true,observation_start=0,form_cache=true))]
+    fn new(py:Python<'_>,task:&str,tasks:&str,settings:arclog_bindings::PyDecodeSettings,session_bytes:Option<usize>,compact:bool,observation_start:u64,form_cache:bool)->PyResult<Self> {
         let settings=settings.engine()?;
         let session_bytes=session_bytes.unwrap_or(STUDY_SESSION_BYTES);
         let (read,judged)=py.detach(||read_task_files(Path::new(tasks),task)).map_err(PyValueError::new_err)?;
         let evidence=evidence_tables(&read,Registry::get());
         let mut cache=study_pair::PairCache::with_byte_bound(compact,session_bytes);
         cache.set_observation_start(observation_start);
+        cache.set_form_cache(form_cache);
         Ok(Self {task_name:task.into(),ident_namespace:study_pair::table_transport_ref(),task:read,judged,session:std::sync::Arc::new(TaskSession::new(SessionBound {bytes:session_bytes},settings.caps)),settings,evidence,cache:std::sync::Mutex::new(cache)})
     }
 
@@ -276,6 +277,12 @@ impl PyStudyTaskEvaluator {
         });
     }
 
+    /// Release the walks of tables that `gold_tables` keeps from one program
+    /// to the next. A case's end does not release them; the evaluator's end does.
+    fn clear_form_cache(&self,py:Python<'_>) {
+        py.detach(|| self.cache.lock().unwrap_or_else(|poisoned|poisoned.into_inner()).clear_form_cache());
+    }
+
     /// All export relation tables (plus evidence), in this evaluator's Ident
     /// namespace, as the decode gives them: a table over the projection cap gives
     /// its entries' counts and its projections in place of its rows. With
@@ -313,6 +320,7 @@ impl PyStudyTaskEvaluator {
                     (report,tables,&[][..])
                 }
             };
+            report["form_cache"]=cache.form_cache_stats();
             if let Some(stop)=study_pair::stopped_at_bytes(&tables) {
                 return Err(format!("the tables of the program stopped at {:?}",stop.bound));
             }
