@@ -9,8 +9,8 @@ column by column:
   is NaN.
 
 The module also holds what chooses the columns and fills them, for the loader and for serving:
-- A table's record is `(hashes, values)`: a uint64 array of m shape hashes and a float32 array (m, 3) of each shape's least, mean and most. A hash a record lacks has
-  the default value, 0. `decode` reads the two base64 fields of a `shapes` record. `combine` makes one token's record from the records of its tables.
+- A table's record is `(hashes, values, stopped)`: a uint64 array of m shape hashes, a float32 array (m, 3) of each shape's least, mean and most, and whether the walk stopped
+  (`stopped` may be left out where false). A hash a record lacks has the default value, 0; a stopped record is NaN in every shape. `decode` reads the two base64 fields of a `shapes` record. `combine` makes one token's record from the records of its tables.
 - `columns(point_tables, spec)` is the matrix of one point: a row per table token, a column per name of the spec, with the NaN rules of the point.
 - `ShapeCounts` and `kept_spec` choose the shapes from the training points, and `ColumnHash` finds the columns that are equal on every training point.
 - A column's name is `shape_<rank|mdiff>:<hash as 16 hex digits>:<least|mean|most>`; `Spec.of_names` reads a model's columns back from them.
@@ -33,34 +33,38 @@ def name_of(form, h, number):
     return f'shape_{form}:{hex_of(h)}:{NUMBERS[number]}'
 
 
-def decode(h, v):
-    """The record `(hashes, values)` of the base64 fields `h` (uint64 hashes) and `v` (float32, n x 3, little-endian) of a `shapes` record."""
+def decode(h, v, stopped=False):
+    """The record `(hashes, values, stopped)` of the base64 fields `h` (uint64 hashes) and `v` (float32, n x 3, little-endian) and the `stopped` flag of a `shapes` record."""
     hashes = np.frombuffer(base64.b64decode(h), '<u8').astype(np.uint64)
     values = np.frombuffer(base64.b64decode(v), '<f4').astype(np.float32).reshape(-1, 3)
     if len(hashes) != len(values):
         raise ValueError(f'{len(hashes)} hashes and {len(values)} value rows')
-    return hashes, values
+    return hashes, values, bool(stopped)
+
+
+def is_stopped(record):
+    return len(record) > 2 and bool(record[2])
 
 
 def combine(vectors):
     """One record from the records of a token's tables, one per assignment: the least of the leasts, the mean of the means and the greatest of the mosts. A hash that an
-    assignment's record lacks counts as 0 there. A NaN stays NaN: where any assignment's value is NaN, so is the combined one. The hashes come out sorted."""
+    assignment's record lacks counts as 0 there. A NaN stays NaN: where any assignment's value is NaN, so is the combined one. A stopped table (the engine's walk stopped at its
+    cell bound) is NaN in every shape, the ones it lists and the ones it lacks, so any stopped table makes the combined record stopped: NaN in every shape, with the hashes of all the
+    tables listed (they say which shapes exist). The hashes come out sorted."""
     vectors = list(vectors)
     if not vectors:
-        return np.zeros(0, np.uint64), np.zeros((0, 3), np.float32)
-    if len(vectors) == 1:
-        h, v = vectors[0]
-        order = np.argsort(h, kind='stable')
-        return h[order], v[order]
-    u = np.unique(np.concatenate([h for h, _ in vectors]))
+        return np.zeros(0, np.uint64), np.zeros((0, 3), np.float32), False
+    u = np.unique(np.concatenate([r[0] for r in vectors]))
+    if any(is_stopped(r) for r in vectors):
+        return u, np.full((len(u), 3), np.nan, np.float32), True
     dense = np.zeros((len(vectors), len(u), 3), np.float32)
-    for a, (h, v) in enumerate(vectors):
-        dense[a, np.searchsorted(u, h)] = v
+    for a, r in enumerate(vectors):
+        dense[a, np.searchsorted(u, r[0])] = r[1]
     out = np.empty((len(u), 3), np.float32)
     out[:, 0] = dense[:, :, 0].min(axis=0)
     out[:, 1] = dense[:, :, 1].astype(np.float64).mean(axis=0)
     out[:, 2] = dense[:, :, 2].max(axis=0)
-    return u, out
+    return u, out, False
 
 
 class Spec:
@@ -98,7 +102,11 @@ def columns(point_tables, spec):
     if k < 2 or c == 0:
         return out
     v = np.zeros((k, s, 3), np.float32)
-    for t, (h, vals) in enumerate(point_tables):
+    for t, rec in enumerate(point_tables):
+        h, vals = rec[0], rec[1]
+        if is_stopped(rec):
+            v[t] = np.nan
+            continue
         if len(h) == 0:
             continue
         at = np.minimum(np.searchsorted(spec.hashes, h), s - 1)
@@ -118,11 +126,15 @@ def _equal(a, b):
 
 
 def unequal_hashes(point_tables):
-    """The hashes whose value (least, mean, most) is not equal across a point's table tokens, a token without the hash counting as 0. NaN equals NaN."""
+    """(hashes, every): the hashes whose value (least, mean, most) is not equal across a point's table tokens, a token without the hash counting as 0. NaN equals NaN. A stopped
+    token is NaN in every shape: where all the tokens are stopped, no shape is unequal; where only some are, every shape is, and `every` is True (the hashes then are empty)."""
     k = len(point_tables)
+    stopped = sum(is_stopped(t) for t in point_tables)
+    if stopped:
+        return np.zeros(0, np.uint64), 0 < stopped < k
     h = np.concatenate([t[0] for t in point_tables])
     if len(h) == 0:
-        return np.zeros(0, np.uint64)
+        return np.zeros(0, np.uint64), False
     v = np.concatenate([t[1] for t in point_tables])
     u, inv = np.unique(h, return_inverse=True)
     order = np.argsort(inv, kind='stable')
@@ -140,28 +152,34 @@ def unequal_hashes(point_tables):
         lo, hi = np.where(absent > 0, np.minimum(lo, 0), lo), np.where(absent > 0, np.maximum(hi, 0), hi)
         defined = present - nan_n + absent  # values that are not NaN, the missing ones counting as 0
         bad |= (defined > 0) & ((nan_n > 0) | (lo != hi))
-    return u[bad]
+    return u[bad], False
 
 
 def unstable_hashes(record):
-    """The hashes of one table record whose least, mean and most are not all equal."""
-    h, v = record
+    """The hashes of one table record whose least, mean and most are not all equal (a stopped record is NaN throughout, which is equal)."""
+    if is_stopped(record):
+        return np.zeros(0, np.uint64)
+    h, v = record[0], record[1]
     return h[~(_equal(v[:, 0], v[:, 1]) & _equal(v[:, 1], v[:, 2]))]
 
 
 class ShapeCounts:
     """What the choice of shapes reads from the training points: per hash, the count of training points (with 2 or more table tokens) where its value is not equal across
-    the table tokens, and whether it is stable (least, mean and most equal on every training table token)."""
+    the table tokens, and whether it is stable (least, mean and most equal on every training table token). `every` counts the points where every shape is unequal (some table tokens stopped,
+    some not); `universe` holds the hashes of all the records seen."""
     FLUSH = 8_000_000  # pending entries that trigger a merge
 
     def __init__(self):
         self.keys = np.zeros(0, np.uint64)
         self.counts = np.zeros(0, np.int64)
         self.unstable = np.zeros(0, np.uint64)
+        self.universe = np.zeros(0, np.uint64)
+        self.every = 0
         self.points = 0  # training points with 2 or more table tokens
         self.tokens = 0
         self._pending: list[tuple[np.ndarray, np.ndarray]] = []
         self._unstable_pending: list[np.ndarray] = []
+        self._universe_pending: list[np.ndarray] = []
         self._size = 0
 
     def add_file(self, points):
@@ -173,13 +191,16 @@ class ShapeCounts:
                 seen[id(r)] = r
             if len(tables) >= 2:
                 self.points += 1
-                chunks.append(unequal_hashes(tables))
+                got, every = unequal_hashes(tables)
+                chunks.append(got)
+                self.every += every
         self.tokens += len(seen)
         if chunks:
             k, c = np.unique(np.concatenate(chunks), return_counts=True)
             self._pending.append((k, c.astype(np.int64)))
             self._size += len(k)
         if seen:
+            self._universe_pending.append(np.unique(np.concatenate([r[0] for r in seen.values()])))
             self._unstable_pending.append(np.unique(np.concatenate([unstable_hashes(r) for r in seen.values()])))
         if self._size > self.FLUSH:
             self.flush()
@@ -194,26 +215,32 @@ class ShapeCounts:
         if self._unstable_pending:
             self.unstable = np.unique(np.concatenate([self.unstable, *self._unstable_pending]))
             self._unstable_pending = []
+        if self._universe_pending:
+            self.universe = np.unique(np.concatenate([self.universe, *self._universe_pending]))
+            self._universe_pending = []
 
 
 def kept_spec(counts, budget):
     """(Spec or None, info): the shapes in the order of their count (most first; equal counts by hash), each with 6 columns (rank and mdiff of least, mean and most), or with 2
     (of the mean) where it is stable, until the next shape no longer fits in `budget` columns. A shape that no training point shows unequal has no column."""
     counts.flush()
-    order = np.lexsort((counts.keys, -counts.counts))
-    unstable = np.isin(counts.keys, counts.unstable)
+    keys = counts.universe
+    score = np.full(len(keys), counts.every, np.int64)
+    score[np.searchsorted(keys, counts.keys)] += counts.counts
+    order = np.lexsort((keys, -score))
+    unstable = np.isin(keys, counts.unstable)
     names, stable_kept, kept = [], 0, 0
     for i in order:
-        if counts.counts[i] <= 0:
+        if score[i] <= 0:
             break
         stable = not unstable[i]
         if len(names) + (2 if stable else 6) > budget:
             break
         for number in ((1,) if stable else (0, 1, 2)):
-            names += [name_of(form, counts.keys[i], number) for form in FORMS]
+            names += [name_of(form, keys[i], number) for form in FORMS]
         kept += 1
         stable_kept += stable
-    info = dict(budget=budget, training_points=counts.points, training_tokens=counts.tokens, shapes_unequal_somewhere=int((counts.counts > 0).sum()), shapes_kept=kept,
+    info = dict(budget=budget, training_points=counts.points, training_tokens=counts.tokens, shapes_unequal_somewhere=int((score > 0).sum()), points_with_some_stopped=int(counts.every), shapes_kept=kept,
                 stable_kept=stable_kept, columns=len(names))
     return (Spec(names) if names else None), info
 
@@ -292,11 +319,22 @@ if __name__ == '__main__':  # a check of the definition on a small case
     # combine: a hash that one table lacks counts 0 there; a NaN stays NaN
     a = (np.array([5, 9], np.uint64), np.array([[1, 2, 3], [4, 4, 4]], np.float32))
     b = (np.array([5], np.uint64), np.array([[3, 4, np.nan]], np.float32))
-    h, v = combine([a, b])
+    h, v = combine([a, b])[:2]
     assert list(h) == [5, 9] and np.allclose(v[0], [1, 3, np.nan], equal_nan=True) and np.allclose(v[1], [0, 2, 4]), v
     spec = Spec([name_of('rank', 5, 1), name_of('mdiff', 5, 1)])
     t = [(np.array([5], np.uint64), np.array([[0, x, 0]], np.float32)) for x in (1.0, 3.0, 2.0)]
     got = columns(t, spec)
     assert np.allclose(got[:, 0], [0, 1, 0.5]) and np.allclose(got[:, 1], [-0.5, 0.5, 0]), got
     assert np.isnan(columns(t[:1], spec)).all()
+    # a stopped table is NaN in every shape, the ones it lists and the ones it lacks
+    st = (np.array([5], np.uint64), np.array([[1, 1, 1]], np.float32), True)
+    h, v = combine([a, st])[:2]
+    assert list(h) == [5, 9] and np.isnan(v).all() and combine([a, st])[2] and is_stopped(st) and not is_stopped(a), v
+    assert not is_stopped(combine([a, b]))
+    ok_rec = (np.array([5], np.uint64), np.array([[0, 2.0, 0]], np.float32), False)
+    stopped_rec = combine([(np.array([7], np.uint64), np.array([[1, 1, 1]], np.float32), True)])
+    got = columns([ok_rec, ok_rec, stopped_rec], Spec([name_of('rank', 5, 1), name_of('mdiff', 5, 1), name_of('rank', 8, 1)]))
+    assert np.isnan(got[2]).all() and np.allclose(got[:2], [[0.5, 0.0, 0.5]] * 2), got
+    c, every = unequal_hashes([ok_rec, ok_rec, stopped_rec])
+    assert every and len(c) == 0 and unequal_hashes([stopped_rec, stopped_rec])[1] is False
     print('ok')

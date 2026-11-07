@@ -342,7 +342,7 @@ class Kept:
     drawn: Floats | None = None  # (size,) float32 where the point lists drawn counts
     weight: float | None = None  # the point's `weight`, where it has one: the share of a state's targets that a kind point stands for (points_write.write_kind_point)
     shape_at: Ints | None = None  # with shapes: the index in the point's ids of each table token (an id with an entry in its sample's `tok_tables`); None where the file has no `tok_tables` for the sample
-    shape_tables: list | None = None  # with shape_at: each table token's shape record (hashes, values), combined over its tables (shape_rel.combine)
+    shape_tables: list | None = None  # with shape_at: each table token's shape record (hashes, values, stopped), combined over its tables (shape_rel.combine)
 
 
 def choice_key(seed: int, sample: str, position: int) -> int:
@@ -361,7 +361,7 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int, shapes: bool = Fal
     kept: list[tuple[int, int, Kept]] = []  # a heap of (-key, position, point) where per_task > 0
     count: Counter[str] = Counter()
     table_at = None
-    shape_of: dict[str, tuple] = {}  # table hash -> (hashes, values)
+    shape_of: dict[str, tuple] = {}  # table hash -> (hashes, values, stopped)
     token_tables: dict[str, dict] = {}  # sample -> {token: [table hash, ...]}
     ids_of: dict[int, tuple[str, Ints]] = {}  # file position -> (sample, ids) of the points that may be kept, where shapes
     if TABLE_CHOICE or TABLE_RANKER:
@@ -378,7 +378,7 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int, shapes: bool = Fal
             tables[int(rec['i'])] = vector
         elif kind == 'shapes' and shapes:
             try:
-                shape_of[rec['table']] = SR.decode(rec['h'], rec['v'])
+                shape_of[rec['table']] = SR.decode(rec['h'], rec['v'], rec.get('stopped', False))
             except ValueError as e:
                 raise FitError(f'{path}: the shapes record of table {rec["table"]}: {e}') from e
         elif kind == 'tok_tables' and shapes:
@@ -460,7 +460,7 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int, shapes: bool = Fal
     count['points kept'] = len(kept)
     kept.sort(key=lambda k: k[1])
     if shapes and token_tables:
-        combined: dict[tuple, tuple] = {}  # a token's tables -> its combined record
+        combined: dict[tuple, tuple] = {}  # a token's tables -> its combined record (a table that is stopped makes it stopped: NaN in every shape)
         for _, position, got in kept:
             sample, ids = ids_of[position]
             by_token = token_tables.get(sample)
