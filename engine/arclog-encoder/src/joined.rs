@@ -205,6 +205,11 @@ impl Joined {
         self.places.len()
     }
 
+    /// The cells that the sides and the ids of the join hold, which a walker's count of held cells leaves out.
+    pub fn held_cells(&self) -> usize {
+        self.left.cells.len() + self.right.cells.len() + self.left_ids.len() + self.right_ids.len() + self.left_counts.len() + self.right_counts.len()
+    }
+
     /// Whether the rows of the join can be written out, in at most `CELL_CAP` cells.
     pub fn fits(&self) -> bool {
         self.rows.saturating_mul(self.width() as u64) <= CELL_CAP as u64

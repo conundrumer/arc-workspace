@@ -2539,6 +2539,10 @@ impl<'a> Walker<'a> {
                 if let Val::Rows(parts) = &value {
                     self.held_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
                 }
+                if let (Val::Joined(joined), true) = (&value, crate::bounds::enabled()) {
+                    crate::bounds::tally("stored", "joined values".to_string(), 1);
+                    crate::bounds::tally("stored", "cells of joined values that held cells leave out".to_string(), joined.held_cells() as u64);
+                }
                 self.values.push(value);
                 self.value_index.insert(hash, at);
                 at
