@@ -326,7 +326,13 @@ class Converter:
         self.prog = prog = self.candidate_parse(prog)
         self.prog = prog = self.demonstrated(prog)
         self.alias: dict[tuple[tuple[str, ...], str], dict[int, int]] = {}
-        self.prog = prog = self.same_columns(prog)
+        # a read that drops a column renames a variable of the clause that holds it, which may leave the head of that
+        # clause repeating a variable: the next pass drops that repeat too
+        while True:
+            alias = {key: dict(same) for key, same in self.alias.items()}
+            self.prog = prog = self.same_columns(prog)
+            if self.alias == alias:
+                break
         self.names: dict[tuple[tuple[str, ...], str], str] = {}
         self.used_names: set[str] = {"output"}   # `out` becomes `&output`
         self.key_names: dict[tuple[tuple[str, ...], str], list[str]] = {}
