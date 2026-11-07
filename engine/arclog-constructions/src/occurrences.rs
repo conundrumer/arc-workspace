@@ -66,15 +66,27 @@ impl Construction for Occurrences {
                 }
             }
             for m in placements {
-                let mut pairs = Vec::with_capacity(images.len());
-                for &(s, image) in &images {
-                    pairs.push(([s], [lib.compose(m, image)?]));
-                }
                 if group.wanted[0] {
                     candidate.insert([d, m].into());
                 }
-                if group.wanted[1] && !compare(&shape, &cells, pairs, context.budget)?.mismatch {
-                    occurrence.insert([d, m].into());
+                if group.wanted[1] {
+                    // Each shape cell's image is composed as the comparison reaches it, which stops at the first
+                    // cell that settles the verdict, so a placement that fails early composes few images.
+                    let mut failed = None;
+                    let pairs = images.iter().map_while(|&(s, image)| match lib.compose(m, image) {
+                        Ok(target) => Some(([s], [target])),
+                        Err(bound) => {
+                            failed = Some(bound);
+                            None
+                        }
+                    });
+                    let verdict = compare(&shape, &cells, pairs, context.budget)?;
+                    if let Some(bound) = failed {
+                        return Err(bound);
+                    }
+                    if !verdict.mismatch {
+                        occurrence.insert([d, m].into());
+                    }
                 }
             }
         }
