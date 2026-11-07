@@ -35,8 +35,6 @@ pub enum Bound {
     Walk,
     /// `inside` reads more than 200 rows.
     InsideRows,
-    /// `occurs` reads a pattern of more than 900 cells.
-    OccursPattern,
     /// `complement` reads a box of more than 4096 cells.
     ComplementArea,
     /// A lib join passes `CELL_CAP` cells, on a side or as its output.
@@ -48,8 +46,8 @@ pub enum Bound {
 }
 
 /// The name of each bound, in the order of [`Bound`].
-const NAMES: [&str; 15] = [
-    "boxes-guard", "cap-join-side", "cap-join-output", "cap-antijoin-side", "cap-select-side", "cap-union", "cap-count-output", "flat", "walk", "inside-rows", "occurs-pattern", "complement-area", "cap-lib-join", "cap-projected", "cap-component-output",
+const NAMES: [&str; 14] = [
+    "boxes-guard", "cap-join-side", "cap-join-output", "cap-antijoin-side", "cap-select-side", "cap-union", "cap-count-output", "flat", "walk", "inside-rows", "complement-area", "cap-lib-join", "cap-projected", "cap-component-output",
 ];
 
 /// The slot of the evaluations in a head's counts, and of those whose input already had no value.
