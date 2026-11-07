@@ -1,4 +1,4 @@
-"""paired.py RUN_A ARM_A RUN_B ARM_B [--kinds]: table recall by dependency depth of two arms of dev_run.py, paired by task: over the whole budget and at k, each task's smaller count of draws. Depths are the union graph's, 0, 1, 2-3 and 4+. It also prints the draws per task, and the tasks where arm A is above, below or equal to arm B at k, over depth 1 and deeper. With --kinds, the rows are non-DET and DET tables in place of depths, and the tasks above, below and equal are by non-DET tables at k, as the pass rule of work/measures.md reads them in tables.
+"""paired.py RUN_A ARM_A RUN_B ARM_B [--kinds]: an ARM may be ARM@SEED. table recall by dependency depth of two arms of dev_run.py, paired by task: over the whole budget and at k, each task's smaller count of draws. Depths are the union graph's, 0, 1, 2-3 and 4+. It also prints the draws per task, and the tasks where arm A is above, below or equal to arm B at k, over depth 1 and deeper. With --kinds, the rows are non-DET and DET tables in place of depths, and the tasks above, below and equal are by non-DET tables at k, as the pass rule of work/measures.md reads them in tables.
 
 Tables are named from the draw records (reach.py --by tables). Only tasks that both arms finished and the out-of-scope list leaves in count."""
 import collections, json, math, statistics as st, sys
@@ -46,7 +46,9 @@ def first_draws(job):
 
 
 def jobs(run, arm):
-    return {r['task']: (Path(run) / 'jobs' / r['job'], r['draws']) for r in map(json.loads, open(Path(run) / 'results.jsonl')) if r['arm'] == arm}
+    """{task: (job folder, draws)} of an arm, written ARM or ARM@SEED for one seed of a run with several."""
+    arm, _, seed = arm.partition('@')
+    return {r['task']: (Path(run) / 'jobs' / r['job'], r['draws']) for r in map(json.loads, open(Path(run) / 'results.jsonl')) if r['arm'] == arm and (not seed or int(r['seed']) == int(seed))}
 
 
 def main():
