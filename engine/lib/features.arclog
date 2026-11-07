@@ -2190,7 +2190,7 @@
   (gives &q))
 
 (fragment (values-consecutive (?R relation) (?n column ?R))
-  "Whether each distinct value of a number column is one more than the value before it, with at least two values."
+  "Whether each distinct value of a number column is one more than the value before it, with at least two values. The lib has no successor of a number, so the values are compared as offsets."
   (INIT &have Order
     (member ((:t ?n))
       (?R (?n *)))
@@ -2206,7 +2206,7 @@
   (gives &q))
 
 (fragment (values-arithmetic (?R relation) (?n column ?R))
-  "Whether three or more distinct values of a number column are each the same step from the value before."
+  "Whether three or more distinct values of a number column are each the same step from the value before. The lib has no successor of a number, so the steps are compared as offsets."
   (INIT &have Order
     (member ((:t ?n))
       (?R (?n *)))
