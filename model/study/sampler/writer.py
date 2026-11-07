@@ -207,7 +207,7 @@ class Limits:  # the loop's hard caps; a path past a cap ends
     max_atoms: int = 16
     port_atoms: int = 12
     branch_atoms: int = 12
-    port_absent: int = 6  # a port body of a PORT_KINDS form ends after this count of top-level atoms in a row with END absent (Track.absent); 0 turns it off
+    port_absent: int = int(os.environ.get('WRITER_PORT_ABSENT', 0))  # a port body of a PORT_KINDS form ends after this count of top-level atoms in a row with END absent (Track.absent); 0 turns it off. Off by default: gold INIT ports hold longer runs, so the cap cut reachable gold
     demo_rules: int = 4  # the DEMO_RULEs of a DEMONSTRATED query; gold has at most 3
     rule_forms: int = 8  # the forms of a DEMO_RULE, its PREDICT clause included; gold has at most 5
     rule_fields: int = 4  # the fields of a DEMO_RULE; gold has at most 1
@@ -1943,6 +1943,44 @@ def without_repeats(pt, plan, ids, probs):
     return out / out.sum()
 
 
+REDUNDANT = os.environ.get('WRITER_NO_REDUNDANT') == '1'  # the writer gives no chance to a token that only respells the query
+
+
+def without_redundant(pt, ids, probs):
+    """The chances at point pt without the tokens that give the same query as the path without them: at a column that has a value, the
+    fresh mark * and a value it already has (0 0, L3 L3); and in a run of bare registered relations, one the run has already (DirDomain
+    DirDomain). No gold query of the corpus holds such a token."""
+    core = core_of(pt.run)
+    toks = [int(t) for t in pt.tokens[pt.track.base:]]
+    drop = set()
+    site = []
+    for t in reversed(toks):
+        if core.is_column[t]:
+            break
+        if core.is_label[t] or t in (M.STAR, M.CARET, M.ZERO):
+            site.append(t)
+            continue
+        site = []
+        break
+    if site:
+        drop |= set(site) | {M.STAR}
+    run = []
+    for t in reversed(toks):
+        if core.kind[t] != 'proposer':
+            break
+        run.append(t)
+    drop |= set(run)
+    if not drop:
+        return probs
+    gone = np.isin(ids, list(drop))
+    if not gone.any() or gone.all():
+        return probs
+    out = np.where(gone, 0.0, np.asarray(probs, np.float64))
+    REPEAT_STATS['redundant points'] = REPEAT_STATS.get('redundant points', 0) + 1
+    REPEAT_STATS['redundant removed'] = REPEAT_STATS.get('redundant removed', 0.0) + 1.0 - float(out.sum())
+    return out / out.sum()
+
+
 def write(start, plan, rng, cache=None, on_atom=None):
     """The query that the writer writes from writing point `start`, or Ended. Each choice of two ids or more goes through rng.node, so each is
     a node of the search. cache maps the tokens of a path to its WritingPoint. on_atom(ctx, point) is called at each atom close, with the path's hash
@@ -1992,6 +2030,8 @@ def write(start, plan, rng, cache=None, on_atom=None):
             probs, costs = probabilities(pt, plan, ids, fac)
             if REPEATS:
                 probs = without_repeats(pt, plan, ids, probs)
+            if REDUNDANT:
+                probs = without_redundant(pt, ids, probs)
             keys = getattr(rng, 'keys', None)
             tie = None if keys is None else (lambda i, pt=pt, ids=ids, keys=keys: keys.of(pt, int(ids[i])))
             if full is not None and closing and full.closes_here(pt):
