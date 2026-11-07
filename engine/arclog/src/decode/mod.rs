@@ -859,8 +859,10 @@ impl<'a> Decoder<'a> {
             let prefix = crate::program::Body { conjuncts: body.conjuncts[..=index].into() };
             let Some(found) = crate::program::static_prune::classify_prefix(&prefix, &type_of) else {
                 let keys = |relation: &RelationRef| relation_keys(self.context.registry, relation);
+                let binds = |atom: &crate::program::Atom, column: &crate::program::ColumnName| binds_column(self.context.registry, atom, column);
                 let rule = crate::program::static_prune::makes_earlier_redundant(&prefix)
-                    .or_else(|| crate::program::static_prune::reads_an_earlier_row(&prefix, &keys));
+                    .or_else(|| crate::program::static_prune::reads_an_earlier_row(&prefix, &keys))
+                    .or_else(|| crate::program::static_prune::makes_membership_redundant(&prefix, &type_of, &binds));
                 if let Some(rule) = rule {
                     return Err(Refusal::Grammar(crate::program::static_prune::rule_message(rule).expect("a message of each rule")));
                 }
@@ -873,10 +875,6 @@ impl<'a> Decoder<'a> {
             }
             match found.class {
                 crate::program::static_prune::Class::Unsatisfiable => return Err(Refusal::Grammar("static prune: no row satisfies the completed atom")),
-                // A membership test that an earlier atom's column already implies has a twin that the decoder takes: the
-                // membership atom first, as the binder, and the other atom joining its label. Both write one query, so
-                // refusing the test only in the order where it comes second makes legality depend on the order.
-                crate::program::static_prune::Class::Valid if found.rule == "membership.subtype" => {}
                 crate::program::static_prune::Class::Valid => return Err(Refusal::Grammar("static prune: the completed atom repeats an existing test")),
                 crate::program::static_prune::Class::Alias | crate::program::static_prune::Class::Constant => {
                     let Some(replacement) = found.replacement else { continue };
@@ -945,12 +943,14 @@ impl<'a> Decoder<'a> {
                 let message = match classify_prefix(&prefix, &type_of) {
                     Some(found) => match found.class {
                         Class::Unsatisfiable => Some(rule_message(found.rule).unwrap_or("static prune: no row satisfies the completed atom")),
-                        Class::Valid if found.rule == "membership.subtype" => None,
                         Class::Valid => Some(rule_message(found.rule).unwrap_or("static prune: the completed atom repeats an existing test")),
                         Class::Alias | Class::Constant => None,
                     },
                     None => makes_earlier_redundant(&prefix)
                         .or_else(|| crate::program::static_prune::reads_an_earlier_row(&prefix, &|relation| relation_keys(self.context.registry, relation)))
+                        .or_else(|| {
+                            crate::program::static_prune::makes_membership_redundant(&prefix, &type_of, &|atom, column| binds_column(self.context.registry, atom, column))
+                        })
                         .and_then(rule_message),
                 };
                 if let Some(message) = message {
@@ -1114,6 +1114,23 @@ struct MaskMemo {
     /// The forms of the state's program with the form in progress, and each
     /// list on the path of the form's open node, as [`open_lists`] gives.
     open_lists: std::cell::OnceCell<Option<(usize, Vec<(NodePath, usize)>)>>,
+}
+
+/// Whether `atom` can make the label at its site on `column`: its relation
+/// holds rows, as a fact, a program relation or a lib relation over a finite
+/// domain does, or one of its modes leaves `column` unbound and binds each
+/// column it needs by a site that joins a label or holds `0`.
+fn binds_column(registry: &Registry, atom: &crate::program::Atom, column: &crate::program::ColumnName) -> bool {
+    use crate::program::{LabelUse, SiteArg};
+    let RelationRef::Lib(name) = &atom.relation else { return true };
+    let Some(relation) = registry.algebra_relation(name) else { return true };
+    relation.modes.is_empty()
+        || relation.modes.iter().any(|mode| {
+            !mode.bound.contains(column)
+                && mode.bound.iter().all(|bound| {
+                    atom.sites.iter().any(|site| site.column == *bound && matches!(&site.value.args[..], [SiteArg::Label(LabelUse::Join(_) | LabelUse::Zero)]))
+                })
+        })
 }
 
 /// The keys of `relation` that the `(key ...)` items of its lib element's

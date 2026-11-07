@@ -633,6 +633,46 @@ pub fn reads_an_earlier_row(body: &Body, keys: &dyn Fn(&RelationRef) -> Vec<Vec<
     })
 }
 
+/// The rule by which the last conjunct of a flat decoder body makes an
+/// earlier membership atom of it redundant, where it does: the last atom
+/// reads, at a column whose type is at or below the membership's type, the
+/// label that the membership atom makes, and `binds` says that it can make
+/// that label itself. Each value at that column is then a member, so the
+/// conjunction equals one with no membership atom, where the label is made
+/// at that column. A membership atom that comes after such an atom is valid
+/// by `membership.subtype`, so a query that holds both is refused in each
+/// order.
+pub fn makes_membership_redundant(
+    body: &Body,
+    column_type: &dyn Fn(&RelationRef, &ColumnName) -> Option<ValueType>,
+    binds: &dyn Fn(&Atom, &ColumnName) -> bool,
+) -> Option<&'static str> {
+    let (Conjunct::Atom(last), earlier) = body.conjuncts.split_last()? else { return None };
+    let last = last.value();
+    if matches!(&last.relation, RelationRef::Lib(name) if membership_type(&name.0).is_some()) {
+        return None;
+    }
+    let made_by_membership = |label: LabelId, ty: &ValueType| {
+        earlier.iter().any(|prior| {
+            let Conjunct::Atom(prior) = prior else { return false };
+            let prior = prior.value();
+            let RelationRef::Lib(name) = &prior.relation else { return false };
+            let Some(tested) = membership_type(&name.0) else { return false };
+            let makes = match &prior.sites[..] {
+                [only] => matches!(&only.value.args[..], [SiteArg::Label(LabelUse::Fresh(made))] if *made == label),
+                _ => false,
+            };
+            makes && ty.is_below(&tested)
+        })
+    };
+    last.sites.iter().find_map(|site| {
+        let [SiteArg::Label(LabelUse::Join(label))] = &site.value.args[..] else { return None };
+        let ty = column_type(&last.relation, &site.column)?;
+        let ty = if matches!(ty, ValueType::Pose(_)) { ValueType::D4 } else { ty };
+        (made_by_membership(*label, &ty) && binds(last, &site.column)).then_some("membership.implied_later")
+    })
+}
+
 /// The refusal message of the static prune's rule `rule`, for the rules whose
 /// refusal names its rule.
 pub fn rule_message(rule: &str) -> Option<&'static str> {
@@ -646,6 +686,8 @@ pub fn rule_message(rule: &str) -> Option<&'static str> {
         "not.implies_earlier" => "static prune: the completed `NOT` refuses each row an earlier `NOT` of its relation refuses",
         "comparison.implies_earlier" => "static prune: the completed comparison implies an earlier comparison of its two operands",
         "comparison.merges" => "static prune: two comparisons of the same two operands are one comparison",
+        "membership.subtype" => "static prune: the column that makes the label holds only members of the membership's type",
+        "membership.implied_later" => "static prune: the completed atom's column holds only members of the type that an earlier membership atom tests, and can make that atom's label",
         "atom.same_row" => "static prune: by a key of its relation, the completed atom reads the row an earlier atom of the relation reads",
         _ => return None,
     })
