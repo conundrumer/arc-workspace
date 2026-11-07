@@ -80,6 +80,9 @@ enum PlanArgument {
 /// The most labels that an atom makes where the join reads it one group at a time.
 const MADE_LABELS: usize = 32;
 
+/// The most bytes of rows of lib relations that the atoms of one call share.
+const READ_BYTES: usize = 1 << 29;
+
 /// What is known of a relation that an atom opens.
 #[derive(Clone)]
 struct OpenedRelation {
@@ -259,9 +262,10 @@ impl PartHashes {
     }
 }
 
-/// An atom with no label of its own, over the groups that it reads: its relation,
-/// the column of each site with the place among a group's values of what stands
-/// there, the example, the assignment, the part and the places of the groups.
+/// An atom over the groups that it reads: its relation, the column of each site
+/// that no label of the atom's own fills, with the place among a group's values of
+/// what stands there, the example, the assignment, the part and the places of the
+/// groups.
 type HoldsKey = (u32, Box<[(u16, u16)]>, usize, usize, usize, Box<[u16]>);
 
 /// What the atoms of one call share.
@@ -275,6 +279,24 @@ struct BatchMemo {
     groups: HashMap<(usize, usize, usize, Box<[u16]>), Rc<Groups>>,
     /// Whether an atom with no label of its own holds at each group, for an atom and the `NOT` of it.
     holds: HashMap<HoldsKey, Rc<Bits>>,
+    /// The rows of a lib relation at each group, by the sites that the groups fill, which the atoms that differ in the sites of their own labels share.
+    reads: HashMap<HoldsKey, Rc<LibRead>>,
+    /// The bytes that `reads` holds.
+    read_bytes: usize,
+}
+
+/// The rows of a lib relation at each group of a part, each row its value at each column of the relation.
+struct LibRead {
+    width: usize,
+    /// The first row of each group, and the end of the last.
+    starts: Vec<u32>,
+    values: Vec<TermId>,
+}
+
+impl LibRead {
+    fn at(&self, group: usize) -> &[TermId] {
+        &self.values[self.starts[group] as usize * self.width..self.starts[group + 1] as usize * self.width]
+    }
 }
 
 /// What stands at a level of an index that an atom walks.
@@ -698,22 +720,22 @@ impl<'a> Decoder<'a> {
         budget.charge_work(groups.count() as u64)?;
         // Where each site's value stands among the values of a group.
         let group_place = |column: u16| places.iter().position(|place| *place == place_of(column)).expect("a place of the groups") as u16;
+        let sites: Box<[(u16, u16)]> = plan.sites.iter().filter(|(_, argument)| !matches!(argument, PlanArgument::Made(_))).map(|&(column, argument)| (column.0, match argument {
+            PlanArgument::Column(held) => group_place(held),
+            _ => u16::MAX,
+        })).collect();
+        let key: HoldsKey = (plan.relation, sites, at.0, at.1, part, places.as_slice().into());
         let result = if plan.made.is_empty() {
-            let sites = plan.sites.iter().map(|&(column, argument)| (column.0, match argument {
-                PlanArgument::Column(held) => group_place(held),
-                _ => u16::MAX,
-            })).collect();
-            let key = (plan.relation, sites, at.0, at.1, part, places.as_slice().into());
             match memo.holds.get(&key) {
                 Some(holds) => GroupResult::Holds(Rc::clone(holds)),
                 None => {
-                    let holds = Rc::new(self.holds_at(plan, input, &groups, &group_place)?);
+                    let holds = Rc::new(self.holds_at(plan, input, &groups, &group_place, &key, memo)?);
                     memo.holds.insert(key, Rc::clone(&holds));
                     GroupResult::Holds(holds)
                 }
             }
         } else {
-            GroupResult::Makes(self.makes_at(plan, input, &groups, &group_place)?)
+            GroupResult::Makes(self.makes_at(plan, input, &groups, &group_place, &key, memo)?)
         };
         // The hash of a row with what the atom adds is the row's hash times the hash of what it adds.
         let others = (0..rows.parts().len()).filter(|other| *other != part).fold(1u64, |product, other| hash_times(product, hashes(memo, other).sum));
@@ -735,22 +757,43 @@ impl<'a> Decoder<'a> {
         Ok(GroupedValue { rows: Arc::clone(rows), part, groups, result, negated: plan.negated, hashes: own, arity, hash: rows_hash_of(arity, hash_times(others, sum)) })
     }
 
+    /// The rows of the lib relation `name` at each group, which the atom of `plan` reads.
+    fn lib_read(&self, name: &crate::registry::LibName, plan: &AtomPlan, groups: &Groups, group_place: &dyn Fn(u16) -> u16, key: &HoldsKey, memo: &mut BatchMemo) -> Result<Rc<LibRead>, ReachedBound> {
+        if let Some(read) = memo.reads.get(key) {
+            return Ok(Rc::clone(read));
+        }
+        let (algebra, mut bound, sites) = self.lib_reading(name, plan, group_place);
+        let mut read = LibRead { width: bound.len(), starts: Vec::with_capacity(groups.count() + 1), values: Vec::new() };
+        read.starts.push(0);
+        for group in 0..groups.count() {
+            let values = groups.values_at(group);
+            for &(column, place) in &sites {
+                bound[column] = Some(values[usize::from(place)]);
+            }
+            algebra.evaluate(&bound, self.context.registry, &mut |row| {
+                if bound.iter().zip(row).all(|(held, value)| held.is_none_or(|held| held == *value)) {
+                    read.values.extend_from_slice(row);
+                }
+            }).map_err(ReachedBound::Margin)?;
+            read.starts.push((read.values.len() / read.width.max(1)) as u32);
+        }
+        let read = Rc::new(read);
+        let bytes = read.values.len() * 4;
+        if memo.read_bytes + bytes <= READ_BYTES {
+            memo.read_bytes += bytes;
+            memo.reads.insert(key.clone(), Rc::clone(&read));
+        }
+        Ok(read)
+    }
+
     /// Whether the atom of `plan`, which makes no label, holds at each group.
-    fn holds_at(&self, plan: &AtomPlan, input: &NodeInput, groups: &Groups, group_place: &dyn Fn(u16) -> u16) -> Result<Bits, ReachedBound> {
+    fn holds_at(&self, plan: &AtomPlan, input: &NodeInput, groups: &Groups, group_place: &dyn Fn(u16) -> u16, key: &HoldsKey, memo: &mut BatchMemo) -> Result<Bits, ReachedBound> {
         let mut holds = Bits::new(groups.count());
         match (&plan.source, input) {
             (PlanSource::Lib(name), _) => {
-                let (algebra, mut bound, sites) = self.lib_reading(name, plan, group_place);
+                let read = self.lib_read(name, plan, groups, group_place, key, memo)?;
                 for group in 0..groups.count() {
-                    let values = groups.values_at(group);
-                    for &(column, place) in &sites {
-                        bound[column] = Some(values[usize::from(place)]);
-                    }
-                    let mut found = false;
-                    algebra.evaluate(&bound, self.context.registry, &mut |row| {
-                        found |= bound.iter().zip(row).all(|(held, value)| held.is_none_or(|held| held == *value));
-                    }).map_err(ReachedBound::Margin)?;
-                    if found {
+                    if read.starts[group] != read.starts[group + 1] {
                         holds.set(group);
                     }
                 }
@@ -769,13 +812,13 @@ impl<'a> Decoder<'a> {
     }
 
     /// The values of the labels that the atom of `plan` makes, at each group.
-    fn makes_at(&self, plan: &AtomPlan, input: &NodeInput, groups: &Groups, group_place: &dyn Fn(u16) -> u16) -> Result<Made, ReachedBound> {
+    fn makes_at(&self, plan: &AtomPlan, input: &NodeInput, groups: &Groups, group_place: &dyn Fn(u16) -> u16, key: &HoldsKey, memo: &mut BatchMemo) -> Result<Made, ReachedBound> {
         let width = plan.made.len();
         let mut made = Made { width, starts: Vec::with_capacity(groups.count() + 1), values: Vec::new() };
         made.starts.push(0);
         match (&plan.source, input) {
             (PlanSource::Lib(name), _) => {
-                let (algebra, mut bound, sites) = self.lib_reading(name, plan, group_place);
+                let read = self.lib_read(name, plan, groups, group_place, key, memo)?;
                 let made_sites: Vec<(usize, usize)> = plan.sites.iter().filter_map(|&(column, argument)| match argument {
                     PlanArgument::Made(index) => Some((usize::from(column.0), usize::from(index))),
                     _ => None,
@@ -783,27 +826,20 @@ impl<'a> Decoder<'a> {
                 let mut found: Vec<TermId> = Vec::new();
                 let mut row_values = vec![TermId::from_encoding(0); width];
                 for group in 0..groups.count() {
-                    let values = groups.values_at(group);
-                    for &(column, place) in &sites {
-                        bound[column] = Some(values[usize::from(place)]);
-                    }
                     found.clear();
-                    algebra.evaluate(&bound, self.context.registry, &mut |row| {
-                        if !bound.iter().zip(row).all(|(held, value)| held.is_none_or(|held| held == *value)) {
-                            return;
-                        }
+                    'rows: for row in read.at(group).chunks_exact(read.width) {
                         let mut seen = [false; MADE_LABELS];
                         for &(column, index) in &made_sites {
                             if std::mem::replace(&mut seen[index], true) {
                                 if row_values[index] != row[column] {
-                                    return;
+                                    continue 'rows;
                                 }
                             } else {
                                 row_values[index] = row[column];
                             }
                         }
                         found.extend_from_slice(&row_values);
-                    }).map_err(ReachedBound::Margin)?;
+                    }
                     // A column with no site repeats a row of the columns at sites.
                     let mut rows: Vec<&[TermId]> = found.chunks_exact(width).collect();
                     rows.sort_unstable_by(|a, b| a.iter().map(|value| value.encoding()).cmp(b.iter().map(|value| value.encoding())));

@@ -25,6 +25,43 @@ pub struct AtomTables {
     pub over_cap: Vec<u32>,
 }
 
+/// The most bytes of results that a [`AtomTablesMemo`] holds.
+const MEMO_BYTES: usize = 1 << 28;
+
+/// The results of [`atom_tables`] at the states of one task session, by the
+/// state and its list of atoms: a search reaches a state of a shared prefix many
+/// times. It holds at most [`MEMO_BYTES`], and is emptied when it would pass that.
+#[derive(Default)]
+pub struct AtomTablesMemo(std::sync::Mutex<(HashMap<u128, std::sync::Arc<AtomTables>>, usize)>);
+
+impl AtomTablesMemo {
+    /// The key of the list `atoms` at the state of `decoder`, where the state has one.
+    pub fn key(decoder: &Decoder<'_>, atoms: &[Box<[u32]>]) -> Option<u128> {
+        use std::hash::Hasher;
+        let mut hasher = arclog::hash::StableHasher::new();
+        hasher.write_u128(decoder.state_key()?);
+        for atom in atoms {
+            hasher.write_usize(atom.len());
+            atom.iter().for_each(|id| hasher.write_u32(*id));
+        }
+        Some(hasher.finish128().0)
+    }
+
+    pub fn get(&self, key: u128) -> Option<std::sync::Arc<AtomTables>> {
+        self.0.lock().expect("the memo is not poisoned").0.get(&key).cloned()
+    }
+
+    pub fn keep(&self, key: u128, tables: std::sync::Arc<AtomTables>) {
+        let bytes = 64 + tables.index.len() * 8 + tables.summaries.iter().flat_map(|summary| summary.assignments.iter()).map(|at| 256 + at.features.len() * 4).sum::<usize>();
+        let mut held = self.0.lock().expect("the memo is not poisoned");
+        if held.1 + bytes > MEMO_BYTES {
+            *held = Default::default();
+        }
+        held.0.insert(key, tables);
+        held.1 += bytes;
+    }
+}
+
 /// A hash of what a summary tells a reader, so that atoms with equal tables share one.
 fn summary_key(summary: &TableSummary) -> (bool, Vec<u32>, Vec<Option<u128>>) {
     let hashes = summary.assignments.iter().map(|at| at.hash.map(|hash| hash.0)).collect();
@@ -48,7 +85,7 @@ fn summary_by_program(decoder: &Decoder<'_>, tokens: &[u32], materializer: &Mate
     let slot = walk.state().open_slot();
     let work = walk.query_work();
     let examples = walk.examples_of(sub.scope).into_iter().zip(walk.values_of(&sub, Some(&work)).into_vec()).map(|(example, rows)| ExampleRows { example, rows: rows.map(|rows| models_of_body(&rows)) }).collect();
-    let contents = relation_metadata(walk.registry(), &sub.program, &form, &relation, slot, &walked_dets(&sub.program, relation.node), examples).ok()?;
+    let contents = body_metadata(walk.registry(), &sub.program, &form, &relation, slot, &walked_dets(&sub.program, relation.node), examples).ok()?;
     summarize_body(materializer, &contents, train, fulls).ok()
 }
 
@@ -122,7 +159,7 @@ fn base_of<'s>(decoder: &Decoder<'_>, closed: Option<&'s Option<Outcome<arclog::
             let form = NodePath::top(decoder.program().value().forms.len() as u32);
             let relation = derived_at(&sub.program, &sub.form);
             let dets = walked_dets(&sub.program, relation.node);
-            let contents = relation_metadata(decoder.registry(), &sub.program, &form, &relation, decoder.state().open_slot(), &dets, Vec::new()).ok()?;
+            let contents = body_metadata(decoder.registry(), &sub.program, &form, &relation, decoder.state().open_slot(), &dets, Vec::new()).ok()?;
             let columns = contents.columns.iter().map(|column| column.label_id.map(|label| (label, column.ty.clone()))).collect::<Option<Vec<_>>>()?;
             let names = dets.iter().map(|det| det.relation.clone()).collect();
             let rows = decoder.base_rows(Some(sub), columns, names, &work);

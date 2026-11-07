@@ -455,6 +455,19 @@ fn contents(decoder: &Decoder<'_>, program: &CheckedProgram, form: &NodePath, re
     Ok(contents)
 }
 
+/// The columns of the body that `relation` holds, by their types and the labels
+/// at them, for a reader of its rows alone: it reads no name of a label, since
+/// a body of a part of a form can join a label that another part of the form makes.
+pub(crate) fn body_metadata(registry: &Registry, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>) -> Outcome<Contents> {
+    let fault = |message: &str| RunFault { message: message.into(), form: form.clone() };
+    let types = program.types.columns(relation).ok_or_else(|| fault("the columns of the relation have no types"))?;
+    let placements = column_placements(program, relation.node, relation.output.as_deref(), form, types.len(), registry);
+    let columns = types.iter().zip(placements).enumerate().map(|(at, (ty, placement))| {
+        TableColumn { name: format!("c{at}"), ty: ty.clone(), slot: placement.map(|placed| placed.slot), label_id: placement.and_then(|placed| placed.label), label: None }
+    }).collect();
+    metadata(program, form, TableRelation::Slot(slot), columns, dets, examples, Box::default())
+}
+
 /// The checked schema/provenance of a relation, without evaluating projections
 /// or extents. Recursive component ports use the same adapter as public tables.
 pub(crate) fn relation_metadata(registry: &Registry, program: &CheckedProgram, form: &NodePath, relation: &GraphRelation, slot: u32, dets: &[Det], examples: Vec<ExampleRows>) -> Outcome<Contents> {

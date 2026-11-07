@@ -204,6 +204,23 @@ impl Decoder<'_> {
         found
     }
 
+    /// What identifies this state to a reader of its candidate atoms: at one
+    /// task session, equal keys give equal atoms and equal tables. `None` where a
+    /// form takes no key.
+    pub fn state_key(&self) -> Option<u128> {
+        let (program, open) = self.state.partial()?;
+        let mut hasher = StableHasher::new();
+        if let Some((last, finished)) = program.value().forms.split_last() {
+            for form in finished {
+                hasher.write(&super::prefix_key::key(form, None)?);
+            }
+            hasher.write(&super::prefix_key::key(last, open.as_ref())?);
+        }
+        self.state.atom_context(true, &mut hasher);
+        hasher.write_u32(self.state.label_count());
+        Some(hasher.finish128().0)
+    }
+
     /// Runs `body` with the decode at `state`, and puts the state back.
     fn at(&mut self, state: State, body: impl FnOnce(&mut Self)) {
         let held = std::mem::replace(&mut self.state, state);

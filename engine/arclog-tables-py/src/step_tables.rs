@@ -416,21 +416,32 @@ pub(crate) fn atom_tables<'py>(py: Python<'py>, decoder: PyRef<'py, PyDecoder>, 
     let _ = (&task, &case);
     let stream = before.as_deref().and_then(|before| before.step()).map(|step| &*step.stream);
     let atoms: Vec<Box<[u32]>> = atoms.into_iter().map(Vec::into_boxed_slice).collect();
-    let found = py.detach(|| {
-        let mut limits = engine.limits();
-        limits.deadline = None;
-        let operation = engine.clone().with_operation_limits(limits.clone());
-        let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
-        let tables = stream.map_or_else(Vec::new, StreamTables::tables);
-        let fulls = DetFulls::new(tables).with_assemblies(assemblies(engine));
-        arclog_tables::tables::atom_tables::atom_tables(&operation, &atoms, &materializer, &train, &fulls, by_program)
-    });
+    let memo = decoder.derived(arclog_tables::tables::atom_tables::AtomTablesMemo::default);
+    let key = if by_program { None } else { arclog_tables::tables::atom_tables::AtomTablesMemo::key(engine, &atoms) };
+    let found = match key.and_then(|key| memo.get(key)) {
+        Some(found) => found,
+        None => {
+            let found = std::sync::Arc::new(py.detach(|| {
+                let mut limits = engine.limits();
+                limits.deadline = None;
+                let operation = engine.clone().with_operation_limits(limits.clone());
+                let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
+                let tables = stream.map_or_else(Vec::new, StreamTables::tables);
+                let fulls = DetFulls::new(tables).with_assemblies(assemblies(engine));
+                arclog_tables::tables::atom_tables::atom_tables(&operation, &atoms, &materializer, &train, &fulls, by_program)
+            }));
+            if let Some(key) = key {
+                memo.keep(key, std::sync::Arc::clone(&found));
+            }
+            found
+        }
+    };
     let summaries = found.summaries.iter().map(|summary| {
         let hashes: Vec<u8> = summary.assignments.iter().flat_map(|at| at.hash.map_or(0u128, |hash| hash.0).to_le_bytes()).collect();
         let features: Vec<u8> = summary.assignments.iter().flat_map(|at| at.features.iter().flat_map(|value| value.to_le_bytes())).collect();
         (summary.capped, PyBytes::new(py, &hashes), PyBytes::new(py, &features))
     }).collect();
-    Ok((found.index, summaries, found.by_program, found.over_cap))
+    Ok((found.index.clone(), summaries, found.by_program, found.over_cap.clone()))
 }
 
 /// The columns that the `OUT` form at which `decoder` ended selects: one
