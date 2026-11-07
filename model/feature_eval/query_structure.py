@@ -31,6 +31,7 @@ class Reader:
         self.bag = Counter()
         self.labels = Counter()
         self.reads = []
+        self.negated = 0
 
     def site(self, node):
         if isinstance(node, str):
@@ -58,15 +59,26 @@ class Reader:
             return
         if head in LOGIC:
             self.bag['logic:' + head] += 1
+            if head == 'OR':
+                self.bag['or_branches'] += len(node) - 1
+            self.negated += head == 'NOT'
             for part in node[1:]:
                 self.atom(part)
+            self.negated -= head == 'NOT'
             return
         self.bag['atoms'] += 1
+        self.bag['not_atoms'] += self.negated > 0
         if head in CONSTRAINTS:
+            self.bag['comparisons'] += 1
             self.bag['constraint:' + head] += 1
         elif head.startswith('&'):
+            self.bag['uses:tables'] += 1
             self.reads.append(head)
         else:
+            if head in ('input', 'ex_input', 'ex_output'):
+                self.bag['uses:' + head] += 1
+            else:
+                self.bag['lib_atoms'] += 1
             self.bag['relation:' + head] += 1
         for part in node[1:]:
             self.site(part)

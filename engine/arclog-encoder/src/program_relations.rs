@@ -301,3 +301,151 @@ fn program_rows(program: &CheckedProgram, registry: &Registry) -> Rows {
     }
     rows
 }
+
+/// Where one column's values come from, over a program's lineage rows.
+#[derive(Clone, Default)]
+struct Lineage {
+    roots: BTreeSet<String>,
+    copy_steps: usize,
+    reach: BTreeSet<&'static str>,
+}
+
+fn reach_of(upstream: &str) -> Option<&'static str> {
+    let head = upstream.split('.').next().unwrap_or("");
+    match head {
+        "input" | "ex_input" => Some("input"),
+        "output" | "ex_output" => Some("output"),
+        _ => None,
+    }
+}
+
+/// The lineage of a column: its roots along `Copy` rows, and what its values depend on along every row.
+fn lineage_of<'f>(table: &'f str, column: &'f str, rows: &BTreeMap<(&'f str, &'f str), Vec<(&'f str, &'f str)>>, parameters: &BTreeSet<&str>, memo: &mut BTreeMap<(&'f str, &'f str), Lineage>) -> Lineage {
+    if let Some(held) = memo.get(&(table, column)) {
+        return held.clone();
+    }
+    // A column that reaches itself, as an `Unfold`'s does, adds nothing on the way round.
+    memo.insert((table, column), Lineage::default());
+    let mut out = Lineage::default();
+    if parameters.contains(table) {
+        out.reach.insert("parameter");
+    }
+    for (kind, upstream) in rows.get(&(table, column)).into_iter().flatten() {
+        let above = upstream.split_once('/').filter(|(from, at)| rows.contains_key(&(*from, *at)));
+        match *kind {
+            "Copy" => match above {
+                Some((from, at)) => {
+                    let held = lineage_of(from, at, rows, parameters, memo);
+                    out.roots.extend(held.roots);
+                    out.copy_steps = out.copy_steps.max(held.copy_steps + 1);
+                    out.reach.extend(held.reach);
+                }
+                None => {
+                    out.roots.insert((*upstream).to_string());
+                    out.reach.extend(reach_of(upstream));
+                }
+            },
+            "Computed" => {
+                out.roots.insert("computed".to_string());
+                match above {
+                    Some((from, at)) => out.reach.extend(lineage_of(from, at, rows, parameters, memo).reach),
+                    None => out.reach.extend(reach_of(upstream)),
+                }
+            }
+            "Constant" => {
+                out.roots.insert("0".to_string());
+            }
+            _ => {
+                out.roots.insert((*upstream).to_string());
+                out.reach.insert("parameter");
+            }
+        }
+    }
+    memo.insert((table, column), out.clone());
+    out
+}
+
+/// What the program relations say of one table: for each type of its columns, how many hold each lineage kind and each lineage root, their greatest
+/// count of copy steps, and what they depend on; which columns its query carries over; and its query's joins, by whether the two sides have one root.
+pub fn table_numbers(facts: &ProgramFacts, name: &str) -> Vec<(String, f64)> {
+    let empty = BTreeSet::new();
+    let rows_of = |fact: ProgramFact| facts.rows.get(fact.name()).unwrap_or(&empty);
+    let Some(identity) = facts.table_names.iter().find(|(_, spelled)| spelled.as_str() == name).map(|(identity, _)| identity.as_str()) else { return Vec::new() };
+    let mut rows: BTreeMap<(&str, &str), Vec<(&str, &str)>> = BTreeMap::new();
+    for row in rows_of(ProgramFact::ColumnLineage) {
+        rows.entry((row[0].as_str(), row[1].as_str())).or_default().push((row[2].as_str(), row[3].as_str()));
+    }
+    let parameters: BTreeSet<&str> = facts.queries.iter().filter(|query| query.kind == "DET").flat_map(|query| query.computes.iter().map(String::as_str)).collect();
+    let mut memo = BTreeMap::new();
+    let mut out: BTreeMap<String, f64> = BTreeMap::new();
+    let query = facts.queries.iter().find(|query| query.computes.iter().any(|computed| computed == identity));
+    let used: BTreeSet<&str> = query.map_or_else(BTreeSet::new, |query| query.reads.iter().map(String::as_str).collect());
+    let mut carried_from: BTreeSet<String> = BTreeSet::new();
+    let (mut carried, mut fresh) = (0.0, 0.0);
+    let mut copies_only = true;
+    for row in rows_of(ProgramFact::ColumnType).iter().filter(|row| row[0] == identity) {
+        let column = row[1].as_str();
+        let ty = row[2].split('(').next().unwrap_or("");
+        let own = rows.get(&(identity, column)).cloned().unwrap_or_default();
+        for (kind, _) in &own {
+            *out.entry(format!("?{ty} lineage {kind}")).or_insert(0.0) += 1.0;
+            copies_only &= *kind == "Copy";
+        }
+        let held = lineage_of(identity, column, &rows, &parameters, &mut memo);
+        for root in &held.roots {
+            *out.entry(format!("?{ty} root {root}")).or_insert(0.0) += 1.0;
+        }
+        for word in &held.reach {
+            out.insert(format!("?{ty} reaches {word}"), 1.0);
+        }
+        let steps = out.entry(format!("?{ty} copy steps")).or_insert(0.0);
+        *steps = steps.max(held.copy_steps as f64);
+        let mut from_a_use = false;
+        for (kind, upstream) in &own {
+            if *kind == "Copy" {
+                let source = upstream.split(['/', '.']).next().unwrap_or("");
+                let source = if source == "ex_input" && !used.contains(source) { "input" } else { source };
+                if used.contains(source) {
+                    carried_from.insert(source.to_string());
+                    from_a_use = true;
+                }
+            }
+        }
+        if from_a_use { carried += 1.0 } else { fresh += 1.0 }
+    }
+    out.insert("columns carried".to_string(), carried);
+    out.insert("columns new".to_string(), fresh);
+    out.insert("uses with no column carried".to_string(), used.iter().filter(|read| !carried_from.contains(**read)).count() as f64);
+    out.insert("every column is a copy".to_string(), f64::from(u8::from(copies_only && !rows.is_empty())));
+    if let Some(query) = query {
+        let mut sites: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
+        for row in rows_of(ProgramFact::LabelSite).iter().filter(|row| row[0] == query.identity) {
+            sites.entry(row[1].as_str()).or_default().push((row[2].as_str(), row[3].as_str()));
+        }
+        let roots_at = |site: &(&'_ str, &'_ str), memo: &mut BTreeMap<_, _>| -> BTreeSet<String> {
+            if rows.contains_key(&(site.0, site.1)) {
+                lineage_of(facts_key(&rows, site.0, site.1).0, facts_key(&rows, site.0, site.1).1, &rows, &parameters, memo).roots
+            } else {
+                // A read of `input` has `ex_input` as its lineage.
+                BTreeSet::from([site.1.strip_prefix("input.").map_or_else(|| site.1.to_string(), |rest| format!("ex_input.{rest}"))])
+            }
+        };
+        let (mut same, mut different) = (0.0, 0.0);
+        for held in sites.values().filter(|held| held.len() >= 2) {
+            let first = roots_at(&held[0], &mut memo);
+            if held[1..].iter().all(|site| !first.is_disjoint(&roots_at(site, &mut memo))) {
+                same += 1.0;
+            } else {
+                different += 1.0;
+            }
+        }
+        out.insert("joins of one root".to_string(), same);
+        out.insert("joins of different roots".to_string(), different);
+    }
+    out.into_iter().filter(|(_, value)| *value != 0.0).collect()
+}
+
+/// A lineage row's own key, which lives as long as the rows.
+fn facts_key<'f>(rows: &BTreeMap<(&'f str, &'f str), Vec<(&'f str, &'f str)>>, table: &str, column: &str) -> (&'f str, &'f str) {
+    *rows.keys().find(|(own, at)| *own == table && *at == column).expect("a key the caller found")
+}

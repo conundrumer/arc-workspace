@@ -237,8 +237,8 @@ def worker(old_root, pool_dir, new_root, task):
             kept = []
             for at, held in enumerate(candidates):
                 same = sorted(ty.split('@')[0] for ty in held['table']['types']) == own_types
-                kept.append(dict(mutant=at, edit='same-types' if same else 'other-types', extra=False, table=held['table'], parents=with_parents(held['parents'])))
-            items.append(dict(query=relation, form=form_at, table=port, gold=gold_table, parents=with_parents(parents_of(gold_forms, form_at, defined)), mutants=kept))
+                kept.append(dict(mutant=at, edit='same-types' if same else 'other-types', extra=False, table=held['table'], parents=with_parents(held['parents']), text=held['text']))
+            items.append(dict(query=relation, form=form_at, table=port, gold=gold_table, parents=with_parents(parents_of(gold_forms, form_at, defined)), mutants=kept, text=text))
     reads_at = {at: parents_of(gold_forms, at, defined) for at in defined.values()}
     names = set(prefix) | {read for reads in reads_at.values() for read in reads} | {item['table'] for item in items}
     names |= {name for name, at in defined.items() if gold_forms[at][0] != 'INIT'}

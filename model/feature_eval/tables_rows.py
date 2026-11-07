@@ -19,7 +19,6 @@ os.environ['ARCLOG_IDENT_SOURCE'] = 'value'
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from common import read_json  # noqa: E402
-from query_lineage import flow_tables, query_numbers  # noqa: E402
 from query_structure import DEFINING, parse_forms  # noqa: E402
 from state_tables import parents_of  # noqa: E402
 from tables_worker import REPO, TASKS, keep, read_table, split_of  # noqa: E402
@@ -45,10 +44,9 @@ def worker(old_root, new_root, task):
 
     def tables_of(program):
         _, tables = evaluator.gold_tables(program, held_rows=True)
-        return flow_tables(arclog, np, program, tables, task_json)
+        return script.Tables(arclog, np, program, tables, task_json)
 
     gold_tables = tables_of(gold)
-    gold_numbers = query_numbers(gold_tables, mutants['gold'])
     gold_forms = parse_forms(mutants['gold'])
     defined = {}
     for at, form in enumerate(gold_forms):
@@ -72,14 +70,12 @@ def worker(old_root, new_root, task):
         if gold_table is None:
             left_out.append(dict(query=item['query'], table=name, why=why))
             continue
-        gold_table['query'] = gold_numbers.get(name, {})
         kept = []
         for mutant in item['mutants']:
             record = by_form[form]['mutants'][mutant['mutant']]
             try:
                 program = arclog.StudyProgram.from_sexp(record['text'], settings)
-                mutant_tables = tables_of(program)
-                table, why = read_table(mutant_tables, name, gold_table['assignment'], sources=True)
+                table, why = read_table(tables_of(program), name, gold_table['assignment'], sources=True)
                 programs += 1
             except Exception as error:
                 left_out.append(dict(query=item['query'], table=name, mutant=mutant['mutant'], why='mutant: ' + type(error).__name__))
@@ -87,11 +83,10 @@ def worker(old_root, new_root, task):
             if table is None:
                 left_out.append(dict(query=item['query'], table=name, mutant=mutant['mutant'], why='mutant: ' + why))
                 continue
-            table['query'] = query_numbers(mutant_tables, record['text']).get(name, {})
             parents = with_parents(parents_of(parse_forms(record['text']), form, defined))
-            kept.append(dict(mutant=mutant['mutant'], edit=mutant.get('edit'), extra=mutant.get('extra'), table=table, parents=parents))
+            kept.append(dict(mutant=mutant['mutant'], edit=mutant.get('edit'), extra=mutant.get('extra'), table=table, parents=parents, text=record['text']))
         if kept:
-            items.append(dict(query=item['query'], form=form, table=name, gold=gold_table, parents=with_parents(parents_of(gold_forms, form, defined)), mutants=kept))
+            items.append(dict(query=item['query'], form=form, table=name, gold=gold_table, parents=with_parents(parents_of(gold_forms, form, defined)), mutants=kept, text=mutants['gold']))
     reads_at = {at: parents_of(gold_forms, at, defined) for at in defined.values()}
     names = set(prefix) | {read for reads in reads_at.values() for read in reads} | {item['table'] for item in items}
     names |= {relation for relation, at in defined.items() if gold_forms[at][0] != 'INIT'}
@@ -104,7 +99,7 @@ def worker(old_root, new_root, task):
         keep_key = lambda held: {key: value for key, value in held.items() if key == 'task' or key.startswith('train/')}
         return {**table, 'rows': keep_key(table['rows']), 'models': keep_key(table['models'])}
 
-    kept_items = [{**item, 'gold': train_rows(item['gold']), 'mutants': [{**mutant, 'table': train_rows(mutant['table'])} for mutant in item['mutants']]} for item in items]
+    kept_items = [{**{key: value for key, value in item.items() if key != 'text'}, 'gold': train_rows(item['gold']), 'mutants': [{**{key: value for key, value in mutant.items() if key != 'text'}, 'table': train_rows(mutant['table'])} for mutant in item['mutants']]} for item in items]
     keep(Path(new_root) / split / 'candidate-tables' / f'{task}.json.zst', dict(head, left_out=left_out, items=kept_items, prefix={name: train_rows(table) for name, table in prefix.items()}, state=dict(nodes=nodes), seconds=round(time.time() - started, 2), programs=programs + 1))
     json.dump(full, sys.stdout)
     sys.stdout.flush()

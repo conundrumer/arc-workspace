@@ -14,6 +14,7 @@ use crate::catalog_lists::{named_shapes, reads_output};
 use crate::gen_constants::number_of;
 use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, READS_TABLE, SLOT_DEFAULT, SLOT_NO_VALUE};
 use crate::native::{hash_words, FastMap};
+use crate::program_relations::{program_facts, table_numbers, ProgramFacts};
 use crate::stored::Stored;
 use crate::state_features::{graph_numbers, nodes_of, pool, relations, Relation};
 use crate::table_vector::{base_vectors, pair_vector, table_vector, task_wide_vector, two_tables_vector, Grids, TableVector};
@@ -265,10 +266,18 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let strings = |names: &serde_json::Value| -> Vec<String> { names.as_array().into_iter().flatten().filter_map(|name| name.as_str().map(str::to_string)).collect() };
     // Per item: its form, and for its gold table and each mutant, the table's place and the names its form reads.
     let mut candidates: Vec<(u64, Vec<(usize, Vec<String>)>)> = Vec::new();
-    // Per item and member: what the first version's reading of the program gives of its table.
+    // Per item and member: what the program relations say of its table.
     let mut query_numbers: Vec<Vec<Vec<(String, f64)>>> = Vec::new();
-    let numbers_of = |table: &serde_json::Value| -> Vec<(String, f64)> {
-        table["query"].as_object().into_iter().flatten().filter_map(|(name, value)| Some((name.clone(), value.as_f64()?))).collect()
+    let mut check_cache = arclog::check::CheckCache::default();
+    let mut facts_of: FastMap<u128, Option<ProgramFacts>> = FastMap::default();
+    let mut numbers_of = |text: &serde_json::Value, name: &str| -> Vec<(String, f64)> {
+        if lists_of != ListsOf::Named {
+            return Vec::new();
+        }
+        let Some(text) = text.as_str() else { return Vec::new() };
+        let registry = arclog::registry::Registry::get();
+        let facts = facts_of.entry(hash_words(text.bytes().map(u64::from))).or_insert_with(|| arclog::study::StudyProgram::from_sexp_cached(text, registry, &mut check_cache).ok().map(|program| program_facts(program.checked(), registry)));
+        facts.as_ref().map_or_else(Vec::new, |facts| table_numbers(facts, name))
     };
     for item in data["items"].as_array().ok_or("a file's items")? {
         note_names(&item["parents"]);
@@ -282,14 +291,15 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         let mut mutants = Vec::new();
         let mut whole = true;
         let mut own_candidates = vec![(gold, strings(&item["parents"]))];
-        let mut own_numbers = vec![numbers_of(&item["gold"])];
+        let table_name = item["table"].as_str().unwrap_or("");
+        let mut own_numbers = vec![numbers_of(&item["text"], table_name)];
         for mutant in item["mutants"].as_array().ok_or("an item's mutants")? {
             let Some(table) = add_table(&mutant["table"], &mut stored) else {
                 whole = false;
                 break;
             };
             own_candidates.push((table, strings(&mutant["parents"])));
-            own_numbers.push(numbers_of(&mutant["table"]));
+            own_numbers.push(numbers_of(&mutant["text"], table_name));
             mutants.push(serde_json::json!({"mutant": mutant["mutant"], "edit": mutant["edit"], "extra": mutant["extra"], "table": table, "parents": reads(&mutant["parents"]), "types": mutant["table"]["types"], "task_level": mutant["table"]["task_level"], "assignments": mutant["table"]["assignments"]}));
         }
         if !whole {
