@@ -35,6 +35,8 @@ ALLOWED_EXACT = {
     'KIT_MODELS': 'path', 'PYTHONPATH': 'path', 'WRITER_TREE': 'path of the model file (extraction reads no tree)', 'SEARCH_STATE_SCORE': 'path',
     'NODE_SCORE': 'path', 'ARC_RECORD': 'path of the record output (debug output)', 'WRITER_PARITY_DIR': 'debug output', 'WRITER_ATOM_LOG_DIR': 'debug output',
     'RUST_BACKTRACE': 'debug output', 'ARCLOG_THREADS': 'thread count',
+    'ARC_SEED_BASE': 'the search\'s seed (extraction runs no search)', 'POOL_CLAUSES': 'the search that runs (extraction runs no search)',
+    'PYTHONDONTWRITEBYTECODE': 'bytecode files, which hold no value',
 }
 ALLOWED_PATTERNS = [(r'.*_NUM_THREADS', 'thread count'), (r'ARC_DRAW_(RECORD|RUN|SITE|RELEASE)', 'debug output (draw records)'), (r'GATE_RECORD(S|_TASK)', 'debug output (gate records)')]
 
@@ -307,7 +309,7 @@ def serving_envs(dev_run, overlay, manifest, command, model):
         c = cmds[0]
         argv = c['argv']
         base = {k: (v, 'manifest env') for k, v in c['env'].items()}
-    arm_list = (argv_values(argv, '--arms') or ['tree,hand'])[0].split(',')
+    arm_list = (argv_values(argv, '--arms') or ['tree'])[0].split(',')  # dev_run's default --arms
     out = {}
     for arm in [a for a in arm_list if a != 'base']:
         env = dict(base)
