@@ -71,7 +71,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
 use crate::check::CheckedProgram;
-use crate::eval::cache::{relation_estimate, replay, Recorded, RecordedKey};
+use crate::eval::cache::{relation_estimate, replay, replay_recorded, Recorded, RecordedKey};
 use crate::eval::carry::{kept_relation, Carry, CarryStore};
 use crate::eval::determinations::det_relation;
 use crate::eval::{Domain, DomainSize, Evaluation, Outcome};
@@ -798,9 +798,16 @@ impl Domains for SessionDomains<'_> {
         let session = evaluation.session;
         for computed in self.memo.computed(&key) {
             let Some(domain) = computed.given.values() else { continue };
+            // An open capture keeps the events of this replay, as it keeps those of a
+            // computation, so that a later replay of the capture makes the same lookups.
             let replayed = || match &computed.found {
-                Some(keys) if session.results.replay_found(&computed.events, keys) => true,
-                _ => replay(session, &computed.events),
+                Some(keys) if session.results.replay_found(&computed.events, keys) => {
+                    for event in computed.events.iter() {
+                        session.results.record(|| event.clone());
+                    }
+                    true
+                }
+                _ => replay_recorded(session, &computed.events),
             };
             if work.fits(computed.charged) && replayed() {
                 work.charge(computed.charged).expect("a count that stays within the cap");

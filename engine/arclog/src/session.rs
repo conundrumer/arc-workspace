@@ -507,7 +507,7 @@ impl ResultCache {
         }
         if recording {
             let mut captured = self.recorded.lock().expect(UNPOISONED);
-            if captured.limit.is_some_and(|limit| captured.events.len() >= limit) {
+            if captured.counts.len() == 1 && captured.limit.is_some_and(|limit| captured.events.len() >= limit) {
                 captured.overflowed = true;
                 captured.events = Vec::new();
                 self.recording.store(false, Ordering::Relaxed);
