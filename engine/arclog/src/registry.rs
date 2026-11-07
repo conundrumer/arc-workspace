@@ -35,7 +35,7 @@
 //!   `<frames>` is a `(frames ...)` form, as the section on frames gives it,
 //!   and `<types>` a `(types ...)` form, as the section on type rules gives it.
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
-//!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key] [required | one-of]) ...)
+//!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key] [required | one-of-<group> ...]) ...)
 //!   (outputs (<output> (<column> <type>) ... [(copies <row> ...)] [<frames>]) ...))`: a construction, a
 //!   detector or a task-structure component, its inputs in the order the component declares them. Each
 //!   `<t>` is a parameter's name or `(<name> <type>)`, a parameter with a bound. An `INIT` form's binding of a
@@ -50,14 +50,22 @@
 //!   for it, as Cardinality's `domain`; an input with neither mark nor
 //!   `default` holds no row there. An input marked `required` is one where
 //!   the component gives no output while the input holds no row, as
-//!   Connectivity's `node`. The inputs marked `one-of` are a group of two
-//!   inputs or more, where the component gives no output while none of them
-//!   holds a row, as Quotient's `equivalent` and `edge`. An input with
-//!   `default` rows takes neither mark, and neither does an input marked
+//!   Connectivity's `node`. A mark `one-of-<group>` puts the input in the
+//!   `one-of` group `<group>`, a name that tells the groups of one component
+//!   apart. A group holds two inputs or more. The component gives no output
+//!   while none of the inputs of one group holds a row, as Quotient's `equivalent`
+//!   and `edge`, the group `pairs`, give. An input carries one mark for each
+//!   group it belongs to, as Wallpaper's `period` does. An input takes
+//!   `required` or group marks, not both. A mark is
+//!   a bare symbol, since a list of two words in an input form is a column.
+//!   The marks come last in the input's list, after `from-key`. An input with
+//!   `default` rows takes no mark, and neither does an input marked
 //!   `from-key` whose one column is `key`, since the instance fills each where
 //!   it writes no clause for it. The stream's decoder refuses the `SKIP` that
-//!   leaves a required input, or each input of the group, with no row
-//!   (`docs/engine/arclog-stream.md#token-stream`). An output may share its name with an input of
+//!   leaves a required input, or each input of a `one-of` group, with no row
+//!   (`docs/engine/arclog-stream.md#token-stream`), and the text checker
+//!   refuses an `INIT` form that leaves one so
+//!   (`docs/arclog/arclog.md#instance`). An output may share its name with an input of
 //!   the same form, as `Unfold`'s `take` does: an instance's output of that
 //!   name, where the instance writes no clause for it, reads the input's
 //!   relation. An output's `(copies <row> ...)` form declares the rows of the
@@ -431,14 +439,40 @@ pub struct InputPort {
 
 /// What a component needs of an input to give any output, as the file marks
 /// it on an input that has no default.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Need {
     /// The input is marked `required`: the component gives no output where
     /// the input holds no row.
     Required,
-    /// The input is marked `one-of`: the component gives no output where
-    /// none of its inputs so marked holds a row.
-    OneOf,
+    /// The input is marked `one-of-<name>`, once for each group it belongs
+    /// to: for each such group, the component gives no output where none
+    /// of the group's inputs holds a row.
+    OneOf(Box<[GroupName]>),
+}
+
+/// The name of a `one-of` group of a component, the word after `one-of-` in
+/// the mark. It tells the groups of one component apart, and means nothing
+/// else.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct GroupName(pub Box<str>);
+
+impl InputPort {
+    /// The `one-of` groups that the input belongs to, in the order the file
+    /// marks them.
+    pub fn groups(&self) -> &[GroupName] {
+        match &self.need {
+            Some(Need::OneOf(groups)) => groups,
+            Some(Need::Required) | None => &[],
+        }
+    }
+
+    /// Whether the input holds no row for certain where an instance writes
+    /// no clause for it: it has no default rows, and the key does not fill
+    /// it, which the key does where the input is marked `from-key` and the
+    /// instance's key has a column (`key_has_column`).
+    pub fn holds_no_row_unwritten(&self, key_has_column: bool) -> bool {
+        self.default.is_none() && !(self.from_key && key_has_column)
+    }
 }
 
 /// The default rows of an input, as the file writes them, read by
@@ -488,6 +522,34 @@ impl Component {
         let shares_output = |port: &Port| self.outputs.iter().any(|output| output.name == port.name);
         let inputs = self.inputs.iter().map(|input| &input.port).filter(|port| written.contains(&&port.name));
         self.outputs.iter().chain(inputs.filter(move |port| !shares_output(port)))
+    }
+
+    /// The names of the component's `one-of` groups, each once, in the order
+    /// of the marks of the inputs.
+    pub fn groups(&self) -> Vec<&GroupName> {
+        let mut groups: Vec<&GroupName> = Vec::new();
+        for group in self.inputs.iter().flat_map(InputPort::groups) {
+            if !groups.contains(&group) {
+                groups.push(group);
+            }
+        }
+        groups
+    }
+
+    /// The position, among the component's inputs, of the last input of
+    /// `group`.
+    pub fn last_of_group(&self, group: &GroupName) -> Option<usize> {
+        self.inputs.iter().rposition(|input| input.groups().contains(group))
+    }
+
+    /// Whether, in an instance that writes the inputs `written`, no input of
+    /// `group` holds a row for certain: each is unwritten and holds no row
+    /// where the instance writes no clause for it
+    /// ([`InputPort::holds_no_row_unwritten`]). `key_has_column` is whether
+    /// the instance's key has a column.
+    pub fn group_is_empty(&self, group: &GroupName, written: &[&PortName], key_has_column: bool) -> bool {
+        let members = self.inputs.iter().filter(|input| input.groups().contains(group));
+        members.into_iter().all(|input| !written.contains(&&input.port.name) && input.holds_no_row_unwritten(key_has_column))
     }
 }
 

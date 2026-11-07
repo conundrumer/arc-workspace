@@ -65,13 +65,13 @@ def set_name(amp: str) -> str:
 def leaves_a_need(component: str, us: list[Unit]) -> bool:
     """Whether the input clauses `us` of an instance of `component` hold no
     clause of an input that the registry marks `required`, or of any input of
-    its `one-of` group: the component then gives no output, so the instance
-    holds no row."""
+    one of its `one-of` groups: the component then gives no output, so the
+    instance holds no row."""
     renamed = libmap.COMP.get(component)
-    required, one_of = NEEDED_INPUTS.get(renamed.name if renamed else component, (frozenset(), frozenset()))
+    required, groups = NEEDED_INPUTS.get(renamed.name if renamed else component, (frozenset(), ()))
     written = {renamed.parts.get(u.head.relation.name, u.head.relation.name) if renamed else u.head.relation.name
                for u in us}
-    return bool(required - written) or (bool(one_of) and not one_of & written)
+    return bool(required - written) or any(not group & written for group in groups)
 
 
 READ = re.compile(r"\((&\w+)(?=[\s)]|$)")
@@ -522,7 +522,7 @@ class InstancesMixin:
                 return []
             us = live
         # an instance with no clause of an input its component requires, or of
-        # any input of its one-of group, holds no row
+        # any input of one of its one-of groups, holds no row
         if leaves_a_need(inst.component, us):
             return []
         if (inst.scope.components, inst.name) in c.demo_insts and any(

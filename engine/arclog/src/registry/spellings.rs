@@ -21,7 +21,8 @@ pub(super) const DEFAULT: &str = "default";
 pub(super) const READS_OUTPUTS: &str = "reads-outputs";
 pub(super) const FROM_KEY: &str = "from-key";
 pub(super) const REQUIRED: &str = "required";
-pub(super) const ONE_OF: &str = "one-of";
+/// The start of a `one-of` group's mark, which ends in the group's name.
+pub(super) const GROUP_MARK: &str = "one-of-";
 pub(super) const COPIES: &str = "copies";
 pub(super) const FRAMES: &str = "frames";
 pub(super) const TYPES: &str = "types";

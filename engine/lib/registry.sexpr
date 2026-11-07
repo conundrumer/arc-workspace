@@ -189,8 +189,8 @@
 ;;; One label per class of an equivalence. A row of `equivalent` or `edge` puts a and b in one class, and the classes are closed over chains of rows.
 ;;; - `class`: a's class. An element in neither input has no class; `equivalent(a, a)` gives it a class of its own.
 (component Quotient construction (type-parameters T)
-  (inputs (equivalent (a T) (b T) one-of)
-    (edge (a T) (b T) one-of))
+  (inputs (equivalent (a T) (b T) one-of-pairs)
+    (edge (a T) (b T) one-of-pairs))
   (outputs (class (a T) (Id Ident)
     (copies (either (equivalent (a a)) (equivalent (b a)) (edge (a a)) (edge (b a)))))))
 (refines Quotient.class (key a))
@@ -208,11 +208,11 @@
 ;;; - `successor`: b comes next after a. Under ties, each member of one score level is followed by each member of the next, and tied members don't follow each other.
 ;;; - `cyclic_successor`: `successor`, with the first after the last.
 (component Order construction (type-parameters Key T)
-  (inputs (member (key Key) (t T) one-of)
+  (inputs (member (key Key) (t T) one-of-ranked)
     (before (key Key) (a T) (b T))
     (score (key Key) (t T) (S Int))
     (secondary_score (key Key) (t T) (S Int))
-    (probe (key Key) (t T) one-of))
+    (probe (key Key) (t T) one-of-ranked))
   (outputs (rank (key Key) (t T) (R Nat)
       (copies (either (member (t t)) (probe (t t)))))
     (dual_rank (key Key) (t T) (R Nat)
@@ -246,13 +246,13 @@
 ;;; - With `score`, a tie forks the walk. An item taken on one branch and left on another is in both `taken` and `untaken` at a state both branches reach.
 (component Unfold construction (type-parameters Key T Item)
   (inputs (start (key Key) (t T) required)
-    (initial_taken (key Key) (item Item) one-of)
-    (initial_untaken (key Key) (item Item) one-of)
+    (initial_taken (key Key) (item Item) one-of-items)
+    (initial_untaken (key Key) (item Item) one-of-items)
     (conflict (key Key) (item Item) (item2 Item))
     (score (key Key) (t T) (item Item) (S Int))
     (step (key Key) (t T) (t2 T) reads-outputs)
     (skip (key Key) (t T) (t2 T) reads-outputs)
-    (take (key Key) (t T) (item Item) reads-outputs one-of))
+    (take (key Key) (t T) (item Item) reads-outputs one-of-items))
   (outputs (taken (key Key) (t T) (item Item))
     (untaken (key Key) (t T) (item Item))
     (excluded (key Key) (t T) (item Item))
@@ -274,8 +274,8 @@
 (component Distance construction (type-parameters Key Node)
   (inputs (edge (key Key) (a Node) (b Node))
     (weight (key Key) (a Node) (b Node) (W Int))
-    (source (key Key) (n Node) from-key one-of)
-    (source_distance (key Key) (n Node) (K Int) one-of))
+    (source (key Key) (n Node) from-key one-of-start)
+    (source_distance (key Key) (n Node) (K Int) one-of-start))
   (outputs (distance (key Key) (n Node) (K Int)
       (copies (either (source (n n)) (source_distance (n n)) (edge (b n)) (weight (b n)))))
     (predecessor (key Key) (b Node) (a Node)
@@ -383,11 +383,12 @@
 ;;; - `period`: the pattern's period along A, at most one per axis, more than 0. An axis with no row has none. A key with two periods on an axis, or a period of 0, has no output.
 ;;; - `symmetry`: D, then the shift Delta, takes some cell onto another cell and no cell onto a cell of another value. Cells outside `grid` are ignored. One D has a row for each shift that differs by a multiple of the period and lands in the frame. Delta is 0 on an axis with no period. So the identity has a row only where a period exists.
 ;;; - `action`: a symmetry or a period move takes the frame cell P onto the frame cell Q.
+;;; - A key with no row in `transform` and none in `period`, or none in `cell` and none in `period`, has no output.
 (component Wallpaper detector (type-parameters Key Val)
-  (inputs (transform (D D4))
-    (cell (key Key) (P Position) (v Val))
+  (inputs (transform (D D4) one-of-period-transform)
+    (cell (key Key) (P Position) (v Val) one-of-period-cell)
     (grid (key Key) (P Position) required)
-    (period (key Key) (A Axis) (K Int)))
+    (period (key Key) (A Axis) (K Int) one-of-period-transform one-of-period-cell))
   (outputs (symmetry (key Key) (D D4) (Delta Offset)
       (copies (transform (D D)) (cell)))
     (action (key Key) (P Position) (Q Position)

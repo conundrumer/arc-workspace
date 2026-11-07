@@ -47,6 +47,7 @@
     - in `period(key: Key, A: Axis, K: Int)`: the pattern's period along A, at most one per axis, more than 0. An axis with no row has none. A key with two periods on an axis, or a period of 0, has no output.
     - out `symmetry(key: Key, D: D4, Delta: Offset)`: D, then the shift Delta, takes some cell onto another cell and no cell onto a cell of another value. Cells outside `grid` are ignored. One D has a row for each shift that differs by a multiple of the period and lands in the frame. Delta is 0 on an axis with no period. So the identity has a row only where a period exists.
     - out `action(key: Key, P: Position, Q: Position)`: a symmetry or a period move takes the frame cell P onto the frame cell Q.
+    - A key with no row in `transform` and none in `period`, or none in `cell` and none in `period`, has no output.
 - **DemonstrationConsistency**<Key, Demonstrated, Object, Index, Value>: The rules a demonstrated pair confirms. An input of a nested task holds pairs that demonstrate a rule, and an object that the same rule completes.
     - in `value(key: Key, o: Object, i: Index, v: Value)`: object o holds v at index i.
     - in `prediction(key: Key, c: Demonstrated, o: Object, i: Index, v: Value)`: rule c predicts that the object paired with o holds v at i.

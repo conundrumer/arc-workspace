@@ -323,8 +323,15 @@ impl FileReader {
         let inputs = self.headed(rest.get(3), INPUTS, place)?;
         let inputs: Option<Vec<InputPort>> = inputs.iter().map(|input| self.input(input, &type_parameters)).collect();
         let inputs = inputs?;
-        if inputs.iter().filter(|input| input.need == Some(Need::OneOf)).count() == 1 {
-            return self.refuse(format!("the component marks one input `{ONE_OF}`: its inputs so marked are a group of two or more, and one input that the component needs alone is marked `{REQUIRED}`"), place);
+        let mut groups: Vec<(&GroupName, usize)> = Vec::new();
+        for group in inputs.iter().flat_map(InputPort::groups) {
+            match groups.iter_mut().find(|(seen, _)| *seen == group) {
+                Some((_, count)) => *count += 1,
+                None => groups.push((group, 1)),
+            }
+        }
+        if let Some((group, _)) = groups.iter().find(|(_, count)| *count == 1) {
+            return self.refuse(format!("the component marks one input `{GROUP_MARK}{}`: the inputs of a group are two or more, and one input that the component needs alone is marked `{REQUIRED}`", group.0), place);
         }
         let outputs = self.headed(rest.get(4), OUTPUTS, place)?;
         self.no_more(rest.get(5..).unwrap_or_default())?;
@@ -432,23 +439,14 @@ impl FileReader {
         Some(CopiedFrom { input, columns: pairs.into() })
     }
 
-    /// An input, `(<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key] [required | one-of])`.
+    /// An input, `(<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key] [required | one-of-<group> ...])`.
     fn input(&mut self, expr: &SExpr, parameters: &[TypeParameter]) -> Option<InputPort> {
         let SExpr::List { items, place, .. } = expr else {
             return self.refuse("an input is a list of its name and its columns", expr.place());
         };
         let name = PortName(self.symbol(items.first(), "the input's name", *place)?.into());
         let mut rest = &items[1..];
-        let need = if take_mark(&mut rest, REQUIRED) {
-            Some(Need::Required)
-        } else if take_mark(&mut rest, ONE_OF) {
-            Some(Need::OneOf)
-        } else {
-            None
-        };
-        if need.is_some() && (take_mark(&mut rest, REQUIRED) || take_mark(&mut rest, ONE_OF)) {
-            return self.refuse(format!("an input takes one of the marks `{REQUIRED}` and `{ONE_OF}`, not both"), *place);
-        }
+        let need = self.need_marks(&mut rest, *place)?;
         let from_key = take_mark(&mut rest, FROM_KEY);
         let reads_outputs = take_mark(&mut rest, READS_OUTPUTS);
         let default_rows = rest.last().and_then(|last| headed(last, DEFAULT));
@@ -457,7 +455,7 @@ impl FileReader {
                 return self.refuse("an input with default rows takes no `from-key` mark", *place);
             }
             if need.is_some() {
-                return self.refuse(format!("an input with default rows takes no `{REQUIRED}` or `{ONE_OF}` mark, since its default rows hold where the instance writes no clause for it"), *place);
+                return self.refuse(format!("an input with default rows takes no `{REQUIRED}` or `{GROUP_MARK}<group>` mark, since its default rows hold where the instance writes no clause for it"), *place);
             }
             rest = &rest[..rest.len() - 1];
         }
@@ -469,13 +467,49 @@ impl FileReader {
             written.push(name);
         }
         if need.is_some() && from_key && columns.iter().all(is_key) {
-            return self.refuse(format!("an input marked `{FROM_KEY}` whose one column is `key` takes no `{REQUIRED}` or `{ONE_OF}` mark, since the key fills it where the instance writes no clause for it"), *place);
+            return self.refuse(format!("an input marked `{FROM_KEY}` whose one column is `key` takes no `{REQUIRED}` or `{GROUP_MARK}<group>` mark, since the key fills it where the instance writes no clause for it"), *place);
         }
         let default = match default_rows {
             Some(rows) => Some(DefaultRows { written: self.read(read_param_value(rows, &written))? }),
             None => None,
         };
         Some(InputPort { port: Port { name, columns: columns.into(), copies: Box::default(), frames: Box::default() }, default, reads_outputs, from_key, need })
+    }
+
+    /// The need marks that end `items`, taken off it: `required`, or one or
+    /// more `one-of-<group>`, each a bare symbol.
+    fn need_marks(&mut self, items: &mut &[SExpr], place: SourcePlace) -> Option<Option<Need>> {
+        let mut required = false;
+        let mut groups: Vec<GroupName> = Vec::new();
+        while let Some(SExpr::Symbol { text, .. }) = items.last() {
+            if &**text == REQUIRED {
+                if required {
+                    return self.refuse(format!("the input carries the mark `{REQUIRED}` twice"), place);
+                }
+                required = true;
+            } else if let Some(group) = text.strip_prefix(GROUP_MARK).or((&**text == GROUP_MARK.trim_end_matches('-')).then_some("")) {
+                if group.is_empty() {
+                    return self.refuse(format!("the mark `{text}` names no group: a group's mark is `{GROUP_MARK}<group>`"), place);
+                }
+                let group = GroupName(group.into());
+                if groups.contains(&group) {
+                    return self.refuse(format!("the input carries the mark `{text}` twice"), place);
+                }
+                groups.push(group);
+            } else {
+                break;
+            }
+            *items = &items[..items.len() - 1];
+        }
+        if required && !groups.is_empty() {
+            return self.refuse(format!("an input takes the mark `{REQUIRED}` or marks of groups, not both"), place);
+        }
+        groups.reverse();
+        Some(match (required, groups.is_empty()) {
+            (true, _) => Some(Need::Required),
+            (false, false) => Some(Need::OneOf(groups.into())),
+            (false, true) => None,
+        })
     }
 
     /// `(proposer <name> native [domain] (columns ...))` or

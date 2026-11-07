@@ -86,17 +86,25 @@ def from_key_inputs() -> dict[str, set[str]]:
     return out
 
 
-def needed_inputs() -> dict[str, tuple[frozenset[str], frozenset[str]]]:
-    """The inputs engine/lib/registry.sexpr marks `required`, and those it
-    marks `one-of`, by component: the component gives no output while a
-    required input holds no row, or while no input of its `one-of` group
+type Needs = tuple[frozenset[str], tuple[frozenset[str], ...]]
+"""The inputs a component requires, then the inputs of each of its `one-of` groups."""
+
+
+def needed_inputs() -> dict[str, Needs]:
+    """The inputs engine/lib/registry.sexpr marks `required`, and the inputs of
+    each `one-of-<group>` mark, by component: the component gives no output
+    while a required input holds no row, or while no input of one of its groups
     holds one."""
-    out: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
+    out: dict[str, Needs] = {}
     for name, inputs in component_inputs().items():
         required = frozenset(i[0] for i in inputs if "required" in i[1:])
-        one_of = frozenset(i[0] for i in inputs if "one-of" in i[1:])
-        if required or one_of:
-            out[name] = (required, one_of)
+        groups: dict[str, set[str]] = defaultdict(set)
+        for i in inputs:
+            for mark in i[1:]:
+                if isinstance(mark, str) and mark.startswith("one-of-"):
+                    groups[mark].add(i[0])
+        if required or groups:
+            out[name] = (required, tuple(frozenset(members) for members in groups.values()))
     return out
 
 
@@ -142,7 +150,7 @@ def copied_inputs() -> dict[str, set[str]]:
 
 
 FROM_KEY = from_key_inputs()   # the inputs the engine fills from the key, by component
-NEEDED_INPUTS = needed_inputs()   # the required inputs and the one-of group, by component
+NEEDED_INPUTS = needed_inputs()   # the required inputs and the inputs of each one-of group, by component
 COPIED_INPUTS = copied_inputs()   # the inputs that the outputs copy, by component
 PROPOSER_COLS = proposer_columns()   # each proposer's columns
 DOMAIN_PROPOSERS = registry_columns("proposer", r"native domain")   # the type-domain proposers, which give one value per row
