@@ -90,10 +90,6 @@
 
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock};
-use std::time::Instant;
-
-mod names;
-mod stats;
 
 use super::cache::{self, relation_estimate, EntryRequest, Recorded, RecordedKey};
 use super::ir::{ClauseIr, CompiledBody};
@@ -133,17 +129,12 @@ impl Carry {
     /// computation of it replays in `session`, counting its work in `work`.
     /// The cache of `session` found no entry of the key's request just before.
     pub(crate) fn replay(&self, session: &TaskSession, work: &TableWork, key: &CarryKey, form: &NodePath) -> Option<RelationValue> {
-        stats::begin(key, self.store.id);
         for (carried, older) in self.store.carried(key) {
             let within = match carried.crossing {
                 None => work.fits(carried.charged),
                 Some(crossing) => crossing.at(work),
             };
-            if !within {
-                stats::reason(stats::Reason::Work);
-            } else if !cache::replay_recorded(session, &carried.events) {
-                stats::reason(stats::Reason::Lookups);
-            } else {
+            if within && cache::replay_recorded(session, &carried.events) {
                 match carried.crossing {
                     None => work.charge(carried.charged).expect("a count that stays within the cap"),
                     Some(Crossing { before, after }) => work.charge_crossing(carried.charged, before, after),
@@ -152,7 +143,6 @@ impl Carry {
                 if older {
                     self.store.promote(key, &carried);
                 }
-                stats::hit(carried.charged, matches!(carried.value, RelationValue::Stopped(_)));
                 return Some(given(carried.value.clone(), form));
             }
         }
@@ -165,23 +155,12 @@ impl Carry {
     /// `form` that is stored in the result cache, or with a stop at the table
     /// work cap at `form` that a charge of the computation caused.
     pub(crate) fn capture(&self, session: &TaskSession, work: &TableWork, key: CarryKey, form: &NodePath, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
-        stats::missed();
-        let note = stats::current();
-        let started = note.map(|_| Instant::now());
         let capture = session.results.begin_capture();
         let before = work.count();
         let found = compute();
         let (events, counts) = session.results.end_capture(capture);
         let charged = work.count().saturating_sub(before);
-        let end = |end: stats::End| {
-            if let (Some(note), Some(started)) = (note, started) {
-                stats::captured(note, end, charged, started);
-            }
-        };
-        let Ok(value) = &found else {
-            end(stats::End::Fault);
-            return found;
-        };
+        let Ok(value) = &found else { return found };
         let kept = match value {
             RelationValue::Stopped(stop) if stop.form != *form => None,
             RelationValue::Stopped(stop) if stop.bound.is_stored() => Some((RelationValue::Stopped(stop.bound), None)),
@@ -192,23 +171,12 @@ impl Carry {
             RelationValue::Stopped(_) => None,
             value => cache::cached(value).map(|value| (value, None)),
         };
-        let Some((value, crossing)) = kept else {
-            end(stats::End::Stopped(match value {
-                RelationValue::Stopped(stop) => Some(stop.bound),
-                _ => None,
-            }));
-            return found;
-        };
+        let Some((value, crossing)) = kept else { return found };
         let stopped = matches!(value, RelationValue::Stopped(_));
         match self.store.keep(key, Carried { events: events.into(), charged, counts, crossing, value }) {
-            Some(kept) => {
-                end(if stopped { stats::End::KeptStop } else { stats::End::Kept });
-                if stopped { found } else { Ok(given(kept, form)) }
-            }
-            None => {
-                end(stats::End::Dropped);
-                found
-            }
+            Some(_) if stopped => found,
+            Some(kept) => Ok(given(kept, form)),
+            None => found,
         }
     }
 }
@@ -313,7 +281,6 @@ impl Eq for CarryKey {}
 /// The kept computations of one generation of the memo's intern table, in two
 /// tiers.
 pub(crate) struct CarryStore {
-    id: u64,
     /// The bytes that both tiers may hold.
     share: usize,
     tiers: RwLock<Tiers>,
@@ -344,8 +311,7 @@ const UNPOISONED: &str = "the kept computations are not poisoned";
 impl CarryStore {
     /// A store with nothing kept, which holds at most `bytes`.
     pub(crate) fn new(bytes: usize) -> Self {
-        stats::event("store.new", bytes as u64);
-        CarryStore { id: stats::store_id(), share: bytes, tiers: RwLock::default() }
+        CarryStore { share: bytes, tiers: RwLock::default() }
     }
 
     /// The computations kept under `key`, each with whether the older tier
@@ -364,19 +330,14 @@ impl CarryStore {
         let mut tiers = self.tiers.write().expect(UNPOISONED);
         let tiers = &mut *tiers;
         if tiers.young.entries.get(&key).is_some_and(|kept| kept.len() >= PER_KEY) {
-            stats::dropped("dropped.full");
             return None;
         }
         let share = self.share / 2;
         let (alone, mut fresh) = tiers.young.bytes_of(&key, &carried);
-        stats::event("kept.alone", alone as u64);
-        stats::event("kept.fresh", fresh as u64);
         if alone > share {
-            stats::dropped("dropped.big");
             return None;
         }
         if tiers.young.bytes + fresh > share {
-            stats::event("store.turn", tiers.young.bytes as u64);
             tiers.old = std::mem::take(&mut tiers.young);
             fresh = alone;
         }
@@ -402,7 +363,6 @@ impl CarryStore {
         if young.bytes + fresh > self.share / 2 {
             return;
         }
-        stats::event("store.promote", fresh as u64);
         let mut one = |relation: &Arc<Relation>| kept_relation(&mut young.relations, relation);
         let moved = carried.with_relations(&mut one);
         let key = key.with_relations(&mut one);
@@ -467,7 +427,6 @@ pub(crate) fn kept_relation(relations: &mut StableHashMap<StableHash, Vec<Arc<Re
 /// IR is `clause`, in `order`, the variable order of the body, over the
 /// columns `columns` of `clause`.
 pub(super) fn part_shape(clause: &ClauseIr, part: &Part, order: &VariableOrder, columns: &[ColumnIndex]) -> StableHash {
-    stats::offer(|| stats::part_components(clause, part, order, columns));
     let mut hasher = StableHasher::new();
     let mut ranks: Vec<usize> = (0..part.nodes.len()).collect();
     ranks.sort_unstable_by_key(|&at| part.nodes[at]);
@@ -489,7 +448,6 @@ pub(super) fn part_shape(clause: &ClauseIr, part: &Part, order: &VariableOrder, 
 /// The digest of the shape of the evaluation of `body`, the compiled body of
 /// a clause, as a whole.
 pub(super) fn body_shape(body: &CompiledBody) -> StableHash {
-    stats::offer(|| stats::body_components(body));
     let mut hasher = StableHasher::new();
     body.clause.hash(&mut hasher);
     body.conjuncts.hash(&mut hasher);
