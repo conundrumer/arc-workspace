@@ -1377,9 +1377,10 @@ def _column_type(pt, core, rtok, pos, ids=None):
     rule = pt.pg.colmaps['RULE'].get(slot, {})
     if pt.kind == 'RULE':
         t = rule.get((pos, None))
-    else:
+    else:  # a table's read outside a RULE may hold an Example column first: the mask at the atom's start tells, by its count of columns. Kept per atom start, so that the order in which a search reaches points can't change it
         memo = pt.pg.__dict__.setdefault('col_offset', {})
-        key = (pt.kind, slot)
+        start = len(pt.tokens) - len(pt.open_atom)
+        key = (pt.kind, pt.tokens[:start + 1])
         if key not in memo and not any(core.is_column[x] for x in pt.open_atom):
             admitted = sum(core.kind[x] == 'column' for x in pt.ids_.tolist())
             memo[key] = 1 if admitted == sum(f is None for _, f in rule) + 1 else 0

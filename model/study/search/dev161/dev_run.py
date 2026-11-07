@@ -145,12 +145,13 @@ def cpu_job(a, w, task, seed, env, samp, sup):
 
 
 def parity_gate(a, out, arm, tasks):
-    """Refuses a live run whose worker gives a model other input rows than training rows: a short worker on a few tasks writes a sample of its points (WRITER_PARITY_DIR), and sampler/serving_parity.py rebuilds them at a session as rows make it. A stamp in the code's folder keeps a pass for this code, site, tree and writer settings."""
+    """Refuses a live run whose worker gives a model other input rows than training rows: a short worker on a few tasks writes a sample of its points (WRITER_PARITY_DIR), and sampler/serving_parity.py rebuilds them at a session as rows make it. A stamp in the code's folder keeps a pass for this sampler code, site, tree and writer settings."""
     samp = Path(a.code) / 'model/study/sampler'
     if not (samp / 'serving_parity.py').exists():
         raise SystemExit('this kit has no serving parity check: %s has no serving_parity.py. --no-parity runs it unchecked.' % samp)
     settings = sorted((k, v) for k, v in os.environ.items() if k.startswith('WRITER_') and k not in ('WRITER_ATOM_LOG_DIR', 'WRITER_PARITY_DIR'))
-    key = hashlib.sha256(json.dumps([a.site, str(a.tree), a.plan, settings]).encode()).hexdigest()[:16]
+    code = hashlib.sha256(b''.join(p.read_bytes() for p in sorted(samp.glob('*.py')))).hexdigest()  # a change to the sampler's code needs a new check
+    key = hashlib.sha256(json.dumps([a.site, str(a.tree), a.plan, settings, code]).encode()).hexdigest()[:16]
     stamp = Path(a.code) / 'parity' / (key + '.json')
     if stamp.exists():
         return
