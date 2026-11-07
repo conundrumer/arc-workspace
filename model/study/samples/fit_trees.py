@@ -238,6 +238,11 @@ class Layout:
     point_cols: Ints
     vector_point_cols: Ints | None = None  # with vectors: the columns that `vp` gives
     vector_id_cols: Ints | None = None  # with vectors: the columns that the rows of `vo` give
+    keep: Ints | None = None  # with vectors and --drop-prefixes: the columns of the whole vector that the matrix keeps, in order; vector_*_cols are columns of the whole vector
+    width: int = 0  # with keep: the whole vector's width
+
+
+DROP: tuple[str, ...] = ()  # --drop-prefixes: the vector columns whose names start with one of these are left out of the matrix and the model
 
 
 def layout_of(fields: dict[str, Any]) -> Layout:
@@ -252,7 +257,11 @@ def layout_of(fields: dict[str, Any]) -> Layout:
         if len(set(point.tolist())) != len(point) or (len(point) and (point.min() < 0 or point.max() >= len(names))):
             raise FitError('the header\'s vector_point_cols are not distinct columns of the vector')
         empty = np.zeros(0, np.int64)
-        return Layout(names, empty, empty, empty, point, np.setdiff1d(np.arange(len(names), dtype=np.int64), point))
+        ids = np.setdiff1d(np.arange(len(names), dtype=np.int64), point)
+        if DROP:
+            keep = np.array([i for i, n in enumerate(names) if not n.startswith(DROP)], np.int64)
+            return Layout([names[i] for i in keep], empty, empty, empty, point, ids, keep, len(names))
+        return Layout(names, empty, empty, empty, point, ids)
     parts = [*fields['option_names'], *fields['table_names'], *fields['point_names']]
     if len(set(parts)) != len(parts):
         raise FitError('a feature name appears twice in the header')
@@ -389,6 +398,12 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
 def fill_rows(out: Floats, k: Kept, tables: dict[int, Floats], layout: Layout, lo: int, hi: int) -> None:
     """Write rows lo to hi of the point k into out, which has hi - lo rows."""
     if layout.vector_id_cols is not None and layout.vector_point_cols is not None and k.vo is not None and k.vp is not None:
+        if layout.keep is not None:  # --drop-prefixes: the whole vector, then the kept columns
+            whole = np.empty((hi - lo, layout.width), out.dtype)
+            whole[:, layout.vector_id_cols] = k.vo[lo:hi]
+            whole[:, layout.vector_point_cols] = k.vp
+            out[:] = whole[:, layout.keep]
+            return
         out[:, layout.vector_id_cols] = k.vo[lo:hi]
         out[:, layout.vector_point_cols] = k.vp
         return
@@ -713,6 +728,7 @@ def main() -> int:
     ap.add_argument('--score', type=Path, help='a saved booster: score it on the dev points, and fit nothing')
     ap.add_argument('--score-tasks', help='with --score: comma-separated dev tasks, the only ones scored')
     ap.add_argument('--dev-tasks', help='comma-separated tasks to treat as dev, whatever their header says (development only)')
+    ap.add_argument('--drop-prefixes', default='', help='P,P: leave out the vector columns whose names start with one of these (an arm of column blocks, such as tok:,state:,task:,pq:body:)')
     ap.add_argument('--task-weights', action='store_true', help="weigh each train point by 1 over its task's points (scaled to a mean of 1), so that each task weighs the same; use with --points-per-task 0")
     ap.add_argument('--alpha', type=float, default=0.0, help='the train loss weighs each id in the softmax denominator by 1 + alpha * drawn (0: no weight)')
     ap.add_argument('--wheels-alike', default='', help='W,W: engine wheels whose point files go in one fit (header wheel, such as site-exp61,site-exp62)')
@@ -726,6 +742,8 @@ def main() -> int:
     ap.add_argument('--feature-fraction', type=float, default=0.8)
     ap.add_argument('--threads', type=int, default=int(os.environ.get('ARC_HEAVY_CPUS', '1')))
     args = ap.parse_args()
+    global DROP
+    DROP = tuple(x for x in args.drop_prefixes.split(',') if x)
     try:
         if args.check:
             return check(args.points[0], args.seed, args.alpha)
