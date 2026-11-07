@@ -50,7 +50,7 @@ pub use atom_values::{AtomRows, BaseRows, JoinedAtom};
 pub use atoms::{add_atom_verdicts, atom_verdicts, CandidateAtoms};
 pub mod program_read;
 mod state;
-mod prefix_key;
+pub(crate) mod prefix_key;
 mod projection_search;
 mod projections;
 
@@ -492,7 +492,12 @@ impl<'a> Decoder<'a> {
         let _timed = stats::span(Phase::DecodeWithChecks);
         let registry = self.context.registry;
         let resolved = self.state.resolved(registry);
-        self.state.with_clauses(registry, |clauses| PrefixChecks::with(&resolved, clauses, registry, body))
+        self.state.with_clauses(registry, |clauses| {
+            PrefixChecks::with(&resolved, clauses, registry, |checks| {
+                checks.share_resolutions(self.state.held_resolutions());
+                body(checks)
+            })
+        })
     }
 
     /// [`Decoder::with_checks`], with the form in progress at the state held
@@ -975,8 +980,13 @@ impl<'a> Decoder<'a> {
     /// progress whose innermost open node is at `open`, with `candidate`.
     fn check_partial(&self, program: &Node<Program>, open: Option<&NodePath>, candidate: Candidate, checks: &PrefixChecks<'_>) -> Result<(), Refusal> {
         let check = || {
-            let resolved = resolve_for_checks(&self.state.resolved(self.context.registry), program, self.context.registry);
-            match checks.check(&resolved, open, candidate, None) {
+            let earlier = self.state.resolved(self.context.registry);
+            let held = open.filter(|_| candidate == Candidate::AtomHead).and_then(|open| checks.check_atom_head_alone(&earlier, program, open));
+            let refused = match held {
+                Some(refused) => refused,
+                None => checks.check(&resolve_for_checks(&earlier, program, self.context.registry), open, candidate, None),
+            };
+            match refused {
                 Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
                 None => Ok(()),
             }

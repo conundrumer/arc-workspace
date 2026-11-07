@@ -88,6 +88,10 @@ pub struct State {
     /// The resolution of the finished forms, made on its first read, which
     /// every clone of the state shares until a form finishes.
     resolved: Arc<FinishedResolution>,
+    /// The resolutions of the form in progress that candidates opening an
+    /// atom share, among the checks of the states and forks with the same
+    /// finished forms.
+    held_resolutions: Arc<crate::check::prefix::HeldResolutions>,
     /// The clauses of the finished forms, which every clone of the state
     /// shares until a form finishes. A clause set memoizes in cells that
     /// one thread reads at a time, so the pool lends each to one reader,
@@ -589,7 +593,7 @@ pub(super) struct OpenProjection {
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::new(FinishedResolution::first()), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), atom_verdicts: Arc::default(), checked_last: Arc::default(), checks: Arc::default(), earlier_forms: Arc::default(), opened: None }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::new(FinishedResolution::first()), held_resolutions: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), atom_verdicts: Arc::default(), checked_last: Arc::default(), checks: Arc::default(), earlier_forms: Arc::default(), opened: None }
     }
 
     /// The fixed scalar type of `column` of `relation` ([`ValueType::is_scalar`]),
@@ -696,6 +700,12 @@ impl State {
     /// names resolve within it.
     pub(super) fn resolved(&self, registry: &Registry) -> Arc<ResolvedProgram> {
         self.resolved.get(&self.program, registry)
+    }
+
+    /// The resolutions of the form in progress that the checks of this state
+    /// share, among those of the states with the same finished forms.
+    pub(super) fn held_resolutions(&self) -> &Arc<crate::check::prefix::HeldResolutions> {
+        &self.held_resolutions
     }
 
     /// Runs `body` with the clauses of the finished forms' resolution, made
@@ -1186,6 +1196,7 @@ impl State {
         self.program = self.with_form(form);
         self.finished_slots = self.next_slot();
         self.resolved = Arc::new(FinishedResolution::after(Arc::clone(&self.resolved)));
+        self.held_resolutions = Arc::default();
         self.clauses = Arc::default();
         self.fixed_columns = Arc::default();
         self.prefixes = Arc::default();

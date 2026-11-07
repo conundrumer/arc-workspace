@@ -183,14 +183,79 @@ struct AtomHead {
     /// ([`PrefixChecks::check_atom_head`]): the one of the candidate
     /// checked last, retargeted to the next.
     resolution: RefCell<Option<HeldResolution>>,
+    /// The resolutions that the checks of one state's finished forms hold
+    /// between them, from which `resolution` is taken and to which it goes
+    /// back ([`PrefixChecks::share_resolutions`]).
+    pool: OnceCell<Arc<HeldResolutions>>,
+}
+
+impl Drop for AtomHead {
+    fn drop(&mut self) {
+        if let (Some(pool), Some(held)) = (self.pool.get(), self.resolution.get_mut().take()) {
+            pool.give(held);
+        }
+    }
 }
 
 /// The resolution of the form in progress for a candidate that opens, at
 /// `at`, an atom of `relation`.
+#[derive(Debug)]
 struct HeldResolution {
     at: NodePath,
     relation: RelationRef,
     resolved: ResolvedProgram,
+}
+
+/// The most resolutions that [`HeldResolutions`] holds.
+const HELD_RESOLUTIONS: usize = 64;
+
+/// The resolutions of the forms in progress that candidates opening an atom
+/// share, among the checks of the states that have the same finished
+/// forms: a mask, the steps of its tokens and the masks of the states that
+/// follow, each of which makes its own [`PrefixChecks`].
+///
+/// Each resolution is held under the key of the program it is of
+/// ([`crate::decode::prefix_key::atom_head_key`]): the source of the last
+/// form, and the path of its open atom, but for that atom's relation. The
+/// finished forms are the same for every holder, so that key fixes the
+/// program, and the resolution is `resolve_for_checks` of it, which is a
+/// function of that program and of the finished forms' resolution alone. A
+/// resolution held for a program that differs from another's in the open
+/// atom's relation alone is retargeted to it, as a mask retargets it from
+/// candidate to candidate ([`ResolvedProgram::retarget_atom`]), and gives
+/// what a fresh resolution gives. The key is made from the program that the
+/// resolution holds when it goes back, so it stands for what the
+/// resolution is of, whatever it was retargeted to meanwhile.
+///
+/// A holder takes a resolution out, so no two hold one at a time, and puts
+/// it back when it is done; the pool keeps the most recent
+/// [`HELD_RESOLUTIONS`].
+#[derive(Debug, Default)]
+pub struct HeldResolutions {
+    held: std::sync::Mutex<std::collections::VecDeque<(Vec<u8>, HeldResolution)>>,
+}
+
+impl HeldResolutions {
+    /// Takes out the resolution held under `key` for an atom at `at`: one
+    /// of `relation` where there is one, and else the latest.
+    fn lease(&self, key: &[u8], at: &NodePath, relation: &RelationRef) -> Option<HeldResolution> {
+        let mut held = self.held.lock().expect("the held resolutions are not poisoned");
+        let same = |(held_key, held): &(Vec<u8>, HeldResolution)| held_key == key && held.at == *at;
+        let index = held.iter().position(|entry| same(entry) && entry.1.relation == *relation).or_else(|| held.iter().position(same))?;
+        held.remove(index).map(|(_, held)| held)
+    }
+
+    /// Puts `held` back. A resolution of the same program as one held is
+    /// held in its place.
+    fn give(&self, held: HeldResolution) {
+        let Some(form) = held.resolved.program.value().forms.last() else { return };
+        let Some(path) = held.at.0.get(1..) else { return };
+        let Some(key) = crate::decode::prefix_key::atom_head_key(form, &NodePath(path.into())) else { return };
+        let mut pool = self.held.lock().expect("the held resolutions are not poisoned");
+        pool.retain(|(pooled, entry)| !(*pooled == key && entry.at == held.at && entry.relation == held.relation));
+        pool.push_front((key, held));
+        pool.truncate(HELD_RESOLUTIONS);
+    }
 }
 
 /// How a check reads the relation of an atom of no site.
@@ -454,20 +519,64 @@ impl PrefixChecks<'_> {
         reads_example_column(&held.as_ref().expect("the resolution is set").resolved, at)
     }
 
+    /// Has the checks take their resolutions of atom-head candidates from
+    /// `pool` and put them back there, in place of resolving each time.
+    pub(crate) fn share_resolutions(&self, pool: &Arc<HeldResolutions>) {
+        let _ = self.head.pool.set(Arc::clone(pool));
+    }
+
     /// Holds the resolution of `program` for the candidate that opens, at
-    /// `at`, an atom of `relation`: the held one retargeted, or
-    /// [`resolve_prefix`]'s. A resolution already held for that candidate
-    /// stays.
+    /// `at`, an atom of `relation`: the held one retargeted, one that the
+    /// pool holds for the same program but for that relation, retargeted,
+    /// or [`resolve_for_checks`]'s. A resolution already held for that
+    /// candidate stays. The resolution held before goes back to the pool,
+    /// where it can be taken again.
     fn hold_atom_head(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, at: &NodePath, relation: &RelationRef) {
         let mut held = self.head.resolution.borrow_mut();
         if held.as_ref().is_some_and(|held| held.at == *at && held.relation == *relation) {
             return;
         }
         let retargeted = held.as_mut().is_some_and(|held| held.at == *at && held.resolved.retarget_atom(program, at, relation, self.registry));
-        match held.as_mut().filter(|_| retargeted) {
-            Some(held) => held.relation = relation.clone(),
-            None => *held = Some(HeldResolution { at: at.clone(), relation: relation.clone(), resolved: resolve_for_checks(earlier, program, self.registry) }),
+        if retargeted {
+            held.as_mut().expect("the resolution is held").relation = relation.clone();
+            return;
         }
+        let pool = self.head.pool.get();
+        if let (Some(pool), Some(old)) = (pool, held.take()) {
+            pool.give(old);
+        }
+        let leased = pool.and_then(|pool| {
+            let form = program.value().forms.last()?;
+            let open = NodePath(at.0.get(1..)?.into());
+            let key = crate::decode::prefix_key::atom_head_key(form, &open)?;
+            let mut leased = pool.lease(&key, at, relation)?;
+            if leased.relation == *relation || leased.resolved.retarget_atom(program, at, relation, self.registry) {
+                leased.relation = relation.clone();
+                return Some(leased);
+            }
+            pool.give(leased);
+            None
+        });
+        *held = Some(leased.unwrap_or_else(|| HeldResolution { at: at.clone(), relation: relation.clone(), resolved: resolve_for_checks(earlier, program, self.registry) }));
+    }
+
+    /// [`PrefixChecks::check`] with [`Candidate::AtomHead`] for the prefix
+    /// whose last token opens, at `open`, an atom that holds no site, where
+    /// no result of a check is shared with the other candidates: the
+    /// result of every check run on a resolution of `program`, which the
+    /// pool or [`resolve_for_checks`] gives. `earlier` is the resolution of
+    /// the forms before the last of `program`. `None` where `open` is no
+    /// atom of the last form, which this does not check; `Some` of the
+    /// result of [`PrefixChecks::check`] otherwise.
+    pub fn check_atom_head_alone(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, open: &NodePath) -> Option<Option<(CheckId, Box<[Refusal]>)>> {
+        let form = program.value().forms.last()?;
+        let relation = node_at(NodeRef::from(form), open)?.atom()?.relation.clone();
+        let last = program.value().forms.len() as u32 - 1;
+        let full = NodePath(std::iter::once(PathStep(last)).chain(open.0.iter().copied()).collect());
+        self.hold_atom_head(earlier, program, &full, &relation);
+        let held = self.head.resolution.borrow();
+        let resolved = &held.as_ref().expect("the resolution is set").resolved;
+        Some(self.check(resolved, Some(open), Candidate::AtomHead, None))
     }
 
     /// The result of `check` on `prefix`, which is the result of the first

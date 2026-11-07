@@ -2,12 +2,13 @@
 //! cannot key checks that read source order, open paths, and original labels.
 use std::hash::{Hash, Hasher};
 use crate::program::*;
-use crate::program::path::NodePath;
+use crate::program::path::{node_at, NodePath, NodeRef};
 
 /// A hasher that keeps the bytes written to it, so a key holds the whole
-/// source of its form.
+/// source of its form. Where it holds an atom, the atom's relation is left
+/// out of the bytes: the atom is the one that an atom-head key stands on.
 #[derive(Default)]
-struct Source(Vec<u8>);
+struct Source(Vec<u8>, Option<*const Atom>);
 impl Hasher for Source {
     fn write(&mut self, bytes: &[u8]) { self.0.extend_from_slice(bytes); }
     fn finish(&self) -> u64 { unreachable!("source keys retain all bytes") }
@@ -15,7 +16,11 @@ impl Hasher for Source {
 impl Source {
     fn scalar(&mut self, value: &impl Hash) { value.hash(self); }
     fn atom(&mut self, atom: &Atom) {
-        self.scalar(&atom.relation);
+        if self.1 == Some(atom as *const Atom) {
+            self.scalar(&0u8);
+        } else {
+            self.scalar(&atom.relation);
+        }
         self.scalar(&atom.sites);
     }
     fn body(&mut self, body: &Body) {
@@ -144,5 +149,20 @@ pub(super) fn key(form: &Form, open: Option<&NodePath>) -> Option<Vec<u8>> {
     let mut source = Source::default();
     source.form(form)?;
     source.scalar(&open);
+    Some(source.0)
+}
+
+/// The key of the prefix whose last form is `form`, with its open node at
+/// `open`, an atom, but for the relation of that atom: the bytes of
+/// [`key`] with the relation left out. Two prefixes with equal keys, over
+/// equal finished forms, are one program but for the relation of the atom
+/// at `open`, which is the case in which a resolution of one retargets to
+/// the other ([`crate::check::prefix::PrefixChecks`]). None where the form
+/// takes no key, or `open` is no atom of the form.
+pub(crate) fn atom_head_key(form: &Form, open: &NodePath) -> Option<Vec<u8>> {
+    let atom = node_at(NodeRef::from(form), open)?.atom()?;
+    let mut source = Source(Vec::new(), Some(atom as *const Atom));
+    source.form(form)?;
+    source.scalar(&Some(open));
     Some(source.0)
 }
