@@ -1,6 +1,6 @@
-"""Whole-atom writing: at a point where the next token starts an item or ends a body, a token tree proposes its top atoms, the engine gives each one's body table, and a learned model scores them as one choice of the search.
+"""Whole-atom writing, as tonight's experiment: at a point where the next token starts an item or ends a body, a token tree proposes its top atoms, the engine gives each one's body table, and a learned model scores them as one choice of the search.
 
-Rows and the live writer share this module, so a model reads at serving what it read in its fit. A candidate's row is the point's columns, the columns of its first token, the atom's structure, whether the engine gave a body table, the token tree's bits for the atom and their gap to the best proposal's, the AssignmentVector of the body with the atom added, and its difference from the body before. A server's rows leave out the bits.
+Rows and the live writer share this module, so a model reads at serving what it read in its fit. A candidate's row is the point's columns, the columns of its first token, the atom's structure, whether the engine gave a body table, the token tree's bits for the atom and their gap to the best proposal's, the AssignmentVector of the body with the atom added, and its difference from the body before. A server's rows hold the bits and their gap, each over 10, after the rest.
 
   WRITER_ATOM_TREE     a LightGBM text model over those columns (with its .uses.json), or
   WRITER_ATOM_SOCKET   the socket of a server, whose Client.score(point, cands) gives one logit per candidate; WRITER_ATOM_SERVER_DIR holds atom_serve.py
@@ -8,7 +8,7 @@ Rows and the live writer share this module, so a model reads at serving what it 
   WRITER_ATOM_ENOUGH   the token tree's mass at which a proposal walk ends (default: no limit)
   WRITER_ATOM_POPS     the items that a proposal walk takes off its heap, per atom wanted (default 12)
 
-A share of the mass that the token tree gives to atoms outside the proposals (WRITER_ATOM_ESCAPE) stays as one more option of the choice, and a search that takes it writes the rest of the body by tokens, so each atom stays reachable.
+A share of the mass that the token tree gives to atoms outside the proposals (WRITER_ATOM_ESCAPE) stays as one more option of the choice, and a search that takes it writes that atom by tokens, so each atom stays reachable. The next atom is one choice again.
 
 Time blocked on a server counts toward a job's budget, through time.blocked_seconds where the CPU clock is on (cpu_clock/sitecustomize.py)."""
 import collections
@@ -62,6 +62,29 @@ def decision(pt):
     """Whether the next token at pt starts an item or ends a body, or may: at a column point, the open atom may close."""
     T = pt.track
     return T.where == 'body' and not T.form and not T.rec and T.col is None and (pt.place.phase == Phase.ATOM_START or (pt.place.phase == Phase.COLUMN and bool(pt.open_atom)))
+
+
+def closes_here(pt):
+    """Whether an atom that goes by tokens may close at pt."""
+    T = pt.track
+    return T.where == 'body' and not T.form and not T.rec and T.col is None and pt.place.phase == Phase.COLUMN and bool(pt.open_atom)
+
+
+def token_choice(pt, ids, probs, costs, rng, closing):
+    """The place in ids of the token that an atom going by tokens takes at pt, or None where the atom closes, since the tokens that close it share one option and the next atom is one choice. With closing, the search has chosen to close the atom before this one, and the tokens that close it are the options."""
+    cl = closers(writer.core_of(pt.run), ids)
+    if closing:
+        at = np.flatnonzero(cl)
+        p = probs[at] / probs[at].sum()
+        return int(at[0 if len(at) == 1 else rng.node(p, None if costs is None else costs[at], None)])
+    rest = np.flatnonzero(~cl)
+    if not cl.any():
+        return int(rest[rng.node(probs, costs, None)])
+    if not len(rest):
+        return None
+    p = np.append(probs[rest], probs[cl].sum())
+    j = rng.node(p, None if costs is None else np.append(costs[rest], 0.0), None)
+    return None if j == len(rest) else int(rest[j])
 
 
 def structure(core, tokens):
@@ -211,7 +234,7 @@ class ServerScore:
         self.client = Client(socket)
 
     def score(self, run, point, tok, struct, defined, av, delta, bits, first):
-        cands = np.concatenate([tok, struct, defined[:, None], av, delta], 1)
+        cands = np.concatenate([tok, struct, defined[:, None], av, delta, bits[:, None] / 10.0, (bits - bits.min())[:, None] / 10.0], 1)
         wall, cpu = time.perf_counter(), time.process_time()
         got = np.asarray(self.client.score(point, cands), np.float64)
         blocked = max(0.0, (time.perf_counter() - wall) - (time.process_time() - cpu))
@@ -239,7 +262,7 @@ def model():
 
 
 def choose(pt, plan, rng):
-    """The point after the atom that the search takes at decision pt, or None where the rest of the body goes by tokens: there's no atom to choose among, or the search takes the mass outside the proposals. The model shares out among the proposals all the mass but that option's."""
+    """The point after the atom that the search takes at decision pt, or None where this atom goes by tokens: there's no atom to choose among, or the search takes the mass outside the proposals. The model shares out among the proposals all the mass but that option's."""
     run = pt.run
     core = writer.core_of(run)
     held = pt.memo.get('atoms')

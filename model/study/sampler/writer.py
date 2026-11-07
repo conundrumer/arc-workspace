@@ -1263,12 +1263,26 @@ def _prefixed(block, *parts):
 TOKEN_ID_NO_TABLE = os.environ.get('WRITER_TOKEN_ID_NO_TABLE') == '1'  # token:id reads 0 for a token that names a table of the state: its id is a place in the scope's order, which no read of a DAG holds
 
 
+TRAINED_RELATIONS = 512  # the relation slots of the vocabulary that a training row's token ids count in: a session's default
+
+
+def trained_ids(core, ids):
+    """Token ids as a training row counts them. A session with more relation slots than TRAINED_RELATIONS, as a worker's is, puts every token after the slots further on, and a model that reads a token's id would read those tokens as others."""
+    shift = core.__dict__.get('trained_shift')
+    if shift is None:
+        first = core.names.index('&r0')
+        after = next(i for i in range(first, len(core.names)) if not core.names[i].startswith('&r'))
+        shift = core.trained_shift = (after, max(0, after - first - TRAINED_RELATIONS))
+    ids = np.asarray(ids)
+    return np.where(ids >= shift[0], ids - shift[1], ids)
+
+
 @vector_block('token', 'option', lambda run: ('token:class', 'token:id'))
 def _block_token(pt, ids):
-    named = ids
+    named = trained_ids(core_of(pt.run), ids)
     if TOKEN_ID_NO_TABLE:
         graph = pt.pg.__dict__.get('tok_graph') or {}
-        named = np.array([0 if i in graph else i for i in ids.tolist()], ids.dtype)
+        named = np.array([0 if i in graph else j for i, j in zip(ids.tolist(), named.tolist())], ids.dtype)
     return np.stack([token_classes(pt, ids), named], 1).astype(np.float32)
 
 
@@ -1396,7 +1410,7 @@ def _block_ctx(pt, ids):
         out[2] = sum(bool(core.is_column[t]) for t in pt.open_atom)
         out[3] = len(_rel_types(pt, core, rtok))
     last = pt.tokens[-1]
-    out[4], out[5] = -1 if core.kind[last] == 'relation' else last, _KIND_AT.get(core.kind[last], 0)
+    out[4], out[5] = -1 if core.kind[last] == 'relation' else trained_ids(core, last), _KIND_AT.get(core.kind[last], 0)
     if pt.kind == 'INIT' and len(pt.tokens) > 1 and core.kind[pt.tokens[1]] == 'component':
         out[6] = pt.tokens[1]
     out[7], out[8], out[9] = T.decision, T.inkey, T.round
@@ -1868,22 +1882,24 @@ def write(start, plan, rng, cache=None, on_atom=None):
     atoms = None
     if os.environ.get('WRITER_ATOM_TREE') or os.environ.get('WRITER_ATOM_SOCKET'):
         import atom_writer as atoms
-    whole = atoms is not None  # whether the writer chooses whole atoms here: until a choice gives the rest of the body to the tokens
+    whole, closing = atoms is not None, False  # whether the next atom is one choice; and, for an atom that goes by tokens, whether the search has chosen to close the one before it
     while True:
         if pt.track.where == 'done':
             return finish(pt)
-        if whole and atoms.decision(pt):
-            got = atoms.choose(pt, plan, rng)
-            if got is None:
-                whole = False
-            else:
-                before = len(pt.track.texts)
-                pt = got
-                if pt.track.body != body:
-                    body, ctx = pt.track.body, getattr(rng, 'hash', 0)
-                if on_atom is not None and len(pt.track.texts) > before:
-                    on_atom(ctx, pt)
-                continue
+        if atoms is not None:
+            if not whole and pt.place.phase == Phase.ATOM_START and atoms.decision(pt):
+                whole = True
+            if whole and atoms.decision(pt):
+                got = atoms.choose(pt, plan, rng)
+                if got is not None:
+                    before = len(pt.track.texts)
+                    pt = got
+                    if pt.track.body != body:
+                        body, ctx = pt.track.body, getattr(rng, 'hash', 0)
+                    if on_atom is not None and len(pt.track.texts) > before:
+                        on_atom(ctx, pt)
+                    continue
+                whole, closing = False, pt.place.phase == Phase.COLUMN
         ids, fac, reason = options(pt, plan)
         if reason:
             return Ended(reason)
@@ -1893,11 +1909,18 @@ def write(start, plan, rng, cache=None, on_atom=None):
             probs, costs = probabilities(pt, plan, ids, fac)
             keys = getattr(rng, 'keys', None)
             tie = None if keys is None else (lambda i, pt=pt, ids=ids, keys=keys: keys.of(pt, int(ids[i])))
-            j = rng.node(probs, costs, tie)
+            if atoms is not None and not whole and atoms.closes_here(pt):
+                j = atoms.token_choice(pt, ids, probs, costs, rng, closing)
+                closing = False
+                if j is None:  # the open atom closes: the next atom is one choice
+                    whole = True
+                    continue
+            else:
+                j = rng.node(probs, costs, tie)
         before = len(pt.track.texts)
         pt = step_point(pt, int(ids[j]), cache)
         if pt.track.body != body:
             body, ctx = pt.track.body, getattr(rng, 'hash', 0)
-            whole = atoms is not None
+            whole, closing = atoms is not None, False
         if on_atom is not None and len(pt.track.texts) > before:
             on_atom(ctx, pt)
