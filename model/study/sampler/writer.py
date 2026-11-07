@@ -546,6 +546,7 @@ class Core:
                 elif kind in ('RULE', 'DET'):
                     T.where = 'done' if np.isin(ids2, self.end_ids).any() else 'body'
                 else:
+                    T.head_labels = ()
                     self._classify(T, kind, ids2, forced, head=not T.inkey)
                     if not T.inkey and T.where == 'head':
                         T.port = T.cur_pos
