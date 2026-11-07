@@ -18,13 +18,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import open_text  # noqa: E402
-from v1_cover import collect  # noqa: E402
+from v1_cover import by_table, collect  # noqa: E402
 
 
-def features_of(pair, name, types_of, tables, coordinates, known):
-    """A table's features at a pair, as {feature: number}, where a word's feature is 1 at the words the table has and 0 at the other words it could have."""
+def features_of(at, name, types_of, tables, coordinates):
+    """A table's features at a pair, as {feature: number}, given as {feature: value}. A word's feature is 1 at the words the table has."""
     out = collections.defaultdict(dict)
-    collect(pair, name, types_of, tables, 'shape', out, 0, coordinates, {})
+    collect(at, name, types_of, tables, 'shape', out, 0, coordinates, {})
     plain, shapes = {}, {}
     for key, at in out.items():
         if isinstance(key, tuple):
@@ -68,16 +68,16 @@ def main():
         tables = data.get('tables', {})
         coordinates = data.get('coordinates', {})
         types_of = {name: dict(columns) for name, columns in data['columns'].items()}
+        gold_pairs = [by_table(pair) for pair in data['pairs']]
         for mutant in data.get('mutants', []):
             if 'pairs' not in mutant:
                 continue
             own_types = dict(types_of)
             own_types.update({name: dict(columns) for name, columns in mutant['columns'].items()})
-            for at, (gold, other) in enumerate(zip(data['pairs'], mutant['pairs'])):
-                names = {key.split('|', 1)[0] for key in other}
-                for name in names:
-                    theirs, their_words = features_of(other, name, own_types, tables, coordinates, None)
-                    ours, our_words = features_of(gold, name, types_of, tables, coordinates, None)
+            for gold, other in zip(gold_pairs, mutant['pairs']):
+                for name, other_at in by_table(other).items():
+                    theirs, their_words = features_of(other_at, name, own_types, tables, coordinates)
+                    ours, our_words = features_of(gold.get(name, {}), name, types_of, tables, coordinates)
                     for shape in their_words & our_words:
                         prefix = f'{shape} :'
                         for feature in [key for key in (*ours, *theirs) if key.startswith(prefix)]:
