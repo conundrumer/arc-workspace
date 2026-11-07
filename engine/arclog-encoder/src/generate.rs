@@ -446,13 +446,16 @@ impl Generated {
     pub fn of_two_tables_keyed(t_types: &[ValueType], t_keys: &[bool], u_types: &[ValueType], u_keys: &[bool], names: &NameStore) -> Generated {
         let t_names: Vec<String> = (0..t_types.len()).map(|at| format!("T{at}")).collect();
         let u_names: Vec<String> = (0..u_types.len()).map(|at| format!("T{}", t_types.len() + at)).collect();
-        let mut family = Generated::two_tables_with_names(t_types, &t_names, u_types, &u_names, "U", names);
-        family.pair_words(t_keys, u_keys);
-        family
+        Generated::two_tables_keyed_with_names(t_types, t_keys, &t_names, u_types, u_keys, &u_names, "U", names)
     }
 
     /// As [`Generated::of_two_tables`], with the columns under the names a program gives them, and U's text.
     pub fn two_tables_with_names(t_types: &[ValueType], t_names: &[String], u_types: &[ValueType], u_names: &[String], u_text: &str, names: &NameStore) -> Generated {
+        Generated::two_tables_keyed_with_names(t_types, &[], t_names, u_types, &[], u_names, u_text, names)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn two_tables_keyed_with_names(t_types: &[ValueType], t_keys: &[bool], t_names: &[String], u_types: &[ValueType], u_keys: &[bool], u_names: &[String], u_text: &str, names: &NameStore) -> Generated {
         let mut family = Generated::empty();
         family.two_tables = true;
         let all: Vec<ValueType> = t_types.iter().chain(u_types).cloned().collect();
@@ -605,6 +608,7 @@ impl Generated {
                 }
             }
         }
+        family.pair_words(t_keys, u_keys);
         family.by_size.push(family.terms.len());
         family.name_roots(&all, names);
         family
