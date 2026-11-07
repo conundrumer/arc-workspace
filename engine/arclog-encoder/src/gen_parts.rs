@@ -265,17 +265,36 @@ pub fn flat(value: &Val) -> Option<Arc<Table>> {
     Some(Table::new(arity, cells))
 }
 
-/// The dense id of each row's key, and the first row at each key.
-pub fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Vec<u32>, Vec<&'t [Cell]>) {
+/// How keys group a table's rows: the dense id of each row's key, and the place of the first row at each key.
+type Grouping = (Vec<u32>, Vec<u32>);
+
+/// Each key's cells and its head.
+type KeyCells = (Vec<Vec<(u8, u8)>>, Vec<Vec<Cell>>);
+
+/// What the parts of one table read alike, held while its walks go on, up to [`HELD_GROUP_CELLS`] of its cells in all.
+#[derive(Default)]
+struct Groups {
+    groupings: FastMap<(u64, u128), Arc<Grouping>>,
+    cells: FastMap<(u64, u128), Arc<KeyCells>>,
+    frames: FastMap<(u64, u128), bool>,
+    held: usize,
+}
+
+const HELD_GROUP_CELLS: usize = 8_000_000;
+
+thread_local! {
+    static GROUPS: std::cell::RefCell<Groups> = std::cell::RefCell::new(Groups::default());
+}
+
+fn grouping_of(table: &Table, keys: &[u16]) -> Grouping {
     let mut ids = Vec::with_capacity(table.len);
-    let mut first = Vec::new();
+    let mut first: Vec<u32> = Vec::new();
+    let mut place = 0u32;
     match keys {
         [] => {
             ids.resize(table.len, 0);
-            if let Some(row) = table.rows().next() {
-                if table.len > 0 {
-                    first.push(row);
-                }
+            if table.len > 0 {
+                first.push(0);
             }
         }
         [one] => {
@@ -284,9 +303,10 @@ pub fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Vec<u32>, Vec<&'t [Cell]>
             for row in table.rows() {
                 let next = seen.len() as u32;
                 ids.push(*seen.entry(row[at]).or_insert_with(|| {
-                    first.push(row);
+                    first.push(place);
                     next
                 }));
+                place += 1;
             }
         }
         [a, b] => {
@@ -295,9 +315,10 @@ pub fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Vec<u32>, Vec<&'t [Cell]>
             for row in table.rows() {
                 let next = seen.len() as u32;
                 ids.push(*seen.entry(u64::from(row[a]) << 32 | u64::from(row[b])).or_insert_with(|| {
-                    first.push(row);
+                    first.push(place);
                     next
                 }));
+                place += 1;
             }
         }
         _ => {
@@ -306,13 +327,39 @@ pub fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Vec<u32>, Vec<&'t [Cell]>
                 let key = hash_words(keys.iter().map(|at| u64::from(row[usize::from(*at)])));
                 let next = seen.len() as u32;
                 ids.push(*seen.entry(key).or_insert_with(|| {
-                    first.push(row);
+                    first.push(place);
                     next
                 }));
+                place += 1;
             }
         }
     }
     (ids, first)
+}
+
+fn places_word(keys: &[u16], p: Option<u16>) -> u128 {
+    hash_words(keys.iter().map(|at| u64::from(*at)).chain([u64::MAX]).chain(p.map(u64::from)))
+}
+
+/// The dense id of each row's key, and the first row at each key.
+pub fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Arc<Grouping>, Vec<&'t [Cell]>) {
+    let key = (table.id, places_word(keys, None));
+    let found = GROUPS.with(|groups| groups.borrow().groupings.get(&key).cloned());
+    let grouping = found.unwrap_or_else(|| {
+        let built = Arc::new(grouping_of(table, keys));
+        GROUPS.with(|groups| {
+            let mut groups = groups.borrow_mut();
+            groups.held += table.len;
+            if groups.held > HELD_GROUP_CELLS {
+                *groups = Groups { held: table.len, ..Groups::default() };
+            }
+            groups.groupings.insert(key, built.clone());
+        });
+        built
+    });
+    let arity = table.arity.max(1);
+    let first = grouping.1.iter().map(|at| &table.cells[*at as usize * arity..(*at as usize + 1) * arity]).collect();
+    (grouping, first)
 }
 
 fn push_key(out: &mut Vec<Cell>, row: &[Cell], keys: &[u16]) {
@@ -340,6 +387,7 @@ thread_local! {
 pub fn clear_views() {
     VIEWS.with(|views| views.borrow_mut().clear());
     RIGHT_KEYS.with(|keys| keys.borrow_mut().clear());
+    GROUPS.with(|groups| *groups.borrow_mut() = Groups::default());
 }
 
 /// A relation's keys at columns, sorted, held while its table stands.
@@ -433,10 +481,15 @@ fn is_cell(m: &[i32; 4]) -> bool {
 }
 
 /// Each key's cells, as (row, column) places of cells with no margin below 0.
-fn cells_by_key(table: &Table, keys: &[u16], p: u16) -> (Vec<Vec<(u8, u8)>>, Vec<Vec<Cell>>) {
-    let (ids, first) = key_ids(table, keys);
+fn cells_by_key(table: &Table, keys: &[u16], p: u16) -> Arc<KeyCells> {
+    let key = (table.id, places_word(keys, Some(p)));
+    if let Some(found) = GROUPS.with(|groups| groups.borrow().cells.get(&key).cloned()) {
+        return found;
+    }
+    let (grouping, first) = key_ids(table, keys);
+    let ids = &grouping.0;
     let mut cells = vec![Vec::new(); first.len()];
-    for (row, id) in table.rows().zip(&ids) {
+    for (row, id) in table.rows().zip(ids) {
         let m = margins_of(row[usize::from(p)]);
         if is_cell(&m) && m[0] < 256 && m[2] < 256 {
             cells[*id as usize].push((m[0] as u8, m[2] as u8));
@@ -447,19 +500,36 @@ fn cells_by_key(table: &Table, keys: &[u16], p: u16) -> (Vec<Vec<(u8, u8)>>, Vec
         held.dedup();
     }
     let heads = first.iter().map(|row| keys.iter().map(|at| row[usize::from(*at)]).collect()).collect();
-    (cells, heads)
+    let built = Arc::new((cells, heads));
+    GROUPS.with(|groups| {
+        let mut groups = groups.borrow_mut();
+        groups.held += table.len;
+        if groups.held > HELD_GROUP_CELLS {
+            *groups = Groups { held: table.len, ..Groups::default() };
+        }
+        groups.cells.insert(key, built.clone());
+    });
+    built
 }
 
 /// Whether each key's cells at a column stand on one frame. The parts that read a cell as a row and
 /// a column have no native value on any other column.
 fn on_one_frame(table: &Table, keys: &[u16], p: u16) -> bool {
-    let (ids, first) = key_ids(table, keys);
+    let key = (table.id, places_word(keys, Some(p)));
+    if let Some(found) = GROUPS.with(|groups| groups.borrow().frames.get(&key).copied()) {
+        return found;
+    }
+    let (grouping, first) = key_ids(table, keys);
     let mut frames: Vec<Option<(i32, i32)>> = vec![None; first.len()];
-    table.rows().zip(&ids).all(|(row, id)| {
+    let holds = table.rows().zip(&grouping.0).all(|(row, id)| {
         let m = margins_of(row[usize::from(p)]);
         let own = (m[0] + m[1], m[2] + m[3]);
         is_cell(&m) && *frames[*id as usize].get_or_insert(own) == own
-    })
+    });
+    GROUPS.with(|groups| {
+        groups.borrow_mut().frames.insert(key, holds);
+    });
+    holds
 }
 
 /// The fewest eight-neighbor steps from a set of cells to a held cell outside it.
@@ -649,9 +719,10 @@ impl PartStep {
             PartStep::DiffGroupsOff { keys, p, output } => {
                 let (input, other) = grids_of(children[1])?;
                 let (one, two) = if *output { (&other, &input) } else { (&input, &other) };
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut touching = vec![false; first.len()];
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let cell = row[usize::from(*p)];
                     touching[*id as usize] |= one.at.get(&cell).is_some_and(|color| two.at.get(&cell) != Some(color));
                 }
@@ -791,9 +862,10 @@ impl PartStep {
                 out.push(number_bits(i64::from(m[0].min(m[1]).min(m[2]).min(m[3]))));
             }),
             PartStep::Pieces { keys, p, four } => {
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut cells: Vec<Vec<Cell>> = vec![Vec::new(); first.len()];
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     cells[*id as usize].push(row[usize::from(*p)]);
                 }
                 let mut out = Vec::new();
@@ -835,9 +907,10 @@ impl PartStep {
                 Val::of_table(Table::distinct(keys.len() + 2, out))
             }
             PartStep::BoxOf { keys, p } => {
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut spans = vec![[i32::MAX; 4]; first.len()];
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let m = margins_of(row[usize::from(*p)]);
                     let held = &mut spans[*id as usize];
                     for at in 0..4 {
@@ -852,9 +925,10 @@ impl PartStep {
                 Val::of_table(Table::new(keys.len() + 1, out))
             }
             PartStep::RelBox { keys, p } => {
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut spans = vec![[i32::MAX; 4]; first.len()];
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let m = margins_of(row[usize::from(*p)]);
                     let held = &mut spans[*id as usize];
                     for at in 0..4 {
@@ -862,7 +936,7 @@ impl PartStep {
                     }
                 }
                 let mut out = Vec::new();
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let m = margins_of(row[usize::from(*p)]);
                     let s = &spans[*id as usize];
                     push_key(&mut out, row, keys);
@@ -871,9 +945,10 @@ impl PartStep {
                 Val::of_table(Table::distinct(keys.len() + 1, out))
             }
             PartStep::Count { keys } => {
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut counts = vec![0i64; first.len()];
-                for id in &ids {
+                for id in ids {
                     counts[*id as usize] += 1;
                 }
                 let mut out = Vec::new();
@@ -884,10 +959,11 @@ impl PartStep {
                 Val::of_table(Table::new(keys.len() + 1, out))
             }
             PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => {
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut held: Vec<Option<Cell>> = vec![None; first.len()];
                 let mut many = vec![false; first.len()];
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let value = row[usize::from(*f)];
                     match held[*id as usize] {
                         None => held[*id as usize] = Some(value),
@@ -924,15 +1000,16 @@ impl PartStep {
                 }
             }
             PartStep::Extreme { keys, t: column, score, greatest } => {
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut best: Vec<Option<i64>> = vec![None; first.len()];
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let value = number_of(row[usize::from(*score)]);
                     let held = &mut best[*id as usize];
                     *held = Some(held.map_or(value, |own| if *greatest { own.max(value) } else { own.min(value) }));
                 }
                 let mut out = Vec::new();
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     if Some(number_of(row[usize::from(*score)])) == best[*id as usize] {
                         push_key(&mut out, row, keys);
                         out.push(row[usize::from(*column)]);
@@ -946,9 +1023,10 @@ impl PartStep {
                 Val::of_table(Table::new(1, held.map_or_else(Vec::new, |value| vec![number_bits(value)])))
             }
             PartStep::ClassOf { keys } => {
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut sums = vec![0u128; first.len()];
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let rest = row.iter().enumerate().filter(|(at, _)| !keys.contains(&(*at as u16))).map(|(_, cell)| u64::from(*cell));
                     sums[*id as usize] = sums[*id as usize].wrapping_add(hash_words(rest));
                 }
@@ -996,9 +1074,10 @@ impl PartStep {
                 Val::of_table(Table::new(width, out))
             }
             PartStep::MostFrequentRows { keys, v } => {
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut counts: FastMap<(u32, Cell), u32> = FastMap::default();
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     *counts.entry((*id, row[usize::from(*v)])).or_insert(0) += 1;
                 }
                 let mut best = vec![0u32; first.len()];
@@ -1006,7 +1085,7 @@ impl PartStep {
                     best[*id as usize] = best[*id as usize].max(*count);
                 }
                 let mut out = Vec::new();
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     if counts[&(*id, row[usize::from(*v)])] == best[*id as usize] {
                         out.extend_from_slice(row);
                     }
@@ -1018,10 +1097,11 @@ impl PartStep {
                 let mut held: Vec<Cell> = other.rows().map(|row| row[usize::from(*b)]).collect();
                 held.sort_unstable();
                 held.dedup();
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut flag: Vec<Option<bool>> = vec![None; first.len()];
                 let mut holds = true;
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let found = held.binary_search(&row[usize::from(*a)]).is_ok();
                     match flag[*id as usize] {
                         None => flag[*id as usize] = Some(found),
@@ -1035,27 +1115,31 @@ impl PartStep {
                 if !on_one_frame(t, keys, *p) {
                     return None;
                 }
-                let (cells, heads) = cells_by_key(t, keys, *p);
+                let held = cells_by_key(t, keys, *p);
+                let (cells, heads) = (&held.0, &held.1);
                 keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![hash_cells(&if *turned { canon(held) } else { normalized(held) })])), keys.len() + 1)
             }
             PartStep::Holes { keys, p } => {
                 if !on_one_frame(t, keys, *p) {
                     return None;
                 }
-                let (cells, heads) = cells_by_key(t, keys, *p);
+                let held = cells_by_key(t, keys, *p);
+                let (cells, heads) = (&held.0, &held.1);
                 keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(enclosed_regions(held))])), keys.len() + 1)
             }
             PartStep::Symmetry { keys, p } => {
                 if !on_one_frame(t, keys, *p) {
                     return None;
                 }
-                let (cells, heads) = cells_by_key(t, keys, *p);
+                let held = cells_by_key(t, keys, *p);
+                let (cells, heads) = (&held.0, &held.1);
                 keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(i64::from(symmetry_count(held)))])), keys.len() + 1)
             }
             PartStep::TouchesEdge { keys, p } => {
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut touching = vec![false; first.len()];
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     touching[*id as usize] |= margins_of(row[usize::from(*p)]).contains(&0);
                 }
                 let heads: Vec<Vec<Cell>> = first.iter().map(|row| keys.iter().map(|at| row[usize::from(*at)]).collect()).collect();
@@ -1065,7 +1149,8 @@ impl PartStep {
                 if !on_one_frame(t, keys, *p) {
                     return None;
                 }
-                let (cells, heads) = cells_by_key(t, keys, *p);
+                let held = cells_by_key(t, keys, *p);
+                let (cells, heads) = (&held.0, &held.1);
                 keys_only(&heads, cells.iter().map(|held| {
                     let (rmin, rmax) = (held.iter().map(|x| x.0).min().unwrap_or(0), held.iter().map(|x| x.0).max().unwrap_or(0));
                     let (cmin, cmax) = (held.iter().map(|x| x.1).min().unwrap_or(0), held.iter().map(|x| x.1).max().unwrap_or(0));
@@ -1093,12 +1178,13 @@ impl PartStep {
             }
             PartStep::Occurs { keys, p, v, turned } => {
                 let grid = grid_of(children[1])?;
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 if first.len() > 60 {
                     return None;
                 }
                 let mut patterns: Vec<Vec<([i32; 4], Cell)>> = vec![Vec::new(); first.len()];
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     patterns[*id as usize].push((margins_of(row[usize::from(*p)]), row[usize::from(*v)]));
                 }
                 let mut out = Vec::new();
@@ -1153,8 +1239,10 @@ impl PartStep {
                     return None;
                 }
                 let shape = |held: &Vec<(u8, u8)>| hash_cells(&if *turned { canon(held) } else { normalized(held) });
-                let (cells, heads) = cells_by_key(t, keys, *a);
-                let (other_cells, _) = cells_by_key(&other, others, *b);
+                let held = cells_by_key(t, keys, *a);
+                let (cells, heads) = (&held.0, &held.1);
+                let other_held = cells_by_key(&other, others, *b);
+                let other_cells = &other_held.0;
                 let seen: std::collections::HashSet<u32> = other_cells.iter().filter(|held| !held.is_empty()).map(shape).collect();
                 keys_only(&heads, cells.iter().map(|held| !held.is_empty() && seen.contains(&shape(held))), keys.len())
             }
@@ -1299,10 +1387,11 @@ impl PartStep {
                 if !on_one_frame(t, keys, *p) {
                     return None;
                 }
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut spans: Vec<Option<[i32; 4]>> = vec![None; first.len()];
                 let mut frames: Vec<(i32, i32)> = vec![(0, 0); first.len()];
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let m = margins_of(row[usize::from(*p)]);
                     frames[*id as usize] = (m[0] + m[1] + 1, m[2] + m[3] + 1);
                     let held = spans[*id as usize].get_or_insert([m[0], m[0], m[2], m[2]]);
@@ -1332,10 +1421,11 @@ impl PartStep {
                 if !on_one_frame(t, keys, *p) {
                     return None;
                 }
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut lines: FastMap<(u32, bool, i32, i32), i64> = FastMap::default();
                 let mut seen: std::collections::HashSet<(u32, Cell)> = std::collections::HashSet::new();
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let cell = row[usize::from(*p)];
                     if seen.insert((*id, cell)) {
                         let m = margins_of(cell);
@@ -1377,9 +1467,10 @@ impl PartStep {
                 if !on_one_frame(t, keys, *p) {
                     return None;
                 }
-                let (cells, heads) = cells_by_key(t, keys, *p);
+                let held = cells_by_key(t, keys, *p);
+                let (cells, heads) = (&held.0, &held.1);
                 let mut out = Vec::new();
-                for (own, head) in cells.iter().zip(&heads) {
+                for (own, head) in cells.iter().zip(heads) {
                     let Some(first) = own.first() else { continue };
                     if own.iter().all(|at| at.1 == first.1) {
                         out.extend_from_slice(head);
@@ -1396,7 +1487,8 @@ impl PartStep {
                 if !on_one_frame(t, keys, *p) {
                     return None;
                 }
-                let (cells, heads) = cells_by_key(t, keys, *p);
+                let held = cells_by_key(t, keys, *p);
+                let (cells, heads) = (&held.0, &held.1);
                 keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(held.len() as i64)])), keys.len() + 1)
             }
             PartStep::GroupGap { keys, p } => {
@@ -1405,9 +1497,10 @@ impl PartStep {
                 }
                 let m = t.rows().next().map(|row| margins_of(row[usize::from(*p)]))?;
                 let (h, w) = ((m[0] + m[1] + 1) as usize, (m[2] + m[3] + 1) as usize);
-                let (cells, heads) = cells_by_key(t, keys, *p);
+                let held = cells_by_key(t, keys, *p);
+                let (cells, heads) = (&held.0, &held.1);
                 let mut held = vec![false; h * w];
-                for own in &cells {
+                for own in cells {
                     for (r, c) in own {
                         held[usize::from(*r) * w + usize::from(*c)] = true;
                     }
@@ -1479,7 +1572,8 @@ impl PartStep {
                 if !on_one_frame(t, keys, *p) {
                     return None;
                 }
-                let (cells, heads) = cells_by_key(t, keys, *p);
+                let held = cells_by_key(t, keys, *p);
+                let (cells, heads) = (&held.0, &held.1);
                 keys_only(&heads, cells.iter().map(|held| {
                     let Some(first) = held.first() else { return false };
                     let (r, c) = (i32::from(first.0), i32::from(first.1));
@@ -1490,11 +1584,12 @@ impl PartStep {
                 if !on_one_frame(t, keys, *p) {
                     return None;
                 }
-                let (ids, first) = key_ids(t, keys);
+                let (grouping, first) = key_ids(t, keys);
+                let ids = &grouping.0;
                 let mut lines: FastMap<(u32, bool, i32, i32), u32> = FastMap::default();
                 let mut wide: Vec<(i32, i32)> = vec![(0, 0); first.len()];
                 let mut seen: std::collections::HashSet<(u32, Cell)> = std::collections::HashSet::new();
-                for (row, id) in t.rows().zip(&ids) {
+                for (row, id) in t.rows().zip(ids) {
                     let cell = row[usize::from(*p)];
                     let m = margins_of(cell);
                     if !is_cell(&m) || !seen.insert((*id, cell)) {

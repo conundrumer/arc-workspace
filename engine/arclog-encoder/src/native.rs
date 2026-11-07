@@ -85,6 +85,11 @@ fn hash_row(row: &[Cell]) -> u128 {
     hash_words(row.iter().map(|cell| u64::from(*cell)))
 }
 
+fn next_table_id() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// A set of rows of one arity. Its hash depends on the set alone.
 #[derive(Debug)]
 pub struct Table {
@@ -93,6 +98,8 @@ pub struct Table {
     pub cells: Box<[Cell]>,
     /// Its hash, once something has read it. A term that counts rows never does.
     hash: std::sync::OnceLock<u128>,
+    /// Which table this is, of all a process makes, since two tables of one hash can hold their rows in two orders.
+    pub id: u64,
     /// For each column, a 64-bit filter of its values: two columns whose filters
     /// share no bit share no value.
     masks: std::sync::OnceLock<Box<[u64]>>,
@@ -102,7 +109,7 @@ impl Table {
     /// The table of `cells`, whose rows are distinct.
     pub fn new(arity: usize, cells: Vec<Cell>) -> Arc<Table> {
         let len = cells.len().checked_div(arity).unwrap_or(0);
-        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), masks: std::sync::OnceLock::new() })
+        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new() })
     }
 
     /// A hash of the set of rows, which their order does not change.
@@ -139,7 +146,7 @@ impl Table {
     /// The table of no columns, with one row where `holds`.
     pub fn unit(holds: bool) -> Arc<Table> {
         let len = usize::from(holds);
-        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: std::sync::OnceLock::new(), masks: std::sync::OnceLock::new() })
+        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new() })
     }
 
     pub fn rows(&self) -> impl Iterator<Item = &[Cell]> {

@@ -2080,8 +2080,8 @@ impl<'a> Walker<'a> {
                 if one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) {
                     let table = one.table.clone();
                     let (grouping, groups) = *self.groupings.entry((id, keys)).or_insert_with(|| {
-                        let (ids, first) = crate::gen_parts::key_ids(&table, &steps.keys[keys as usize]);
-                        (hash_words(ids.iter().map(|id| u64::from(*id))), first.len() as u32)
+                        let (grouping, first) = crate::gen_parts::key_ids(&table, &steps.keys[keys as usize]);
+                        (hash_words(grouping.0.iter().map(|id| u64::from(*id))), first.len() as u32)
                     });
                     if part == PROJECT {
                         return (groups, 0);
@@ -2504,6 +2504,7 @@ pub fn example_bits(example: usize) -> u32 {
 
 /// The terms that the cache of families holds at most; past it, the oldest families leave.
 const CACHED_TERMS: usize = 3_000_000;
+const SAVED_CACHED_TERMS: usize = 400_000;
 
 /// The families of each schema, kept in a bounded cache, and the name of each root.
 #[derive(Default)]
@@ -2536,7 +2537,8 @@ impl Generators {
             self.save(hash, &built);
             built
         }));
-        let limit = if self.term_limit == 0 { CACHED_TERMS } else { self.term_limit };
+        // A family on file costs a read to get back, so memory holds fewer of them.
+        let limit = if self.saved.is_some() { SAVED_CACHED_TERMS } else if self.term_limit == 0 { CACHED_TERMS } else { self.term_limit };
         let mut held = self.held.lock().expect("no panic");
         let (cache, clock) = &mut *held;
         *clock += 1;
