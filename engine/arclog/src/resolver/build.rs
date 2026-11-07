@@ -116,6 +116,8 @@ struct Builder<'a> {
     clauses: Vec<(NodePath, &'a Clause)>,
     resolutions: StableHashMap<NodePath, Resolution>,
     signatures: StableHashMap<NodePath, Signature>,
+    /// Whether the resolution holds the signature of each read.
+    signed: bool,
     positions: StableHashMap<NodePath, ColumnPosition>,
     /// The position in its node's rows of each column a form gives, by
     /// the form's path and the column's label.
@@ -173,6 +175,7 @@ impl<'a> Builder<'a> {
             clauses: Vec::new(),
             resolutions: StableHashMap::default(),
             signatures: StableHashMap::default(),
+            signed: true,
             positions: StableHashMap::default(),
             label_positions: StableHashMap::default(),
             groups: StableHashMap::default(),
@@ -210,7 +213,7 @@ impl<'a> Builder<'a> {
 /// of `earlier`, by the passes of [`resolve`] over the last form alone, or
 /// `None` where the last form is one this resolution does not handle. A
 /// `DEMONSTRATED` last form is handled where `demonstrated` is true.
-fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry, demonstrated: bool) -> Option<ResolvedProgram> {
+fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry, demonstrated: bool, signed: bool) -> Option<ResolvedProgram> {
     let scope = SolverScope::default();
     let (last, complete) = program.value().forms.split_last()?;
     if earlier.concept().is_some() || earlier.names.earlier.is_some() || earlier.program.value().forms.len() != complete.len() {
@@ -224,6 +227,7 @@ fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &R
     }
     let program_scope = NameScope::Program;
     let mut builder = Builder::new(program, &scope, registry, Some(earlier));
+    builder.signed = signed;
     let path = NodePath::top(complete.len() as u32);
     let mut pending = Vec::new();
     builder.declare(last, path.clone(), &program_scope, &mut pending);
@@ -247,7 +251,7 @@ fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &R
             })
             .collect();
         let widened = earlier.widened(widening, registry);
-        return layered(&widened, program, registry, demonstrated);
+        return layered(&widened, program, registry, demonstrated, signed);
     }
     builder.sides();
     builder.contents();
@@ -257,11 +261,18 @@ fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &R
 }
 
 pub(super) fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
-    layered(earlier, program, registry, false).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
+    layered(earlier, program, registry, false, true).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
 }
 
 pub(super) fn resolve_in_progress(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
-    layered(earlier, program, registry, true).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
+    layered(earlier, program, registry, true, true).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
+}
+
+/// [`resolve_in_progress`] for the checks of a prefix: a layered resolution
+/// holds no signature of a read, which only the check of a finished program
+/// reads.
+pub(super) fn resolve_prefix(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
+    layered(earlier, program, registry, true, false).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
 }
 
 /// The grammar's decision at an open relation needs binding and sides,

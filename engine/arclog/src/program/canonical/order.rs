@@ -55,8 +55,8 @@ pub(super) struct Recorded {
 }
 
 impl CanonicalOrder {
-    /// The canonical order of `form`.
-    pub fn of(form: &Form, search: &mut SearchBudget) -> Self {
+    /// The canonical order of `form`, which the node of `form` keeps.
+    pub fn of<'f>(form: &'f Form, search: &mut SearchBudget) -> &'f Self {
         Self::with_form(form, search).0
     }
 
@@ -68,10 +68,10 @@ impl CanonicalOrder {
     /// [`super::SEARCH_NODE_CAP`] nodes whatever `search` holds, so the
     /// result reads nothing of `search`, and sets its `reached` where a
     /// search reached the cap.
-    pub fn with_form(form: &Form, search: &mut SearchBudget) -> (Self, CanonicalForm) {
+    pub fn with_form<'f>(form: &'f Form, search: &mut SearchBudget) -> (&'f Self, &'f CanonicalForm) {
         let (order, canonical, reached) = written(form);
         search.reached |= *reached;
-        (order.clone(), canonical.clone())
+        (order, canonical)
     }
 
     /// The canonical form of `form`, as [`CanonicalOrder::with_form`] gives
@@ -162,7 +162,7 @@ impl CanonicalOrder {
     pub fn source_path(&self, canonical: &NodePath) -> NodePath {
         let mut source: Vec<PathStep> = Vec::with_capacity(canonical.0.len());
         for step in canonical.0.iter() {
-            let mapped = match self.lists.get(&NodePath(source.clone().into())) {
+            let mapped = match self.lists.get(&source[..]) {
                 Some(order) => PathStep(*order.get(step.0 as usize).expect("a canonical path names a member of each list")),
                 None => *step,
             };
@@ -176,7 +176,7 @@ impl CanonicalOrder {
     pub fn canonical_path(&self, source: &NodePath) -> NodePath {
         let mut canonical = Vec::with_capacity(source.0.len());
         for (depth, step) in source.0.iter().enumerate() {
-            let mapped = match self.lists.get(&NodePath(source.0[..depth].into())) {
+            let mapped = match self.lists.get(&source.0[..depth]) {
                 Some(order) => {
                     let position = order.iter().position(|&index| index == step.0);
                     PathStep(position.expect("a source path names a member of each list") as u32)

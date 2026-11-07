@@ -234,9 +234,11 @@ impl<'a> Renderer<'a> {
             (Token::Fact(_) | Token::Lib(_) | Token::Proposer(_) | Token::Relation(_), Emitter::Model) => vec![self.atom()],
             (Token::Control(Control::Not), Emitter::Model) => {
                 self.next();
+                // A decode's trace may end at the `NOT`.
                 let inner = match self.peek().map(|record| &record.token) {
                     Some(Token::Fact(_) | Token::Lib(_) | Token::Proposer(_) | Token::Relation(_)) => vec![self.atom()],
-                    _ => self.conjunct(),
+                    Some(_) => self.conjunct(),
+                    None => Vec::new(),
                 };
                 hang(&format!("({} ", self.symbol(record, "NOT")), vec![inner], ")")
             }

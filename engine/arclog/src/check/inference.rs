@@ -20,7 +20,7 @@ use super::types::{
 };
 use super::{ClauseEntry, FileScope, HeldClauses, Refusal, SolverClauses};
 use crate::hash::{StableHash, StableHashMap, StableHashSet, StableHasher};
-use crate::program::canonical::{form_scope_labels, scope_labels, CanonicalOrder, LabelScope};
+use crate::program::canonical::{form_scope_labels, one_scope_labels, scope_labels, LabelScope};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
     Atom, Body, ColumnName, Conjunct, DemoRule, Constraint, Form, Instance, LabelId, NameScope, Node, Operand, OutputOwner, OutputStep, PortName, ProgramRelation, RelationColumn, RelationRef, Site, SiteArg,
@@ -697,6 +697,9 @@ pub(super) struct Inference<'a> {
     /// Whether the inference serves a mask: a form of atoms alone takes
     /// [`Inference::flat_form`].
     fast: bool,
+    /// Whether the labels of a form may stand in any order: a mask reads a
+    /// form's types by label, and takes no canonical order for them.
+    any_label_order: bool,
     /// The grids of the columns of the relations that this program's forms
     /// give, each read once (`check/frames.rs`).
     grids: GridCache,
@@ -731,7 +734,7 @@ impl<'a, 'e: 'a> EarlierForms<'a> for Inference<'e> {
 impl<'a> Inference<'a> {
     /// This inference in mask mode where `enabled`, as [`Inference::is_mask`]
     /// gives.
-    pub(super) fn mask(mut self, enabled: bool) -> Self { self.fast = enabled; self }
+    pub(super) fn mask(mut self, enabled: bool) -> Self { self.fast = enabled; self.any_label_order = enabled; self }
 
     /// Whether the inference serves a mask: it types a form of atoms alone
     /// by [`Inference::flat_form`], and its type check collects no types
@@ -822,7 +825,7 @@ impl<'a> Inference<'a> {
                 all = type_all(PoseOr::Open, &bindings)?;
             }
         }
-        let members = form_scope_labels(form);
+        let members = self.scope_labels_of(form);
         let mut given = if members.iter().any(|label| all.get(label).and_then(Option::as_ref).is_none()) { type_all(PoseOr::Given, &bindings)? } else { StableHashMap::default() };
         let mut given_labels = Vec::new();
         let mut labels: Vec<_> = members.iter().map(|label| {
@@ -858,7 +861,7 @@ impl<'a> Inference<'a> {
 
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
         let concept = program.concept().map(|concept| cases.concept(concept));
-        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), ordered: RefCell::default(), signatures: RefCell::default(), shared: None, state: std::cell::OnceCell::new(), splits: true, fast: false, grids: GridCache::default() }
+        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), ordered: RefCell::default(), signatures: RefCell::default(), shared: None, state: std::cell::OnceCell::new(), splits: true, fast: false, any_label_order: false, grids: GridCache::default() }
     }
 
     /// The inference of `program`, a resolution by [`crate::resolver::resolve_last`]
@@ -959,6 +962,15 @@ impl<'a> Inference<'a> {
         Some(inferred)
     }
 
+    /// The labels of the scope of `form`: in their canonical order, or in
+    /// any order where the inference allows it and takes no labeling for it.
+    fn scope_labels_of<'f>(&self, form: &'f Form) -> std::borrow::Cow<'f, [LabelId]> {
+        match self.any_label_order.then(|| one_scope_labels(form)).flatten() {
+            Some(labels) => labels.into(),
+            None => form_scope_labels(form).into(),
+        }
+    }
+
     /// The index in the [`SolverClauses`] of this inference's program, where
     /// the types this inference gives are those that [`KeptScopes`] keeps:
     /// an inference of a case program of the [`SolverClauses`] from the
@@ -979,7 +991,7 @@ impl<'a> Inference<'a> {
         }
         let scope = ScopeBody::of(form, self.registry);
         let walk = FormWalk::of(form);
-        let all_labels = form_scope_labels(form);
+        let all_labels = self.scope_labels_of(form);
         let ruled = self.holds_ruled_site(&walk);
         let framed = self.holds_framed_site(&walk);
         let split = if ruled { None } else { self.state_split(form, path, &all_labels) };
@@ -1336,6 +1348,11 @@ impl<'a> Inference<'a> {
     /// `(= *X 0)` gives a type adds no type. A Pose type's key row names
     /// the labels of `clause`.
     fn other_clauses_type(&self, clause: &crate::program::Clause, path: &NodePath, column: &ColumnName) -> Result<Option<ValueType>, LabelFault> {
+        // A relation of no clause in the programs has no other clause to read,
+        // and this clause's signature, which a read compares, takes a write of it.
+        if self.cases.clauses.of_relation(&FileScope::Program, &clause.derives).is_empty() {
+            return Ok(None);
+        }
         let own = self.signature(path);
         let reads = self.cases.clauses.column_reads();
         let entries: Vec<&ClauseEntry> = self.cases.clauses.of_relation_in(&clause.derives, self.held.get_or_init(|| HeldClauses::of(self.program))).filter(|entry| entry.signature != own).collect();
@@ -1418,7 +1435,7 @@ impl<'a> Inference<'a> {
     /// column of its relation to which it gives a type with no join with
     /// the types that the relation's other clauses give that column, as
     /// [`CheckId::Types`] gives.
-    pub(super) fn column_refusals(&self, form: &FormInference<'_>, clause: &crate::program::Clause, path: &NodePath, order: &CanonicalOrder) -> Vec<Refusal> {
+    pub(super) fn column_refusals(&self, form: &FormInference<'_>, clause: &crate::program::Clause, path: &NodePath, place: &dyn Fn(&NodePath) -> NodePath) -> Vec<Refusal> {
         let target = |column: &ColumnName| head_label(clause, column);
         let mut refusals = Vec::new();
         for name in self.clause_column_names(clause, &NameScope::Program) {
@@ -1434,7 +1451,7 @@ impl<'a> Inference<'a> {
                 Ok(Some(_)) | Err(_) => {}
             }
             let message = format!("the clause gives the column {name:?} of its relation the type {own:?}, which has no join with the types that the relation's other clauses give it");
-            let at = label.map_or_else(NodePath::default, |label| order.canonical_path(form.walk.first_use(label)));
+            let at = label.map_or_else(NodePath::default, |label| place(form.walk.first_use(label)));
             refusals.push(Refusal { message: message.into(), at });
         }
         refusals

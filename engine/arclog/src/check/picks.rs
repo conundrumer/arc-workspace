@@ -4,11 +4,10 @@
 
 use super::types::result;
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
-use crate::program::path::{NodePath, NodeRef};
+use crate::program::path::{NodePath, NodeRef, PathStep};
 use crate::registry::{ColumnType, LibEntry, LibName, Registry};
 use crate::resolver::registry_columns::{is_domain, proposer_columns};
-use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, ColumnName, Conjunct, Form, ConstraintOp, LabelId, LabelUse, Operand, RelationRef, Site, SiteArg};
+use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, ColumnName, Conjunct, ConstraintOp, LabelId, LabelUse, Operand, RelationRef, Site, SiteArg};
 
 /// [`CheckId::Picks`].
 pub struct PicksCheck;
@@ -36,7 +35,7 @@ impl Check for PicksCheck {
     ///   determine a row of the pick, which `ONE` marks state, as
     ///   `states_one` gives.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
-        refusals(input.form, &|_| true, input.scope.registry)
+        refusals(input, &|_| true)
     }
 
     /// The check over each clause and each `CHOOSE` form once it ends: a
@@ -45,34 +44,35 @@ impl Check for PicksCheck {
     /// A form of a `DEMO_RULE` ends at its own `END`. An atom that reads
     /// `ONE` is refused once it is written.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
-        super::prefix::settled_result(prefix, refusals(prefix.partial, &|at| !prefix.is_open(at), prefix.scope.registry))
+        let open = |at: &[PathStep]| prefix.open.is_some_and(|open| open.0.starts_with(at));
+        super::prefix::settled_result(prefix, refusals(&super::prefix::whole(prefix), &|at| !open(at)))
     }
 }
 
-/// The refusals of [`PicksCheck`] on `form`, those of the `ONE` marks of a
-/// clause and of a `CHOOSE` form only where `ended` holds at its path, where
-/// that clause or form is written whole.
-fn refusals(form: &Form, ended: &dyn Fn(&NodePath) -> bool, registry: &Registry) -> CheckResult {
+/// The refusals of [`PicksCheck`] on the form of `input`, those of the `ONE`
+/// marks of a clause and of a `CHOOSE` form only where `ended` holds at its
+/// path, where that clause or form is written whole.
+fn refusals(input: &CheckInput<'_>, ended: &dyn Fn(&[PathStep]) -> bool) -> CheckResult {
+    let (form, registry) = (input.form, input.scope.registry);
     let mut refused: Vec<(NodePath, &str)> = Vec::new();
     each_node(NodeRef::from(form), &NodePath::default(), &mut |node, at| match (node, node.atom()) {
-        (NodeRef::Clause(clause), _) if ended(at) && !marks_name_columns(clause) => refused.push((at.clone(), "a `ONE` mark names only columns of the clause")),
+        (NodeRef::Clause(clause), _) if ended(at) && !marks_name_columns(clause) => refused.push((at.into(), "a `ONE` mark names only columns of the clause")),
         (NodeRef::Clause(clause), _) if ended(at) && !set_mark_fits(clause, registry) => {
-            refused.push((at.clone(), "a `SET` mark stands only after proposers of one column each that the registry does not mark `domain`, in a clause with no body"))
+            refused.push((at.into(), "a `SET` mark stands only after proposers of one column each that the registry does not mark `domain`, in a clause with no body"))
         }
         (NodeRef::Clause(clause), _) if !proposers_fit(clause, registry) => {
-            refused.push((at.clone(), "each proposer of a clause has, at each column of its first proposer, a type that joins that proposer's type"))
+            refused.push((at.into(), "each proposer of a clause has, at each column of its first proposer, a type that joins that proposer's type"))
         }
-        (NodeRef::Choose(choose), _) if ended(at) => choose_refusals(choose, at, &mut refused),
+        (NodeRef::Choose(choose), _) if ended(at) => choose_refusals(choose, &NodePath::from(at), &mut refused),
         (_, Some(Atom { relation: RelationRef::Lib(name), .. })) if *name.0 == *crate::read::spelling::ONE => {
-            refused.push((at.clone(), "`ONE` stands at a clause's top level, after its body"));
+            refused.push((at.into(), "`ONE` stands at a clause's top level, after its body"));
         }
         _ => {}
     });
     if refused.is_empty() {
         return CheckResult::Pass;
     }
-    let order = CanonicalOrder::of(form, &mut SearchBudget::new());
-    result(refused.into_iter().map(|(at, message)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
+    result(refused.into_iter().map(|(at, message)| Refusal { message: message.into(), at: input.refusal_path(&at) }).collect())
 }
 
 /// Whether each proposer of `clause` after the first has, at each column of
@@ -81,16 +81,21 @@ fn refusals(form: &Form, ended: &dyn Fn(&NodePath) -> bool, registry: &Registry)
 /// onto the first proposer's columns (`docs/engine/determination.md`), so a
 /// value of another type would stand in a column of the first one's type.
 fn proposers_fit(clause: &Clause, registry: &Registry) -> bool {
+    let Some(first) = clause.proposers.first() else { return true };
+    clause.proposers[1..].iter().all(|other| proposer_fits(first, other, registry))
+}
+
+/// Whether `other` has, at each column of the proposer `first`, a type that
+/// joins that proposer's type there, where both types are fixed.
+pub(crate) fn proposer_fits(first: &LibName, other: &LibName, registry: &Registry) -> bool {
     let columns = |name: &LibName| match registry.entry(name) {
         Some(LibEntry::Proposer(proposer)) => Some(&proposer.columns),
         _ => None,
     };
-    let Some(first) = clause.proposers.first().and_then(columns) else { return true };
-    clause.proposers[1..].iter().filter_map(columns).all(|other| {
-        other.iter().zip(first.iter()).all(|(a, b)| match (&a.ty, &b.ty) {
-            (ColumnType::Fixed(a), ColumnType::Fixed(b)) => a.join(b).is_some(),
-            _ => true,
-        })
+    let (Some(first), Some(other)) = (columns(first), columns(other)) else { return true };
+    other.iter().zip(first.iter()).all(|(a, b)| match (&a.ty, &b.ty) {
+        (ColumnType::Fixed(a), ColumnType::Fixed(b)) => a.join(b).is_some(),
+        _ => true,
     })
 }
 

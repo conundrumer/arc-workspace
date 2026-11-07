@@ -82,6 +82,18 @@ pub struct PathStep(pub u32);
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
 pub struct NodePath(pub Box<[PathStep]>);
 
+impl From<&[PathStep]> for NodePath {
+    fn from(steps: &[PathStep]) -> NodePath {
+        NodePath(steps.into())
+    }
+}
+
+impl std::borrow::Borrow<[PathStep]> for NodePath {
+    fn borrow(&self) -> &[PathStep] {
+        &self.0
+    }
+}
+
 impl NodePath {
     /// The path of the node at `relative` below the node at `self`.
     pub fn join(&self, relative: &NodePath) -> NodePath {
@@ -365,6 +377,11 @@ pub(crate) trait PathNode: Copy {
     /// The child at `index`, or `None` where there are fewer children.
     fn child_at(self, index: usize) -> Option<Self>;
     fn address(self) -> *const ();
+    /// The index of `child` among the children of the node, as
+    /// [`child_index`] gives it.
+    fn index_of(self, child: Self) -> Option<u32> {
+        index_among(&self.children(), child)
+    }
 }
 
 /// The address of `value`.
@@ -376,15 +393,19 @@ fn address_of<T>(value: &T) -> *const () {
 /// variant at its address, or `None` where the children of `parent` do not
 /// hold it.
 pub(crate) fn child_index<N: PathNode>(parent: N, child: N) -> Option<u32> {
-    index_among(&parent.children(), child)
+    parent.index_of(child)
 }
 
 /// The index of `child` among `children`, the children of one node: the
 /// child of its variant at its address, or `None` where `children` do not
 /// hold it.
 pub(crate) fn index_among<N: PathNode>(children: &[N], child: N) -> Option<u32> {
-    let same = |node: &N| std::mem::discriminant(node) == std::mem::discriminant(&child) && node.address() == child.address();
-    children.iter().position(same).map(|index| index as u32)
+    children.iter().position(|node| same_node(*node, child)).map(|index| index as u32)
+}
+
+/// Whether `a` and `b` are one node: of one variant, at one address.
+fn same_node<N: PathNode>(a: N, b: N) -> bool {
+    std::mem::discriminant(&a) == std::mem::discriminant(&b) && a.address() == b.address()
 }
 
 impl PathNode for NodeRef<'_> {
@@ -394,6 +415,20 @@ impl PathNode for NodeRef<'_> {
 
     fn child_at(self, index: usize) -> Option<Self> {
         NodeRef::child_at(self, index)
+    }
+
+    /// Walks the children without collecting them.
+    fn index_of(self, child: Self) -> Option<u32> {
+        let (mut index, mut found) = (0, None);
+        self.each_handle(|handle| {
+            if same_node(handle.node(), child) {
+                found = Some(index);
+                return ControlFlow::Break(());
+            }
+            index += 1;
+            ControlFlow::Continue(())
+        });
+        found
     }
 
     fn address(self) -> *const () {

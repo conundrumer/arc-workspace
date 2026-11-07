@@ -5,8 +5,7 @@
 use super::safety::{form_bodies, label_scope, FormBody};
 use super::types::{result, PoseOr};
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, Scope, SolverClauses, CheckCacheKey, KeyInput};
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
-use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{constraint_second, Body, Clause, ClauseKeyword, Conjunct, Constraint, ConstraintOp, Form, LabelId, LabelUse, Operand, SiteArg};
 use crate::read::columns::exports;
 use crate::resolver::Signature;
@@ -57,8 +56,7 @@ impl Check for EqualityAndZeroCheck {
         if refused.is_empty() {
             return CheckResult::Pass;
         }
-        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        result(refused.into_iter().map(|refusal| Refusal { at: order.canonical_path(&refusal.at), ..refusal }).collect())
+        result(refused.into_iter().map(|refusal| Refusal { at: input.refusal_path(&refusal.at), ..refusal }).collect())
     }
 
     /// The refusals of each complete node of the partial form, and, since
@@ -153,12 +151,13 @@ fn rule_refusals(form: &Form, path: &NodePath, scope: &Scope<'_>, open: &dyn Fn(
     let mut refused = Vec::new();
     each_node(NodeRef::from(form), &NodePath::default(), &mut |node, at| match node {
         NodeRef::Conjunct(Conjunct::Constraint(constraint)) if constraint.op == ConstraintOp::Eq && second_made(constraint) => {
-            refused.push(refusal("`=` makes its first label only", at.clone()));
+            refused.push(refusal("`=` makes its first label only", at.into()));
         }
         NodeRef::Conjunct(Conjunct::Constraint(Constraint { first, second: Operand::Zero, .. })) => {
-            let label = label_scope(scope.labels, at).into_iter().find(|entry| entry.label == first.label);
+            let at = NodePath::from(at);
+            let label = label_scope(scope.labels, &at).into_iter().find(|entry| entry.label == first.label);
             if label.and_then(|entry| entry.ty.as_ref()).is_some_and(|ty| !ty.has_zero()) {
-                refused.push(refusal(ZERO_AGAINST, at.clone()));
+                refused.push(refusal(ZERO_AGAINST, at));
             }
         }
         NodeRef::Conjunct(conjunct @ (Conjunct::Atom(_) | Conjunct::Not(_))) => {
@@ -179,12 +178,13 @@ fn rule_refusals(form: &Form, path: &NodePath, scope: &Scope<'_>, open: &dyn Fn(
 
 /// Pushes onto `refused` each site of `atom`, at `at` of the form at
 /// `path`, that holds `0` on a column whose type is fixed and has no `0`.
-fn zero_sites(atom: &crate::program::Atom, path: &NodePath, at: &NodePath, scope: &Scope<'_>, refused: &mut Vec<Refusal>) {
+fn zero_sites(atom: &crate::program::Atom, path: &NodePath, at: &[PathStep], scope: &Scope<'_>, refused: &mut Vec<Refusal>) {
     for (site, index) in atom.sites.iter().zip(0u32..) {
         if !matches!(&site.value.args[..], [SiteArg::Label(LabelUse::Zero)]) {
             continue;
         }
-        let ty = column_type(atom, path, at, &site.column, scope);
+        let at = NodePath::from(at);
+        let ty = column_type(atom, path, &at, &site.column, scope);
         if ty.is_some_and(|ty| !ty.has_zero()) {
             refused.push(refusal(ZERO_ON, at.child(index)));
         }

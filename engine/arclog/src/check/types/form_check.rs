@@ -4,7 +4,7 @@
 use super::super::inference::FormInference;
 use super::super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use super::{map_labels, pose_of_fault, result, rule_scope_forms, rule_within, form_within};
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
+use crate::program::canonical::{one_scope_labels, CanonicalOrder, SearchBudget};
 use crate::program::path::NodePath;
 use crate::program::{ConstraintOp, Form, LabelId, Operand};
 use crate::types::{label_fault_message, FormRelation, FormTypes, LabelFault, ValueType};
@@ -32,9 +32,19 @@ impl Check for TypesCheck {
     /// until its label scope ends, as [`scope_ended`] gives.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         let input = super::super::prefix::whole(prefix);
-        let order = CanonicalOrder::of(prefix.partial, &mut SearchBudget::new());
         let ended = |form: &FormInference<'_>| scope_ended(prefix, &NodePath(form.path.0[prefix.path.0.len()..].into()));
-        let (result, _) = infer_form_where(&input, &order, &|form, label| !form.is_given(label) || ended(form), !input.scope.inference.is_mask());
+        let refuses = |form: &FormInference<'_>, label| !form.is_given(label) || ended(form);
+        let (result, _) = if input.scope.inference.is_mask() {
+            // A mask reads the refusals alone, so it takes no canonical order for a form of one scope.
+            let scopes = match one_scope_labels(prefix.partial) {
+                Some(_) => vec![NodePath::default()],
+                None => inferred_scopes(CanonicalOrder::of(prefix.partial, &mut SearchBudget::new())),
+            };
+            infer_form_where(&input, scopes, &refuses, None)
+        } else {
+            let order = CanonicalOrder::of(prefix.partial, &mut SearchBudget::new());
+            infer_form_where(&input, inferred_scopes(order), &refuses, Some(order))
+        };
         super::super::prefix::settled_result(prefix, result)
     }
 }
@@ -66,21 +76,22 @@ pub type ScopeTypes = Box<[(NodePath, FormTypes)]>;
 /// give it a Pose type and another type is the pose rule's, which
 /// [`crate::check::pose`] refuses.
 pub fn infer_form(input: &CheckInput<'_>, order: &CanonicalOrder) -> (CheckResult, ScopeTypes) {
-    infer_form_where(input, order, &|_, _| true, true)
+    infer_form_where(input, inferred_scopes(order), &|_, _| true, Some(order))
 }
 
-/// [`infer_form`], with a refusal of a label only where `refuses` holds
-/// for the label in its scope's inference, and the types of the scopes
-/// only where `collect_types` holds: a prefix in mask mode reads the
+/// [`infer_form`] over the label scopes at the source paths `sources`, with
+/// a refusal of a label only where `refuses` holds for the label in its
+/// scope's inference, and the types of the scopes only where `order` is
+/// given, the canonical order of the form: a prefix in mask mode reads the
 /// refusals alone.
-fn infer_form_where(input: &CheckInput<'_>, order: &CanonicalOrder, refuses: &dyn Fn(&FormInference<'_>, LabelId) -> bool, collect_types: bool) -> (CheckResult, ScopeTypes) {
+fn infer_form_where(input: &CheckInput<'_>, sources: Vec<NodePath>, refuses: &dyn Fn(&FormInference<'_>, LabelId) -> bool, order: Option<&CanonicalOrder>) -> (CheckResult, ScopeTypes) {
     let inference = input.scope.inference;
     let mut found = Vec::new();
     let mut scopes = Vec::new();
-    for source in inferred_scopes(order) {
+    for source in sources {
         let form = inference.infer(&input.path.join(&source)).expect(SCOPE_FORM);
-        found.extend(refusals(&form, order, &source, refuses));
-        if collect_types {
+        found.extend(refusals(&form, input, &source, refuses));
+        if let Some(order) = order {
             let relations = scope_forms_within(input.form, &source).into_iter().flat_map(|(at, form)| {
                 let relations = inference.form_relations(&input.path.join(&at), form);
                 let canonical = order.canonical_path(&at);
@@ -90,7 +101,7 @@ fn infer_form_where(input: &CheckInput<'_>, order: &CanonicalOrder, refuses: &dy
         }
     }
     if let (Form::Clause(clause), Some(form)) = (input.form, inference.infer(input.path)) {
-        found.extend(inference.column_refusals(&form, clause.value(), input.path, order));
+        found.extend(inference.column_refusals(&form, clause.value(), input.path, &|at| input.refusal_path(at)));
     }
     (result(found), scopes.into())
 }
@@ -107,11 +118,11 @@ pub(super) fn inferred_scopes(order: &CanonicalOrder) -> Vec<NodePath> {
 }
 
 /// The refusals of the type check on `form`, the label scope whose form
-/// stands at `scope`, a source path relative to a form whose canonical
-/// order is `order`, each at the canonical path of `scope` joined to its
+/// stands at `scope`, a source path relative to the form of `input`, each at
+/// the path that [`CheckInput::refusal_path`] gives for `scope` joined to its
 /// place in the scope's form.
-fn refusals(form: &FormInference<'_>, order: &CanonicalOrder, scope: &NodePath, refuses: &dyn Fn(&FormInference<'_>, LabelId) -> bool) -> Vec<Refusal> {
-    let place = |at: &NodePath| order.canonical_path(&scope.join(at));
+fn refusals(form: &FormInference<'_>, input: &CheckInput<'_>, scope: &NodePath, refuses: &dyn Fn(&FormInference<'_>, LabelId) -> bool) -> Vec<Refusal> {
+    let place = |at: &NodePath| input.refusal_path(&scope.join(at));
     let mut refusals = Vec::new();
     for (label, ty) in &form.labels {
         let Err(fault) = ty else { continue };

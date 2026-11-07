@@ -8,7 +8,6 @@
 use super::types::PoseOr;
 use super::{Check, CheckCacheKey, CheckId, CheckInput, CheckResult, KeyInput, Prefix, PrefixResult, Refusal, Scope};
 use super::prefix::refused;
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{AltItem, Atom, ColumnName, Conjunct, FactRelation, Form, LabelId, LabelUse, Out, RelationRef, Site, SiteArg};
 use crate::resolver::Resolution;
@@ -84,8 +83,7 @@ impl Check for OutCheck {
         if found.is_empty() {
             return CheckResult::Pass;
         }
-        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        CheckResult::Refuse(found.into_iter().map(|(at, message)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
+        CheckResult::Refuse(found.into_iter().map(|(at, message)| Refusal { message: message.into(), at: input.refusal_path(&at) }).collect())
     }
 
     /// Refuses what no completion of the prefix undoes: a conjunct that is

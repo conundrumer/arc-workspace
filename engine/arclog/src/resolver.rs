@@ -874,6 +874,14 @@ pub fn resolve_in_progress(earlier: &Arc<ResolvedProgram>, program: &Node<Progra
     build::resolve_in_progress(earlier, program, registry)
 }
 
+/// [`resolve_in_progress`] for the checks of a prefix, which read no signature
+/// of a read: a layered resolution holds none.
+pub fn resolve_prefix(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
+    let _timed = crate::stats::span(crate::stats::Phase::ResolveLast);
+    crate::stats::units(crate::stats::Phase::ResolveLast, earlier.graph.nodes.len());
+    build::resolve_prefix(earlier, program, registry)
+}
+
 /// Whether a complete-program grammar must insert the lifted Example
 /// column at an open relation. Runs only binding and side analysis; the
 /// completed AST still goes through the full resolver and checker.

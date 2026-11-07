@@ -423,3 +423,93 @@ pub(super) fn demo_rule<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, rule: &'a
         });
     }
 }
+
+/// The labels of the scope of `form`, in order of their ids, where `form`
+/// holds no label scope within it: a clause, an `INIT`, a `CHOOSE`, a
+/// `RIGID_DET` or an `OUT` form. They are the labels that
+/// [`form_scope_labels`] gives, with no labeling of the scope, for a reader
+/// to whom their order is no part of what it reads.
+pub(crate) fn one_scope_labels(form: &Form) -> Option<Vec<LabelId>> {
+    if !matches!(form, Form::Clause(_) | Form::Instance(_) | Form::Choose(_) | Form::RigidDet(_) | Form::Out(_)) {
+        return None;
+    }
+    let mut sink = LabelSink::default();
+    scope(&mut sink, (), form_scope(form).expect("a form of one scope has its scope"));
+    sink.labels.sort_unstable_by_key(|label| label.0);
+    sink.labels.dedup();
+    Some(sink.labels)
+}
+
+/// Takes from the walk of a scope each label that it visits.
+#[derive(Default)]
+struct LabelSink {
+    labels: Vec<LabelId>,
+}
+
+impl<'a> ScopeSink<'a> for LabelSink {
+    type At = ();
+
+    fn feature_sites(&self) -> bool {
+        false
+    }
+
+    fn open(&mut self, _at: (), _role: Tag, _index: usize, _node: Open<'a>) {}
+
+    fn child(&mut self, _parent: NodeRef<'a>, _child: NodeRef<'a>, visit: impl FnOnce(&mut Self)) {
+        visit(self);
+    }
+
+    fn members<T>(&mut self, at: (), _parent: NodeRef<'a>, members: &'a [T], _pinned: &[usize], repeats: &[usize], _node: impl Fn(&'a T) -> NodeRef<'a>, visit: impl Fn(&mut Self, (), &'a T)) {
+        for (_, member) in members.iter().enumerate().filter(|(index, _)| !repeats.contains(index)) {
+            visit(self, at, member);
+        }
+    }
+
+    fn head_field(&mut self, port: &ColumnName, _key: HeadKey) -> ColumnName {
+        port.clone()
+    }
+
+    fn len(&mut self, _len: usize) {}
+
+    fn option(&mut self, _present: bool) {}
+
+    fn atom_sites(&mut self, at: (), _atom: &'a Atom, visit: impl Fn(&mut Self, ())) {
+        visit(self, at);
+    }
+
+    fn site(&mut self, _at: (), _path: &[ColumnName], _args: usize, _relation: Option<&RelationRef>) {}
+
+    fn site_label(&mut self, _at: (), _index: usize, _path: &[ColumnName], _named: Option<&ColumnName>, label: LabelUse, _relation: Option<&RelationRef>) {
+        match label {
+            LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id) => self.labels.push(id),
+            LabelUse::Zero => {}
+        }
+    }
+
+    fn site_field(&mut self) {}
+
+    fn operand(&mut self, _at: (), _index: usize, label: Option<ConstraintLabel>) {
+        self.labels.extend(label.map(|label| label.label));
+    }
+
+    fn constraint(&mut self, at: (), constraint: &Constraint) {
+        let (_, operands, _) = normalized_constraint(constraint);
+        for label in operands {
+            self.operand(at, 0, label);
+        }
+    }
+
+    fn marks(&mut self, _at: (), ones: &'a [OneMark]) {
+        self.labels.extend(ones.iter().flat_map(|one| one.key.iter().copied()));
+    }
+
+    fn columns(&mut self, _at: (), columns: &'a [RelationColumn], _relation: Option<&RelationRef>, _ordered: bool) {
+        self.labels.extend(columns.iter().map(|column| column.label));
+    }
+
+    fn choose_from_inside_for(&mut self, _choose: &'a Choose) {}
+
+    fn rule_text(&mut self, _rule: &'a DemoRule) {}
+
+    fn own_scope(&mut self, _form: &'a Form) {}
+}

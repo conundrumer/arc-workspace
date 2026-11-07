@@ -3,7 +3,6 @@
 use super::reads::form_reads;
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::NodePath;
 use crate::eval::determinations::relation_spelled;
 use crate::program::{column_spelled, Form, OutputOwner, ProgramRelation, RelationRef, SiteArg};
@@ -109,8 +108,7 @@ fn site_refusals(input: &CheckInput<'_>, partial: bool) -> CheckResult {
     if refused.is_empty() {
         return CheckResult::Pass;
     }
-    let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-    result(refused.into_iter().map(|(message, at)| Refusal { message: message.into_boxed_str().into(), at: order.canonical_path(&at) }).collect())
+    result(refused.into_iter().map(|(message, at)| Refusal { message: message.into_boxed_str().into(), at: input.refusal_path(&at) }).collect())
 }
 
 /// Whether `relation` is an output of `form`, an `INIT` form.

@@ -50,14 +50,20 @@ pub fn rows(evaluation: &Evaluation<'_>, trace: Option<&RefCell<RunTrace>>, prop
     };
     match &declaration.kind {
         ProposerKind::Native { .. } => {
-            let grids = native::Grids {
-                inputs: task.train.iter().map(|pair| &pair.input).chain(task.test.iter()).collect(),
-                pairs: task.train.iter().map(|pair| (&pair.input, &pair.output)).collect(),
+            let example = match evidence {
+                Evidence::Task => None,
+                Evidence::Input(example) => Some(example),
             };
-            let context = native::Context { registry: evaluation.registry, session: evaluation.session };
-            let rows = native::rows(&proposer.0, declaration, &grids, &context)
-                .ok_or_else(|| fault(format!("the native proposer `{}` has no port", proposer.0)))?;
-            Ok(RelationValue::Rows(Arc::new(join::one_part(rows))))
+            let rows = evaluation.session.native_proposer_rows(proposer, example, || {
+                let grids = native::Grids {
+                    inputs: task.train.iter().map(|pair| &pair.input).chain(task.test.iter()).collect(),
+                    pairs: task.train.iter().map(|pair| (&pair.input, &pair.output)).collect(),
+                };
+                let context = native::Context { registry: evaluation.registry, session: evaluation.session };
+                native::rows(&proposer.0, declaration, &grids, &context).map(join::one_part)
+            });
+            let rows = rows.ok_or_else(|| fault(format!("the native proposer `{}` has no port", proposer.0)))?;
+            Ok(RelationValue::Rows(rows))
         }
         ProposerKind::Arclog { .. } => {
             let clause = arclog_proposers().get(proposer).ok_or_else(|| fault(format!("`{}` has no checked clause", proposer.0)))?;

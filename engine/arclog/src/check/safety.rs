@@ -7,12 +7,12 @@ use super::types::result;
 use super::prefix::{refused, whole};
 use super::{Check, CheckId, CheckInput, CheckResult, LabelInScope, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::eval::ir::atom_modes;
-use crate::safety::{conjunct_labels, each_label_use_at, bound_labels, conjunct_label_set, LabelCounts, list_of, mode_holds, mode_may_hold, orientation_labels, parts_of};
+use crate::safety::{conjunct_labels, each_label_use_at, each_label_use_on, bound_labels, conjunct_label_set, LabelCounts, list_of, mode_holds, mode_may_hold, orientation_labels, parts_of};
 use std::cell::RefCell;
 
 use crate::hash::{StableHashMap, StableHashSet};
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
-use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::canonical::CanonicalOrder;
+use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{
     Atom, Body, ChoosePart, Conjunct, DemonstratedPart, Form, InstanceInput, InstanceInputPart, InstancePart, KeyClause, KeyClausePart, LabelId, LabelUse,
     Negated, Node, RelationColumn, RigidDetPart,
@@ -52,8 +52,7 @@ impl Check for SafetyCheck {
         if refused.is_empty() {
             return CheckResult::Pass;
         }
-        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        result(refused.into_iter().map(|found| Refusal { message: found.fault.message().into(), at: order.canonical_path(&found.at) }).collect())
+        result(refused.into_iter().map(|found| Refusal { message: found.fault.message().into(), at: input.refusal_path(&found.at) }).collect())
     }
 
     /// Refuses at each refusal of [`SafetyCheck::check`] on the partial form
@@ -518,16 +517,16 @@ impl Walk<'_> {
         let mut found = Vec::new();
         self.ordered(&reading.list, &given, &reading.outside, &mut found);
         let bound = bound_labels(&conjuncts, &given, &reading.outside, &|atom| atom_modes(self.registry, atom), self.types);
-        let mut check_use = |at: &NodePath, use_: LabelUse| {
+        let mut check_use = |at: &[PathStep], use_: LabelUse| {
             if let Some(label) = use_label(use_).filter(|label| !bound.contains(label)) {
-                found.push(Found { label: Some(label), fault: Fault::Unbound { body: reading.at.clone() }, at: at.clone() });
+                found.push(Found { label: Some(label), fault: Fault::Unbound { body: reading.at.clone() }, at: at.into() });
             }
         };
         for (at, conjunct) in &reading.list {
-            each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut check_use);
+            each_label_use_on(NodeRef::Conjunct(conjunct), &mut at.0.to_vec(), &mut check_use);
         }
         if let Some((input, at)) = reading.head {
-            each_head_use(input, at, &mut check_use);
+            each_head_use(input, at, &mut |at, use_| check_use(&at.0, use_));
         }
         let held = list_labels(conjuncts);
         for &label in reading.columns.iter().filter(|label| !bound.contains(label) && !held.contains(label)) {
@@ -589,17 +588,17 @@ impl Walk<'_> {
                 (Conjunct::Atom(atom), Some(written)) => {
                     let after_outside = suffix.around(outside, Some(&sets[i]));
                     let after = self.bind_before(&mut prefixes, &conjuncts, i + 1, given, &after_outside);
-                    each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
+                    each_label_use_on(NodeRef::Conjunct(conjunct), &mut at.0.to_vec(), &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| !after.contains(label)) {
                             let completes = mode_may_hold(atom.value(), written, atom_modes(self.registry, atom.value()));
-                            found.push(Found { label: Some(label), fault: Fault::NoMode { atom: at.clone(), completes }, at: path.clone() });
+                            found.push(Found { label: Some(label), fault: Fault::NoMode { atom: at.clone(), completes }, at: path.into() });
                         }
                     });
                 }
                 (Conjunct::Not(_) | Conjunct::All { .. }, _) => {
-                    each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |path, use_| {
+                    each_label_use_on(NodeRef::Conjunct(conjunct), &mut at.0.to_vec(), &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| around.contains(label) && !before.contains(label)) {
-                            found.push(Found { label: Some(label), fault: Fault::Misordered, at: path.clone() });
+                            found.push(Found { label: Some(label), fault: Fault::Misordered, at: path.into() });
                         }
                     });
                 }

@@ -5,7 +5,6 @@
 
 use super::types::result;
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{Clause, ClauseKeyword, OutputName, OutputOwner, RelationRef, RigidDetName};
 use crate::resolver::form_columns::rigid_outputs;
@@ -39,23 +38,22 @@ impl Check for RigidPartsAndProposersCheck {
         each_node(NodeRef::from(input.form), &NodePath::default(), &mut |node, at| {
             if let NodeRef::Clause(clause) = node {
                 if !clause.proposers.iter().all(|proposer| is_proposer_name(&proposer.0)) {
-                    refused.push((at.clone(), "a proposer's name is an uppercase letter, then letters and digits"));
+                    refused.push((at.into(), "a proposer's name is an uppercase letter, then letters and digits"));
                 }
                 if names_proposer_and_holds_body(clause) {
-                    refused.push((at.clone(), "a `DET` or `RULE` that names a proposer has no body"));
+                    refused.push((at.into(), "a `DET` or `RULE` that names a proposer has no body"));
                 }
             }
             if let Some(RelationRef::Output(output @ OutputName { of: OutputOwner::RigidDet(owner), .. })) = node.atom().map(|atom| &atom.relation) {
                 if !gives(program, owner, output) {
-                    refused.push((at.clone(), "no part of the `RIGID_DET` form gives the output"));
+                    refused.push((at.into(), "no part of the `RIGID_DET` form gives the output"));
                 }
             }
         });
         if refused.is_empty() {
             return CheckResult::Pass;
         }
-        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        result(refused.into_iter().map(|(at, message)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
+        result(refused.into_iter().map(|(at, message)| Refusal { message: message.into(), at: input.refusal_path(&at) }).collect())
     }
 
     /// A clause's proposers stand before its body, and a read names a form

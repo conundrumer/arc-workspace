@@ -6,7 +6,6 @@ use super::labels::each_list;
 use super::safety::{form_bodies, label_scope, BodyPlace, FormBody};
 use super::types::result;
 use super::{each_node, CaseFiles, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::hash::StableHashSet;
 use crate::program::{ColumnName, Conjunct, LabelId, LabelUse, Negated, SiteArg};
@@ -52,8 +51,7 @@ impl Check for SpellingCheck {
         if refused.is_empty() {
             return CheckResult::Pass;
         }
-        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        result(refused.into_iter().map(|refusal| Refusal { at: order.canonical_path(&refusal.at), ..refusal }).collect())
+        result(refused.into_iter().map(|refusal| Refusal { at: input.refusal_path(&refusal.at), ..refusal }).collect())
     }
 
     /// Undecided: no token stream breaks the spelling, since the stream
@@ -79,6 +77,7 @@ fn is_pascal(name: &str) -> bool {
 fn field_case(input: &CheckInput<'_>) -> Vec<Refusal> {
     let mut refused = Vec::new();
     each_node(NodeRef::from(input.form), &NodePath::default(), &mut |node, at| {
+        let at = &NodePath::from(at);
         if let NodeRef::Site(site) = node {
             for (arg, index) in site.value.args.iter().zip(0u32..) {
                 if let SiteArg::Field(field) = arg {
@@ -112,7 +111,9 @@ fn elided(input: &CheckInput<'_>, spelled: &CaseFiles<'_>) -> Vec<Refusal> {
         (ColumnName::Written(column), [SiteArg::Label(use_)]) => use_name(input, spelled, at, use_) == Some(&**column),
         _ => false,
     };
-    each_node(NodeRef::from(input.form), &NodePath::default(), &mut |node, at| match node {
+    each_node(NodeRef::from(input.form), &NodePath::default(), &mut |node, at| {
+        let at = &NodePath::from(at);
+        match node {
         NodeRef::Conjunct(conjunct) => {
             let Some(atom) = conjunct.atom() else { return };
             let elided = spelled.layout(&input.path.join(at)).map_or(&[][..], |layout| &layout.elided_sites[..]);
@@ -132,6 +133,7 @@ fn elided(input: &CheckInput<'_>, spelled: &CaseFiles<'_>) -> Vec<Refusal> {
             }
         }
         _ => {}
+        }
     });
     refused
 }

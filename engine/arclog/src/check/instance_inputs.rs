@@ -6,7 +6,6 @@ use super::reads::{form_reads, forms_within, FormRead};
 use super::types::{component, result};
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::safety::body_labels;
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, PortName};
 use crate::registry::{binding_sites, is_key, unbound, Column, ColumnType, InputPort, TypeParameter};
@@ -80,8 +79,7 @@ impl Check for InstanceInputsCheck {
         if refusals.is_empty() {
             return CheckResult::Pass;
         }
-        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        result(refusals.into_iter().map(|(message, at)| Refusal { message: message.into(), at: order.canonical_path(&at) }).collect())
+        result(refusals.into_iter().map(|(message, at)| Refusal { message: message.into(), at: input.refusal_path(&at) }).collect())
     }
 
     /// Refuses each refusal of [`Check::check`] at a complete input. A

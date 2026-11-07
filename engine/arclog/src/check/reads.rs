@@ -5,7 +5,7 @@
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::hash::StableHashSet;
-use crate::program::canonical::{prediction, relation_of, CanonicalOrder, SearchBudget};
+use crate::program::canonical::{prediction, relation_of};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Atom, ColumnName, FactRelation, Form, Site, SiteArg};
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Side};
@@ -32,14 +32,12 @@ impl Check for PooledAndLiftedReadsCheck {
     /// side.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let program = input.scope.program;
-        let mut order = None;
         let mut refusals = Vec::new();
         for read in form_reads(input.form, input.path) {
             let Some((node, false)) = read.node(program, input.path) else { continue };
             let Some(side) = program.form_side(&read.form) else { continue };
             let Some(message) = refused_read(program, side, node, read.atom) else { continue };
-            let order = order.get_or_insert_with(|| CanonicalOrder::of(input.form, &mut SearchBudget::new()));
-            refusals.push(Refusal { message: message.text().into(), at: order.canonical_path(&read.at) });
+            refusals.push(Refusal { message: message.text().into(), at: input.refusal_path(&read.at) });
         }
         result(refusals)
     }

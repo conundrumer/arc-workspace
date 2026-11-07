@@ -2,7 +2,7 @@
 //! derivation of a relation macro's modes both apply.
 
 use crate::hash::StableHashSet;
-use crate::program::path::{NodePath, NodeRef};
+use crate::program::path::{NodePath, NodeRef, PathStep};
 use crate::program::{constraint_second, Atom, Body, Conjunct, Constraint, ConstraintOp, LabelId, LabelUse, Negated, Node, Operand, Site};
 use crate::registry::Mode;
 use crate::types::{each_site_label, use_label, ValueType};
@@ -122,6 +122,30 @@ pub(crate) fn each_label_use_at(node: NodeRef<'_>, at: &NodePath, visit: &mut dy
             for (child, index) in node.children().into_iter().zip(0u32..) {
                 each_label_use_at(child, &at.child(index), visit);
             }
+        }
+    }
+}
+
+/// [`each_label_use_at`], with each use's path as its steps, on the stack
+/// `at` that holds the steps of `node`.
+pub(crate) fn each_label_use_on(node: NodeRef<'_>, at: &mut Vec<PathStep>, visit: &mut dyn FnMut(&[PathStep], LabelUse)) {
+    match node {
+        NodeRef::Label(use_) => visit(at, *use_),
+        NodeRef::Conjunct(Conjunct::Constraint(constraint)) => {
+            visit(at, constraint.first.into());
+            if let Some(second) = constraint_second(constraint) {
+                visit(at, second.into());
+            }
+        }
+        _ => {
+            let mut index = 0;
+            node.each_handle(|handle| {
+                at.push(PathStep(index));
+                each_label_use_on(handle.node(), at, visit);
+                at.pop();
+                index += 1;
+                std::ops::ControlFlow::Continue(())
+            });
         }
     }
 }

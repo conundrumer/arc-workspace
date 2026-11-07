@@ -17,7 +17,7 @@ use super::Inference;
 use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::program::{Atom, Body, Conjunct, Form, LabelId, Negated, Node, Operand, Program};
-use crate::resolver::{resolve_last, ResolvedProgram};
+use crate::resolver::{resolve_prefix, ResolvedProgram};
 use crate::types::{each_conjunct, each_site_label, use_label, LabelFault, ValueType};
 
 type LabelTypes = Result<Option<ValueType>, LabelFault>;
@@ -186,10 +186,10 @@ impl<'a> Inference<'a> {
         held.types
             .get_or_init(|| {
                 let Some(Form::Clause(_)) = held.program.value().forms.last() else { return None };
-                let resolved = held.resolved.get_or_init(|| resolve_last(&held.earlier, &held.program, self.registry));
+                let resolved = held.resolved.get_or_init(|| resolve_prefix(&held.earlier, &held.program, self.registry));
                 let Some(Form::Clause(clause)) = resolved.program.value().forms.last() else { return None };
                 let path = NodePath::top(resolved.program.value().forms.len() as u32 - 1);
-                let inference = Inference { splits: false, ..Inference::layered(resolved, self.cases, earlier) };
+                let inference = Inference { splits: false, any_label_order: true, ..Inference::layered(resolved, self.cases, earlier) };
                 let inferred = inference.infer(&path)?;
                 let plain = inferred.given.is_empty() && inferred.zero_typed.is_empty() && inferred.bindings.is_empty() && clause.value().columns.is_empty();
                 plain.then(|| StateTypes {
@@ -248,7 +248,7 @@ mod tests {
     use crate::eval::values::Caps;
     use crate::read::read_solver;
     use crate::registry::Registry;
-    use crate::resolver::resolve;
+    use crate::resolver::{resolve, resolve_last};
     use crate::session::{SessionBound, TaskSession};
     use crate::stream::{token_stream, DecodeSettings, Emitter, Vocabulary};
     use crate::task::Task;

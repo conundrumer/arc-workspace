@@ -44,7 +44,7 @@ use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{canonical_form, CanonicalForm, CanonicalOrder, CanonicalWriter, SearchBudget};
 use crate::layout::{NodeLayout, SourceFile};
-use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{Form, LabelId, PortName};
 use crate::solver::{Case, FileOwner, Solver};
 use crate::registry::Registry;
@@ -266,6 +266,19 @@ pub struct CheckInput<'a> {
     pub form: &'a Form,
     pub path: &'a NodePath,
     pub scope: Scope<'a>,
+}
+
+impl CheckInput<'_> {
+    /// The path that a refusal of a check on this input holds for the node
+    /// at the source path `at`: its canonical path, as [`Refusal`] gives it,
+    /// or in a mask, which reads a refusal's place and no more, `at` itself,
+    /// with no canonical order taken.
+    pub(crate) fn refusal_path(&self, at: &NodePath) -> NodePath {
+        if self.scope.inference.is_mask() {
+            return at.clone();
+        }
+        CanonicalOrder::of(self.form, &mut SearchBudget::new()).canonical_path(at)
+    }
 }
 
 /// One error a check finds: its message, at the node of the path relative to
@@ -621,6 +634,7 @@ fn check_program_with_open(
         .map(|(path, form)| {
             let mut search = SearchBudget::new();
             let (order, canonical) = CanonicalOrder::with_form(form, &mut search);
+            let (order, canonical) = (order.clone(), canonical.clone());
             if search.reached {
                 let message = "the search for the form's canonical form reached its cap".into();
                 alerts.push(diagnostic(DiagnosticKind::Bound, Severity::Alert, message, path.clone()));
@@ -842,9 +856,17 @@ pub fn checks() -> &'static [&'static dyn Check] {
 
 /// Visits `node`, at `at`, and each node below it, in source order, each
 /// with its path.
-fn each_node<'a>(node: NodeRef<'a>, at: &NodePath, visit: &mut dyn FnMut(NodeRef<'a>, &NodePath)) {
-    visit(node, at);
-    for (child, index) in node.children().into_iter().zip(0u32..) {
-        each_node(child, &at.child(index), visit);
+fn each_node<'a>(node: NodeRef<'a>, at: &NodePath, visit: &mut dyn FnMut(NodeRef<'a>, &[PathStep])) {
+    fn walk<'a>(node: NodeRef<'a>, at: &mut Vec<PathStep>, visit: &mut dyn FnMut(NodeRef<'a>, &[PathStep])) {
+        visit(node, at);
+        let mut index = 0;
+        node.each_handle(|handle| {
+            at.push(PathStep(index));
+            walk(handle.node(), at, visit);
+            at.pop();
+            index += 1;
+            std::ops::ControlFlow::Continue(())
+        });
     }
+    walk(node, &mut at.0.to_vec(), visit);
 }

@@ -3,7 +3,6 @@
 use super::inference::{FormInference, Inference, SiteUse};
 use super::types::{result, PoseOr};
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::NodePath;
 use crate::types::{Meet, ValueType};
 
@@ -36,7 +35,6 @@ impl Check for PoseRuleCheck {
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let inference = input.scope.inference;
         let Some(form) = inference.infer(input.path) else { return CheckResult::Pass };
-        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
         let reading = form.reading(PoseOr::Open);
         let mut refusals = Vec::new();
         let mut shared: Vec<(*const crate::program::Atom, &crate::program::path::NodePath, ValueType)> = Vec::new();
@@ -48,11 +46,11 @@ impl Check for PoseRuleCheck {
                     match form.labels.iter().find(|(label, _)| *label == site.label) {
                         Some((_, Ok(Some(_)))) => {
                             let message = "a label of a type that is no Pose stands at a column of a Pose type that `docs/arclog/rigid.md#the-pose` shares among the relation's columns";
-                            refusals.push(Refusal { message: message.into(), at: order.canonical_path(&site.at) });
+                            refusals.push(Refusal { message: message.into(), at: input.refusal_path(&site.at) });
                         }
                         Some((_, Ok(None))) if !std::mem::replace(&mut untyped_refused, true) => {
                             let message = "a label of no type stands at a column of a Pose type that `docs/arclog/rigid.md#the-pose` shares among the relation's columns";
-                            refusals.push(Refusal { message: message.into(), at: order.canonical_path(&NodePath::default()) });
+                            refusals.push(Refusal { message: message.into(), at: input.refusal_path(&NodePath::default()) });
                         }
                         // A label with a fault is refused by `CheckId::Types`.
                         _ => {}
@@ -60,7 +58,7 @@ impl Check for PoseRuleCheck {
                     continue;
                 }
                 if let Some(message) = pose_or_conflict(inference, &form, site, atom) {
-                    refusals.push(Refusal { message: message.into(), at: order.canonical_path(&site.at) });
+                    refusals.push(Refusal { message: message.into(), at: input.refusal_path(&site.at) });
                 }
                 continue;
             };
@@ -70,14 +68,14 @@ impl Check for PoseRuleCheck {
             };
             if !admitted {
                 let message = "a Pose label stands at a site that `docs/arclog/rigid.md#the-pose` does not give";
-                refusals.push(Refusal { message: message.into(), at: order.canonical_path(&site.at) });
+                refusals.push(Refusal { message: message.into(), at: input.refusal_path(&site.at) });
                 continue;
             }
             if inference.shares_pose(reading, atom, &site.column) {
                 let atom = atom as *const crate::program::Atom;
                 if shared.iter().any(|(found, _, ty)| *found == atom && ty != pose) {
                     let message = "the atom's columns of one Pose type hold labels of two Pose types";
-                    refusals.push(Refusal { message: message.into(), at: order.canonical_path(&site.at) });
+                    refusals.push(Refusal { message: message.into(), at: input.refusal_path(&site.at) });
                 }
                 shared.push((atom, &site.at, pose.clone()));
             }

@@ -242,7 +242,7 @@ impl<'a> IrBuilder<'a> {
         }
         let variables = variables.into_iter().map(|info| info.expect("a label at each canonical position")).collect();
         let labels = held.into_iter().map(|label| label.expect("a label at each canonical position")).collect();
-        Ok(IrBuilder { program, form, compiled, order, variables, nodes: Vec::new(), labels, paths: Vec::new() })
+        Ok(IrBuilder { program, form, compiled, order: order.clone(), variables, nodes: Vec::new(), labels, paths: Vec::new() })
     }
 
     /// The variable of `label`: its canonical position in the form's scope.

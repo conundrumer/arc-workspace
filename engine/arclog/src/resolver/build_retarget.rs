@@ -74,7 +74,7 @@ impl ResolvedProgram {
             (Target::Lib(_), _) => false,
         };
         let Some(nodes) = self.atom_nodes(at) else { return false };
-        let shared = self.signatures.keys().any(|path| path != at && path.0.first() == at.0.first() && self.reads_relation(path, &old_relation));
+        let shared = self.resolutions.keys().any(|path| path != at && path.0.first() == at.0.first() && self.reads_relation(path, &old_relation));
         if let Some(readers) = readers {
             for reader in readers {
                 let mut reads = self.graph.reads[reader.0 as usize].to_vec();
@@ -115,8 +115,10 @@ impl ResolvedProgram {
         } else {
             self.lifted.remove(at);
         }
-        let signature = signature(&self.names, &resolution, relation, columns.as_ref());
-        self.signatures.insert(at.clone(), signature);
+        if !self.signatures.is_empty() {
+            let signature = signature(&self.names, &resolution, relation, columns.as_ref());
+            self.signatures.insert(at.clone(), signature);
+        }
         self.resolutions.insert(at.clone(), resolution);
         for cell in self.names.unwritten.iter_mut().flatten() {
             *cell = std::sync::OnceLock::new();

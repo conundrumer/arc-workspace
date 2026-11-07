@@ -3,7 +3,6 @@
 
 use super::types::result;
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{
     Atom, DemonstratedPart, Form, InstanceInput, InstanceName, InstancePart, KeyClause, KeyClausePart, LabelUse, Node, OutputName, OutputOwner, RelationRef,
@@ -32,8 +31,7 @@ impl Check for InstanceSitesCheck {
         if refused.is_empty() {
             return CheckResult::Pass;
         }
-        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        result(refused.into_iter().map(|refusal| Refusal { at: order.canonical_path(&refusal.at), ..refusal }).collect())
+        result(refused.into_iter().map(|refusal| Refusal { at: input.refusal_path(&refusal.at), ..refusal }).collect())
     }
 
     /// Refuses each refusal of [`Check::check`] at a complete keyed input.
@@ -94,7 +92,7 @@ fn each_read<'a>(input: &'a InstanceInput, at: &NodePath, visit: &mut dyn FnMut(
         let Some(atom) = conjunct.atom() else { return };
         let atom: &'a Node<Atom> = atom;
         if let RelationRef::Output(OutputName { of: OutputOwner::Instance(name), .. }) = &atom.value().relation {
-            visit(name, atom.value(), at);
+            visit(name, atom.value(), &NodePath::from(at));
         }
     });
 }

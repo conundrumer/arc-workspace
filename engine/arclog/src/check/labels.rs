@@ -5,7 +5,6 @@ use crate::safety::{each_label_use_at, list_of, parts_of};
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::hash::StableHashSet;
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{Body, Conjunct, Constraint, ConstraintOp, Form, LabelId, LabelUse, Negated};
 use crate::read::columns::exports;
@@ -45,8 +44,7 @@ impl Check for MadeAndExportedLabelsCheck {
         if refused.is_empty() {
             return CheckResult::Pass;
         }
-        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        result(refused.into_iter().map(|refusal| Refusal { at: order.canonical_path(&refusal.at), ..refusal }).collect())
+        result(refused.into_iter().map(|refusal| Refusal { at: input.refusal_path(&refusal.at), ..refusal }).collect())
     }
 
     /// The refusals of each complete body of the partial form, since a node

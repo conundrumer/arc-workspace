@@ -40,6 +40,7 @@ use order::Recorded;
 
 pub use order::CanonicalOrder;
 pub(crate) use replay::cached_write;
+pub(crate) use walk::one_scope_labels;
 
 pub(crate) use form::{normalized_constraint,canonical_form, form_scope_labels, prediction, relation_of, scope_labels, shares_rule_scope};
 pub use form::{canonical_hash, opens_scope, AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter};

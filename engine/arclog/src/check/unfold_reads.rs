@@ -4,7 +4,6 @@ use super::instance_inputs::inputs_at;
 use super::reads::form_reads;
 use super::types::{component, result};
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{Conjunct, Form, LabelUse};
 use crate::types::each_site_label;
@@ -68,8 +67,7 @@ impl Check for UnfoldReadsCheck {
         if refusals.is_empty() {
             return CheckResult::Pass;
         }
-        let order = CanonicalOrder::of(input.form, &mut SearchBudget::new());
-        result(refusals.into_iter().map(|refusal| Refusal { at: order.canonical_path(&refusal.at), ..refusal }).collect())
+        result(refusals.into_iter().map(|refusal| Refusal { at: input.refusal_path(&refusal.at), ..refusal }).collect())
     }
 
     /// Refuses each refusal of [`Check::check`] at a complete read. A

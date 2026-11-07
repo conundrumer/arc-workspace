@@ -10,12 +10,12 @@ use super::safety::{BoundCache, BoundMemo};
 use super::LabelInScope;
 use crate::eval::ir::relation_modes;
 use crate::hash::StableHashMap;
-use crate::program::canonical::{CanonicalOrder, SearchBudget};
+use crate::program::canonical::{one_scope_labels, CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{Atom, Body, Choose, Clause, ColumnName, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, Out, Program, RigidDet, Site, SiteArg, SiteValue};
 use crate::registry::{LibEntry, Mode, Registry};
 use crate::program::{OutputName, OutputOwner, RelationRef};
-use crate::resolver::{resolve_in_progress, DependencyKind, ResolvedProgram, Side};
+use crate::resolver::{resolve_prefix, DependencyKind, ResolvedProgram, Side};
 use crate::stats::{self, Phase};
 use crate::stream::write::reads_example_column;
 use crate::types::each_site_label;
@@ -339,7 +339,7 @@ impl PrefixChecks<'_> {
 
     /// The first check of [`checks`], in their order, that refuses the
     /// prefix whose partial form is the last form of `program`, a
-    /// resolution by [`crate::resolver::resolve_in_progress`] over the complete
+    /// resolution by [`crate::resolver::resolve_prefix`] over the complete
     /// forms, and whose open node is at `open`, with its refusals; `None`
     /// where none refuses. No check after it runs. Where `candidate` is
     /// [`Candidate::AtomHead`], a refusal of a check that ignores the open
@@ -361,7 +361,7 @@ impl PrefixChecks<'_> {
             let (partial, complete) = program.program.value().forms.split_last().expect("a prefix's partial form");
             let path = NodePath::top(complete.len() as u32);
             let cases = inference::CaseInferences::new(self.clauses, self.registry);
-            let inference = inference::Inference::layered(program, &cases, self.inference);
+            let inference = inference::Inference::layered(program, &cases, self.inference).mask(true);
             let scope = Scope { program, registry: self.registry, labels: &[], clauses: self.clauses, inference: &inference, files: None, bound: None };
             let prefix = Prefix { complete, partial, path: &path, open, scope };
             for check in checks().iter().filter(|check| BEFORE_LABELS.contains(&check.id())) {
@@ -386,7 +386,7 @@ impl PrefixChecks<'_> {
     /// at one open path share one resolution of the form in progress,
     /// retargeted to each one's relation
     /// ([`ResolvedProgram::retarget_atom`]); where that gives no retarget,
-    /// the resolution is [`resolve_in_progress`]'s. They share as well the result
+    /// the resolution is [`resolve_prefix`]'s. They share as well the result
     /// of each check, as `AtomHead` states: a candidate for which the
     /// checks, in their order up to the first that refuses, all hold a
     /// result that a candidate of its [`RelationClass`] gave takes the
@@ -439,7 +439,7 @@ impl PrefixChecks<'_> {
 
     /// Holds the resolution of `program` for the candidate that opens, at
     /// `at`, an atom of `relation`: the held one retargeted, or
-    /// [`resolve_in_progress`]'s. A resolution already held for that candidate
+    /// [`resolve_prefix`]'s. A resolution already held for that candidate
     /// stays.
     fn hold_atom_head(&self, earlier: &Arc<ResolvedProgram>, program: &Node<Program>, at: &NodePath, relation: &RelationRef) {
         let mut held = self.head.resolution.borrow_mut();
@@ -449,7 +449,7 @@ impl PrefixChecks<'_> {
         let retargeted = held.as_mut().is_some_and(|held| held.at == *at && held.resolved.retarget_atom(program, at, relation, self.registry));
         match held.as_mut().filter(|_| retargeted) {
             Some(held) => held.relation = relation.clone(),
-            None => *held = Some(HeldResolution { at: at.clone(), relation: relation.clone(), resolved: resolve_in_progress(earlier, program, self.registry) }),
+            None => *held = Some(HeldResolution { at: at.clone(), relation: relation.clone(), resolved: resolve_prefix(earlier, program, self.registry) }),
         }
     }
 
@@ -507,29 +507,17 @@ fn with_prefix<R>(
     let inference = &inference;
     let bound = cache.zip(earlier.and_then(|earlier| earlier.state_form())).map(|(cache, state)| BoundMemo { cache, state });
     let scope = |labels| Scope { program, registry, labels, clauses, inference, files: None, bound };
-    let (order, untyped, computed);
+    let (untyped, computed);
     let labels: &[LabelInScope] = match head.and_then(|head| head.labels.get()) {
         Some(labels) => labels,
         None => {
-            order = CanonicalOrder::of(partial, &mut SearchBudget::new());
             computed = if lean {
-                // The labels take the inference's types, in the scope order of
-                // `labels_in_scopes`, with the canonical labels in Pose key rows.
-                let mut labels = Vec::new();
-                for (at, members) in order.label_scopes() {
-                    let form = inference.infer(&path.join(&at)).expect("a label scope has an inference");
-                    for &(label, _) in members {
-                        let ty = form.label(label).map(|ty| {
-                            types::try_map_labels(&ty, &|label| Some(LabelId(order.canonical_label(&at, label)))).expect("every key-row label belongs to its scope")
-                        });
-                        labels.push(LabelInScope { scope: at.clone(), label, ty });
-                    }
-                }
-                labels
+                mask_labels(partial, &path, inference)
             } else {
-                untyped = labels_in_scopes(&order, &|_, _| None);
-                let (_, form_types) = types::infer_form(&CheckInput { form: partial, path: &path, scope: scope(&untyped) }, &order);
-                typed_labels(&order, &form_types)
+                let order = CanonicalOrder::of(partial, &mut SearchBudget::new());
+                untyped = labels_in_scopes(order, &|_, _| None);
+                let (_, form_types) = types::infer_form(&CheckInput { form: partial, path: &path, scope: scope(&untyped) }, order);
+                typed_labels(order, &form_types)
             };
             if let Some(head) = head {
                 head.labels.get_or_init(|| computed.clone());
@@ -539,6 +527,34 @@ fn with_prefix<R>(
     };
     let prefix = Prefix { complete, partial, path: &path, open, scope: scope(labels) };
     body(&prefix)
+}
+
+/// The labels of each label scope of `form`, the form at `path`, as a mask's
+/// checks read them: with the inference's types, and the canonical labels in
+/// Pose key rows. A mask finds a label by its scope and its id, so the labels
+/// stand in no order, and a form of one scope takes its canonical order only
+/// for a type that holds a label.
+fn mask_labels(form: &Form, path: &NodePath, inference: &inference::Inference<'_>) -> Vec<LabelInScope> {
+    let order = || CanonicalOrder::of(form, &mut SearchBudget::new());
+    let in_scope = |at: &NodePath, members: &mut dyn Iterator<Item = LabelId>, labels: &mut Vec<LabelInScope>| {
+        let inferred = inference.infer(&path.join(at)).expect("a label scope has an inference");
+        for label in members {
+            let ty = inferred.label(label).map(|ty| {
+                types::try_map_labels(&ty, &|label| Some(LabelId(order().canonical_label(at, label)))).expect("every key-row label belongs to its scope")
+            });
+            labels.push(LabelInScope { scope: at.clone(), label, ty });
+        }
+    };
+    let mut labels = Vec::new();
+    match one_scope_labels(form) {
+        Some(members) => in_scope(&NodePath::default(), &mut members.into_iter(), &mut labels),
+        None => {
+            for (at, members) in order().label_scopes() {
+                in_scope(&at, &mut members.iter().map(|(label, _)| *label), &mut labels);
+            }
+        }
+    }
+    labels
 }
 
 /// The input of a check over the whole partial form of `prefix`.
@@ -571,6 +587,10 @@ pub(super) fn settled_result(prefix: &Prefix<'_>, result: CheckResult) -> Prefix
 /// relative to the partial form.
 pub(super) fn standing(prefix: &Prefix<'_>, result: CheckResult, stands: &dyn Fn(&NodePath) -> bool) -> PrefixResult {
     let CheckResult::Refuse(refusals) = result else { return PrefixResult::Undecided };
+    if prefix.scope.inference.is_mask() {
+        // Its refusals hold their source paths ([`CheckInput::refusal_path`]).
+        return refused(refusals.into_vec().into_iter().filter(|refusal| stands(&refusal.at)).collect());
+    }
     let order = CanonicalOrder::of(prefix.partial, &mut SearchBudget::new());
     let source = refusals.iter().map(|refusal| Refusal { message: refusal.message.clone(), at: order.source_path(&refusal.at) });
     refused(source.filter(|refusal| stands(&refusal.at)).collect())
@@ -722,19 +742,19 @@ fn empty() -> Node<Body> {
 /// makes its label or holds `0`.
 pub(super) fn grammar(prefix: &Prefix<'_>) -> PrefixResult {
     let mut refusals = Vec::new();
-    grammar_node(prefix, NodeRef::from(prefix.partial), NodePath::default(), &mut refusals);
+    grammar_node(prefix, NodeRef::from(prefix.partial), &mut Vec::new(), &mut refusals);
     refused(refusals)
 }
 
-fn grammar_node(prefix: &Prefix<'_>, node: NodeRef<'_>, at: NodePath, out: &mut Vec<Refusal>) {
-    let complete = !prefix.is_open(&at);
+fn grammar_node(prefix: &Prefix<'_>, node: NodeRef<'_>, at: &mut Vec<PathStep>, out: &mut Vec<Refusal>) {
+    let complete = !prefix.open.is_some_and(|open| open.0.starts_with(at));
     let mut refuse = |message: &str, at: NodePath| out.push(Refusal { message: message.into(), at });
     match node {
-        NodeRef::Conjunct(Conjunct::Or(branches)) if complete && branches.is_empty() => refuse("an `OR` holds its branches", at.clone()),
-        NodeRef::Site(site) if complete && site.value.args.is_empty() => refuse("a site holds a label or a field site", at.clone()),
+        NodeRef::Conjunct(Conjunct::Or(branches)) if complete && branches.is_empty() => refuse("an `OR` holds its branches", NodePath::from(&at[..])),
+        NodeRef::Site(site) if complete && site.value.args.is_empty() => refuse("a site holds a label or a field site", NodePath::from(&at[..])),
         NodeRef::InstanceInput(input) => {
             for (site, index) in input.head.iter().zip(0u32..) {
-                let site_at = at.child(index);
+                let site_at = NodePath::from(&at[..]).child(index);
                 each_site_label(site, &mut Vec::new(), &mut |use_, _| match use_ {
                     LabelUse::Fresh(_) => refuse("a head site carries no `*`: the body or the key makes its label", site_at.clone()),
                     LabelUse::Zero => refuse("a head site holds no `0`: the body makes its label with `(= *X 0)`", site_at.clone()),
@@ -744,9 +764,14 @@ fn grammar_node(prefix: &Prefix<'_>, node: NodeRef<'_>, at: NodePath, out: &mut 
         }
         _ => {}
     }
-    for (child, index) in node.children().into_iter().zip(0u32..) {
-        grammar_node(prefix, child, at.child(index), out);
-    }
+    let mut index = 0;
+    node.each_handle(|handle| {
+        at.push(PathStep(index));
+        grammar_node(prefix, handle.node(), at, out);
+        at.pop();
+        index += 1;
+        std::ops::ControlFlow::Continue(())
+    });
 }
 
 /// The refusals of the scope on `prefix`: each read of its partial form

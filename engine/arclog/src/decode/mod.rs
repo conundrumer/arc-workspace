@@ -69,7 +69,7 @@ use crate::program::path::NodePath;
 use crate::program::{ProgramRelation, RelationRef};
 use crate::program::{ConstraintOp, Node, Program};
 use crate::registry::Registry;
-use crate::resolver::resolve_in_progress;
+use crate::resolver::resolve_prefix;
 use crate::session::TaskSession;
 use crate::stats::{self, Phase};
 use crate::judge::run::Tested;
@@ -334,7 +334,7 @@ impl<'a> Decoder<'a> {
         }
         self.with_checks_at_state(|checks| {
             checks.prepare_mask();
-            let order = RefCell::default();
+            let memo = MaskMemo::default();
             let column_type = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
             let conflicts = self.state.fixed_label_conflicts(self.context.registry, &column_type);
             let classes = self.state.native_classes(self.context.registry, &column_type);
@@ -363,7 +363,7 @@ impl<'a> Decoder<'a> {
                         }
                         continue;
                     }
-                    let next = if self.state.grammar_only_candidate(token) { self.grammar_next(token) } else { self.next(token, checks, &order) };
+                    let next = if self.state.grammar_only_candidate(token, self.context.registry) { self.grammar_next(token) } else { self.next(token, checks, &memo) };
                     if let Some(class) = class_of[id as usize] {
                         admitted[class] = Some(next.is_ok());
                     }
@@ -400,10 +400,10 @@ impl<'a> Decoder<'a> {
         let mut mask = TokenMask::new(vocabulary.len());
         let mut steps = HashMap::new();
         self.with_checks_at_state(|checks| {
-            let order = RefCell::default();
+            let memo = MaskMemo::default();
             for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
                 let token = vocabulary.token(id).expect("an id of the vocabulary");
-                if let Ok(step) = self.next(token, checks, &order) {
+                if let Ok(step) = self.next(token, checks, &memo) {
                     mask.insert(id);
                     steps.insert(id, step);
                 }
@@ -491,7 +491,7 @@ impl<'a> Decoder<'a> {
         let kept = self.held.0.get().and_then(|held| held.steps.get(&self.context.vocabulary.id(token)?));
         match kept {
             Some((state, forced)) => Ok((state.clone(), forced.clone())),
-            None => self.with_checks(|checks| self.next(token, checks, &RefCell::default())),
+            None => self.with_checks(|checks| self.next(token, checks, &MaskMemo::default())),
         }
     }
 
@@ -627,7 +627,7 @@ impl<'a> Decoder<'a> {
 
     /// The state after `token`, and the tokens the engine emits after it,
     /// where `token` is in the mask.
-    fn next(&self, token: &Token, checks: &PrefixChecks<'_>, order: &RefCell<Order>) -> Result<(state::State, Vec<Token>), Refusal> {
+    fn next(&self, token: &Token, checks: &PrefixChecks<'_>, memo: &MaskMemo) -> Result<(state::State, Vec<Token>), Refusal> {
         let _timed = stats::span(Phase::DecodeNext);
         let vocabulary = &self.context.vocabulary;
         if self.output.is_some() {
@@ -646,7 +646,7 @@ impl<'a> Decoder<'a> {
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
                 if self.context.settings.static_pruning {
-                    self.check_static_prune(&program, open.as_ref(), checks)?;
+                    self.check_static_prune(&program, open.as_ref(), checks, memo)?;
                 }
                 if let (Some(open), true, Token::Lib(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
                     let relation = state.open_relation().expect("an atom stands open");
@@ -656,12 +656,12 @@ impl<'a> Decoder<'a> {
                     return Ok((state, forced));
                 }
                 let candidate = if opened.is_some() { Candidate::AtomHead } else { Candidate::Any };
-                self.check_state(&state, candidate, checks)?;
+                self.check_partial(&program, open.as_ref(), candidate, checks)?;
             }
         }
         if state.open_constraint().is_some() {
             let _timed = stats::span(Phase::DecodeCompletes);
-            self.completes(&state, checks, &reads_example, order)?;
+            self.completes(&state, checks, &reads_example, &memo.order)?;
         } else if state.head_site_completions(usize::MAX).is_some() {
             let _timed = stats::span(Phase::DecodeCompletes);
             let steps = &mut projection_steps();
@@ -680,6 +680,7 @@ impl<'a> Decoder<'a> {
         program: &Node<Program>,
         open: Option<&NodePath>,
         checks: &PrefixChecks<'_>,
+        memo: &MaskMemo,
     ) -> Result<(), Refusal> {
         let _timed = stats::span(Phase::DecodeStaticPrune);
         fn completed<'a>(program: &'a Node<Program>, open: Option<&NodePath>) -> Option<(&'a crate::program::Body, usize)> {
@@ -692,9 +693,11 @@ impl<'a> Decoder<'a> {
             Some((body, count))
         }
         let Some((body, count)) = completed(program, open) else { return Ok(()) };
-        let before = self.state.partial();
-        let prior = before.as_ref().filter(|(p, _)| p.value().forms.len() == program.value().forms.len())
-            .and_then(|(p, o)| completed(p, o.as_ref())).map_or(0, |(_, count)| count);
+        let prior = memo.before.get_or_init(|| {
+            let before = self.state.partial()?;
+            completed(&before.0, before.1.as_ref()).map(|(_, count)| (before.0.value().forms.len(), count))
+        });
+        let prior = prior.filter(|(forms, _)| *forms == program.value().forms.len()).map_or(0, |(_, count)| count);
         let type_of = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
         for index in prior..count {
             let prefix = crate::program::Body { conjuncts: body.conjuncts[..=index].into() };
@@ -746,19 +749,26 @@ impl<'a> Decoder<'a> {
         if program.value().forms.is_empty() {
             return Ok(());
         }
+        self.check_partial(&program, open.as_ref(), candidate, checks)
+    }
+
+    /// The refusal of `checks` on `program`, a program with a form in
+    /// progress whose innermost open node is at `open`, with `candidate`.
+    fn check_partial(&self, program: &Node<Program>, open: Option<&NodePath>, candidate: Candidate, checks: &PrefixChecks<'_>) -> Result<(), Refusal> {
         let check = || {
-            let resolved = resolve_in_progress(&self.state.resolved(self.context.registry), &program, self.context.registry);
-            match checks.check(&resolved, open.as_ref(), candidate, None) {
+            let resolved = resolve_prefix(&self.state.resolved(self.context.registry), program, self.context.registry);
+            match checks.check(&resolved, open, candidate, None) {
                 Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
                 None => Ok(()),
             }
         };
-        // Only the verdict at an open node is shared: a completed form keeps the
-        // node that the step built, and its checks run on that node. A single
-        // token's step shares it as well, so that the step of a token that
-        // `forced` has checked at the state checks nothing again.
-        if candidate == Candidate::Any && open.is_some() {
-            if let Some(key) = prefix_key::key(program.value().forms.last().unwrap(), open.as_ref()) {
+        // A step shares only the verdict at an open node: a completed form keeps
+        // the node that the step built, and its checks run on that node. A
+        // single token's step shares it as well, so that the step of a token
+        // that `forced` has checked at the state checks nothing again. A mask
+        // reads the verdict alone, so it shares that of a completed form too.
+        if candidate == Candidate::Any && (open.is_some() || checks.is_mask()) {
+            if let Some(key) = prefix_key::key(program.value().forms.last().unwrap(), open) {
                 return if checks.is_mask() { self.state.cached_prefix(key, check) } else { self.state.cached_single_prefix(key, check) };
             }
         }
@@ -867,6 +877,16 @@ impl<'a> Decoder<'a> {
 fn projection_steps() -> usize {
     static STEPS: OnceLock<usize> = OnceLock::new();
     *STEPS.get_or_init(|| std::env::var("ARCLOG_PROJECTION_STEPS").ok().and_then(|v| v.parse().ok()).unwrap_or(96))
+}
+
+/// What the candidates of one mask share, each read of the state before
+/// their step.
+#[derive(Default)]
+struct MaskMemo {
+    order: RefCell<Order>,
+    /// The forms of the state's program with the form in progress, and the
+    /// conjuncts complete in that form, where it is a clause.
+    before: std::cell::OnceCell<Option<(usize, usize)>>,
 }
 
 /// What the mask has found at a state of the order operators `<`, `<=`, `>`

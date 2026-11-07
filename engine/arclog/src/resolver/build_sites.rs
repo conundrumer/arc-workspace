@@ -23,21 +23,25 @@ impl Builder<'_> {
     pub(super) fn sites(&mut self) {
         let atoms = std::mem::take(&mut self.atoms);
         for AtomRead { path, atom, scope, form } in &atoms {
-            let mut columns = self.names.columns(scope, &atom.relation).cloned();
-            if self.lifts(form, &self.resolutions[path]) {
-                columns = columns.map(|found| found.lifted());
+            let lifts = self.lifts(form, &self.resolutions[path]);
+            if lifts {
                 self.lifted.insert(path.clone());
                 if binds_train_examples(self.case.value(), path, atom) {
                     self.train_lifted.insert(path.clone());
                 }
             }
-            if let Some(columns) = &columns {
+            let found = self.names.columns(scope, &atom.relation);
+            let lifted = found.filter(|_| lifts).map(Columns::lifted);
+            let columns = if lifts { lifted.as_ref() } else { found };
+            if let Some(columns) = columns {
                 for (index, site) in atom.sites.iter().enumerate() {
-                    self.place_site(columns, site, path.child(index as u32));
+                    place_site(&mut self.positions, &mut self.groups, columns, site, path.child(index as u32));
                 }
             }
-            let signature = signature(&self.names, &self.resolutions[path], &atom.relation, columns.as_ref());
-            self.signatures.insert(path.clone(), signature);
+            if self.signed {
+                let signature = signature(&self.names, &self.resolutions[path], &atom.relation, columns);
+                self.signatures.insert(path.clone(), signature);
+            }
         }
     }
 
@@ -48,34 +52,6 @@ impl Builder<'_> {
         let Resolution::Node(read) = resolution else { return false };
         lifted(self.is_fact(*read), self.form_sides[form], self.sides[read.0 as usize])
     }
-    fn place_site(&mut self, columns: &Columns, site: &crate::program::Site, path: NodePath) {
-        use crate::program::SiteArg;
-        match columns.place(std::slice::from_ref(&site.column)) {
-            Some(Place::Column(position)) => {
-                for (index, arg) in site.value.args.iter().enumerate() {
-                    if let SiteArg::NamedLabel { .. } = arg {
-                        self.positions.insert(path.child(index as u32), position);
-                    }
-                }
-                self.positions.insert(path, position);
-            }
-            Some(Place::Group(group)) => {
-                for (index, arg) in site.value.args.iter().enumerate() {
-                    let field = match arg {
-                        SiteArg::NamedLabel { name, .. } => name,
-                        SiteArg::Field(field) => &field.column,
-                        SiteArg::Label(_) => continue,
-                    };
-                    if let Some(Place::Field(position, _)) = columns.place(&[site.column.clone(), field.clone()]) {
-                        self.positions.insert(path.child(index as u32), position);
-                    }
-                }
-                self.groups.insert(path, group);
-            }
-            Some(Place::Field(..)) | None => {}
-        }
-    }
-
     /// The stored parameter's column that each column of each proposer
     /// of each clause stands for, by position: the clause's columns in
     /// the order it gives them, or, with none, its first proposer's.
@@ -168,6 +144,35 @@ pub(super) fn signature(names: &Names, resolution: &Resolution, relation: &Relat
         None => out.write(&[0]),
     }
     Signature(out.finish())
+}
+
+/// Records in `positions` and `groups` where the site at `path` stands in `columns`.
+fn place_site(positions: &mut StableHashMap<NodePath, crate::resolver::ColumnPosition>, groups: &mut StableHashMap<NodePath, crate::relations::ColumnGroup>, columns: &Columns, site: &crate::program::Site, path: NodePath) {
+    use crate::program::SiteArg;
+    match columns.place(std::slice::from_ref(&site.column)) {
+        Some(Place::Column(position)) => {
+            for (index, arg) in site.value.args.iter().enumerate() {
+                if let SiteArg::NamedLabel { .. } = arg {
+                    positions.insert(path.child(index as u32), position);
+                }
+            }
+            positions.insert(path, position);
+        }
+        Some(Place::Group(group)) => {
+            for (index, arg) in site.value.args.iter().enumerate() {
+                let field = match arg {
+                    SiteArg::NamedLabel { name, .. } => name,
+                    SiteArg::Field(field) => &field.column,
+                    SiteArg::Label(_) => continue,
+                };
+                if let Some(Place::Field(position, _)) = columns.place(&[site.column.clone(), field.clone()]) {
+                    positions.insert(path.child(index as u32), position);
+                }
+            }
+            groups.insert(path, group);
+        }
+        Some(Place::Field(..)) | None => {}
+    }
 }
 
 /// Whether the lifted read `atom` at `path` of `program` has a site on the

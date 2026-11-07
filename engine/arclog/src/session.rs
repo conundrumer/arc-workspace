@@ -15,6 +15,7 @@ use crate::eval::{Caps, ReachedBound, RelationValue};
 use crate::hash::{StableHash, StableHashMap};
 use crate::relations::{Relation, RelationPart, SharedRows, StorageTag};
 use crate::program::FactRelation;
+use crate::registry::LibName;
 use crate::task::Task;
 use crate::terms::{Example, InternTable, TermId};
 
@@ -780,6 +781,10 @@ pub struct TaskSession {
     /// The fact relations built so far, one per fact and example, each
     /// built on its first use. A session serves one task.
     facts: Arc<Mutex<StableHashMap<(FactRelation, Option<Example>), Arc<Relation>>>>,
+    /// The rows of the native proposers so far, one relation per proposer
+    /// and example, each built on its first use, as `facts` keeps a fact's:
+    /// they read the grids of the session's task alone.
+    native_rows: Arc<Mutex<StableHashMap<(LibName, Option<Example>), Arc<Relation>>>>,
     /// The domains that the liveness walks of the decodes of this session
     /// keep, made on the first walk.
     det_probes: Arc<OnceLock<crate::decode::det_memo::ProbeMemo>>,
@@ -816,7 +821,7 @@ impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default() }
+        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), native_rows: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default() }
     }
 
     /// A session with this session's intern table and fact relations, and
@@ -840,7 +845,7 @@ impl TaskSession {
     /// relation for each fact and example, so an evaluation over a task other
     /// than the session's uses a session from this method.
     pub fn with_own_facts(&self) -> Self {
-        TaskSession { facts: Arc::default(), ..self.clone() }
+        TaskSession { facts: Arc::default(), native_rows: Arc::default(), ..self.clone() }
     }
 
     /// The domains that the liveness walks of this session's decodes keep.
@@ -872,6 +877,19 @@ impl TaskSession {
     /// relation of the session's state, or a stored table.
     pub fn provide_fact(&self, fact: FactRelation, example: Option<Example>, rows: Relation) {
         self.facts.lock().expect(UNPOISONED).insert((fact, example), Arc::new(rows));
+    }
+
+    /// The rows of the native proposer `proposer` on `example` of the
+    /// session's task, or over the whole task where `example` is none, which
+    /// `make` gives on the first request or else `None` for a proposer with
+    /// no port.
+    pub(crate) fn native_proposer_rows(&self, proposer: &LibName, example: Option<Example>, make: impl FnOnce() -> Option<Relation>) -> Option<Arc<Relation>> {
+        let key = (proposer.clone(), example);
+        if let Some(held) = self.native_rows.lock().expect(UNPOISONED).get(&key) {
+            return Some(Arc::clone(held));
+        }
+        let made = Arc::new(make()?);
+        Some(Arc::clone(self.native_rows.lock().expect(UNPOISONED).entry(key).or_insert(made)))
     }
 
     /// Whether the session's bytes lie within its bound. The bytes are the

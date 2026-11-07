@@ -529,14 +529,29 @@ impl State {
     /// the prefix's source, its open path and the finished forms, which the
     /// key and the cache's lifetime fix.
     pub(super) fn cached_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
-        self.cached_verdict(PrefixKind::Check, key, compute)
+        let single = (PrefixKind::SingleCheck, key);
+        // The oracle of the mask reads each verdict apart.
+        #[cfg(not(feature = "admissible-reference"))]
+        if let Some(verdict) = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&single) {
+            crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
+            return verdict;
+        }
+        self.cached_verdict(PrefixKind::Check, single.1, compute)
     }
 
     /// [`State::cached_prefix`] for a verdict that the checks give outside the
-    /// mask's mode, as a single token's step does; it is kept apart from the
-    /// mask's.
+    /// mask's mode, as a single token's step does. A mask gives one verdict
+    /// with a step, so a prefix that a mask passed takes that pass; a mask's
+    /// refusal is kept apart, as a step gives each refusal's place and text.
     pub(super) fn cached_single_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
-        self.cached_verdict(PrefixKind::SingleCheck, key, compute)
+        let mask = (PrefixKind::Check, key);
+        // The oracle of the mask reads each verdict apart.
+        #[cfg(not(feature = "admissible-reference"))]
+        if let Some(Ok(())) = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&mask) {
+            crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
+            return Ok(());
+        }
+        self.cached_verdict(PrefixKind::SingleCheck, mask.1, compute)
     }
 
     pub(super) fn cached_det_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
@@ -682,16 +697,20 @@ impl State {
     }
 
     /// Whether `token` takes the grammar step alone, with no check of the
-    /// prefix: an `INIT`'s component token, and the first proposer of a
-    /// clause. At an `INIT` that holds its component alone, and at a clause
-    /// that holds one proposer and no body, no check refuses but the
-    /// proposer's name rule of `RigidPartsAndProposersCheck`.
-    pub(super) fn grammar_only_candidate(&self, token: &Token) -> bool {
+    /// prefix: an `INIT`'s component token, and a proposer of a clause. At an
+    /// `INIT` that holds its component alone, no check refuses, and at a
+    /// clause that holds proposers and no body, no check refuses but the
+    /// proposer's name rule of `RigidPartsAndProposersCheck` and the rule of
+    /// `PicksCheck` that each proposer fits the first. A proposer that breaks
+    /// a rule takes the checks, which refuse it.
+    pub(super) fn grammar_only_candidate(&self, token: &Token, registry: &Registry) -> bool {
         if self.awaits_component() {
             return matches!(token, Token::Lib(_));
         }
         match (&self.stack[..], token) {
-            ([Frame::Clause(ClauseFrame { stage: ClauseStage::Proposers, proposers, .. })], Token::Proposer(name)) if proposers.is_empty() => crate::check::rigid_proposer::is_proposer_name(&name.0),
+            ([Frame::Clause(ClauseFrame { stage: ClauseStage::Proposers, proposers, .. })], Token::Proposer(name)) => {
+                crate::check::rigid_proposer::is_proposer_name(&name.0) && proposers.first().is_none_or(|first| crate::check::picks::proposer_fits(first, name, registry))
+            }
             _ => false,
         }
     }
