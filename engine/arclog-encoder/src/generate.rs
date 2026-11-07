@@ -178,6 +178,11 @@ struct SavedFamily {
     task_wide: bool,
     over_grids: bool,
     two_tables: bool,
+    /// The heads by name and the head of each term, where the counts of bounds ran.
+    #[serde(default)]
+    head_names: Vec<String>,
+    #[serde(default)]
+    term_heads: Vec<u32>,
 }
 
 /// The terms over a table of one schema.
@@ -209,6 +214,8 @@ pub struct Generated {
     over_grids: bool,
     /// Whether each of the family's roots reads two tables.
     two_tables: bool,
+    /// The head number of each term, where the counts of bounds run, and none otherwise.
+    bound_heads: Vec<u32>,
 }
 
 pub fn is_number(ty: &ValueType) -> bool {
@@ -702,6 +709,9 @@ impl Generated {
             roots += term.roots.len();
         }
         family.roots = roots;
+        if crate::bounds::enabled() {
+            family.bound_heads = family.terms.iter().map(|term| crate::bounds::head_of(&term.text)).collect();
+        }
         // A walk reads the steps and the roots, and the leaves' refinements.
         if !family.keep_text {
             for term in &mut family.terms {
@@ -1012,7 +1022,7 @@ impl Generated {
     }
 
     fn empty() -> Generated {
-        Generated { key_columns: Vec::new(), step_ids: std::sync::OnceLock::new(), one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false }
+        Generated { key_columns: Vec::new(), step_ids: std::sync::OnceLock::new(), one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false, bound_heads: Vec::new() }
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
@@ -2443,13 +2453,16 @@ impl<'a> Walker<'a> {
     }
 
     fn apply(&mut self, step: &Step, a: u32, b: u32) -> Val {
+        crate::bounds::begin();
         let first = self.values[a as usize].clone();
-        if b == NO_TERM {
+        let value = if b == NO_TERM {
             self.eval.apply(step, &[&first])
         } else {
             let second = self.values[b as usize].clone();
             self.eval.apply(step, &[&first, &second])
-        }
+        };
+        crate::bounds::end(a == 0 || (b != NO_TERM && b == 0));
+        value
     }
 
     /// A term's count of rows and, for a number root, its number, with what can be left unbuilt left so.
@@ -2480,7 +2493,9 @@ impl<'a> Walker<'a> {
         if !number && matches!(step, Step::Join { .. } | Step::Antijoin { .. }) {
             let first = self.values[id as usize].clone();
             let second = self.values[b as usize].clone();
+            crate::bounds::begin();
             if let Some(found) = self.eval.count(step, &[&first, &second]) {
+                crate::bounds::end(id == 0 || b == 0);
                 return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
             }
         }
@@ -2504,6 +2519,9 @@ impl<'a> Walker<'a> {
         let mut table = RootTable { stride: instances, ..RootTable::default() };
         let mut walk_cells = 0usize;
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
+            if let Some(head) = family.bound_heads.get(at) {
+                crate::bounds::set_head(*head);
+            }
             let step_id = steps.ids[at];
             let first = std::mem::take(&mut ids[term.a as usize]);
             let second = if term.b == NO_TERM { Vec::new() } else if term.b == term.a { first.clone() } else { std::mem::take(&mut ids[term.b as usize]) };
@@ -2517,6 +2535,9 @@ impl<'a> Walker<'a> {
             let idle = (!on_no_rows && first[..scope].iter().all(|id| *id == 1)) || first[..scope].iter().all(|id| *id == 0) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
             if extended {
                 own.reserve(instances);
+                if walk_cells > WALK_CELLS {
+                    crate::bounds::skipped(crate::bounds::Bound::Walk, scope as u64);
+                }
                 // Past the bound, what a term gives has no value, so a walk's memory stays bounded.
                 for pair in 0..if walk_cells > WALK_CELLS { 0 } else { scope } {
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
@@ -2595,6 +2616,7 @@ impl<'a> Walker<'a> {
         }
         // A task keeps a walker per schema, so one large walk leaves nothing behind.
         self.keep_within_budget();
+        crate::bounds::flush();
         table
     }
 
@@ -3034,6 +3056,14 @@ impl Generators {
         family.task_wide = held.task_wide;
         family.over_grids = held.over_grids;
         family.two_tables = held.two_tables;
+        if crate::bounds::enabled() {
+            // A family saved with no heads would count under none.
+            if held.term_heads.len() != family.terms.len() {
+                return None;
+            }
+            let heads: Vec<u32> = held.head_names.iter().map(|name| crate::bounds::head_of(name)).collect();
+            family.bound_heads = held.term_heads.iter().map(|at| heads[*at as usize]).collect();
+        }
         Some(family)
     }
 
@@ -3052,7 +3082,13 @@ impl Generators {
             task_wide: family.task_wide,
             over_grids: family.over_grids,
             two_tables: family.two_tables,
+            head_names: Vec::new(),
+            term_heads: Vec::new(),
         };
+        let mut held = held;
+        let names_of: Vec<String> = family.bound_heads.iter().map(|head| crate::bounds::name_of(*head)).collect();
+        held.head_names = names_of.iter().cloned().collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+        held.term_heads = names_of.iter().map(|name| held.head_names.binary_search(name).expect("a head's name") as u32).collect();
         let Ok(text) = serde_json::to_vec(&held) else { return };
         let Ok(packed) = zstd::stream::encode_all(&text[..], 3) else { return };
         if let Some(folder) = path.parent() {

@@ -22,6 +22,7 @@ use arclog::session::TaskSession;
 use arclog::terms::{Constant, Term, TermId};
 use arclog::types::ValueType;
 
+use crate::bounds::Bound;
 use crate::expression::Op;
 
 pub type Cell = u32;
@@ -625,6 +626,7 @@ impl<'a> Evaluator<'a> {
                 // The rows that `join` would build, which past the cap give no value.
                 let width = l.columns.len() + (0..r.columns.len()).filter(|place| !r_places.contains(place)).count();
                 if matched.saturating_mul(width as u64) > CELL_CAP as u64 {
+                    crate::bounds::mark(Bound::CountOutput);
                     return Some(None);
                 }
                 let rest: Vec<&Part> = l_rest.into_iter().chain(r_rest).collect();
@@ -775,7 +777,7 @@ impl<'a> Evaluator<'a> {
         let fresh: Vec<usize> = (0..arity).filter(|at| bound[*at].is_none()).collect();
         let positions: Vec<u16> = bound.iter().flatten().copied().collect();
         let (touched, rest) = split_parts(parts, &positions);
-        let Some(merged) = merge(&touched) else { return Val::None };
+        let Some(merged) = merge(&touched, Bound::LibJoin) else { return Val::None };
         // The place in the merged rows of each lib column that a position binds.
         let places: Vec<Option<usize>> = bound.iter().map(|at| at.map(|at| merged.columns.iter().position(|column| *column == at).expect("a bound column stands in a touched part"))).collect();
         let width = merged.columns.len() + fresh.len();
@@ -797,6 +799,7 @@ impl<'a> Evaluator<'a> {
                     out.extend(fresh.iter().map(|at| lib_row[*at]));
                 }
                 if out.len() > CELL_CAP {
+                    crate::bounds::mark(Bound::LibJoin);
                     return Val::None;
                 }
             }
@@ -843,10 +846,11 @@ impl<'a> Evaluator<'a> {
             let cells = distinct_rows(places.len(), cells);
             factors.push((held, cells));
         }
-        let total = factors.iter().try_fold(1usize, |total, (held, cells)| total.checked_mul(cells.len() / held.len().max(1)))?;
-        if total.checked_mul(width)? > CELL_CAP {
+        let total = factors.iter().try_fold(1usize, |total, (held, cells)| total.checked_mul(cells.len() / held.len().max(1)));
+        let Some(total) = total.filter(|total| total.checked_mul(width).is_some_and(|cells| cells <= CELL_CAP)) else {
+            crate::bounds::mark(Bound::Projected);
             return None;
-        }
+        };
         let mut out: Vec<Cell> = vec![0; total * width];
         let mut repeat = 1usize;
         for (held, cells) in &factors {
@@ -999,6 +1003,7 @@ impl<'a> Evaluator<'a> {
                     counts[at] += 1;
                 }
                 if cells[at].len() > CELL_CAP {
+                    crate::bounds::mark(Bound::ComponentOutput);
                     return None;
                 }
             }
@@ -1338,15 +1343,16 @@ struct Merged<'p> {
 }
 
 /// The product of `parts`, or `None` past the cap. One part is its own rows, read in place.
-fn merge<'p>(parts: &[&'p Part]) -> Option<Merged<'p>> {
+fn merge<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
     let columns: Vec<u16> = parts.iter().flat_map(|part| part.columns.iter().copied()).collect();
-    let total = parts.iter().try_fold(1usize, |total, part| total.checked_mul(part.table.len))?;
+    let total = parts.iter().try_fold(1usize, |total, part| total.checked_mul(part.table.len));
     if parts.is_empty() {
         return Some(Merged { columns, cells: std::borrow::Cow::Borrowed(&[]) });
     }
-    if total.checked_mul(columns.len())? > CELL_CAP {
+    let Some(total) = total.filter(|total| total.checked_mul(columns.len()).is_some_and(|cells| cells <= CELL_CAP)) else {
+        crate::bounds::mark(site);
         return None;
-    }
+    };
     if let [one] = parts {
         return Some(Merged { columns, cells: std::borrow::Cow::Borrowed(&one.table.cells) });
     }
@@ -1422,7 +1428,7 @@ fn select(value: &Val, at: u16, op: Op, other: Option<u16>, drop: Option<u16>) -
     let mut positions = vec![at];
     positions.extend(other);
     let (touched, rest) = split_parts(parts, &positions);
-    let merged = merge(&touched)?;
+    let merged = merge(&touched, Bound::SelectSide)?;
     let place_of = |position: u16| merged.columns.iter().position(|column| *column == position).expect("a selected column stands in a touched part");
     let a = place_of(at);
     let b = other.map(place_of);
@@ -1559,8 +1565,8 @@ fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16]
             }
         }
     }
-    let tl = merge(&left_touched)?;
-    let tr = merge(&right_touched)?;
+    let tl = merge(&left_touched, Bound::JoinSide)?;
+    let tr = merge(&right_touched, Bound::JoinSide)?;
     let left_places: Vec<usize> = left_at.iter().map(|at| tl.columns.iter().position(|column| column == at).expect("a paired column")).collect();
     let right_places: Vec<usize> = right_at.iter().map(|at| tr.columns.iter().position(|column| column == at).expect("a paired column")).collect();
     let right_kept: Vec<usize> = (0..tr.columns.len()).filter(|place| !right_places.contains(place)).collect();
@@ -1594,6 +1600,7 @@ fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16]
             }
         }
         if cells.len() > CELL_CAP {
+            crate::bounds::mark(Bound::JoinOutput);
             return None;
         }
     }
@@ -1673,8 +1680,8 @@ fn antijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Optio
     }
     let (left_touched, left_rest) = split_parts(left_parts, left_at);
     let (right_touched, _) = split_parts(right_parts, right_at);
-    let tl = merge(&left_touched)?;
-    let tr = merge(&right_touched)?;
+    let tl = merge(&left_touched, Bound::AntijoinSide)?;
+    let tr = merge(&right_touched, Bound::AntijoinSide)?;
     let left_places: Vec<usize> = left_at.iter().map(|at| tl.columns.iter().position(|column| column == at).expect("a paired column")).collect();
     let right_places: Vec<usize> = right_at.iter().map(|at| tr.columns.iter().position(|column| column == at).expect("a paired column")).collect();
     let mut keys: Vec<u64> = tr.cells.chunks_exact(tr.columns.len()).map(|row| key_word(row, &right_places)).collect();
@@ -1699,17 +1706,26 @@ fn union(left: &Val, right: &Val, map: &[Option<u16>]) -> Option<Val> {
     let width = map.len();
     let mut cells: Vec<Cell> = Vec::new();
     if let Val::Rows(_) = left {
-        for row in left.rows(width, CELL_CAP / width.max(1))? {
+        let Some(rows) = left.rows(width, CELL_CAP / width.max(1)) else {
+            crate::bounds::mark(Bound::Union);
+            return None;
+        };
+        for row in rows {
             cells.extend_from_slice(&row);
         }
     }
     if let Val::Rows(parts) = right {
         let arity = parts.iter().flat_map(|part| part.columns.iter()).map(|column| usize::from(*column) + 1).max().unwrap_or(0);
-        for row in right.rows(arity, CELL_CAP / width.max(1))? {
+        let Some(rows) = right.rows(arity, CELL_CAP / width.max(1)) else {
+            crate::bounds::mark(Bound::Union);
+            return None;
+        };
+        for row in rows {
             cells.extend(map.iter().map(|at| at.map_or(0, |at| row[usize::from(at)])));
         }
     }
     if cells.len() > CELL_CAP {
+        crate::bounds::mark(Bound::Union);
         return None;
     }
     if cells.is_empty() {

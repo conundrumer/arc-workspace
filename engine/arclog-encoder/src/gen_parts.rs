@@ -330,7 +330,10 @@ pub fn flat(value: &Val) -> Option<Arc<Table>> {
     if let Some(found) = FLATS.with(|flats| flats.borrow().0.get(&key).cloned()) {
         return Some(found);
     }
-    let built = flat_product(value, parts, arity)?;
+    let Some(built) = flat_product(value, parts, arity) else {
+        crate::bounds::mark(crate::bounds::Bound::Flat);
+        return None;
+    };
     FLATS.with(|flats| {
         let mut flats = flats.borrow_mut();
         flats.1 += built.cells.len();
@@ -1885,6 +1888,7 @@ impl PartStep {
                 let grid = grid_of(children[1])?;
                 let mut out = Vec::new();
                 if t.len > 200 {
+                    crate::bounds::mark(crate::bounds::Bound::InsideRows);
                     return None;
                 }
                 for row in t.rows() {
@@ -1916,6 +1920,7 @@ impl PartStep {
                     pattern.sort_unstable();
                     pattern.dedup();
                     if pattern.len() > 900 {
+                        crate::bounds::mark(crate::bounds::Bound::OccursPattern);
                         return None;
                     }
                     for which in 0..if *turned { 8 } else { 1 } {
@@ -2233,6 +2238,7 @@ impl PartStep {
             PartStep::InsideBoxes { a, b } | PartStep::BoxesHolding { a, b } => {
                 let other = flat(children[1])?;
                 if other.sorted_column(usize::from(*b)).len() * t.len > 4_000_000 {
+                    crate::bounds::mark(crate::bounds::Bound::BoxesGuard);
                     return None;
                 }
                 let inside = matches!(self, PartStep::InsideBoxes { .. });
@@ -2443,6 +2449,7 @@ impl PartStep {
                 let first = t.rows().next().map(|row| margins_of(row[usize::from(*p)]))?;
                 let (h, w) = (first[0] + first[1] + 1, first[2] + first[3] + 1);
                 if h * w > 4096 {
+                    crate::bounds::mark(crate::bounds::Bound::ComplementArea);
                     return None;
                 }
                 let held: std::collections::HashSet<Cell> = t.rows().map(|row| row[usize::from(*p)]).collect();
