@@ -1672,6 +1672,32 @@ fn print(evaluated: &Evaluated) {
     }
 }
 
+/// The lists of tables that a caller sends by pipe, so no table's rows stand in a file: each line of stdin is what the
+/// tables command of `candidate-lists` prints, and each answer on stdout is its length as 8 bytes, then the lists as that
+/// command's file holds them. An answer of length 0 is a fault, written to stderr.
+fn run_serve_lists(arguments: &Arguments) -> Result<(), String> {
+    use arclog_encoder::candidate_lists::{lists_task, ListsOf};
+    use arclog_encoder::generate::Generators;
+    use std::io::{BufRead, Write};
+    let families = Generators::default();
+    let stdin = std::io::stdin();
+    let mut out = std::io::stdout().lock();
+    for line in stdin.lock().lines() {
+        let line = line.map_err(|error| error.to_string())?;
+        let bytes = match lists_task(&line, &arguments.tasks, &families, None, arguments.size.max(1), ListsOf::Tables) {
+            Ok(found) => found.bytes,
+            Err(message) => {
+                eprintln!("{message}");
+                Vec::new()
+            }
+        };
+        out.write_all(&(bytes.len() as u64).to_le_bytes()).map_err(|error| error.to_string())?;
+        out.write_all(&bytes).map_err(|error| error.to_string())?;
+        out.flush().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 fn main() {
     // The specification takes sources as on, and the engine's default is off.
     if std::env::var_os("ARCLOG_IDENT_SOURCE").is_none() {
@@ -1694,6 +1720,7 @@ fn main() {
         ("query-vectors", [solver]) => run_query_vectors(&arguments, solver),
         ("state-vectors", [solver]) => run_state_vectors(&arguments, solver),
         ("candidate-lists", [out, sources @ ..]) if !sources.is_empty() => run_candidate_lists(&arguments, out, sources),
+        ("serve-lists", []) => run_serve_lists(&arguments),
         ("all-lists", [root, sources @ ..]) if !sources.is_empty() => run_all_lists(&arguments, root, sources),
         ("term-counts", [pattern, file]) => run_term_counts(&arguments, pattern, file),
         ("generate-check", [file]) => run_generate_check(&arguments, arguments.tables_per_task.max(1), file),
