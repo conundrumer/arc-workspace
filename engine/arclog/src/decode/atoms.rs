@@ -37,6 +37,69 @@ struct Tokens {
     end: Option<u32>,
     /// What may stand after a site's column, in ascending order of id.
     ascending_after_site: Vec<u32>,
+    /// The settings of the decode, which give the ids of the tokens.
+    settings: String,
+}
+
+/// The most verdicts that the process holds for the lib's relations and the
+/// fact relations.
+const SHARED_VERDICTS: usize = 1 << 22;
+
+/// The verdicts of the atoms of the lib's relations and of the fact relations,
+/// which read no program and no task: the sessions of the process share them.
+/// A verdict that may read a task's rows stands apart ([`Decoder::atom_place_walk`]).
+fn shared_verdicts() -> &'static std::sync::Mutex<crate::hash::StableHashMap<u128, HeldVerdict>> {
+    static HELD: std::sync::OnceLock<std::sync::Mutex<crate::hash::StableHashMap<u128, HeldVerdict>>> = std::sync::OnceLock::new();
+    HELD.get_or_init(Default::default)
+}
+
+/// The verdicts that the process holds for the lib's relations and the fact
+/// relations, as bytes for [`add_atom_verdicts`] in a process of the same engine.
+pub fn atom_verdicts() -> Vec<u8> {
+    let held = shared_verdicts().lock().expect("the atom verdicts are not poisoned");
+    let mut bytes = Vec::with_capacity(held.len() * 18);
+    for (key, verdict) in held.iter() {
+        bytes.extend_from_slice(&key.to_le_bytes());
+        match verdict {
+            HeldVerdict::Value(admitted) => bytes.push(u8::from(*admitted)),
+            HeldVerdict::Place(verdict) => {
+                bytes.push(2 + u8::from(verdict.place == AtomPlace::Value) + 2 * u8::from(verdict.closes));
+                bytes.extend_from_slice(&(verdict.next.len() as u32).to_le_bytes());
+                verdict.next.iter().for_each(|id| bytes.extend_from_slice(&id.to_le_bytes()));
+            }
+        }
+    }
+    bytes
+}
+
+/// Adds the verdicts that [`atom_verdicts`] gave, and gives the count of them,
+/// or `None` where the bytes are not whole.
+pub fn add_atom_verdicts(bytes: &[u8]) -> Option<usize> {
+    let mut held = shared_verdicts().lock().expect("the atom verdicts are not poisoned");
+    let mut at = 0;
+    let mut count = 0;
+    let take = |at: &mut usize, len: usize| -> Option<&[u8]> {
+        let found = bytes.get(*at..*at + len)?;
+        *at += len;
+        Some(found)
+    };
+    while at < bytes.len() {
+        let key = u128::from_le_bytes(take(&mut at, 16)?.try_into().ok()?);
+        let tag = take(&mut at, 1)?[0];
+        let verdict = match tag {
+            0 | 1 => HeldVerdict::Value(tag == 1),
+            2..=5 => {
+                let len = u32::from_le_bytes(take(&mut at, 4)?.try_into().ok()?) as usize;
+                let next = take(&mut at, len * 4)?.chunks_exact(4).map(|id| u32::from_le_bytes(id.try_into().expect("four bytes"))).collect();
+                let place = if (tag - 2) % 2 == 1 { AtomPlace::Value } else { AtomPlace::Sites };
+                HeldVerdict::Place(Arc::new(AtomVerdict { place, closes: tag >= 4, next }))
+            }
+            _ => return None,
+        };
+        held.insert(key, verdict);
+        count += 1;
+    }
+    Some(count)
 }
 
 /// What the checks give at a place in an atom, which an atom of the same shape shares.
@@ -164,7 +227,7 @@ impl Decoder<'_> {
     pub fn candidate_atoms(&self, limit: usize) -> CandidateAtoms {
         let mut found = CandidateAtoms::default();
         let vocabulary = self.vocabulary();
-        let mut tokens = Tokens { opening: Vec::new(), not: None, columns: Vec::new(), values: Vec::new(), closing: Vec::new(), end: None, ascending_after_site: Vec::new() };
+        let mut tokens = Tokens { opening: Vec::new(), not: None, columns: Vec::new(), values: Vec::new(), closing: Vec::new(), end: None, ascending_after_site: Vec::new(), settings: format!("{:?}", self.context.settings) };
         for id in 0..vocabulary.len() as u32 {
             match vocabulary.token(id).expect("an id of the vocabulary") {
                 Token::Relation(_) | Token::Fact(_) | Token::Lib(_) => tokens.opening.push(id),
@@ -238,6 +301,7 @@ impl Decoder<'_> {
         // A read of a program's relation can read an output of the form in progress, whose checks read the rest of the form.
         let reads_program = opening.last().is_some_and(|id| matches!(self.vocabulary().token(*id), Some(Token::Relation(_))));
         state.atom_context(reads_program, &mut hasher);
+        hasher.write(tokens.settings.as_bytes());
         // A rule that reads whether two labels stand in one grid reads what no shape holds.
         let reads_grids = opening.last().and_then(|id| match self.vocabulary().token(*id) {
             Some(Token::Lib(name)) => self.context.registry.algebra_relation(name),
@@ -317,19 +381,23 @@ impl Decoder<'_> {
                 let mut made = None;
                 self.at(here, |walker| {
                     made = Some(if place == AtomPlace::Sites {
-                        let closes = walker.mask_first(tokens.closing.iter().copied());
+                        // The token that opens an atom reads no task. Another token, such as an `END` that closes a `DET`, may read the rows of its task.
+                        let by_atom = walker.mask_first(tokens.opening.iter().copied());
+                        let closes = by_atom || walker.mask_first(tokens.closing.iter().copied());
                         let above = floor.map_or(0, |floor| floor as usize + 1);
-                        (closes, walker.mask_over(tokens.columns[above.min(tokens.columns.len())..].iter().copied()))
+                        (closes, by_atom, walker.mask_over(tokens.columns[above.min(tokens.columns.len())..].iter().copied()))
                     } else {
-                        (false, walker.mask_over(tokens.columns.iter().chain(&tokens.end).copied()))
+                        (false, true, walker.mask_over(tokens.columns.iter().chain(&tokens.end).copied()))
                     });
                 });
-                let (closes, mask) = made.expect("the body ran");
+                let (closes, reads_no_task, mask) = made.expect("the body ran");
                 let mut next: Vec<u32> = mask.steps.keys().copied().collect();
                 next.sort_unstable();
                 steps.extend(mask.steps.into_iter().map(|(id, (state, _))| (id, state)));
                 let verdict = Arc::new(AtomVerdict { place, closes, next: next.into() });
-                self.atom_verdict_keep(shared, node, HeldVerdict::Place(Arc::clone(&verdict)));
+                if reads_no_task || !shared {
+                    self.atom_verdict_keep(shared, node, HeldVerdict::Place(Arc::clone(&verdict)));
+                }
                 verdict
             }
         };
@@ -421,11 +489,19 @@ impl Decoder<'_> {
     }
 
     fn atom_verdict_held(&self, shared: bool, key: u128) -> Option<HeldVerdict> {
-        if shared { self.session.atom_verdict(key) } else { self.state.atom_verdict(key) }
+        if shared { shared_verdicts().lock().expect("the atom verdicts are not poisoned").get(&key).cloned() } else { self.state.atom_verdict(key) }
     }
 
     fn atom_verdict_keep(&self, shared: bool, key: u128, verdict: HeldVerdict) {
-        if shared { self.session.keep_atom_verdict(key, verdict) } else { self.state.keep_atom_verdict(key, verdict) }
+        if shared {
+            let mut held = shared_verdicts().lock().expect("the atom verdicts are not poisoned");
+            if held.len() >= SHARED_VERDICTS {
+                held.clear();
+            }
+            held.insert(key, verdict);
+        } else {
+            self.state.keep_atom_verdict(key, verdict);
+        }
     }
 }
 

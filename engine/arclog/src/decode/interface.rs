@@ -432,7 +432,16 @@ impl<'a> Decoder<'a> {
             _ => None,
         };
         let OpenClause { clause, mut kept, open_at, below } = match view {
-            Some((instance, keyword)) => open_instance_clause(instance.value(), &open, keyword, self.fresh_relation(), registry)?,
+            Some((instance, keyword)) => match open_instance_clause(instance.value(), &open, keyword, self.fresh_relation(), registry) {
+                Some(open) => open,
+                // The next token may open the body that the engine named.
+                None => {
+                    let kept: Vec<Conjunct> = self.state.named_body_before()?.to_vec();
+                    let empty = Node::new(Body { conjuncts: Arc::from([]) });
+                    let clause = Clause { keyword, derives: self.fresh_relation(), gloss: None, proposers: Arc::from([]), body: empty, ones: Arc::from([]), set: false, columns: Arc::from([]) };
+                    OpenClause { clause, kept, open_at: None, below: Vec::new() }
+                }
+            },
             None => open_clause(last, &open, registry)?,
         };
         if let Some(at) = open_at {

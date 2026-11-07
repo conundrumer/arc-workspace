@@ -444,6 +444,20 @@ pub(crate) fn atom_tables<'py>(py: Python<'py>, decoder: PyRef<'py, PyDecoder>, 
     Ok((found.index.clone(), summaries, found.by_program, found.over_cap.clone()))
 }
 
+/// The verdicts that the process holds for the atoms of the lib's relations and
+/// the fact relations, as bytes that `add_atom_verdicts` reads in a process of the
+/// same extension and settings, so that its walks start warm.
+#[pyfunction]
+pub(crate) fn atom_verdicts<'py>(py: Python<'py>) -> Bound<'py, PyBytes> {
+    PyBytes::new(py, &arclog::decode::atom_verdicts())
+}
+
+/// Adds the verdicts that `atom_verdicts` gave, and gives the count of them.
+#[pyfunction]
+pub(crate) fn add_atom_verdicts(bytes: &[u8]) -> PyResult<usize> {
+    arclog::decode::add_atom_verdicts(bytes).ok_or_else(|| PyValueError::new_err("the atom verdicts are not whole"))
+}
+
 /// The columns that the `OUT` form at which `decoder` ended selects: one
 /// `(slot, position, color)` for each relation an atom of the form selects a
 /// column of, with `slot` the `relation` of that relation's table in

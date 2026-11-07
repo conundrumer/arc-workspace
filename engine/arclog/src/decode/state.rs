@@ -1556,6 +1556,17 @@ impl State {
         found
     }
 
+    /// The conjuncts of the key body where the next token may open a body of
+    /// an `INIT` form, as the engine named it: none for the key body and for an
+    /// input that holds for every key. `None` at any other state.
+    pub(super) fn named_body_before(&self) -> Option<&[Conjunct]> {
+        match &self.stack[..] {
+            [Frame::Instance(InstanceFrame { stage: Naming::Named(_), demonstrated: false, .. })] => Some(&[]),
+            [Frame::Instance(InstanceFrame { demonstrated: false, .. }), Frame::KeyClause(KeyClauseFrame { stage: Naming::Named(_), body: Some(key), .. })] => Some(&key.value().conjuncts),
+            _ => None,
+        }
+    }
+
     /// Whether the body on top stands in a form of a body other than a branch of an `OR`.
     pub(super) fn in_other_form(&self) -> bool {
         self.stack.iter().any(|frame| matches!(frame, Frame::Lists(_) | Frame::Body(BodyFrame { close: Close::Not, .. })))
