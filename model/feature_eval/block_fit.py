@@ -209,8 +209,9 @@ def plan_of(directory, out, split, meta, data, spec, groups, told):
             plan.add('graph', widths['graph'], 'candidate', np.arange(widths['graph']), [f"graph:{meta['family_names'].get(int(key), '')}" for key in meta['graph_columns']])
         elif term == 'query':
             plan.add('query', widths['query'], 'candidate', np.arange(widths['query']), [f"query:{meta['family_names'].get(int(key), '')}" for key in meta['query_columns']])
-        elif term == 'relations':
-            plan.add('relations', widths['relations'], 'candidate', np.arange(widths['relations']), [f"{relation}:{meta['family_names'].get(int(key), '')}" for relation in RELATIONS for key in meta['relation_columns']])
+        elif term in ('relations', 'relations_least', 'relations_most'):
+            suffix = {'relations': '', 'relations_least': ':least', 'relations_most': ':most'}[term]
+            plan.add(term, widths[term], 'candidate', np.arange(widths[term]), [f"{relation}:{meta['family_names'].get(int(key), '')}{suffix}" for relation in RELATIONS for key in meta['relation_columns']])
         elif term == 'wide':
             plan.add('wide', widths['wide'], 'candidate', np.arange(widths['wide']), wide_labels)
         elif term == 'wide_null':
