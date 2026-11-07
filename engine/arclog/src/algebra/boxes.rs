@@ -171,6 +171,20 @@ fn subtract(a: Margins, b: Margins) -> Margins {
     margins(|e| margin(a, e).saturating_sub(margin(b, e)))
 }
 
+/// The term of the Box that the `compose` relation gives at the Boxes `a`
+/// and `b`, as its row with its last column unbound gives it: their margins
+/// summed, saturating, then encoded.
+pub fn compose_terms(a: TermId, b: TermId) -> Result<TermId, crate::terms::ReachedMarginBound> {
+    Term::Box(compose(Term::decode_box(a), Term::decode_box(b))).encode()
+}
+
+/// The term of the translation that the `relative` relation gives at the
+/// Boxes `base` and `x`, as its row with its last column unbound gives it:
+/// `x`'s margins less `base`'s, saturating, then encoded.
+pub fn relative_terms(base: TermId, x: TermId) -> Result<TermId, crate::terms::ReachedMarginBound> {
+    Term::Box(subtract(Term::decode_box(x), Term::decode_box(base))).encode()
+}
+
 /// The sum of `m`'s margins at `edges`: for a Dir, the distance to its
 /// edge, and for a DiagDir, the taxicab distance to its corner.
 fn distance(m: Margins, edges: Edges) -> i32 {

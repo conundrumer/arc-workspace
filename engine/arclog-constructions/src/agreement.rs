@@ -183,14 +183,18 @@ impl Lib<'_> {
         self.partial_image("apply", &[Some(d), Some(p), None])
     }
 
-    /// The Box `a` translated by `b`.
+    /// The Box `a` translated by `b`: the term that the `compose` relation's
+    /// row gives, computed by its arithmetic with no evaluation of the
+    /// relation.
     pub(crate) fn compose(&self, a: TermId, b: TermId) -> Result<TermId, ReachedBound> {
-        self.image("compose", &[Some(a), Some(b), None])
+        arclog::algebra::boxes::compose_terms(a, b).map_err(ReachedBound::Margin)
     }
 
-    /// The translation that takes the Box `base` onto `x`.
+    /// The translation that takes the Box `base` onto `x`: the term that the
+    /// `relative` relation's row gives, computed by its arithmetic with no
+    /// evaluation of the relation.
     pub(crate) fn relative(&self, base: TermId, x: TermId) -> Result<TermId, ReachedBound> {
-        self.image("relative", &[Some(base), Some(x), None])
+        arclog::algebra::boxes::relative_terms(base, x).map_err(ReachedBound::Margin)
     }
 
     /// The inverse of `d`, or `None` where `d` is no D4 element, where
