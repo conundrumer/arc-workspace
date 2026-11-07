@@ -39,6 +39,8 @@ A store's `relations`, `relations_least`, `relations_most`, `graph`, `query`, `b
 varies across a candidate's examples at each row. A missing feature is also judged on one row per candidate, where its value is its mean over the candidate's rows and its
 columns are these: `on candidates` gives that status.
 
+`--why PATTERN` judges nothing. For each feature whose name the pattern finds, it prints its nearest single column, the feature's values at each of that column's values, and the first table rows where the two part, by task, item, candidate, ARC example and table.
+
 Streams one line per distinct feature, with the first version's metadata of the feature (what it reads, its aggregation level and what else it
 reads) and the names that share its values.
 """
@@ -187,6 +189,7 @@ def main():
     parser.add_argument('--disposition')
     parser.add_argument('--pairs', action='store_true')
     parser.add_argument('--only')
+    parser.add_argument('--why')
     parser.add_argument('--tasks', type=int)
     parser.add_argument('--procs', type=int, default=3)
     args = parser.parse_args()
@@ -234,6 +237,7 @@ def main():
     no_rows = [0]
     row_width = []
     row_candidate = []
+    row_info = []
 
     def add_list(row, held, other, at):
         """A row's entries from a table's list at a pair."""
@@ -313,6 +317,7 @@ def main():
                 rows += 1
                 row_width.append(len(own_types.get(name, {})))
                 row_candidate.append(candidate)
+                row_info.append((task, candidates[candidate][1], candidates[candidate][2], at, name))
                 add_list(row, lists[place], others[place], at)
                 if own_named:
                     add_list(row, own_named[0], own_named[1], at)
@@ -596,6 +601,32 @@ def main():
             pair = by_pairs(feature, at) + (by_pairs(feature, shuffled)[0],)
         return real + (judged(feature, shuffled)[4], group_of(feature)[0], wider, whole) + pair
 
+    if args.why:
+        by_name = {}
+        for key, name in name_of.items():
+            by_name.setdefault(name, key)
+        for feature, at in features.items():
+            if not isinstance(feature, str) or not re.search(args.why, feature):
+                continue
+            _, share, _, _, one_name = by_pairs(feature, at)[:5]
+            key = by_name.get(one_name)
+            print(f'\n{feature}: rows {len(at)}, nearest column {one_name}')
+            if key is None:
+                continue
+            place = np.searchsorted(unique_ids, key)
+            own = np.flatnonzero(shape == place)
+            column = dict(zip(row[own].tolist(), val[own].tolist()))
+            classes = collections.defaultdict(collections.Counter)
+            for here, value in at.items():
+                classes[round(column.get(here, 0.0), 4)][value] += 1
+            print('  at column value: the feature\'s values', {value: dict(held.most_common(4)) for value, held in sorted(classes.items())[:12]})
+            shown = 0
+            for here, value in at.items():
+                held = classes[round(column.get(here, 0.0), 4)]
+                if value != held.most_common(1)[0][0] and shown < 10:
+                    shown += 1
+                    print('  ', row_info[here], 'feature', value, 'column', column.get(here, 0.0))
+        return
     JUDGE = one
     same_values = collections.defaultdict(list)
     for feature, at in features.items():
