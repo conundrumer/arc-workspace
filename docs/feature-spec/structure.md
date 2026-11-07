@@ -28,6 +28,15 @@ The objects of the search over programs and the maps between them. The [Type con
 - A query is an experiment, and its parameterized tables are the experiment's result. A feature is a hypothesis about that result. The features of the tables of S, such as [the judgments](#the-judgments) and progress toward the train output, guide the next query.
 - The learned model learns from negatives: tables that the search's own runs on train tasks computed and that no case of the task's solver holds, beside the tables of the solver's cases.
 
+## Rules
+
+- Two queries whose parameterized tables are equal at every assignment give one table token.
+- The writer reads the features that the [feature specification](feature-spec.md) defines.
+- No feature, legality rule or training target reads anything authored: no order as written or as created, and no label as named. An order that a rule needs comes from content.
+- The grammar is as tight as the language allows. Where a rule and a ground-truth program disagree, the rule stands and the program is rewritten.
+- Ground truth hits no cap. Each cap is set from its greatest value over the ground-truth programs, with a stated margin, and a cap that a search hits marks a computation that ground truth does not need.
+- A change is judged by [table recall](../../work/measures.md#table-recall) by dependency depth in the live search, on the tables of every case of the solver.
+
 ## Conditions
 
 - Each operator has a **precondition** on what it reads and a **postcondition** on what it gives. The postcondition is what follows from the precondition, whatever the table rows are.
