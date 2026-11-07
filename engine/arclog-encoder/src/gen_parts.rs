@@ -118,7 +118,7 @@ pub enum PartStep {
     DiffGroupsOff { keys: Box<[u16]>, p: u16, output: bool },
     /// Whether a column of each of two relations holds the same values.
     SameValues { a: u16, b: u16 },
-    /// How a column of each of two relations stand as sets: a row where they stand as `word`. Under `cells`, the columns hold the cells of one frame, and two disjoint sets that fill it are complements, and no other word.
+    /// How a column of each of two relations stand as sets: a row where they stand as `word`. Under `cells`, the first column holds the cells of one frame, and two disjoint sets are complements where the first column's cells and the second's that lie in that frame fill it. `Subset` is strict.
     SetWord { a: u16, b: u16, cells: bool, word: SetRelation },
     /// Whether the first relation has fewer rows than the second, or as many.
     CountWord { less: bool },
@@ -278,12 +278,12 @@ impl PartStep {
             PartStep::ColumnMeasure { a, measure } => format!("({} &r {})", measure.fragment(), c(a)),
             PartStep::CountedByValue { a, second: next } => format!("({} &r {})", if *next { "second-number-rows" } else { "first-number-rows" }, c(a)),
             PartStep::LeastDistance { a, b } => format!("(least-distance &r &s {} {})", c(a), second(*b)),
-            PartStep::OnBoundary { b } => format!("(on-boundary &r &s {})", second(*b)),
-            PartStep::NeighborsIn { b } => format!("(neighbors-in &r &s {})", second(*b)),
-            PartStep::OnBorder { b } => format!("(on-border &r &s {})", second(*b)),
-            PartStep::RayMeets { b } => format!("(ray-meets &r &s {})", second(*b)),
+            PartStep::OnBoundary { b } => format!("(on-boundary &r &s C0 {})", second(*b)),
+            PartStep::NeighborsIn { b } => format!("(neighbors-in &r &s C0 {})", second(*b)),
+            PartStep::OnBorder { b } => format!("(on-border &r &s C0 {})", second(*b)),
+            PartStep::RayMeets { b } => format!("(ray-meets &r &s C0 C1 {})", second(*b)),
             PartStep::TopColorsUnder { p } => format!("(most-colors-under &r {} {grid})", c(p)),
-            PartStep::GroupsWord { p, q, shapes, word, .. } => format!("({}-{} &r &s {} {})", if *shapes { "shapes" } else { "groups" }, word.word(), c(p), second(*q)),
+            PartStep::GroupsWord { p, left, q, right, shapes, word } => format!("({}-{} &r &s {} {} ({}) {})", if *shapes { "shapes" } else { "groups" }, word.word(), list(left), c(p), right.iter().map(|at| second(*at)).collect::<Vec<_>>().join(" "), second(*q)),
             PartStep::AgreeWord { p, x, q, y, word } => format!("(colors-agree-{} &r &s {} {} {} {})", word.word(), c(p), c(x), second(*q), second(*y)),
             PartStep::InsideBoxes { a, b } => format!("(inside-boxes &r &s {} {})", c(a), second(*b)),
             PartStep::BoxesHolding { a, b } => format!("(boxes-holding &r &s {} {})", c(a), second(*b)),
@@ -542,6 +542,18 @@ const STEPS: [(i32, i32); 8] = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1,
 fn moved(m: [i32; 4], dr: i32, dc: i32) -> Option<Cell> {
     let (t, b, l, r) = (m[0] + dr, m[1] - dr, m[2] + dc, m[3] - dc);
     (t >= 0 && b >= 0 && l >= 0 && r >= 0).then(|| box_bits(t, b, l, r))
+}
+
+/// The box that one step moves a box to, which can reach past the frame.
+fn shifted_box(m: [i32; 4], dr: i32, dc: i32) -> Cell {
+    box_bits(m[0] + dr, m[1] - dr, m[2] + dc, m[3] - dc)
+}
+
+/// The box one step from a box, with any margin that a signed byte holds, off the grid included.
+#[inline]
+fn shifted(m: [i32; 4], dr: i32, dc: i32) -> Option<Cell> {
+    let bits = box_bits(m[0] + dr, m[1] - dr, m[2] + dc, m[3] - dc);
+    (bits != u32::MAX).then_some(bits)
 }
 
 fn rows_with(table: &Table, extra: usize, mut each: impl FnMut(&[Cell], &mut Vec<Cell>)) -> Val {
@@ -886,9 +898,12 @@ pub struct BoxFeatures {
     values: [Option<i32>; 15],
 }
 
-/// The extents of the frame of a relation's cell column, from its first row.
+/// The extents of the frame of a relation's cell column, where its cells lie in one frame.
 fn frame_of_rows(value: &Val, f: u16) -> Option<(i32, i32)> {
     let table = flat(value)?;
+    if !on_one_frame(&table, &[], f) {
+        return None;
+    }
     let m = margins_of(table.rows().next()?[usize::from(f)]);
     Some((m[0] + m[1] + 1, m[2] + m[3] + 1))
 }
@@ -925,18 +940,22 @@ fn box_features(set: &[[i32; 4]], h: i32, w: i32) -> BoxFeatures {
         put(Aligned, i32::from(one_of(&|m| (m[0], m[1])) || one_of(&|m| (m[2], m[3]))));
         put(OneSize, i32::from(!sides.is_empty() && sides.iter().all(|side| *side == sides[0])));
         let spans: Vec<[i32; 4]> = set.iter().map(|m| [m[0], h - 1 - m[1], m[2], w - 1 - m[3]]).filter(|s| s[0] <= s[1] && s[2] <= s[3]).collect();
+        // Two boxes overlap where a cell of the frame lies in both.
+        let held: Vec<[i32; 4]> = spans.iter().map(|s| [s[0].max(0), s[1].min(h - 1), s[2].max(0), s[3].min(w - 1)]).filter(|s| s[0] <= s[1] && s[2] <= s[3]).collect();
         let (mut overlap, mut nested) = (false, false);
+        for (at, x) in held.iter().enumerate() {
+            for (other, y) in held.iter().enumerate() {
+                overlap = overlap || (at != other && x[0] <= y[1] && y[0] <= x[1] && x[2] <= y[3] && y[2] <= x[3]);
+            }
+        }
         for (at, x) in spans.iter().enumerate() {
             for (other, y) in spans.iter().enumerate() {
-                if at != other {
-                    overlap = overlap || (x[0] <= y[1] && y[0] <= x[1] && x[2] <= y[3] && y[2] <= x[3]);
-                    nested = nested || (y[0] <= x[0] && x[1] <= y[1] && y[2] <= x[2] && x[3] <= y[3]);
-                }
+                nested = nested || (at != other && y[0] <= x[0] && x[1] <= y[1] && y[2] <= x[2] && x[3] <= y[3]);
             }
         }
         put(SomeOverlap, i32::from(overlap));
         put(Nested, i32::from(nested));
-        if h > 0 && w > 0 && i64::from(h) * i64::from(w) <= 1_000_000 {
+        if h > 0 && w > 0 {
             let mut seen = vec![false; (h * w) as usize];
             for s in &spans {
                 for r in s[0].max(0)..=s[1].min(h - 1) {
@@ -1074,8 +1093,8 @@ fn least_gap(own: &[Cell], theirs: &[Cell]) -> i64 {
     i64::from(mine.iter().map(|(r, c)| gap[at(*r, *c)]).min().unwrap_or(0))
 }
 
-/// How two sorted sets stand to each other. With `size`, the count of a frame's cells, two disjoint sets that fill it are complements.
-fn set_relation<K: Ord>(own: &[K], theirs: &[K], size: Option<usize>) -> SetRelation {
+/// How two sorted sets stand to each other. With `fill`, a frame's count of cells and the count of the second set's cells in it, two disjoint sets that fill the frame are complements.
+fn set_relation<K: Ord>(own: &[K], theirs: &[K], fill: Option<(usize, usize)>) -> SetRelation {
     let (mut at, mut there, mut shared) = (0, 0, 0usize);
     while at < own.len() && there < theirs.len() {
         match own[at].cmp(&theirs[there]) {
@@ -1091,7 +1110,7 @@ fn set_relation<K: Ord>(own: &[K], theirs: &[K], size: Option<usize>) -> SetRela
     if shared == own.len() && shared == theirs.len() {
         SetRelation::Equal
     } else if shared == 0 {
-        if size == Some(own.len() + theirs.len()) { SetRelation::Complement } else { SetRelation::Disjoint }
+        if fill.is_some_and(|(area, there)| area == own.len() + there) { SetRelation::Complement } else { SetRelation::Disjoint }
     } else if shared == own.len() {
         SetRelation::Subset
     } else if shared == theirs.len() {
@@ -1304,12 +1323,10 @@ impl PartStep {
                             piece.push(held[at]);
                             let m = margins_of(held[at]);
                             for (dr, dc) in &STEPS[..if *four { 4 } else { 8 }] {
-                                if let Some(next) = moved(m, *dr, *dc) {
-                                    if let Ok(place) = held.binary_search(&next) {
-                                        if !seen[place] {
-                                            seen[place] = true;
-                                            stack.push(place);
-                                        }
+                                if let Ok(place) = held.binary_search(&shifted_box(m, *dr, *dc)) {
+                                    if !seen[place] {
+                                        seen[place] = true;
+                                        stack.push(place);
                                     }
                                 }
                             }
@@ -1627,8 +1644,19 @@ impl PartStep {
             PartStep::SetWord { a, b, cells, word } => {
                 let other = flat(children[1])?;
                 let (own, theirs) = (sorted_values(t, *a), sorted_values(&other, *b));
-                let size = cells.then(|| own.first().or(theirs.first()).map_or(0, |cell| { let m = margins_of(*cell); ((m[0] + m[1] + 1) * (m[2] + m[3] + 1)) as usize }));
-                Val::of_table(Table::unit(set_relation(&own, &theirs, size) == *word))
+                // Under `cells`, the first column's cells are those of one frame, and the second's cells that lie in it count toward filling it.
+                let fill = if *cells && matches!(word, SetRelation::Disjoint | SetRelation::Complement) {
+                    let Some(first) = own.first().map(|cell| margins_of(*cell)) else { return Some(Val::Empty) };
+                    let (h, w) = (first[0] + first[1] + 1, first[2] + first[3] + 1);
+                    let in_frame = |cell: &Cell| { let m = margins_of(*cell); is_cell(&m) && m[0] + m[1] + 1 == h && m[2] + m[3] + 1 == w };
+                    if !own.iter().all(in_frame) {
+                        return None;
+                    }
+                    Some(((h * w) as usize, theirs.iter().filter(|cell| in_frame(cell)).count()))
+                } else {
+                    None
+                };
+                Val::of_table(Table::unit(set_relation(&own, &theirs, fill) == *word))
             }
             PartStep::CountWord { less } => {
                 let other = flat(children[1])?;
@@ -1714,7 +1742,7 @@ impl PartStep {
                 let (Some(r0), Some(r1)) = (cells.iter().map(|cell| cell.0).min(), cells.iter().map(|cell| cell.0).max()) else { return Some(Val::Empty) };
                 let (c0, c1) = (cells.iter().map(|cell| cell.1).min().unwrap_or(0), cells.iter().map(|cell| cell.1).max().unwrap_or(0));
                 let (bh, bw) = ((r1 - r0 + 1) as usize, (c1 - c0 + 1) as usize);
-                Val::of_table(Table::unit(bh >= 3 && bw >= 3 && cells.len() == 2 * (bh + bw) - 4 && cells.iter().all(|cell| cell.0 == r0 || cell.0 == r1 || cell.1 == c0 || cell.1 == c1)))
+                Val::of_table(Table::unit(bh >= 2 && bw >= 2 && cells.len() == 2 * (bh + bw) - 4 && cells.iter().all(|cell| cell.0 == r0 || cell.0 == r1 || cell.1 == c0 || cell.1 == c1)))
             }
             PartStep::LineSpacings { p } => {
                 if !on_one_frame(t, &[], *p) {
@@ -1751,7 +1779,9 @@ impl PartStep {
                     ColumnMeasureKind::Consecutive | ColumnMeasureKind::Arithmetic => {
                         let mut numbers: Vec<i64> = values.iter().map(|cell| number_of(*cell)).collect();
                         numbers.sort_unstable();
-                        if *measure == ColumnMeasureKind::Consecutive {
+                        if numbers.len() < 2 {
+                            Val::Empty
+                        } else if *measure == ColumnMeasureKind::Consecutive {
                             Val::of_table(Table::unit(numbers[numbers.len() - 1] - numbers[0] + 1 == numbers.len() as i64))
                         } else if numbers.len() < 3 {
                             Val::Empty
@@ -1785,7 +1815,7 @@ impl PartStep {
             PartStep::CountedByValue { a, second } => {
                 let mut numbers: Vec<i64> = t.rows().map(|row| number_of(row[usize::from(*a)])).collect();
                 numbers.sort_unstable_by(|x, y| y.cmp(x));
-                let Some(chosen) = numbers.get(usize::from(*second)).copied().filter(|chosen| *chosen > 0 && *chosen <= 100_000) else { return Some(Val::Empty) };
+                let Some(chosen) = numbers.get(usize::from(*second)).copied().filter(|chosen| *chosen > 0) else { return Some(Val::Empty) };
                 Val::of_table(Table::new(1, (0..chosen).map(number_bits).collect()))
             }
             PartStep::LeastDistance { a, b } => {
@@ -1799,7 +1829,7 @@ impl PartStep {
             PartStep::OnBoundary { b } => {
                 let other = flat(children[1])?;
                 let (own, theirs) = (sorted_values(t, 0), sorted_values(&other, *b));
-                let outside = |m: [i32; 4], step: &(i32, i32)| moved(m, step.0, step.1).is_none_or(|next| theirs.binary_search(&next).is_err());
+                let outside = |m: [i32; 4], step: &(i32, i32)| shifted(m, step.0, step.1).is_none_or(|next| theirs.binary_search(&next).is_err());
                 Val::of_table(Table::new(1, own.iter().copied().filter(|cell| theirs.binary_search(cell).is_ok() && STEPS[..4].iter().any(|step| outside(margins_of(*cell), step))).collect()))
             }
             PartStep::NeighborsIn { b } => {
@@ -1809,7 +1839,7 @@ impl PartStep {
                 for cell in &own {
                     let m = margins_of(*cell);
                     for (dr, dc) in STEPS {
-                        if let Some(next) = moved(m, dr, dc).filter(|next| theirs.binary_search(next).is_ok()) {
+                        if let Some(next) = shifted(m, dr, dc).filter(|next| theirs.binary_search(next).is_ok()) {
                             out.push(*cell);
                             out.push(next);
                         }
@@ -1861,11 +1891,25 @@ impl PartStep {
                     return Some(Val::Empty);
                 }
                 let sets = |table: &Table, keys: &[u16], cell: u16| -> Option<Vec<u128>> {
-                    if !on_one_frame(table, keys, cell) {
-                        return None;
-                    }
-                    let held = cells_by_key(table, keys, cell);
-                    let mut out: Vec<u128> = held.0.iter().filter(|cells| !cells.is_empty()).map(|cells| if *shapes { u128::from(shape_hash(cells, false)) } else { hash_words(cells.iter().map(|(r, c)| (u64::from(*r) << 8) | u64::from(*c))) }).collect();
+                    let mut out: Vec<u128> = if *shapes {
+                        if !on_one_frame(table, keys, cell) {
+                            return None;
+                        }
+                        let held = cells_by_key(table, keys, cell);
+                        held.0.iter().filter(|cells| !cells.is_empty()).map(|cells| u128::from(shape_hash(cells, false))).collect()
+                    } else {
+                        // A set of cells is a set of values, whatever frame each cell is in.
+                        let (grouping, first) = key_ids(table, keys);
+                        let mut held: Vec<Vec<Cell>> = vec![Vec::new(); first.len()];
+                        for (row, id) in table.rows().zip(&grouping.0) {
+                            held[*id as usize].push(row[usize::from(cell)]);
+                        }
+                        held.iter_mut().filter(|cells| !cells.is_empty()).map(|cells| {
+                            cells.sort_unstable();
+                            cells.dedup();
+                            hash_words(cells.iter().map(|value| u64::from(*value)))
+                        }).collect()
+                    };
                     out.sort_unstable();
                     out.dedup();
                     (!out.is_empty()).then_some(out)
