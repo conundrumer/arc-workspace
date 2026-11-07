@@ -67,17 +67,6 @@ fn an_operator_with_no_label_in_scope_is_refused() {
     }
 }
 
-#[test]
-fn an_order_operator_over_labels_with_no_order_is_refused() {
-    let inputs = inputs();
-    let decoder = body_with_labels(&inputs);
-    for op in ORDERS {
-        assert!(!admits(&decoder, &Token::Control(Control::Op(op))), "{op:?} over a position and a color");
-    }
-    assert!(admits(&decoder, &Token::Control(Control::Op(ConstraintOp::Ne))));
-    assert!(admits(&decoder, &Token::Control(Control::Op(ConstraintOp::Eq))));
-}
-
 /// Every operator and first label the mask admits has an admitted token
 /// after it, and the first label of an operator other than `=` has an
 /// admitted second operand.

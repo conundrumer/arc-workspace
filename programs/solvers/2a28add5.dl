@@ -30,7 +30,7 @@ ink_at(Across, P) :-
 // Each ink cell travels toward its line's marker and stops against the marker
 // or against the ink already packed ahead of it. A cell meets no cell of
 // another line, so the cells of every line that head one way fall together.
-.init pack = Gravity<Dir, Position>
+.init pack = Gravity<Dir8, Position>
 pack.dir(D, D) :- params.axis(A), axis_of(D, A).
 pack.cell(D, P, P) :- ink_at(Across, P), marker_at(Across, M), nearer(D, M, P).
 pack.blocked(D, M) :- marker_at(_, M), params.axis(A), axis_of(D, A).
