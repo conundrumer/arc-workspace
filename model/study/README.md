@@ -4,7 +4,9 @@ The study's code is here.
 
 `study_paths.CODE_ROOT` names this directory in the current checkout.
 `study_paths.DATA_ROOT` names `work/lm/data-study` in the repository's main
-worktree, found with `engine.checkout.main_worktree`. Databases, corpora,
+worktree, found with `engine.checkout.main_worktree`, or in the folder that
+the environment variable `ARC_MAIN_ROOT` names, where it is set (a machine with
+no git checkout). Databases, corpora,
 runtimes, immutable reader snapshots, native blocks, replay artifacts, thread
 state and logs stay there. A source dependency stays relative to its module.
 
