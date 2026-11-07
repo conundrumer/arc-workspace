@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use crate::catalog_facts::{canon, normalized};
+use crate::cell_sets::{grid_pieces, relation, shape_hash, symmetry_count, Walk, STEPS};
+pub use crate::cell_sets::SetRelation;
 use crate::gen_constants::{box_bits, encoding, margins_of, number_bits, number_of};
 use crate::native::{first_ids, hash_words, row_word, Cell, FastMap, Grouping, Table, Val};
 use crate::occurrence::{distinct_patterns, each_turned_image, for_each_move, Canvas, PatternCell};
@@ -531,8 +532,7 @@ fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
     let mut grid: Vec<u32> = Vec::new();
     let mut held: Vec<Cell> = Vec::new();
     let mut margins: Vec<[i32; 4]> = Vec::new();
-    let mut seen: Vec<bool> = Vec::new();
-    let mut stack: Vec<usize> = Vec::new();
+    let mut walk = Walk::default();
     let mut piece: Vec<Cell> = Vec::new();
     let mut at = 0;
     while at < pairs.len() {
@@ -557,34 +557,18 @@ fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
                 grid[(m[0] * w + m[2]) as usize] = place as u32;
             }
         }
-        seen.clear();
-        seen.resize(held.len(), false);
-        for start in 0..held.len() {
-            if seen[start] {
-                continue;
+        let neighbor = |from: usize, dr: i32, dc: i32| {
+            let m = margins[from];
+            if on_frame {
+                let (r, c) = (m[0] + dr, m[2] + dc);
+                if r < 0 || c < 0 || r >= h || c >= w { None } else { Some(grid[(r * w + c) as usize]).filter(|place| *place != NONE).map(|place| place as usize) }
+            } else {
+                held.binary_search(&shifted_box(m, dr, dc)).ok()
             }
-            seen[start] = true;
-            stack.clear();
-            stack.push(start);
+        };
+        walk.pieces(held.len(), steps, |_| true, neighbor, |members| {
             piece.clear();
-            while let Some(from) = stack.pop() {
-                piece.push(held[from]);
-                let m = margins[from];
-                for (dr, dc) in steps {
-                    let next = if on_frame {
-                        let (r, c) = (m[0] + dr, m[2] + dc);
-                        if r < 0 || c < 0 || r >= h || c >= w { None } else { Some(grid[(r * w + c) as usize]).filter(|place| *place != NONE).map(|place| place as usize) }
-                    } else {
-                        held.binary_search(&shifted_box(m, *dr, *dc)).ok()
-                    };
-                    if let Some(place) = next {
-                        if !seen[place] {
-                            seen[place] = true;
-                            stack.push(place);
-                        }
-                    }
-                }
-            }
+            piece.extend(members.iter().map(|place| held[*place]));
             // An Ident labels the set of its members, as `Connectivity` interns it.
             piece.sort_unstable();
             let label = hash_words(piece.iter().map(|cell| u64::from(*cell))) as u32;
@@ -593,7 +577,7 @@ fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
                 out.push(*cell);
                 out.push(label);
             }
-        }
+        });
         if on_frame {
             for m in &margins {
                 grid[(m[0] * w + m[2]) as usize] = NONE;
@@ -752,8 +736,6 @@ fn less_cell(a: [i32; 4], b: [i32; 4]) -> Cell {
     box_bits(a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3])
 }
 
-const STEPS: [(i32, i32); 8] = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)];
-
 #[inline]
 fn moved(m: [i32; 4], dr: i32, dc: i32) -> Option<Cell> {
     let (t, b, l, r) = (m[0] + dr, m[1] - dr, m[2] + dc, m[3] - dc);
@@ -871,77 +853,6 @@ fn nearest_other(own: &[(u8, u8)], held: &[bool], h: usize, w: usize) -> Option<
         frontier = next;
     }
     None
-}
-
-/// A class per set of cells, up to a move, and with `turned` also up to a rotation or a reflection.
-pub fn shape_hash(cells: &[(u8, u8)], turned: bool) -> u32 {
-    hash_cells(&if turned { canon(cells) } else { normalized(cells) })
-}
-
-/// What `shape_hash` gives for cells that stand sorted and without repeats, with no cell set built but the best image.
-fn set_shape(cells: &[(u8, u8)], turned: bool) -> u32 {
-    let r0 = cells.iter().map(|cell| cell.0).min().unwrap_or(0);
-    let c0 = cells.iter().map(|cell| cell.1).min().unwrap_or(0);
-    if !turned {
-        return hash_words(cells.iter().map(|(r, c)| u64::from(r - r0) << 8 | u64::from(c - c0))) as u32;
-    }
-    let r1 = cells.iter().map(|cell| cell.0 - r0).max().unwrap_or(0);
-    let c1 = cells.iter().map(|cell| cell.1 - c0).max().unwrap_or(0);
-    let mut best: Vec<u16> = Vec::new();
-    let mut image: Vec<u16> = Vec::with_capacity(cells.len());
-    for which in 0..8 {
-        image.clear();
-        image.extend(cells.iter().map(|(r, c)| {
-            let (r, c) = (r - r0, c - c0);
-            let (a, b) = match which {
-                0 => (r, c),
-                1 => (r, c1 - c),
-                2 => (r1 - r, c),
-                3 => (r1 - r, c1 - c),
-                4 => (c, r),
-                5 => (c, r1 - r),
-                6 => (c1 - c, r),
-                _ => (c1 - c, r1 - r),
-            };
-            u16::from(a) << 8 | u16::from(b)
-        }));
-        image.sort_unstable();
-        if which == 0 || image < best {
-            std::mem::swap(&mut best, &mut image);
-        }
-    }
-    hash_words(best.iter().map(|word| u64::from(*word))) as u32
-}
-
-/// What `symmetry_count` gives for cells that stand without repeats: the images of the cells that land on cells.
-fn set_symmetries(cells: &[(u8, u8)]) -> u32 {
-    let r0 = cells.iter().map(|cell| cell.0).min().unwrap_or(0);
-    let c0 = cells.iter().map(|cell| cell.1).min().unwrap_or(0);
-    let r1 = cells.iter().map(|cell| cell.0 - r0).max().unwrap_or(0);
-    let c1 = cells.iter().map(|cell| cell.1 - c0).max().unwrap_or(0);
-    let (h, w) = (usize::from(r1) + 1, usize::from(c1) + 1);
-    let mut held = vec![false; h * w];
-    for (r, c) in cells {
-        held[usize::from(r - r0) * w + usize::from(c - c0)] = true;
-    }
-    (0..8).filter(|which| cells.iter().all(|(r, c)| {
-        let (r, c) = (r - r0, c - c0);
-        let (a, b) = match *which {
-            0 => (r, c),
-            1 => (r, c1 - c),
-            2 => (r1 - r, c),
-            3 => (r1 - r, c1 - c),
-            4 => (c, r),
-            5 => (c, r1 - r),
-            6 => (c1 - c, r),
-            _ => (c1 - c, r1 - r),
-        };
-        usize::from(a) < h && usize::from(b) < w && held[usize::from(a) * w + usize::from(b)]
-    })).count() as u32
-}
-
-fn hash_cells(cells: &[(u8, u8)]) -> u32 {
-    hash_words(cells.iter().map(|cell| u64::from(cell.0) << 8 | u64::from(cell.1))) as u32
 }
 
 fn enclosed_regions(list: &[(u8, u8)]) -> i64 {
@@ -1165,29 +1076,7 @@ fn turned_moves_of(framed: &Option<Framed>, grid: &GridView, plain: &[Cell]) -> 
     out
 }
 
-/// How two sets of values stand to each other.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum SetRelation {
-    Equal,
-    Subset,
-    Superset,
-    Overlap,
-    Disjoint,
-    Complement,
-}
-
 impl SetRelation {
-    fn word(self) -> &'static str {
-        match self {
-            SetRelation::Equal => "equal",
-            SetRelation::Subset => "subset",
-            SetRelation::Superset => "superset",
-            SetRelation::Overlap => "overlap",
-            SetRelation::Disjoint => "disjoint",
-            SetRelation::Complement => "complement",
-        }
-    }
-
     /// The fragment that defines the word over two columns.
     pub fn fragment(self, cells: bool) -> String {
         format!("{}-{}", if cells && matches!(self, SetRelation::Disjoint | SetRelation::Complement) { "cells" } else { "set" }, self.word())
@@ -1388,38 +1277,6 @@ fn box_features(set: &[[i32; 4]], h: i32, w: i32) -> BoxFeatures {
     out
 }
 
-/// The connected parts of the places that `on` holds, in a grid of `w` columns, by four or eight steps.
-fn connected_parts(on: &[bool], w: usize, diagonal: bool) -> Vec<Vec<usize>> {
-    let h = if w == 0 { 0 } else { on.len() / w };
-    let mut seen = vec![false; on.len()];
-    let mut parts = Vec::new();
-    let mut stack = Vec::new();
-    for start in 0..on.len() {
-        if !on[start] || seen[start] {
-            continue;
-        }
-        seen[start] = true;
-        stack.push(start);
-        let mut part = Vec::new();
-        while let Some(at) = stack.pop() {
-            part.push(at);
-            let (r, c) = ((at / w) as i32, (at % w) as i32);
-            for (dr, dc) in if diagonal { &STEPS[..] } else { &STEPS[..4] } {
-                let (nr, nc) = (r + dr, c + dc);
-                if nr >= 0 && nc >= 0 && (nr as usize) < h && (nc as usize) < w {
-                    let next = nr as usize * w + nc as usize;
-                    if on[next] && !seen[next] {
-                        seen[next] = true;
-                        stack.push(next);
-                    }
-                }
-            }
-        }
-        parts.push(part);
-    }
-    parts
-}
-
 /// The boxes of a column that decide whether a box lies inside one of them, or holds one: the ones no other box is beyond on every margin. Past 64 of them, every box. Held with the table.
 fn box_front(table: &Table, b: u16, inside: bool) -> Arc<Vec<[i32; 4]>> {
     let key = (table.id, places_word(&[], Some(b)) ^ u128::from(inside));
@@ -1607,17 +1464,7 @@ fn set_relation<K: Ord>(own: &[K], theirs: &[K], fill: Option<(usize, usize)>) -
             }
         }
     }
-    if shared == own.len() && shared == theirs.len() {
-        SetRelation::Equal
-    } else if shared == 0 {
-        if fill.is_some_and(|(area, there)| area == own.len() + there) { SetRelation::Complement } else { SetRelation::Disjoint }
-    } else if shared == own.len() {
-        SetRelation::Subset
-    } else if shared == theirs.len() {
-        SetRelation::Superset
-    } else {
-        SetRelation::Overlap
-    }
+    relation(shared < own.len(), shared < theirs.len(), shared > 0, fill.is_some_and(|(area, there)| area == own.len() + there))
 }
 
 impl PartStep {
@@ -2057,7 +1904,7 @@ impl PartStep {
                 }
                 let held = cells_by_key(t, keys, *p);
                 let (cells, heads) = (&held.0, &held.1);
-                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![set_shape(held, *turned)])), keys.len() + 1)
+                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![shape_hash(held, *turned)])), keys.len() + 1)
             }
             PartStep::Holes { keys, p } => {
                 if !on_one_frame(t, keys, *p) {
@@ -2073,7 +1920,7 @@ impl PartStep {
                 }
                 let held = cells_by_key(t, keys, *p);
                 let (cells, heads) = (&held.0, &held.1);
-                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(i64::from(set_symmetries(held)))])), keys.len() + 1)
+                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(i64::from(symmetry_count(held)))])), keys.len() + 1)
             }
             PartStep::TouchesEdge { keys, p } => {
                 let (grouping, first) = key_ids(t, keys);
@@ -2200,7 +2047,9 @@ impl PartStep {
                     let m = margins_of(row[usize::from(*p)]);
                     free[m[0] as usize * w + m[2] as usize] = false;
                 }
-                Val::of_table(Table::new(1, vec![number_bits(connected_parts(&free, w, false).len() as i64)]))
+                let mut count = 0;
+                grid_pieces(h, w, &STEPS[..4], |at| free[at], |_| count += 1);
+                Val::of_table(Table::new(1, vec![number_bits(count)]))
             }
             PartStep::EveryPartStraight { p } => {
                 if !on_one_frame(t, &[], *p) {
@@ -2213,11 +2062,13 @@ impl PartStep {
                     let m = margins_of(row[usize::from(*p)]);
                     on[m[0] as usize * w + m[2] as usize] = true;
                 }
-                Val::of_table(Table::unit(connected_parts(&on, w, true).iter().all(|part| {
+                let mut straight = true;
+                grid_pieces(h, w, &STEPS, |at| on[at], |part| {
                     let places: Vec<(i32, i32)> = part.iter().map(|at| ((at / w) as i32, (at % w) as i32)).collect();
                     let one = |pick: &dyn Fn(&(i32, i32)) -> i32| places.iter().all(|place| pick(place) == pick(&places[0]));
-                    one(&|place| place.0) || one(&|place| place.1) || one(&|place| place.0 - place.1) || one(&|place| place.0 + place.1)
-                })))
+                    straight &= one(&|place| place.0) || one(&|place| place.1) || one(&|place| place.0 - place.1) || one(&|place| place.0 + place.1);
+                });
+                Val::of_table(Table::unit(straight))
             }
             PartStep::OutlinesBox { p } => {
                 if !on_one_frame(t, &[], *p) {
@@ -2381,7 +2232,7 @@ impl PartStep {
                             return None;
                         }
                         let held = cells_by_key(table, keys, cell);
-                        held.0.iter().filter(|cells| !cells.is_empty()).map(|cells| u128::from(set_shape(cells, false))).collect()
+                        held.0.iter().filter(|cells| !cells.is_empty()).map(|cells| u128::from(shape_hash(cells, false))).collect()
                     } else {
                         // A set of cells is a set of values, whatever frame each cell is in.
                         let (grouping, first) = key_ids(table, keys);
@@ -2451,7 +2302,7 @@ impl PartStep {
                 if !on_one_frame(t, keys, *a) || !on_one_frame(&other, others, *b) {
                     return None;
                 }
-                let shape = |held: &Vec<(u8, u8)>| set_shape(held, *turned);
+                let shape = |held: &Vec<(u8, u8)>| shape_hash(held, *turned);
                 let held = cells_by_key(t, keys, *a);
                 let (cells, heads) = (&held.0, &held.1);
                 let other_held = cells_by_key(&other, others, *b);

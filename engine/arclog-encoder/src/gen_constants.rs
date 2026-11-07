@@ -346,7 +346,7 @@ fn grid_tables(g: &GridFacts, e: &Encoding, out: &mut Vec<Arc<Table>>) {
     for piece in &g.pieces {
         let mut cells: Vec<(u8, u8)> = Vec::with_capacity(piece.size as usize);
         piece.cells.each(|at| cells.push(((at / w) as u8, (at % w) as u8)));
-        let (own, all) = (crate::gen_parts::shape_hash(&cells, false), crate::gen_parts::shape_hash(&cells, true));
+        let (own, all) = (crate::cell_sets::shape_hash(&cells, false), crate::cell_sets::shape_hash(&cells, true));
         piece.cells.each(|at| {
             let cell = cell_bits(h, w, at);
             shapes.extend_from_slice(&[cell, own]);
