@@ -43,7 +43,7 @@ pub const TABLE_ROW_WORK:u64=1<<28;
 /// program is meant to reach it: it guards the machine, and a caller takes a
 /// stop at it as a failure of the program ([`stopped_at_bytes`]), since the
 /// heap count it reads depends on the session's history.
-pub const TABLE_BYTES:usize=8<<30;
+pub const TABLE_BYTES:usize=4<<30;
 
 /// The limits of [`gold_tables_cached_in`]: no clock, whatever deadline the
 /// settings hold, so that the rows of a table do not depend on machine load.
@@ -51,30 +51,60 @@ pub fn table_limits()->arclog::eval::Limits {
     arclog::eval::Limits::new(None,arclog::eval::Cancellation::default()).bound_by(arclog::session::SessionBound {bytes:TABLE_BYTES})
 }
 
-/// A stop at the byte bound in `tables`, in rows, projections or extents.
-pub fn stopped_at_bytes(tables:&[(usize,Table)])->Option<arclog::eval::Stop> {
-    let at_bytes=|stop:&arclog::eval::Stop|matches!(stop.bound,arclog::eval::ReachedBound::SessionBytes(_));
+/// A stop in `tables`, in rows, projections or extents, at a bound that `at` takes.
+fn stopped_where(tables:&[(usize,Table)],at:impl Fn(arclog::eval::ReachedBound)->bool)->Option<arclog::eval::Stop> {
+    let taken=|stop:&arclog::eval::Stop|at(stop.bound);
     for (_,table) in tables {
         let Ok(contents)=&table.contents else {continue};
         if let Some(Projections::Stopped(stop))=&contents.projections {
-            if at_bytes(stop) {return Some(stop.clone());}
+            if taken(stop) {return Some(stop.clone());}
         }
         for (e,example) in contents.examples.iter().enumerate() {
             let Ok(rows)=&example.rows else {continue};
-            if let Some(stop)=rows.stop.as_ref().filter(|stop|at_bytes(stop)) {return Some(stop.clone());}
+            if let Some(stop)=rows.stop.as_ref().filter(|stop|taken(stop)) {return Some(stop.clone());}
             for (a,(_,models)) in rows.at.iter().enumerate() {
                 for (m,model) in models.iter().enumerate() {
                     if let RelationValue::Stopped(stop)=model {
-                        if at_bytes(stop) {return Some(stop.clone());}
+                        if taken(stop) {return Some(stop.clone());}
                     }
                     if let Some(crate::extents::EntryExtents::Stopped(stop))=contents.extents.as_ref().and_then(|extents|extents.entry(e,a,m)) {
-                        if at_bytes(stop) {return Some(stop.clone());}
+                        if taken(stop) {return Some(stop.clone());}
                     }
                 }
             }
         }
     }
     None
+}
+
+/// A stop at the byte bound in `tables`, in rows, projections or extents.
+pub fn stopped_at_bytes(tables:&[(usize,Table)])->Option<arclog::eval::Stop> {
+    stopped_where(tables,|bound|matches!(bound,arclog::eval::ReachedBound::SessionBytes(_)))
+}
+
+/// The text of each top-level form of `text`, a program's S-expression.
+fn top_level_forms(text:&str)->Vec<&str> {
+    let mut forms=Vec::new();
+    let (mut depth,mut start)=(0usize,0usize);
+    for (at,byte) in text.bytes().enumerate() {
+        match byte {
+            b'(' => {
+                if depth==0 {start=at;}
+                depth+=1;
+            }
+            b')' => {
+                depth=depth.saturating_sub(1);
+                if depth==0 {forms.push(&text[start..=at]);}
+            }
+            _ => {}
+        }
+    }
+    forms
+}
+
+/// The top-level form that a written form stands in.
+fn top_of(form:&arclog::stream::write::WrittenForm)->usize {
+    form.path.0.first().map_or(0,|step|step.0 as usize)
 }
 
 pub struct PairEvaluation {
@@ -98,6 +128,7 @@ pub struct PairCache {
     gold: HashMap<usize,Arc<GoldMemo>>,
     gold_bodies: HashMap<(usize,NodePath),Outcome<ClauseTables>>,
     gold_relations: HashMap<usize,GoldRelationMemo>,
+    held: Option<HeldProgram>,
     prefix: Option<PrefixMemo>,
     columns: Option<(Vec<u32>,crate::columns::CaseColumnPrefix)>,
     source: Option<(Arc<CheckedProgram>,Arc<arclog::stream::WrittenStream>)>,
@@ -108,6 +139,21 @@ pub struct PairCache {
     gold_hits:u64,
     prefix_hits:u64,
     sequence:u64,
+}
+/// What the full evaluation of a program leaves for a later program that
+/// shares its first forms ([`form_tables`]). Its tables stand in
+/// [`PairCache::gold_relations`], and its results in the session's cache.
+struct HeldProgram {
+    /// The key of the program in [`PairCache::gold_relations`].
+    key:usize,
+    checked:Arc<CheckedProgram>,
+    /// The text of each top-level form.
+    texts:Vec<String>,
+    /// For each top-level form, the place of its first table among the
+    /// program's tables, and the count of `too_large` that stood before it.
+    starts:Vec<(usize,usize)>,
+    /// What [`TooLarge`] held at the end of the evaluation.
+    too_large:Vec<(Vec<Assignment>,arclog::eval::Stop)>,
 }
 struct PrefixMemo {
     key:Vec<u32>,
@@ -169,7 +215,7 @@ impl Default for PairCache { fn default()->Self {Self::new(false)} }
 impl PairCache {
     pub fn new(compact:bool)->Self {Self::with_byte_bound(compact,STUDY_SESSION_BYTES)}
     pub fn with_byte_bound(compact:bool,bytes:usize)->Self {
-        Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),prefix:None,columns:None,source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
+        Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),held:None,prefix:None,columns:None,source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
     }
     pub fn set_observation_start(&mut self,sequence:u64) {self.sequence=sequence;}
     /// End a case even when ingestion or a pair faults. Release allocations,
@@ -181,6 +227,7 @@ impl PairCache {
         self.gold=HashMap::new();
         self.gold_bodies=HashMap::new();
         self.gold_relations=HashMap::new();
+        self.held=None;
         self.prefix=None;
         self.columns=None;
         self.source=None;
@@ -243,6 +290,31 @@ fn source_stream(program:&StudyProgram,decoder:&Decoder<'_>,cache:&PairCache)->O
     }
 }
 
+/// The tables of `form` of `program`, after the tables `earlier`, with the
+/// stops of a table's rows that `skipping` holds where it is given: then a
+/// table's rows count under [`TABLE_ROW_WORK`].
+fn form_relations(program:&StudyProgram,written:&arclog::stream::WrittenStream,form:&arclog::stream::write::WrittenForm,skipping:Option<&TooLarge>,decoder:&Decoder<'_>,earlier:&[&Table])->Outcome<Vec<(usize,Table)>> {
+    let checked=program.checked();
+    let mut held:Vec<(usize,Table)>=Vec::new();
+    for slot in materialized_slots(program.program().value(),written,form) {
+        let declared=&written.relations[slot];
+        let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;
+        let dets=relation_dets(checked,relation.node);
+        let work=if skipping.is_some() {TableWork::new(TABLE_ROW_WORK)} else {decoder.query_work()};
+        let examples=match skipping {
+            Some(too_large)=>relation_examples_skipping(decoder,checked,&relation,&dets,&work,too_large),
+            None=>relation_examples(decoder,checked,&relation,&dets,&work),
+        };
+        let contents=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples).map(|c| {
+            let c=Contents {name:relation_spelled(declared),output_name:output_name(program.program().value(),&form.path,declared),keys:checked.program.column_keys(relation.node),..c};
+            let seen=earlier.iter().copied().chain(held.iter().map(|(_,t)|t)).collect::<Vec<_>>();
+            made(decoder,&seen,checked,&relation,c)
+        });
+        held.push((form.tokens.end.saturating_sub(1),Table {form:form.path.clone(),point:Point::Relation,contents}));
+    }
+    Ok(held)
+}
+
 /// Evaluate export relation declarations against their original checked
 /// graph. Prefixes are scoped to the certified gold handle, so source names
 /// and AST paths are never confused across equal-looking token streams.
@@ -272,22 +344,27 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
         }
     }
     let too_large=TooLarge::default();
+    let (_,session,_)=decoder.evaluation_inputs();
+    let mut starts=Vec::new();
     for form in forms.iter().skip(start) {
-        let mut held=Vec::new();
-        for slot in materialized_slots(program.program().value(),written,form) {
-            let declared=&written.relations[slot];
-            let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;
-            let dets=relation_dets(checked,relation.node);
-            let work=if until.is_none() {TableWork::new(TABLE_ROW_WORK)} else {decoder.query_work()};
-            let examples=if until.is_none() {relation_examples_skipping(decoder,checked,&relation,&dets,&work,&too_large)} else {relation_examples(decoder,checked,&relation,&dets,&work)};
-            let contents=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples).map(|c| {
-                let c=Contents {name:relation_spelled(declared),output_name:output_name(program.program().value(),&form.path,declared),keys:checked.program.column_keys(relation.node),..c};
-                let seen=tables.iter().chain(held.iter()).map(|(_,t)|t).collect::<Vec<_>>();
-                made(decoder,&seen,checked,&relation,c)
-            });
-            held.push((form.tokens.end.saturating_sub(1),Table {form:form.path.clone(),point:Point::Relation,contents}));
+        let top=top_of(form);
+        if starts.len()<=top {
+            starts.resize(top+1,(tables.len(),too_large.0.borrow().len()));
+            session.results.mark(top as u32);
         }
+        let seen=tables.iter().map(|(_,t)|t).collect::<Vec<_>>();
+        let held=form_relations(program,written,form,until.is_none().then_some(&too_large),decoder,&seen)?;
         tables.extend(held);
+    }
+    if until.is_none() && start==0 {
+        let source=program.sexp(decoder.registry());
+        cache.held=Some(HeldProgram {
+            key:Arc::as_ptr(checked) as usize,
+            checked:Arc::clone(checked),
+            texts:top_level_forms(&source).into_iter().map(str::to_owned).collect(),
+            starts,
+            too_large:too_large.0.into_inner(),
+        });
     }
     let last=match forms.last() {
         None=>Vec::new(),
@@ -1104,6 +1181,88 @@ pub fn gold_tables_cached_in(gold:&StudyProgram,task:&Task,session:&TaskSession,
         cache.gold_relations.insert(key,GoldRelationMemo::new(held));
     }
     cache.gold_relations[&key].view(hit)
+}
+
+/// The tables of the top-level form `form` of `program`, with the rows and
+/// the stops that a full evaluation of `program` gives them.
+///
+/// Where the evaluator holds the full evaluation of a program that opens with
+/// the same forms ([`HeldProgram`]), those forms are not evaluated again: no
+/// form among them reads a later form, so their tables and the size stops they
+/// found are the same here. The forms from the first that differs through
+/// `form` see the session's result cache as the evaluation of the earlier forms
+/// left it ([`arclog::session::ResultCache::begin_view`]). A count of work
+/// depends on what the cache holds, and an entry that an eviction dropped costs
+/// its work again, so the count here is no less than a full evaluation's while
+/// the cache evicts nothing. So the result stands where the cache evicts
+/// nothing and no table stops at a cap of work or at the byte bound. Otherwise
+/// the forms through `form` are evaluated in a session of their own, from the
+/// first form.
+pub fn form_tables(program:&StudyProgram,form:usize,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&PairCache,limits:&arclog::eval::Limits)->(Value,Vec<(usize,Table)>) {
+    let registry=Registry::get();
+    let of_form=|tables:Vec<(usize,Table)>|tables.into_iter().filter(|(_,table)|table.form.0.first().is_some_and(|step|step.0 as usize==form)).collect::<Vec<_>>();
+    let finish=|tables:Outcome<Vec<(usize,Table)>>,kind:&str,evaluated:usize| {
+        let (mut report,tables)=match tables {
+            Ok(tables)=>{let mut report=table_status(&tables);report["relation_tables"]=json!(tables.len());(report,tables)},
+            Err(f)=>(faulted(&f),Vec::new()),
+        };
+        report["form_tables"]=json!({"form":form,"kind":kind,"forms_evaluated":evaluated});
+        (report,tables)
+    };
+    let held=cache.held.as_ref().and_then(|held| {
+        let source=program.sexp(registry);
+        let texts=top_level_forms(&source);
+        if texts.len()!=program.program().value().forms.len() {return None;}
+        let same=texts.iter().zip(&held.texts).take_while(|(a,b)|**a==b.as_str()).count();
+        let tables=cache.gold_relations.get(&held.key)?.tables.as_ref().ok()?;
+        (same>0 && same<=held.starts.len() && !held.checked.program.reads_from(same) && !program.checked().program.reads_from(same)).then_some((held,tables,same))
+    });
+    let held=held.filter(|(held,_,same)|if *same>form {form<held.starts.len()} else {*same<held.starts.len()});
+    let written=match program.written_stream(registry,settings) {
+        Ok(written)=>written,
+        Err(d)=>return finish(Err(fault(d.message,&NodePath::default())),"fault",0),
+    };
+    if let Some((held,tables,same))=held {
+        if same>form {
+            let (start,end)=(held.starts[form].0,held.starts.get(form+1).map_or(tables.len(),|at|at.0));
+            return finish(Ok(tables[start..end].to_vec()),"held",0);
+        }
+        let (start,stops)=held.starts[same];
+        let earlier=tables[..start].iter().map(|(_,table)|table).collect::<Vec<_>>();
+        let too_large=TooLarge(std::cell::RefCell::new(held.too_large[..stops].to_vec()));
+        let decoder=Decoder::new(task,session,registry,constructions,settings).with_operation_limits(limits.clone());
+        let evictions=session.results.evictions();
+        session.results.begin_view(same as u32);
+        let mut made:Vec<(usize,Table)>=Vec::new();
+        let mut result:Outcome<()>=Ok(());
+        for written_form in written.forms.iter().filter(|written_form|(same..=form).contains(&top_of(written_form))) {
+            let seen=earlier.iter().copied().chain(made.iter().map(|(_,table)|table)).collect::<Vec<_>>();
+            match form_relations(program,&written,written_form,Some(&too_large),&decoder,&seen) {
+                Ok(tables)=>made.extend(tables),
+                Err(fault)=>{result=Err(fault);break},
+            }
+        }
+        session.results.end_view();
+        let near_a_cap=stopped_where(&made,|bound|matches!(bound,arclog::eval::ReachedBound::TableWork {..}|arclog::eval::ReachedBound::SessionBytes(_))).is_some();
+        if result.is_ok() && !near_a_cap && session.results.evictions()==evictions {
+            return finish(Ok(of_form(made)),"reused",form+1-same);
+        }
+        if let Err(fault)=result {
+            if session.results.evictions()==evictions {return finish(Err(fault),"reused",form+1-same);}
+        }
+    }
+    let own=session.sharing_terms();
+    let decoder=Decoder::new(task,&own,registry,constructions,settings).with_operation_limits(limits.clone());
+    let too_large=TooLarge::default();
+    let mut made:Vec<(usize,Table)>=Vec::new();
+    for written_form in written.forms.iter().filter(|written_form|top_of(written_form)<=form) {
+        let seen=made.iter().map(|(_,table)|table).collect::<Vec<_>>();
+        match form_relations(program,&written,written_form,Some(&too_large),&decoder,&seen) {
+            Ok(tables)=>made.extend(tables),
+            Err(fault)=>return finish(Err(fault),"full",form+1),
+        }
+    }
+    finish(Ok(of_form(made)),"full",form+1)
 }
 
 /// Pack the shared relation prefix once, preserving every exported offset

@@ -664,6 +664,23 @@ impl ResolvedProgram {
         Some((build::resolve_with(&pruned, None, &SolverScope::default(), registry, canonical_kept).value, last))
     }
 
+    /// Whether a top-level form before `end` reads, at any depth, a node that
+    /// a form at `end` or later gives.
+    pub fn reads_from(&self, end: usize) -> bool {
+        let mut seen = vec![false; self.graph.nodes.len()];
+        let mut stack: Vec<GraphNodeIndex> = (0..end).filter_map(|top| self.form_roots(top)).flatten().collect();
+        while let Some(node) = stack.pop() {
+            if std::mem::replace(&mut seen[node.0 as usize], true) {
+                continue;
+            }
+            if self.forms_of(node).iter().any(|form| form.0.first().is_some_and(|step| step.0 as usize >= end)) {
+                return true;
+            }
+            stack.extend(self.graph.reads[node.0 as usize].iter().copied());
+        }
+        false
+    }
+
     /// The nodes that the top-level form at `top` gives, and, for a
     /// `DEMONSTRATED` form, the nodes its rules declare. `None` where `top`
     /// is out of the range of a path step.

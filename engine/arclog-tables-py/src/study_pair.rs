@@ -288,26 +288,43 @@ impl PyStudyTaskEvaluator {
     /// decides. A `ValueError` is raised where the evaluation or the packing
     /// reached the byte bound (`study_pair::TABLE_BYTES`), in place of tables
     /// that leave out rows for that reason.
-    #[pyo3(signature=(gold,*,held_rows=false))]
-    fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,held_rows:bool)->PyResult<(String,PyCaseTables)> {
+    ///
+    /// With `form`, the index of a top-level form of the program, the result
+    /// holds the tables of that form alone, with no evidence, and the rows that
+    /// the full result gives them. The call takes no part in the active case:
+    /// it evaluates from the first form that differs from the program of the
+    /// last call without `form` through `form` (`study_pair::form_tables`), so
+    /// a caller evaluates a program in full first, and then each program made
+    /// from it by a change to one form.
+    #[pyo3(signature=(gold,*,held_rows=false,form=None))]
+    fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,held_rows:bool,form:Option<usize>)->PyResult<(String,PyCaseTables)> {
         if gold.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
         let (report,columns)=py.detach(|| self.with_cache("gold_tables",|cache| {
             let limits=study_pair::table_limits();
-            if cache.activate(&gold.program) {self.session.results.clear();}
-            let (mut report,tables)=study_pair::gold_tables_cached_in(&gold.program,&self.task,&self.session,constructions,&self.settings,cache,&limits);
+            let (mut report,tables,evidence)=match form {
+                None=>{
+                    if cache.activate(&gold.program) {self.session.results.clear();}
+                    let (report,tables)=study_pair::gold_tables_cached_in(&gold.program,&self.task,&self.session,constructions,&self.settings,cache,&limits);
+                    (report,tables,&self.evidence[..])
+                }
+                Some(form)=>{
+                    let (report,tables)=study_pair::form_tables(&gold.program,form,&self.task,&self.session,constructions,&self.settings,cache,&limits);
+                    (report,tables,&[][..])
+                }
+            };
             if let Some(stop)=study_pair::stopped_at_bytes(&tables) {
                 return Err(format!("the tables of the program stopped at {:?}",stop.bound));
             }
             let started=std::time::Instant::now();
             let materializer=Materializer::new(&self.session,&limits);
             let columns=if held_rows {
-                case_columns_held_in(&materializer,&self.evidence,&tables,self.task.train.len(),None,self.settings.projection_cap)
+                case_columns_held_in(&materializer,evidence,&tables,self.task.train.len(),None,self.settings.projection_cap)
             } else {
-                case_columns_in(&materializer,&self.evidence,&tables,self.task.train.len(),None)
+                case_columns_in(&materializer,evidence,&tables,self.task.train.len(),None)
             };
             let written=gold.program.written_stream(Registry::get(),&self.settings).map_err(|d|d.message.to_string())?;
-            let columns=columns.with_identities(identify(gold.program.checked(),Registry::get(),&written.relations,&self.evidence,&tables));
+            let columns=columns.with_identities(identify(gold.program.checked(),Registry::get(),&written.relations,evidence,&tables));
             report["entry_count"]=columns.entries.table.len().into();
             let counts = self.session.largest_counts();
             report["largest_counts"] = serde_json::json!({"bindings":counts.bindings,"rows":counts.rows});

@@ -190,6 +190,8 @@ evaluation holds them: a product of parts over the projection cap gives its row
 count and its parts, as the table's projections, and every other entry its rows.
 It runs under no deadline, whatever the settings give, so its rows do not depend on machine load. The rows of a table stop only at the caps of a query and at `TABLE_ROW_WORK` bindings counted over the table. It raises `ValueError` where the evaluation or the packing reaches `TABLE_BYTES`, in place of tables that leave out rows.
 
+`evaluator.gold_tables(program, form=F)` returns the tables of the top-level form at index `F` alone, with no evidence, and the rows that the full result gives them. Call `gold_tables` without `form` on a program first. A later call with `form` on a program that opens with the same forms evaluates only from its first form that differs through `F`. Those forms see the result cache as the evaluation of the earlier forms left it, so their counts of work are what a full evaluation counts. Where one of their tables stops at a cap of work or at the byte bound, or the cache evicts, the forms through `F` are evaluated again from the first form, in a session of their own. The call leaves the active case and the held program as they were.
+
 The task evaluator defaults to `compact=True`: the first pair for a gold
 handle contains the gold assignment records and train observations;
 subsequent pairs refer to that record through `gold_observation_ref`.

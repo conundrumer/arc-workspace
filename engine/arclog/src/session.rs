@@ -157,7 +157,26 @@ struct CacheState {
     since_sum: usize,
     /// Whether the bytes have passed the bound of an eviction.
     evicted: bool,
+    /// The times the bytes have passed the bound of an eviction.
+    evictions: u64,
+    /// The place that an entry made now takes ([`ResultCache::mark`]).
+    mark: u32,
+    /// The view of the cache that requests have now ([`ResultCache::begin_view`]).
+    view: Option<CacheView>,
+    /// The views begun, so that each has an id of its own.
+    views: u64,
 }
+
+/// What requests find during a view: the entries marked below `below`, and
+/// those that the view `id` made or asked to store.
+#[derive(Clone, Copy, Debug)]
+struct CacheView {
+    below: u32,
+    id: u64,
+}
+
+/// The mark of an entry that a view made, which no later view finds.
+const MADE_IN_VIEW: u32 = u32::MAX;
 
 #[derive(Debug)]
 struct Entry {
@@ -165,6 +184,16 @@ struct Entry {
     /// The id of the value's relation, where the value is one.
     rows: Option<RelationId>,
     used: u64,
+    /// The place of the entry's making ([`ResultCache::mark`]).
+    made: u32,
+    /// The view that last stored the entry, 0 for none.
+    stored_in: u64,
+}
+
+impl Entry {
+    fn found_under(&self, view: Option<CacheView>) -> bool {
+        view.is_none_or(|view| self.made < view.below || self.stored_in == view.id)
+    }
 }
 
 #[derive(Debug)]
@@ -295,7 +324,7 @@ impl ResultCache {
         use crate::eval::cache::Recorded;
         let mut state = self.state.lock().expect(UNPOISONED);
         let held = events.len() == keys.len()
-            && events.iter().zip(keys).all(|(event, key)| match (event, state.entries.get(key)) {
+            && events.iter().zip(keys).all(|(event, key)| match (event, state.entries.get(key).filter(|entry| entry.found_under(state.view))) {
                 (Recorded::Lookup { found: Some(found), .. }, Some(entry)) => alike(&entry.value, found),
                 _ => false,
             });
@@ -313,6 +342,43 @@ impl ResultCache {
     /// that it dropped the relations no entry holds, and entries.
     pub fn evicted(&self) -> bool {
         self.state.lock().expect(UNPOISONED).evicted
+    }
+
+    /// The times the cache's bytes have passed the bound of an eviction.
+    pub fn evictions(&self) -> u64 {
+        self.state.lock().expect(UNPOISONED).evictions
+    }
+
+    /// Gives each entry made from now on the place `mark`: the place of the
+    /// form under evaluation in its program.
+    pub fn mark(&self, mark: u32) {
+        self.state.lock().expect(UNPOISONED).mark = mark;
+    }
+
+    /// Until [`ResultCache::end_view`], a request finds only the entries
+    /// marked below `below` and those stored since this call. Those are the
+    /// entries a cache holds that an evaluation of the forms below `below`
+    /// left, with no later form evaluated.
+    pub fn begin_view(&self, below: u32) {
+        let mut state = self.state.lock().expect(UNPOISONED);
+        state.views += 1;
+        let id = state.views;
+        state.view = Some(CacheView { below, id });
+    }
+
+    /// Ends the view of [`ResultCache::begin_view`], and drops the entries
+    /// that it alone made and the relations that no entry holds.
+    pub fn end_view(&self) {
+        let mut state = self.state.lock().expect(UNPOISONED);
+        state.view = None;
+        let made: Vec<Arc<ResultKey>> = state.entries.iter().filter(|(_, entry)| entry.made == MADE_IN_VIEW).map(|(key, _)| Arc::clone(key)).collect();
+        for key in made {
+            state.remove_entry(&key);
+        }
+        let unheld: Vec<RelationId> = state.relations.iter().filter(|(_, held)| held.holders == 0).map(|(&id, _)| id).collect();
+        for id in unheld {
+            state.drop_relation(id);
+        }
     }
 
     /// Starts keeping each lookup, id and store that [`crate::eval::cache`]
@@ -445,7 +511,8 @@ impl ResultCache {
 impl CacheState {
     fn touch(&mut self, key: &ResultKey) -> Option<CachedValue> {
         let tick = self.tick();
-        let entry = self.entries.get_mut(key)?;
+        let view = self.view;
+        let entry = self.entries.get_mut(key).filter(|entry| entry.found_under(view))?;
         let last = std::mem::replace(&mut entry.used, tick);
         let value = entry.value.clone();
         let key = self.recency.remove(&last).expect("a recency tick for each entry");
@@ -492,7 +559,7 @@ impl CacheState {
             }
         };
         let entry = |entries: &Stored<'_>, key: &RecordedKey, digest: u64| -> Option<CachedValue> {
-            if let Some(found) = self.held_key(key).and_then(|key| self.entries.get(&key)) {
+            if let Some(found) = self.held_key(key).and_then(|key| self.entries.get(&key)).filter(|entry| entry.found_under(self.view)) {
                 return Some(found.value.clone());
             }
             entries.get(&digest)?.iter().find(|(stored, _)| stored.same(key)).map(|(_, value)| value.clone())
@@ -576,7 +643,11 @@ impl CacheState {
     }
 
     fn insert(&mut self, key: ResultKey, value: CachedValue) {
-        if self.entries.contains_key(&key) {
+        let view = self.view;
+        if let Some(entry) = self.entries.get_mut(&key) {
+            if let Some(view) = view {
+                entry.stored_in = view.id;
+            }
             return;
         }
         let (value, rows) = match value {
@@ -595,7 +666,17 @@ impl CacheState {
         let used = self.tick();
         let key = Arc::new(key);
         self.recency.insert(used, key.clone());
-        self.entries.insert(key, Entry { value, rows, used });
+        let (made, stored_in) = view.map_or((self.mark, 0), |view| (MADE_IN_VIEW, view.id));
+        self.entries.insert(key, Entry { value, rows, used, made, stored_in });
+    }
+
+    fn remove_entry(&mut self, key: &Arc<ResultKey>) {
+        let entry = self.entries.remove(key).expect("the key of an entry");
+        self.recency.remove(&entry.used);
+        self.bytes -= entry_bytes(key);
+        for id in entry.rows.into_iter().chain(key.reads.iter().copied()).chain(key.parameters.iter().copied()) {
+            self.release(id);
+        }
     }
 
     /// Adds a holder to `id`, where the cache still holds it: an eviction
@@ -646,6 +727,7 @@ impl CacheState {
             return;
         }
         self.evicted = true;
+        self.evictions += 1;
         let target = bound - bound / EVICT_MARGIN;
         let unheld: Vec<RelationId> = self.relations.iter().filter(|(_, held)| held.holders == 0).map(|(&id, _)| id).collect();
         for id in unheld {
@@ -663,12 +745,8 @@ impl CacheState {
             self.index_bytes = self.index_bytes.saturating_sub(bytes);
         }
         while self.bytes + self.index_bytes > target {
-            let Some((_, key)) = self.recency.pop_first() else { break };
-            let entry = self.entries.remove(&key).expect("an entry for each recency tick");
-            self.bytes -= entry_bytes(&key);
-            for id in entry.rows.into_iter().chain(key.reads.iter().copied()).chain(key.parameters.iter().copied()) {
-                self.release(id);
-            }
+            let Some((_, key)) = self.recency.first_key_value().map(|(tick, key)| (*tick, Arc::clone(key))) else { break };
+            self.remove_entry(&key);
         }
     }
 }
