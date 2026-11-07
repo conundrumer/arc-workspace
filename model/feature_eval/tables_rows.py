@@ -24,6 +24,11 @@ from state_tables import parents_of  # noqa: E402
 from tables_worker import REPO, TASKS, keep, read_table, split_of  # noqa: E402
 
 
+def ONE_FORM(form):
+    """The argument that has `gold_tables` evaluate only a mutant's changed form. TABLES_ONE_FORM=1 turns it on, for a runtime built at 6b412df2a or later."""
+    return dict(form=form) if os.environ.get('TABLES_ONE_FORM') == '1' else {}
+
+
 def worker(old_root, new_root, task):
     import numpy as np
     import arclog
@@ -42,8 +47,8 @@ def worker(old_root, new_root, task):
     task_json = json.loads((TASKS / (task + '.json')).read_text())
     evaluator = arclog.StudyTaskEvaluator(task, str(TASKS), settings)
 
-    def tables_of(program):
-        _, tables = evaluator.gold_tables(program, held_rows=True)
+    def tables_of(program, **form):
+        _, tables = evaluator.gold_tables(program, held_rows=True, **form)
         return script.Tables(arclog, np, program, tables, task_json)
 
     gold_tables = tables_of(gold)
@@ -75,7 +80,7 @@ def worker(old_root, new_root, task):
             record = by_form[form]['mutants'][mutant['mutant']]
             try:
                 program = arclog.StudyProgram.from_sexp(record['text'], settings)
-                table, why = read_table(tables_of(program), name, gold_table['assignment'], sources=True)
+                table, why = read_table(tables_of(program, **ONE_FORM(form)), name, gold_table['assignment'], sources=True)
                 programs += 1
             except Exception as error:
                 left_out.append(dict(query=item['query'], table=name, mutant=mutant['mutant'], why='mutant: ' + type(error).__name__))
