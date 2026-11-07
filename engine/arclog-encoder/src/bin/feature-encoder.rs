@@ -828,7 +828,10 @@ fn check_family(family: &arclog_encoder::generate::Generated, leaves: &[Vec<arcl
     use std::collections::BTreeSet;
     let (_, first) = family.counts();
     let mut walker = Walker::new(family);
-    let chosen = |at: usize| (at < first && check_leaves) || (at >= first && !family.is_pair_term(at) && (at - first) % every.max(1) == 0);
+    // With GENERATE_CHECK_TERMS, only the terms whose text holds one of those words, beside the sample.
+    let words: Vec<String> = std::env::var("GENERATE_CHECK_TERMS").map_or_else(|_| Vec::new(), |text| text.split(',').map(str::to_string).collect());
+    let holds = |at: usize| words.iter().any(|word| family.term_info(at).0.contains(word.as_str()));
+    let chosen = |at: usize| if words.is_empty() { (at < first && check_leaves) || (at >= first && !family.is_pair_term(at) && (at - first) % every.max(1) == 0) } else { at >= first && !family.is_pair_term(at) && holds(at) };
     for (at, values) in walker.term_values(leaves, train, &chosen) {
         if tally.out_of_time() {
             break;

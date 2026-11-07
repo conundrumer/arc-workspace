@@ -1727,6 +1727,90 @@
   (QUERY &q (?R (?keys *)) (&whole.minimal (:key ?keys) (:t (:Axis (*new A ?R)) (:Line (*new Along ?R)))))
   (gives &q))
 
+(fragment (box-sides (?R relation) (?keys columns ?R) (?p column ?R))
+  "The extent of the box of each key's cells on each axis."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &box BoundingBox
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell))))))
+  (INIT &sides Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t (:Axis Axis) (:Long Long)))
+        (&whole Whole)
+        (&box.box (:key ?keys) (:B *Box))
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))
+        (box_extent (:B Box) (:P Cell) (:A *Axis) (:N *Long)))))
+  (QUERY &q (?R (?keys *)) (&sides.minimal (:key ?keys) (:t (:Axis (*new A ?R)) (:Long (*new N ?R)))))
+  (gives &q))
+
+(fragment (box-margins (?R relation) (?keys columns ?R) (?p column ?R))
+  "The margin of the box of each key's cells on each edge."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &box BoundingBox
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell))))))
+  (INIT &margins Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t (:Edge Edge) (:Margin Margin)))
+        (&whole Whole)
+        (&box.box (:key ?keys) (:B *Box))
+        (margin (:B Box) (:D *Edge) (:K *Margin)))))
+  (QUERY &q (?R (?keys *)) (&margins.minimal (:key ?keys) (:t (:Edge (*new D ?R)) (:Margin (*new K ?R)))))
+  (gives &q))
+
+(fragment (line-counts (?R relation) (?keys columns ?R) (?p column ?R))
+  "Each key's cells on each of its rows and columns."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &on_line Cardinality
+    (key ((?R (?keys ^) (?p *)) (split (:P ?p) (:A ^Axis) (:Along ^Line)))
+      (member ((:m Cell))
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))
+        (split (:P Cell) (:A Axis) (:Along Line)))))
+  (QUERY &q (?R (?keys *)) (&on_line.size (:key ?keys (:Axis (*new A ?R)) (:Line (*new Along ?R))) (:N (*new N ?R))))
+  (gives &q))
+
+(fragment (complement (?R relation) (?p column ?R))
+  "The cells of a column's frame that it does not hold."
+  (INIT &have Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?R (?p *))
+      (frame_extent (:P ?p) *A *N)))
+  (QUERY &free (&frame.cell (:P *Free)) (NOT (&have.minimal (:t Free))))
+  (QUERY &q (&free (:Free (*new P ?R))))
+  (gives &q))
+
+(fragment (straight (?R relation) (?keys columns ?R) (?p column ?R))
+  "The keys whose cells lie on one row, one column or one diagonal."
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &off Cardinality
+    (key ((?R (?keys ^)) (axis4_elem (:A ^Line)))
+      (member ((:m (:X X) (:Y Y)))
+        (&cells_of.minimal (:t ?keys (:Cell *X)))
+        (&cells_of.minimal (:t ?keys (:Cell *Y)))
+        (NOT (same_line (:A Line) (:P X) (:Q Y))))))
+  (INIT &on Cardinality
+    (key ((?R (?keys ^)) (axis4_elem (:A *Line)) (&off.size (:key ?keys Line) (:N 0)))))
+  (QUERY &q (?R (?keys *)) (&on.size (:key ?keys)))
+  (gives &q))
+
 (fragment (occurs (?R relation) (?keys columns ?R) (?p column ?R) (?v column ?R) (?G grid))
   "The moves that take a key's colored cells into a grid."
   (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))

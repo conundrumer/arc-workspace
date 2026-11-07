@@ -304,8 +304,12 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         let table_name = item["table"].as_str().unwrap_or("");
         let mut own_numbers = vec![numbers_of(&item["text"], &item["gold"], table_name)];
         for mutant in item["mutants"].as_array().ok_or("an item's mutants")? {
+            // A mutant too large to read leaves the item its other mutants.
             let Some(table) = add_table(&mutant["table"], &mut stored) else {
-                whole = false;
+                whole &= mutant["table"]["too_large"].as_bool() == Some(true);
+                if whole {
+                    continue;
+                }
                 break;
             };
             own_candidates.push((table, strings(&mutant["parents"])));

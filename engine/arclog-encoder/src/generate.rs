@@ -1277,8 +1277,10 @@ impl Generated {
         let columns = self.terms[at as usize].columns.clone();
         let text = self.terms[at as usize].text.clone();
         let count = columns.len();
-        if count >= 2 && count <= 10 {
-            for mask in 1u32..(1 << count) - 1 {
+        // A shape's name does not depend on a table's width, so a table's own `project` of all its columns stands as a term.
+        let every = at == LEAF_TABLE;
+        if (count >= 2 || (every && count == 1)) && count <= 10 {
+            for mask in 1u32..(1 << count) - u32::from(!every) {
                 if mask.count_ones() as usize > MAX_PROJECTED {
                     continue;
                 }
@@ -1379,6 +1381,7 @@ impl Generated {
                     }
                 }
                 add(PartStep::FrameExtent { p }, NO_TERM, vec![one("A", ValueType::Axis, 0), one("N", ValueType::Int, 0)], format!("(frame-extent {text} {name})"), RootKind::Rows);
+                add(PartStep::Complement { p }, NO_TERM, vec![fresh("P", ValueType::Position, 0)], format!("(complement {text} {name})"), RootKind::Rows);
                 for (other, second) in columns.iter().enumerate() {
                     if other != place && second.ty == ValueType::Position {
                         add(PartStep::Displacement { a: p, b: other as u16 }, NO_TERM, with(&[("V", ValueType::Offset, 0)]), format!("(displacement {text} {name} {})", second.name), RootKind::Rows);
@@ -1410,6 +1413,10 @@ impl Generated {
                     }
                     add(PartStep::TouchesEdge { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(touches-edge {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::FillsBox { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(fills-box {text} {key_text} {name})"), RootKind::Rows);
+                    add(PartStep::Straight { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(straight {text} {key_text} {name})"), RootKind::Rows);
+                    add(PartStep::BoxSides { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("N", ValueType::Int, 0)]), format!("(box-sides {text} {key_text} {name})"), RootKind::Rows);
+                    add(PartStep::BoxMargins { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("D", ValueType::Dir, 0), fresh("K", ValueType::Int, 0)]), format!("(box-margins {text} {key_text} {name})"), RootKind::Rows);
+                    add(PartStep::LineCounts { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("Along", ValueType::Box, 0), fresh("N", ValueType::Nat, 0)]), format!("(line-counts {text} {key_text} {name})"), RootKind::Rows);
                     for (v, value) in columns.iter().enumerate() {
                         if value.ty == ValueType::Color && v != place && !keys.contains(&(v as u16)) {
                             for (turned, label) in [(false, "occurs"), (true, "occurs-d4")] {

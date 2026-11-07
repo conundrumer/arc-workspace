@@ -78,6 +78,16 @@ pub enum PartStep {
     FrameExtent { p: u16 },
     /// A key's whole rows and columns, by the frame of its cells: keys, A, Along.
     FullLines { keys: Box<[u16]>, p: u16 },
+    /// The extent of the box of a key's cells on each axis: keys, A, N.
+    BoxSides { keys: Box<[u16]>, p: u16 },
+    /// The margin of the box of a key's cells on each edge: keys, D, K.
+    BoxMargins { keys: Box<[u16]>, p: u16 },
+    /// A key's cells on each of its rows and columns: keys, A, Along, N.
+    LineCounts { keys: Box<[u16]>, p: u16 },
+    /// The cells of a column's frame that it does not hold: (P).
+    Complement { p: u16 },
+    /// The keys whose cells lie on one row, one column or one diagonal.
+    Straight { keys: Box<[u16]>, p: u16 },
     /// A column of boxes read against the two grids. An input cell of a box of the output's
     /// extents stands for the output cell at its place in the box: B, P, X_rel, Col, and Col_2
     /// where the two colors differ.
@@ -125,7 +135,7 @@ impl PartStep {
     pub fn hole_columns(&self) -> Vec<u16> {
         let with = |keys: &[u16], rest: &[u16]| keys.iter().chain(rest).copied().collect::<Vec<u16>>();
         match self {
-            PartStep::CellsOn { p } | PartStep::ColorsUnder { p } | PartStep::Around { p } | PartStep::Neighbors { p } | PartStep::Split { p } | PartStep::Margin { p } | PartStep::CornerDist { p } | PartStep::Parity { p } | PartStep::BorderDistance { p } | PartStep::NeighborhoodClass { p } | PartStep::NeighborColorClass { p } | PartStep::SameColorNeighbors { p } | PartStep::Distance { p } | PartStep::FrameExtent { p } => vec![*p],
+            PartStep::Complement { p } | PartStep::CellsOn { p } | PartStep::ColorsUnder { p } | PartStep::Around { p } | PartStep::Neighbors { p } | PartStep::Split { p } | PartStep::Margin { p } | PartStep::CornerDist { p } | PartStep::Parity { p } | PartStep::BorderDistance { p } | PartStep::NeighborhoodClass { p } | PartStep::NeighborColorClass { p } | PartStep::SameColorNeighbors { p } | PartStep::Distance { p } | PartStep::FrameExtent { p } => vec![*p],
             PartStep::Inside { b } | PartStep::BoxMargin { b } | PartStep::BoxExtent { b } | PartStep::BoxRead { b, .. } => vec![*b],
             PartStep::NumberExtreme { n, .. } => vec![*n],
             PartStep::SharedLine { a, .. } | PartStep::SameValues { a, .. } | PartStep::InsideBoxes { a, .. } | PartStep::BoxesHolding { a, .. } => vec![*a],
@@ -133,7 +143,7 @@ impl PartStep {
             PartStep::DeterminesJointly { p, v, w } => vec![*p, *v, *w],
             PartStep::Displacement { a, b } => vec![*a, *b],
             PartStep::BoxFrameRead { b, x, .. } | PartStep::BoxCellRead { b, x, .. } => vec![*b, *x],
-            PartStep::Pieces { keys, p, .. } | PartStep::BoxOf { keys, p } | PartStep::RelBox { keys, p } | PartStep::ShapeClass { keys, p, .. } | PartStep::Holes { keys, p } | PartStep::Symmetry { keys, p } | PartStep::TouchesEdge { keys, p } | PartStep::FillsBox { keys, p } | PartStep::FullLines { keys, p } => with(keys, &[*p]),
+            PartStep::BoxSides { keys, p } | PartStep::BoxMargins { keys, p } | PartStep::LineCounts { keys, p } | PartStep::Straight { keys, p } | PartStep::Pieces { keys, p, .. } | PartStep::BoxOf { keys, p } | PartStep::RelBox { keys, p } | PartStep::ShapeClass { keys, p, .. } | PartStep::Holes { keys, p } | PartStep::Symmetry { keys, p } | PartStep::TouchesEdge { keys, p } | PartStep::FillsBox { keys, p } | PartStep::FullLines { keys, p } => with(keys, &[*p]),
             PartStep::Count { keys } | PartStep::ClassOf { keys } => keys.to_vec(),
             PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => with(keys, &[*f]),
             PartStep::Extreme { keys, t, score, .. } => with(keys, &[*t, *score]),
@@ -201,6 +211,11 @@ impl PartStep {
             PartStep::Displacement { a, b } => format!("(displacement &r {} {})", c(a), c(b)),
             PartStep::FrameExtent { p } => format!("(frame-extent &r {})", c(p)),
             PartStep::FullLines { keys, p } => format!("(full-lines &r {} {})", list(keys), c(p)),
+            PartStep::BoxSides { keys, p } => format!("(box-sides &r {} {})", list(keys), c(p)),
+            PartStep::BoxMargins { keys, p } => format!("(box-margins &r {} {})", list(keys), c(p)),
+            PartStep::LineCounts { keys, p } => format!("(line-counts &r {} {})", list(keys), c(p)),
+            PartStep::Complement { p } => format!("(complement &r {})", c(p)),
+            PartStep::Straight { keys, p } => format!("(straight &r {} {})", list(keys), c(p)),
             PartStep::BoxRead { b, kept } => format!("({} &r {})", if *kept { "box-kept" } else { "box-changed" }, c(b)),
             PartStep::BoxFrameRead { b, x, kept } => format!("({} &r {} {})", if *kept { "box-frame-kept" } else { "box-frame-changed" }, c(b), c(x)),
             PartStep::BoxCellRead { b, x, kept } => format!("({} &r {} {})", if *kept { "box-cell-kept" } else { "box-cell-changed" }, c(b), c(x)),
@@ -1208,6 +1223,95 @@ impl PartStep {
                     out.push(number_bits(i64::from(value)));
                 }
                 Val::of_table(Table::new(2, out))
+            }
+            PartStep::BoxSides { keys, p } | PartStep::BoxMargins { keys, p } => {
+                if !on_one_frame(t, keys, *p) {
+                    return None;
+                }
+                let (ids, first) = key_ids(t, keys);
+                let mut spans: Vec<Option<[i32; 4]>> = vec![None; first.len()];
+                let mut frames: Vec<(i32, i32)> = vec![(0, 0); first.len()];
+                for (row, id) in t.rows().zip(&ids) {
+                    let m = margins_of(row[usize::from(*p)]);
+                    frames[*id as usize] = (m[0] + m[1] + 1, m[2] + m[3] + 1);
+                    let held = spans[*id as usize].get_or_insert([m[0], m[0], m[2], m[2]]);
+                    *held = [held[0].min(m[0]), held[1].max(m[0]), held[2].min(m[2]), held[3].max(m[2])];
+                }
+                let mut out = Vec::new();
+                for (at, span) in spans.iter().enumerate() {
+                    let Some([r0, r1, c0, c1]) = span else { continue };
+                    if matches!(self, PartStep::BoxSides { .. }) {
+                        for (axis, long) in [(0, r1 - r0 + 1), (1, c1 - c0 + 1)] {
+                            push_key(&mut out, first[at], keys);
+                            out.push(e.axes[axis]);
+                            out.push(number_bits(i64::from(long)));
+                        }
+                    } else {
+                        let (h, w) = frames[at];
+                        for (edge, margin) in [*r0, h - 1 - r1, *c0, w - 1 - c1].into_iter().enumerate() {
+                            push_key(&mut out, first[at], keys);
+                            out.push(e.dirs[edge]);
+                            out.push(number_bits(i64::from(margin)));
+                        }
+                    }
+                }
+                Val::of_table(Table::distinct(keys.len() + 2, out))
+            }
+            PartStep::LineCounts { keys, p } => {
+                if !on_one_frame(t, keys, *p) {
+                    return None;
+                }
+                let (ids, first) = key_ids(t, keys);
+                let mut lines: FastMap<(u32, bool, i32, i32), i64> = FastMap::default();
+                let mut seen: std::collections::HashSet<(u32, Cell)> = std::collections::HashSet::new();
+                for (row, id) in t.rows().zip(&ids) {
+                    let cell = row[usize::from(*p)];
+                    if seen.insert((*id, cell)) {
+                        let m = margins_of(cell);
+                        *lines.entry((*id, true, m[0], m[1])).or_insert(0) += 1;
+                        *lines.entry((*id, false, m[2], m[3])).or_insert(0) += 1;
+                    }
+                }
+                let mut out = Vec::new();
+                for ((id, is_row, a, b), count) in &lines {
+                    push_key(&mut out, first[*id as usize], keys);
+                    out.push(e.axes[usize::from(!*is_row)]);
+                    out.push(if *is_row { box_bits(*a, *b, 0, 0) } else { box_bits(0, 0, *a, *b) });
+                    out.push(number_bits(*count));
+                }
+                Val::of_table(Table::distinct(keys.len() + 3, out))
+            }
+            PartStep::Complement { p } => {
+                if !on_one_frame(t, &[], *p) {
+                    return None;
+                }
+                let first = t.rows().next().map(|row| margins_of(row[usize::from(*p)]))?;
+                let (h, w) = (first[0] + first[1] + 1, first[2] + first[3] + 1);
+                if h * w > 4096 {
+                    return None;
+                }
+                let held: std::collections::HashSet<Cell> = t.rows().map(|row| row[usize::from(*p)]).collect();
+                let mut out = Vec::new();
+                for r in 0..h {
+                    for c in 0..w {
+                        let cell = box_bits(r, h - 1 - r, c, w - 1 - c);
+                        if !held.contains(&cell) {
+                            out.push(cell);
+                        }
+                    }
+                }
+                Val::of_table(Table::distinct(1, out))
+            }
+            PartStep::Straight { keys, p } => {
+                if !on_one_frame(t, keys, *p) {
+                    return None;
+                }
+                let (cells, heads) = cells_by_key(t, keys, *p);
+                keys_only(&heads, cells.iter().map(|held| {
+                    let Some(first) = held.first() else { return false };
+                    let (r, c) = (i32::from(first.0), i32::from(first.1));
+                    held.iter().all(|at| i32::from(at.0) == r) || held.iter().all(|at| i32::from(at.1) == c) || held.iter().all(|at| i32::from(at.0) - i32::from(at.1) == r - c) || held.iter().all(|at| i32::from(at.0) + i32::from(at.1) == r + c)
+                }), keys.len())
             }
             PartStep::FullLines { keys, p } => {
                 if !on_one_frame(t, keys, *p) {
