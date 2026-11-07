@@ -5,7 +5,8 @@
 #   checkout/      the build checkout, a detached worktree of the repo. Each build moves it to SHA, so git rewrites only the files that differ.
 #   target/        the cargo target folder. Only the build checkout builds into it, so cargo never reuses a crate built from another tree.
 #   builds/NAME/   the engine build: the arclog and arclog_features packages, for PYTHONPATH.
-#   linux/NAME/    Linux x86_64 wheels of arclog and arclog_features, with SHA256SUMS and COMMIT, for a pod.
+#   linux/NAME/    Linux x86_64 wheels of arclog and arclog_features and the feature-encoder binary, with SHA256SUMS and COMMIT, for a pod.
+#   zig/           the C compiler wrappers that link the Linux binaries with zig, through maturin's `zig cc`.
 #   bin/           tool binaries, each as TOOL-NAME.
 #   logs/NAME.log  each step's time and cargo's output.
 #   build.lock     held while a build step runs.
@@ -14,7 +15,8 @@
 #   wheel    arclog and arclog_features into builds/NAME/.
 #   encoder  feature-encoder into bin/feature-encoder-NAME.
 #   cli      arclog-cli's arclog-cli, verdicts and stream_round_trip into bin/.
-#   linux    Linux x86_64 wheels, cross-built with zig into the same target folder, into linux/NAME/.
+#   linux    Linux x86_64 wheels and feature-encoder, cross-built with zig for glibc 2.17 into the same target folder, into linux/NAME/.
+#   linux-encoder  the Linux feature-encoder alone, added to the wheels already in linux/NAME/.
 #   tests    the tests of the arclog crate.
 #
 # A step that fails prints the end of its cargo output and ends the build with status 1.
@@ -63,7 +65,23 @@ linux() {
   for P in arclog-py arclog-features-py; do
     CARGO_TARGET_DIR=$T PYTHONDONTWRITEBYTECODE=1 maturin build --offline --profile tool --target x86_64-unknown-linux-gnu --zig --manifest-path "$B/engine/$P/Cargo.toml" -o "$R/linux/$NAME" || return 1
   done &&
-  (cd "$R/linux/$NAME" && shasum -a 256 *.whl > SHA256SUMS && git -C "$B" rev-parse HEAD > COMMIT)
+  linux_encoder
+}
+
+# The Linux feature-encoder into linux/NAME/, with zig as the linker and the C compiler, for the glibc that the wheels target; then the folder's SHA256SUMS and COMMIT. cc-rs runs the C compiler through no wrapper, since sccache refuses the zig one.
+linux_encoder() {
+  local Z=$R/zig M
+  M=$(command -v maturin) || return 1
+  mkdir -p "$Z" &&
+  printf '#!/bin/sh\nexec "%s" zig cc -- -g -fno-sanitize=all -target x86_64-linux-gnu.2.17 "$@"\n' "$M" > "$Z/cc" &&
+  printf '#!/bin/sh\nexec "%s" zig c++ -- -g -fno-sanitize=all -target x86_64-linux-gnu.2.17 "$@"\n' "$M" > "$Z/c++" &&
+  printf '#!/bin/sh\nexec "%s" zig ar -- "$@"\n' "$M" > "$Z/ar" &&
+  printf '#!/bin/sh\nexec "%s" zig ranlib -- "$@"\n' "$M" > "$Z/ranlib" &&
+  chmod +x "$Z/cc" "$Z/c++" "$Z/ar" "$Z/ranlib" &&
+  RUSTC_WRAPPER= CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$Z/cc CC_x86_64_unknown_linux_gnu=$Z/cc CXX_x86_64_unknown_linux_gnu=$Z/c++ AR_x86_64_unknown_linux_gnu=$Z/ar RANLIB_x86_64_unknown_linux_gnu=$Z/ranlib \
+    CARGO_TARGET_DIR=$T cargo build --offline --profile tool --target x86_64-unknown-linux-gnu --manifest-path "$B/engine/Cargo.toml" -p arclog-encoder --bin feature-encoder &&
+  cp "$T/x86_64-unknown-linux-gnu/tool/feature-encoder" "$R/linux/$NAME/feature-encoder" &&
+  (cd "$R/linux/$NAME" && shasum -a 256 *.whl feature-encoder > SHA256SUMS && git -C "$B" rev-parse HEAD > COMMIT)
 }
 
 tests() {
@@ -82,6 +100,7 @@ for PART in $PARTS; do
     encoder) locked encoder || fail encoder; step "$R/bin/feature-encoder-$NAME";;
     cli) locked cli || fail cli; step "$R/bin/{arclog-cli,verdicts,stream_round_trip}-$NAME";;
     linux) locked linux || fail linux; step "$R/linux/$NAME";;
+    linux-encoder) locked linux_encoder || fail linux-encoder; step "$R/linux/$NAME/feature-encoder";;
     tests) locked tests || fail tests; step "tests: $(grep -E '^test result' "$LOG" | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')";;
     *) step "unknown part $PART"; exit 1;;
   esac
