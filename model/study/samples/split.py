@@ -21,7 +21,7 @@ from pathlib import Path
 
 TASKS = MAIN_ROOT / 'data/tasks'
 GRAPHS = DATA_ROOT / 'gold/gold-union'
-OUTD = DATA_ROOT / 'samples'
+OUTD = Path(os.environ.get('ARC_SAMPLE_OUT') or DATA_ROOT / 'samples')  # ARC_SAMPLE_OUT: another samples folder, such as one for a rebuild of some tasks
 DESIGN = Path(__file__).resolve().parent / 'split_design/split2.tsv'
 SALT = 1533
 CUT = 0.85
