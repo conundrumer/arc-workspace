@@ -1,5 +1,5 @@
 //! The domain of a `DET` from the evidence refuses a `DET` that reads a
-//! pick of more than one model, and a `DET` with no body and no proposer.
+//! pick of more than one model.
 //! The determination reports a `DET` without `(ONE)` that keeps two values
 //! as underdetermined, and stops a case whose joint assignments pass the
 //! assignment cap.
@@ -64,11 +64,6 @@ fn a_det_that_reads_a_pick_of_two_models_is_refused() {
 #[test]
 fn a_det_that_reads_a_pick_of_one_model_is_kept() {
     assert!(!domain_fault(READS_A_PICK, "x", &[1]), "the pick has one model");
-}
-
-#[test]
-fn a_det_with_no_body_and_no_proposer_is_refused() {
-    assert!(domain_fault("(DET &x)\n", "x", &[1]), "`(DET &x)` gives no value");
 }
 
 /// `&<name>` as a program relation.

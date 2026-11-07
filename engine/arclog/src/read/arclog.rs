@@ -719,6 +719,9 @@ impl Reader {
                 Err(LabelUse::Zero) => Operand::Zero,
                 Err(_) => return self.refuse("a constraint takes no `^` label", place),
             };
+            if matches!(second, Operand::Label(second) if second.label == first.label) {
+                return self.refuse(crate::program::self_comparison_refusal(op), place);
+            }
             record.token(place);
             Conjunct::Constraint(Constraint { op, first, second })
         } else {

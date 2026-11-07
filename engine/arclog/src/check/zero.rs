@@ -52,10 +52,12 @@ impl Check for EqualityAndZeroCheck {
     ///   of the same list makes, where that site could make `V`. In the first
     ///   branch of an `OR` that is a body's one conjunct, the `OR` may export
     ///   `V`, and the check refuses the `=` only where it does not;
-    /// - a `(= *V Y)` at the top level of a body whose label `Y` a field
-    ///   site of a positive atom of the same list makes, such as a field
-    ///   site of a key, `(:key (:F *Y))`, or a site on a column of a type
-    ///   parameter, with a message of its own.
+    /// - a `(= *V Y)` at the top level of a body, or in an `OR`'s first
+    ///   branch or an `IF`'s then, whose label `Y` a field site of a
+    ///   positive atom of the same list makes, such as a field site of a
+    ///   key, `(:key (:F *Y))`, or a site on a column of a type parameter,
+    ///   with a message of its own, where the same rule on `V` that holds
+    ///   for a site of one label holds.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let mut refused = rule_refusals(input.form, input.path, &input.scope, &|_| false);
         refused.extend(head_zero(input.form, input.scope.clauses));
@@ -324,11 +326,11 @@ fn lists(form_body: &FormBody<'_>, union: bool, union_open: bool, refused: &mut 
                     };
                     match top {
                         Some((_, true)) => {}
-                        Some((true, false)) => made_from_site(branches[0].value(), &at.child(0), &|label| !exported(label), MADE_IN_BRANCH, None, refused),
-                        _ => made_from_site(branches[0].value(), &at.child(0), &|_| true, MADE_IN_BRANCH, None, refused),
+                        Some((true, false)) => made_from_site(branches[0].value(), &at.child(0), &|label| !exported(label), MADE_IN_BRANCH, Some(MADE_IN_BRANCH_FIELD), refused),
+                        _ => made_from_site(branches[0].value(), &at.child(0), &|_| true, MADE_IN_BRANCH, Some(MADE_IN_BRANCH_FIELD), refused),
                     }
                 }
-                Conjunct::If { then, .. } => made_from_site(then.value(), &at.child(1), &|_| true, MADE_IN_BRANCH, None, refused),
+                Conjunct::If { then, .. } => made_from_site(then.value(), &at.child(1), &|_| true, MADE_IN_BRANCH, Some(MADE_IN_BRANCH_FIELD), refused),
                 _ => {}
             }
             each_body(conjunct, &at, &mut |body, at| walk(body, at, None, refused));
@@ -341,6 +343,7 @@ fn lists(form_body: &FormBody<'_>, union: bool, union_open: bool, refused: &mut 
 }
 
 const MADE_IN_BRANCH: &str = "a site of the list makes the second label, so it could make the first";
+const MADE_IN_BRANCH_FIELD: &str = "a field site of the list, such as one of a key, makes the second label, so it could make the first";
 const MADE_AT_TOP: &str = "at the top level of a body, a site of the list makes the second label of `=`, so it could make the first";
 const MADE_AT_TOP_FIELD: &str = "at the top level of a body, a field site of the list, such as one of a key, makes the second label of `=`, so it could make the first";
 

@@ -127,28 +127,6 @@ fn a_pose_at_a_site_of_a_d4_column_in_a_concept_det_is_refused_in_each_case() {
 }
 
 #[test]
-fn a_column_that_a_color_and_a_number_give_is_refused_at_each_clause() {
-    let forms = type_refused_forms(
-        "
-(RULE &cell
-  (input *P *Col))
-
-(RULE &mixed
-  (&cell (:Col *X)))
-
-(RULE &mixed
-  (&cell (:P *Q))
-  (frame_extent (:P Q) (:A *A) (:N *X)))
-
-(RULE &use
-  (&mixed *X)
-  (< X X))
-",
-    );
-    assert_eq!(forms, vec![1, 2]);
-}
-
-#[test]
 fn a_column_that_two_assemblies_give_poses_is_refused_at_each_clause() {
     let forms = type_refused_forms(
         "

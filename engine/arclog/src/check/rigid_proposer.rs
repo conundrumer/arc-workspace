@@ -5,9 +5,10 @@
 
 use super::types::result;
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
-use crate::program::path::{NodePath, NodeRef};
-use crate::program::{Clause, ClauseKeyword, OutputName, OutputOwner, Program, RelationRef, RigidDetName};
-use crate::resolver::form_columns::rigid_outputs;
+use crate::program::canonical::{prediction, relation_of};
+use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::{Clause, ClauseKeyword, OutputName, OutputOwner, OutputStep, Program, RelationRef, RigidDetName, RigidDetPart};
+use crate::resolver::form_columns::{part_steps, rigid_outputs};
 use crate::resolver::ResolvedProgram;
 use crate::solver::Case;
 
@@ -28,14 +29,50 @@ impl Check for RigidPartsAndProposersCheck {
     /// Refuses, at the clause, a proposer whose name is not an uppercase
     /// letter and then letters and digits, a `DET` or `RULE` that names
     /// a proposer and holds a body, and a `DET` or `RULE` that names more
-    /// than one proposer (`docs/arclog/arclog.md#program`), and,
+    /// than one proposer (`docs/arclog/arclog.md#program`), at the body of a
+    /// `DET` that the file writes with no proposer and no conjunct, which gives no
+    /// value, at the second of two parts of a `RIGID_DET` form whose outputs
+    /// begin with one name (`docs/arclog/rigid.md#form`), at a `&prediction`
+    /// clause of a `DEMONSTRATED` form that makes no label named as a column
+    /// of the `value` head (`docs/arclog/arclog.md#demonstrated`), and,
     /// at the atom, a read of an
     /// output of a `RIGID_DET` form of the case program that gives no such
     /// output: a part that no atom of the form reads. A read of a form that
     /// the case program does not hold is the resolver's: the case is
     /// undefined where it reads it.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
+        self.refusals(input, true)
+    }
+
+    /// A clause's proposers stand before its body, and a read names a form
+    /// written before it, so no completion undoes a refusal: each stands
+    /// once its node is written.
+    ///
+    /// The refusal of a `DET` with no body stands once its body is complete:
+    /// a body that is open may yet take a conjunct. That of a `&prediction`
+    /// clause stands once the form is complete: the clause stands in the
+    /// prefix with the columns filled so far. The refusal of a part that
+    /// begins its output as an earlier part does is the grammar's alone: it
+    /// reads the part's relation, where the checks of the candidates of an
+    /// open atom share their results by the class of the relation.
+    fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
+        let unsettled = |at: &NodePath| match node_at(NodeRef::from(prefix.partial), at) {
+            Some(NodeRef::Body(body)) => body.conjuncts.is_empty() && at.0.split_last().is_some_and(|(_, parent)| prefix.is_open(&NodePath(parent.into()))),
+            Some(NodeRef::Clause(clause)) => relation_of(&clause.derives) == prediction() && prefix.open.is_some(),
+            _ => false,
+        };
+        super::prefix::standing(prefix, self.refusals(&super::prefix::whole(prefix), false), &|at| !unsettled(at))
+    }
+}
+
+impl RigidPartsAndProposersCheck {
+    /// The refusals of [`Check::check`] of the form of `input`; with `parts`,
+    /// those at a part of a `RIGID_DET` form whose output begins as an
+    /// earlier part's does.
+    fn refusals(&self, input: &CheckInput<'_>, parts: bool) -> CheckResult {
         let program = input.scope.program;
+        // A case's reading of a line makes `DET` clauses that the file does not write.
+        let written = input.scope.files.map_or(true, |files| files.writes(input.path));
         let mut refused: Vec<(NodePath, &str)> = Vec::new();
         each_node(NodeRef::from(input.form), &NodePath::default(), &mut |node, at| {
             if let NodeRef::Clause(clause) = node {
@@ -47,6 +84,25 @@ impl Check for RigidPartsAndProposersCheck {
                 }
                 if names_several_proposers(clause) {
                     refused.push((at.into(), "a `DET` or `RULE` names at most one proposer"));
+                }
+                if written && holds_nothing(clause) {
+                    refused.push((NodePath::from(at).child(0), "a `DET` holds a body or names a proposer, since a `DET` of no body and no proposer gives no value"));
+                }
+            }
+            if let NodeRef::Demonstrated(form) = node {
+                for clause in crate::eval::demonstrated::predictions_missing_a_value_column(form, &NodePath::from(at)) {
+                    refused.push((clause, "a `&prediction` clause makes a label named as each column of the `value` head"));
+                }
+            }
+            if let (true, NodeRef::RigidDet(form)) = (parts, node) {
+                let mut begun: Vec<OutputStep> = Vec::new();
+                for (part, index) in form.parts.iter().zip(0usize..) {
+                    let Some(step) = part_steps(&part.value().relation).and_then(|steps| steps.into_iter().next()) else { continue };
+                    if begun.contains(&step) {
+                        let at = NodePath::from(at).child(form.position(RigidDetPart::Part(index)));
+                        refused.push((at, "the output of a part of a `RIGID_DET` form begins with a step that the output of an earlier part begins with"));
+                    }
+                    begun.push(step);
                 }
             }
             if let Some(RelationRef::Output(output @ OutputName { of: OutputOwner::RigidDet(owner), .. })) = node.atom().map(|atom| &atom.relation) {
@@ -60,13 +116,11 @@ impl Check for RigidPartsAndProposersCheck {
         }
         result(refused.into_iter().map(|(at, message)| Refusal { message: message.into(), at: input.refusal_path(&at) }).collect())
     }
+}
 
-    /// A clause's proposers stand before its body, and a read names a form
-    /// written before it, so no completion undoes a refusal: each stands
-    /// once its node is written.
-    fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
-        super::prefix::standing(prefix, self.check(&super::prefix::whole(prefix)), &|_| true)
-    }
+/// Whether `clause` is a `DET` that names no proposer and holds no conjunct.
+fn holds_nothing(clause: &Clause) -> bool {
+    clause.keyword == ClauseKeyword::Det && clause.proposers.is_empty() && clause.body.value().conjuncts.is_empty()
 }
 
 /// Whether `clause` is a `DET` or `RULE` that names a proposer and holds a

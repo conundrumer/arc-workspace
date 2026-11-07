@@ -14,8 +14,6 @@ use arclog::session::{SessionBound, TaskSession};
 use arclog::task::{Grid, Task, TrainPair};
 use arclog::terms::{Color, Example};
 
-/// The input grid of the one train pair.
-const GRID: &[&[u8]] = &[&[1, 2, 0, 0], &[2, 2, 1, 1], &[0, 3, 3, 3], &[1, 1, 1, 2]];
 /// A grid of 100 cells, of which 51 are color 0, the dominant color, and the walls.
 const WIDE: &[&[u8]] = &[
     &[1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
@@ -85,14 +83,6 @@ fn the_position_of_a_not_does_not_change_the_rows_or_the_bounds() {
         })
         .collect();
     assert!(outcomes.windows(2).all(|pair| pair[0] == pair[1]), "{outcomes:?}");
-}
-
-#[test]
-fn a_not_of_an_atom_with_no_column_holds_where_the_relation_holds_no_row() {
-    let empty = "(RULE &none (input *P *Col) (!= P P))\n";
-    assert_eq!(last_clause(&format!("{empty}(RULE &body (input *P *Col) (NOT (&none)))\n"), 2, GRID, Caps::CORPUS), Ok(16));
-    let full = "(RULE &some (input *P *Col))\n";
-    assert_eq!(last_clause(&format!("{full}(RULE &body (input *P *Col) (NOT (&some)))\n"), 2, GRID, Caps::CORPUS), Ok(0));
 }
 
 #[test]

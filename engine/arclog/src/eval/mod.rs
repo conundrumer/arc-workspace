@@ -36,7 +36,7 @@ mod body_context;
 pub mod cache;
 pub mod copies;
 pub mod determinations;
-mod demonstrated;
+pub(crate) mod demonstrated;
 mod driver;
 pub mod examples;
 pub mod filters;

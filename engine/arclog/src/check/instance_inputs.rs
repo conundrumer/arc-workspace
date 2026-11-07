@@ -7,7 +7,7 @@ use super::types::{component, result};
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::safety::body_labels;
 use crate::program::path::{NodePath, NodeRef};
-use crate::program::{Form, Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, LabelId, OutputName, OutputOwner, PortName, RelationRef};
+use crate::program::{Form, Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, LabelId, OutputName, OutputOwner, PortName, RelationRef, SiteArg};
 use crate::registry::{binding_sites, is_key, unbound, Column, ColumnType, Component, InputPort, LibName, Need, Registry, TypeParameter};
 use crate::resolver::ResolvedProgram;
 use crate::types::{each_site_label, use_label};
@@ -32,9 +32,10 @@ impl Check for InstanceInputsCheck {
     /// than a column of an unbounded type parameter that no place of the form binds,
     /// and each input whose rows its component counts, a `Cardinality`
     /// instance's `member` input or an `Excess` instance's `plus` or `minus`
-    /// input, whose head holds no site, and each input its component
-    /// requires, and each `one-of` group of its component, that the form
-    /// leaves with no row ([`left_needs`]), as
+    /// input, whose head holds no site, and each input whose head site on a
+    /// column of a fixed type holds other than one label, and each input its
+    /// component requires, and each `one-of` group of its component, that
+    /// the form leaves with no row ([`left_needs`]), as
     /// `docs/arclog/arclog.md#instance` gives. In a keyed instance, it
     /// refuses as well each input that stands in a group other than its
     /// own: an input after the key clause that reads an output of its
@@ -71,13 +72,14 @@ impl Check for InstanceInputsCheck {
                 };
                 let headless = index.and_then(|index| headless_column(&component.inputs[index], written_input, &unit));
                 let counted_head = empty_counted_head(&instance.component, written_input).map(str::to_owned);
+                let crowded = index.and_then(|index| crowded_fixed_head(&component.inputs[index], written_input)).map(str::to_owned);
                 latest = latest.max(index);
                 written.push(name);
                 let input_at = at.join(&path);
                 let within = reads.iter().filter(|read| read.form == instance_at && read.at.0.starts_with(&input_at.0));
                 let group = instance.key.as_ref().and_then(|key| group_fault(program, input.path, keyed, written_input, &key.value().key, within));
                 let group = group.map(str::to_owned);
-                for message in [message, headless, counted_head, group].into_iter().flatten() {
+                for message in [message, headless, counted_head, crowded, group].into_iter().flatten() {
                     refusals.push((message, input_at.clone()));
                 }
             }
@@ -230,6 +232,17 @@ pub fn head_needs(registry: &Registry, form: &Form) -> Option<HeadNeeds> {
         Some(labels)
     });
     Some(HeadNeeds { required, key_labels })
+}
+
+/// Why `written`, an input of the port `port`, is refused for a head site: a
+/// head site on a column of the port that is no type parameter's, other than
+/// `key`, holds a field site or more than one label, as
+/// `docs/arclog/arclog.md#instance` gives. A column of a type parameter takes
+/// one label or a record, and the `key` column takes the labels of the key.
+fn crowded_fixed_head(port: &InputPort, written: &InstanceInput) -> Option<&'static str> {
+    let fixed = |name: &crate::program::ColumnName| port.port.columns.iter().any(|column| column.name == *name && !is_key(column) && !matches!(column.ty, ColumnType::Parameter(_)));
+    let crowded = written.head.iter().any(|site| fixed(&site.column) && !matches!(&site.value.args[..], [SiteArg::Label(_)]));
+    crowded.then_some("a head site on a column of a fixed type holds one label")
 }
 
 /// Why `written`, an input of an instance whose key is `key`, stands in the

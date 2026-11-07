@@ -12,7 +12,7 @@ use crate::eval::ir::relation_modes;
 use crate::hash::StableHashMap;
 use crate::program::canonical::{one_scope_labels, CanonicalOrder, SearchBudget};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
-use crate::program::{Atom, Body, Choose, Clause, ColumnName, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, Out, Program, RigidDet, Site, SiteArg, SiteValue};
+use crate::program::{Atom, Body, Choose, Clause, ColumnName, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, Operand, Out, Program, RigidDet, Site, SiteArg, SiteValue};
 use crate::registry::{LibEntry, Mode, Registry};
 use crate::program::{OutputName, OutputOwner, RelationRef};
 use crate::resolver::{resolve_for_checks, DependencyKind, ResolvedProgram, Side};
@@ -755,8 +755,8 @@ fn empty() -> Node<Body> {
 
 /// The refusals of the grammar on `prefix`: each complete node of its
 /// partial form that no reader gives, as `crate::read::arclog` refuses
-/// it: an `OR` of no branch, an `ALL` whose second list holds no conjunct,
-/// at that list, a site of no argument, and a head site that makes its
+/// it: an `OR` of no branch, a constraint whose second label is its first,
+/// an `ALL` whose second list holds no conjunct, at that list, a site of no argument, and a head site that makes its
 /// label or holds `0`.
 pub(super) fn grammar(prefix: &Prefix<'_>) -> PrefixResult {
     let mut refusals = Vec::new();
@@ -773,6 +773,9 @@ fn grammar_node(prefix: &Prefix<'_>, node: NodeRef<'_>, at: &mut Vec<PathStep>, 
             "an `ALL` form's second list holds a conjunct, since an `ALL` with an empty second list holds wherever its domain has a member",
             NodePath::from(&at[..]).child(1),
         ),
+        NodeRef::Conjunct(Conjunct::Constraint(constraint)) if complete && matches!(constraint.second, Operand::Label(second) if second.label == constraint.first.label) => {
+            refuse(crate::program::self_comparison_refusal(constraint.op), NodePath::from(&at[..]))
+        }
         NodeRef::Site(site) if complete && site.value.args.is_empty() => refuse("a site holds a label or a field site", NodePath::from(&at[..])),
         NodeRef::InstanceInput(input) => {
             for (site, index) in input.head.iter().zip(0u32..) {

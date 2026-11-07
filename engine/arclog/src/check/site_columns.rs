@@ -24,8 +24,10 @@ impl Check for SiteColumnsCheck {
     /// Refuses each site of an atom of the form on a column that an earlier
     /// site of the atom names, and each site on a column that the
     /// relation the atom reads does not have, and each field of a site on a
-    /// record column that the record does not have, and each field site at a
-    /// site on one column, and each bare label at a site on a record, and each
+    /// record column that the record does not have, and each field site on a
+    /// field that an earlier field site of the site holds, and each field site at a
+    /// site on one column, and each site on one column that holds more than one
+    /// label, and each bare label at a site on a record, and each
     /// field site on a record that holds other than one bare label (the shapes
     /// that `IrBuilder::site` takes as impossible), as
     /// [`ResolvedProgram::column_position`] and
@@ -81,6 +83,9 @@ fn site_refusals(input: &CheckInput<'_>, partial: bool) -> CheckResult {
                         refused.push((format!("{} holds a field site, and a column of a fixed type or of one label's type takes one label", site_text()), read.at.child(index).child(field)));
                     }
                 }
+                if site.value.args.len() > 1 {
+                    refused.push((format!("{} holds more than one label, and a column of a fixed type or of one label's type takes one label", site_text()), read.at.child(index)));
+                }
                 continue;
             }
             if partial && program.column_group(&at).is_some_and(|group| group.len == 0) && own_output(input.form, &read.atom.relation) {
@@ -90,10 +95,18 @@ fn site_refusals(input: &CheckInput<'_>, partial: bool) -> CheckResult {
                 refused.push(("the site is on a column that the relation its atom reads does not have".to_owned(), read.at.child(index)));
                 continue;
             }
+            let mut named: Vec<_> = Vec::new();
             for (arg, field) in site.value.args.iter().zip(0u32..) {
                 let is_field = matches!(arg, SiteArg::NamedLabel { .. } | SiteArg::Field(_));
-                if is_field && program.column_position(&at.child(field)).is_none() {
+                let field_position = program.column_position(&at.child(field));
+                if is_field && field_position.is_none() {
                     refused.push(("the site names a field that the record of its column does not have".to_owned(), read.at.child(index).child(field)));
+                }
+                if let (true, Some(position)) = (is_field, field_position) {
+                    if named.contains(&position) {
+                        refused.push((format!("{} holds a field site on a field that an earlier field site of the site holds, and a site on a record holds one field site on each field", site_text()), read.at.child(index).child(field)));
+                    }
+                    named.push(position);
                 }
                 match arg {
                     SiteArg::Label(_) => refused.push((format!("{} holds a bare label, and each argument of a site on a record is a site on one field, `(:<Field> <label>)`", site_text()), read.at.child(index).child(field))),

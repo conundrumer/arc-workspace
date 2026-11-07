@@ -423,6 +423,34 @@ fn prediction_columns<'c>(clause: &'c Clause, rule: &'c DemoRule) -> Vec<(&'c Co
 }
 
 /// Each `&prediction` clause of the `DEMONSTRATED` form `demonstrated` at
+/// `form`, by its path, whose body makes no label named as a column of the
+/// `value` head, so that the clause leaves the column with no value
+/// (`docs/arclog/arclog.md#demonstrated`). A form whose heads do not read
+/// has none: the heads' own faults are not this one.
+pub(crate) fn predictions_missing_a_value_column(demonstrated: &Demonstrated, form: &NodePath) -> Vec<NodePath> {
+    let shape = Shape::of(demonstrated, form);
+    let Ok(heads) = shape.heads() else { return Vec::new() };
+    let mut missing = Vec::new();
+    for (index, rule) in demonstrated.rules.iter().enumerate() {
+        let rule_path = form.child(demonstrated.position(DemonstratedPart::Rule(index)));
+        let rule = rule.value();
+        for (at, found) in rule.forms.iter().enumerate() {
+            let Form::Clause(clause) = found else { continue };
+            let clause = clause.value();
+            if relation_of(&clause.derives) != prediction() {
+                continue;
+            }
+            let named = prediction_columns(clause, rule);
+            let makes = |name: &Option<ColumnName>| name.as_ref().is_some_and(|name| named.iter().any(|(found, _)| *found == name));
+            if !heads.value.columns.iter().all(|(name, _)| makes(name)) {
+                missing.push(rule_path.child(at as u32));
+            }
+        }
+    }
+    missing
+}
+
+/// Each `&prediction` clause of the `DEMONSTRATED` form `demonstrated` at
 /// `form`, by its path, with the label in its body of each column of the
 /// form's relation: the key's columns, then the columns of the `value`
 /// head. A key column has none where the clause makes no label for it, as

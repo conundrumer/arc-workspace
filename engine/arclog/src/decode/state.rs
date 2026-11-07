@@ -1960,10 +1960,7 @@ impl State {
         // `=`, `<=` and `>=` of a label with itself hold wherever the label is bound, and `!=`, `<` and `>` of a
         // label with itself hold nowhere, so the second label of a constraint is not its first.
         if matches!(second, Operand::Label(second) if second.label == first.label) {
-            return Err(match constraint.op {
-                ConstraintOp::Eq | ConstraintOp::Le | ConstraintOp::Ge => "the second label of `=`, `<=` or `>=` is not its first, since the comparison of a label with itself holds wherever the label is bound",
-                ConstraintOp::Ne | ConstraintOp::Lt | ConstraintOp::Gt => "the second label of `!=`, `<` or `>` is not its first, since the comparison of a label with itself holds nowhere",
-            });
+            return Err(crate::program::self_comparison_refusal(constraint.op));
         }
         let conjunct = Conjunct::Constraint(Constraint { op: constraint.op, first, second });
         self.stack.pop();

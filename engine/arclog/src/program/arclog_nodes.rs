@@ -263,6 +263,17 @@ pub fn constraint_second(constraint: &Constraint) -> Option<ConstraintLabel> {
     }
 }
 
+/// Why a constraint of the operator `op` whose second label is its first is
+/// refused (`docs/arclog/arclog.md#negation-and-constraints`).
+pub fn self_comparison_refusal(op: ConstraintOp) -> &'static str {
+    match op {
+        ConstraintOp::Eq | ConstraintOp::Le | ConstraintOp::Ge => {
+            "the second label of `=`, `<=` or `>=` is not its first, since the comparison of a label with itself holds wherever the label is bound"
+        }
+        ConstraintOp::Ne | ConstraintOp::Lt | ConstraintOp::Gt => "the second label of `!=`, `<` or `>` is not its first, since the comparison of a label with itself holds nowhere",
+    }
+}
+
 /// The relation an atom reads.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum RelationRef {
