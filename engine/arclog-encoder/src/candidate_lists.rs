@@ -282,8 +282,8 @@ fn pool_values(pairs: &[&PairValues]) -> Vec<(u64, f32, f32, f32)> {
     out
 }
 
-/// A task's lists as they are made. Each list leaves memory as bytes, into a file beside the task's lists where one is named, and memory holds only where it stands and the
-/// shapes it names.
+/// A task's lists as they are made. Each list leaves memory as a zstd frame, into a file beside the task's lists where one is named, and memory holds only where it stands and
+/// the shapes it names.
 struct ListSink {
     spool: Spool,
     heads: Vec<ListHead>,
@@ -306,6 +306,8 @@ struct ListHead {
     pairs: usize,
     at_pairs: usize,
     offset: u64,
+    /// How many bytes it takes where it stands.
+    stored: u64,
 }
 
 impl ListSink {
@@ -318,14 +320,22 @@ impl ListSink {
     }
 
     fn put(&mut self, bytes: &[u8]) {
-        self.written += bytes.len() as u64;
         match &mut self.spool {
-            Spool::Memory(held) => held.extend_from_slice(bytes),
-            Spool::File(writer, _) => {
-                if let Err(error) = std::io::Write::write_all(writer, bytes) {
+            Spool::Memory(held) => {
+                held.extend_from_slice(bytes);
+                self.written += bytes.len() as u64;
+            }
+            Spool::File(writer, _) => match zstd::stream::encode_all(bytes, 1) {
+                Ok(packed) => {
+                    self.written += packed.len() as u64;
+                    if let Err(error) = std::io::Write::write_all(writer, &packed) {
+                        self.fault.get_or_insert(error.to_string());
+                    }
+                }
+                Err(error) => {
                     self.fault.get_or_insert(error.to_string());
                 }
-            }
+            },
         }
     }
 
@@ -339,22 +349,25 @@ impl ListSink {
     fn push_at(&mut self, rank: usize, list: Written) {
         self.next_rank = self.next_rank.max(rank + 1);
         let offset = self.written;
+        let mut raw = Vec::with_capacity(list.ids.len() * 12 + list.graded.len() * 20 + list.at_pairs.len() * 4);
         for shape in list.ids.iter().copied().chain(list.graded.iter().map(|entry| entry.0)) {
             self.shapes.insert(shape, ());
-            self.put(&shape.to_le_bytes());
+            raw.extend_from_slice(&shape.to_le_bytes());
         }
         for value in &list.values {
-            self.put(&value.to_le_bytes());
+            raw.extend_from_slice(&value.to_le_bytes());
         }
         for number in [|entry: &(u64, f32, f32, f32)| entry.1, |entry: &(u64, f32, f32, f32)| entry.2, |entry: &(u64, f32, f32, f32)| entry.3] {
             for entry in &list.graded {
-                self.put(&number(entry).to_le_bytes());
+                raw.extend_from_slice(&number(entry).to_le_bytes());
             }
         }
         for value in &list.at_pairs {
-            self.put(&value.to_le_bytes());
+            raw.extend_from_slice(&value.to_le_bytes());
         }
-        self.heads.push(ListHead { rank, owner: list.owner, count: list.ids.len(), graded: list.graded.len(), pairs: list.pairs, at_pairs: list.at_pairs.len(), offset });
+        self.put(&raw);
+        let stored = self.written - offset;
+        self.heads.push(ListHead { rank, owner: list.owner, count: list.ids.len(), graded: list.graded.len(), pairs: list.pairs, at_pairs: list.at_pairs.len(), offset, stored });
     }
 
     /// Writes the file: its header's length, its header, then the shapes, then each list as places in them and its values, then its graded shapes as places, their least, mean and
@@ -372,8 +385,8 @@ impl ListSink {
         match (spool, target) {
             (Spool::Memory(held), None) => {
                 let mut out = Vec::with_capacity(8 + header.len() + dictionary.len() * 8 + held.len());
-                write_lists(&header, &dictionary, &heads, &mut |offset, into: &mut Vec<u8>| {
-                    let start = offset as usize;
+                write_lists(&header, &dictionary, &heads, &mut |head: &ListHead, into: &mut Vec<u8>| {
+                    let start = head.offset as usize;
                     let end = start + into.len();
                     into.copy_from_slice(&held[start..end]);
                     Ok(())
@@ -384,10 +397,15 @@ impl ListSink {
                 let file = writer.into_inner().map_err(|error| error.to_string())?;
                 drop(file);
                 let mut reader = std::fs::File::open(&path).map_err(|error| error.to_string())?;
+                let mut packed = Vec::new();
                 let result = crate::zio::write_with(target, |out| {
-                    write_lists(&header, &dictionary, &heads, &mut |offset, into: &mut Vec<u8>| {
-                        std::io::Seek::seek(&mut reader, std::io::SeekFrom::Start(offset)).map_err(|error| error.to_string())?;
-                        std::io::Read::read_exact(&mut reader, into).map_err(|error| error.to_string())
+                    write_lists(&header, &dictionary, &heads, &mut |head: &ListHead, into: &mut Vec<u8>| {
+                        std::io::Seek::seek(&mut reader, std::io::SeekFrom::Start(head.offset)).map_err(|error| error.to_string())?;
+                        packed.resize(head.stored as usize, 0);
+                        std::io::Read::read_exact(&mut reader, &mut packed).map_err(|error| error.to_string())?;
+                        let raw = zstd::stream::decode_all(&packed[..]).map_err(|error| error.to_string())?;
+                        into.copy_from_slice(&raw);
+                        Ok(())
                     }, out)
                 });
                 let _ = std::fs::remove_file(&path);
@@ -400,7 +418,7 @@ impl ListSink {
 }
 
 /// The body of a lists file. Each list is sorted, so a shape's place stands after the one before it.
-fn write_lists(header: &str, dictionary: &[u64], heads: &[ListHead], read: &mut dyn FnMut(u64, &mut Vec<u8>) -> Result<(), String>, out: &mut dyn std::io::Write) -> Result<(), String> {
+fn write_lists(header: &str, dictionary: &[u64], heads: &[ListHead], read: &mut dyn FnMut(&ListHead, &mut Vec<u8>) -> Result<(), String>, out: &mut dyn std::io::Write) -> Result<(), String> {
     let fail = |error: std::io::Error| error.to_string();
     out.write_all(&(header.len() as u64).to_le_bytes()).map_err(fail)?;
     out.write_all(header.as_bytes()).map_err(fail)?;
@@ -418,7 +436,7 @@ fn write_lists(header: &str, dictionary: &[u64], heads: &[ListHead], read: &mut 
     for head in heads {
         let size = head.count * 12 + head.graded * 20 + head.at_pairs * 4;
         raw.resize(size, 0);
-        read(head.offset, &mut raw)?;
+        read(head, &mut raw)?;
         let (ids, rest) = raw.split_at(head.count * 8);
         let (graded_ids, rest) = rest.split_at(head.graded * 8);
         let (values, rest) = rest.split_at(head.count * 4);
@@ -588,7 +606,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
     let only_output = order.is_some();
     let mut lists = ListSink::new(target.map(|path| {
         let mut spill = path.as_os_str().to_os_string();
-        spill.push(".spill");
+        spill.push(".spill.zst");
         std::path::PathBuf::from(spill)
     }))?;
     let mut rows_at: Vec<serde_json::Value> = Vec::new();

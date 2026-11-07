@@ -7,7 +7,6 @@ A train row is one candidate at one example. A value that every example of a can
 `graph`, `relations` and `wide` are numbered as v1_cover.py numbers them. `--named` also counts the shapes of a folder of named lists.
 """
 import argparse
-import pickle
 import struct
 import sys
 import time
@@ -18,6 +17,7 @@ import zstandard
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from candidate import read_lists  # noqa: E402
+from common import read_pickle  # noqa: E402
 
 OTHER = 1 << 63
 # Each source at the place v1_cover.py numbers it.
@@ -71,8 +71,8 @@ def main():
     args = parser.parse_args()
     started = time.time()
     blocks = Path(args.blocks)
-    meta = pickle.load((blocks / 'meta.pkl').open('rb'))
-    example_of = pickle.load((blocks / 'train.example_of.pkl').open('rb'))
+    meta = read_pickle(blocks / 'meta.pkl')
+    example_of = read_pickle(blocks / 'train.example_of.pkl')
     examples = np.bincount(example_of)
     columns = np.asarray(meta['columns'], dtype=np.uint64)
     held = counted(blocks / 'blocks' / 'train.each.zst', len(columns))

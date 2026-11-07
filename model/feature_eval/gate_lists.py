@@ -55,7 +55,6 @@ A fit reads one column for each set of columns equal on all its train rows, name
 """
 import argparse
 import json
-import pickle
 import subprocess
 import sys
 import time
@@ -67,7 +66,7 @@ import zstandard
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from candidate import read_lists  # noqa: E402
-from common import open_text, read_json  # noqa: E402
+from common import open_text, read_json, read_pickle, write_pickle  # noqa: E402
 from query_structure import LABEL_STRUCTURE, Reader, base_features, parse_forms  # noqa: E402
 
 ROOT_REPO = Path('/Users/davidlu/code/arc-workspace')
@@ -662,17 +661,13 @@ def build(root, out):
         data[split] = dict(rows=rows, example_of=np.array(example_of, dtype=np.int64), index=dict(example_pair=np.array(example_pair, dtype=np.int64), row_task=np.array(row_task, dtype=np.int64), first_example=np.array(first_example, dtype=np.int64), task_train=np.array(task_train, dtype=np.int64), examples=examples_so_far))
         print(split, 'rows', len(rows), 'nnz', nnz, flush=True)
     for split in data:
-        with (out / f'{split}.rows.pkl').open('wb') as sink:
-            pickle.dump(data[split]['rows'], sink, protocol=4)
-        with (out / f'{split}.example_of.pkl').open('wb') as sink:
-            pickle.dump(data[split]['example_of'], sink, protocol=4)
-        with (out / f'{split}.index.pkl').open('wb') as sink:
-            pickle.dump(data[split]['index'], sink, protocol=4)
+        write_pickle(out / f'{split}.rows.pkl', data[split]['rows'])
+        write_pickle(out / f'{split}.example_of.pkl', data[split]['example_of'])
+        write_pickle(out / f'{split}.index.pkl', data[split]['index'])
     meta = dict(columns=columns, column_tasks=column_tasks, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab, wide_columns=wide_columns, pair_columns=pair_columns, wide_names=wide_names, wide_flags=wide_flags, family_columns=family_columns, family_names=family_names, family_flags=family_flags, graph_columns=graph_columns, relation_columns=relation_columns, query_columns=query_columns)
     meta['blocks'] = True
     meta['widths'] = dict({name: len(columns) for name in ('stable', 'null', 'contingent', 'null_contingent', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'each', 'null_each')}, base=len(base_vocab), ctx=len(context_vocab), qv=len(QV_NAMES), wide=len(wide_columns), null_wide=len(wide_columns), pair_least=len(pair_columns), pair_mean=len(pair_columns), pair_most=len(pair_columns), relations_each=len(RELATIONS) * len(relation_columns), graph=len(graph_columns), query=len(query_columns), **{name: len(RELATIONS) * len(relation_columns) for name in RELATION_NUMBERS})
-    with (out / 'meta.pkl').open('wb') as sink:
-        pickle.dump(meta, sink, protocol=4)
+    write_pickle(out / 'meta.pkl', meta)
     code = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=ROOT_REPO).stdout.strip()
     (out / 'provenance.json').write_text(json.dumps(dict(lists=str(root), code=code, tasks={split: len({row[0] for row in data[split]['rows']}) for split in data}, columns=len(columns))))
     print('built', flush=True)
@@ -816,7 +811,7 @@ def score(out, spec, name, vectors):
 def fit(out, sets, filters, threads, fraction, seeds=5):
     import block_fit
     out = Path(out)
-    meta = pickle.load((out / 'meta.pkl').open('rb'))
+    meta = read_pickle(out / 'meta.pkl')
     if not meta.get('blocks'):
         raise SystemExit(f'{out} holds a store of an older form: build it again')
     return block_fit.fit(out, meta, sets, filters, threads, fraction, seeds)

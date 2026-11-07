@@ -47,7 +47,6 @@ import collections
 import csv
 import json
 import multiprocessing as mp
-import pickle
 import random
 import re
 import struct
@@ -61,7 +60,7 @@ import zstandard
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gate_lists as g  # noqa: E402
 from candidate import read_lists  # noqa: E402
-from common import open_text  # noqa: E402
+from common import open_text, read_pickle  # noqa: E402
 
 TOKEN = re.compile(r'(?:\w+\.)?⟨c:[^⟩]*⟩')
 TABLE = re.compile(r'⟨t:[^⟩]*⟩')
@@ -193,8 +192,8 @@ def main():
     args = parser.parse_args()
     begun_at = time.time()
     blocks = Path(args.blocks)
-    meta = pickle.load((blocks / 'meta.pkl').open('rb'))
-    candidates = pickle.load((blocks / 'train.rows.pkl').open('rb'))
+    meta = read_pickle(blocks / 'meta.pkl')
+    candidates = read_pickle(blocks / 'train.rows.pkl')
     candidate_of = {(row[0], row[1], row[2]): at for at, row in enumerate(candidates)}
     extra = {}
     extra['base'] = {place: 'base:' + key for key, place in meta['base'].items()}

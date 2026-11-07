@@ -5,6 +5,7 @@ import glob
 import io
 import json
 import os
+import pickle
 import random
 import subprocess
 import sys
@@ -51,6 +52,20 @@ def read_bytes(path):
         with zstandard.ZstdDecompressor().stream_reader(open(path, 'rb'), read_across_frames=True, closefd=True) as reader:
             return reader.read()
     return Path(path).read_bytes()
+
+
+def read_pickle(path):
+    """A pickled value from a file that a path stands for, with or without `.zst`."""
+    return pickle.loads(read_bytes(path))
+
+
+def write_pickle(path, value):
+    """A pickled value as a zstd stream at the path with `.zst`, which stands only once it is complete."""
+    target = Path(str(path) + '.zst')
+    temporary = Path(str(target) + '.tmp')
+    with temporary.open('wb') as raw, zstandard.ZstdCompressor(level=3).stream_writer(raw) as sink:
+        pickle.dump(value, sink, protocol=4)
+    temporary.rename(target)
 
 
 def read_json(path):
