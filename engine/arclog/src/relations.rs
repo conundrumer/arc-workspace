@@ -653,8 +653,14 @@ const MODULUS: u64 = (1 << 61) - 1;
 
 /// The hash of `row`, a row of a part that holds `columns`, in the sum that
 /// [`Relation::rows_hash`] takes.
+///
+/// The product starts at the first value's hash, which is the product of 1
+/// and that hash, since a value's hash is under `MODULUS`. A row of no
+/// columns hashes as 1.
 pub(crate) fn row_hash_at(columns: &[ColumnIndex], row: &[TermId]) -> u64 {
-    columns.iter().zip(row).fold(1u64, |hash, (column, value)| hash_times(hash, value_hash(column.0, value.encoding())))
+    let mut values = columns.iter().zip(row).map(|(column, value)| value_hash(column.0, value.encoding()));
+    let Some(first) = values.next() else { return 1 };
+    values.fold(first, hash_times)
 }
 
 /// The rows hash of a relation of `arity` columns from the product of the sums of its parts.
@@ -665,8 +671,21 @@ pub(crate) fn rows_hash_of(arity: u16, product: u64) -> StableHash {
 }
 
 /// The sum of two hashes in the sum that [`Relation::rows_hash`] takes.
+///
+/// It is `(a + b) % MODULUS` for each `a + b` that fits in 64 bits. Since
+/// 2^61 is 1 modulo `MODULUS`, a number is equal modulo `MODULUS` to the sum
+/// of its low 61 bits and the rest of its bits. For a sum under 2^64 that
+/// takes at most `MODULUS + 7`, which is under twice `MODULUS`, so at most one
+/// subtraction of `MODULUS` is left.
 pub(crate) fn hash_plus(a: u64, b: u64) -> u64 {
-    (a + b) % MODULUS
+    let folded = fold(a + b);
+    if folded >= MODULUS { folded - MODULUS } else { folded }
+}
+
+/// The sum of the low 61 bits of `x` and the rest of its bits, which is equal
+/// to `x` modulo `MODULUS`, since 2^61 is 1 modulo `MODULUS`.
+fn fold(x: u64) -> u64 {
+    (x & MODULUS) + (x >> 61)
 }
 
 /// The hash of `value` at `column`, in `1..MODULUS`.
@@ -677,6 +696,16 @@ pub(crate) fn value_hash(column: u16, value: u32) -> u64 {
 }
 
 /// The product of two hashes in the sum that [`Relation::rows_hash`] takes.
+///
+/// It is `a * b % MODULUS` for each `a` and `b`, with no division, which a
+/// 128-bit remainder takes as a call. The product is under 2^128. One fold of
+/// it ([`fold`] on 128 bits) gives a number under 2^61 + 2^67, a second gives
+/// at most `MODULUS + 65`, which is under twice `MODULUS`, so at most one
+/// subtraction of `MODULUS` is left.
 pub(crate) fn hash_times(a: u64, b: u64) -> u64 {
-    ((u128::from(a) * u128::from(b)) % u128::from(MODULUS)) as u64
+    const WIDE: u128 = MODULUS as u128;
+    let product = u128::from(a) * u128::from(b);
+    let once = (product & WIDE) + (product >> 61);
+    let twice = ((once & WIDE) + (once >> 61)) as u64;
+    if twice >= MODULUS { twice - MODULUS } else { twice }
 }
