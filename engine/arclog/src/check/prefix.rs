@@ -755,8 +755,9 @@ fn empty() -> Node<Body> {
 
 /// The refusals of the grammar on `prefix`: each complete node of its
 /// partial form that no reader gives, as `crate::read::arclog` refuses
-/// it: an `OR` of no branch, a site of no argument, and a head site that
-/// makes its label or holds `0`.
+/// it: an `OR` of no branch, an `ALL` whose second list holds no conjunct,
+/// at that list, a site of no argument, and a head site that makes its
+/// label or holds `0`.
 pub(super) fn grammar(prefix: &Prefix<'_>) -> PrefixResult {
     let mut refusals = Vec::new();
     grammar_node(prefix, NodeRef::from(prefix.partial), &mut Vec::new(), &mut refusals);
@@ -768,6 +769,10 @@ fn grammar_node(prefix: &Prefix<'_>, node: NodeRef<'_>, at: &mut Vec<PathStep>, 
     let mut refuse = |message: &str, at: NodePath| out.push(Refusal { message: message.into(), at });
     match node {
         NodeRef::Conjunct(Conjunct::Or(branches)) if complete && branches.is_empty() => refuse("an `OR` holds its branches", NodePath::from(&at[..])),
+        NodeRef::Conjunct(Conjunct::All { body, .. }) if complete && body.value().conjuncts.is_empty() => refuse(
+            "an `ALL` form's second list holds a conjunct, since an `ALL` with an empty second list holds wherever its domain has a member",
+            NodePath::from(&at[..]).child(1),
+        ),
         NodeRef::Site(site) if complete && site.value.args.is_empty() => refuse("a site holds a label or a field site", NodePath::from(&at[..])),
         NodeRef::InstanceInput(input) => {
             for (site, index) in input.head.iter().zip(0u32..) {

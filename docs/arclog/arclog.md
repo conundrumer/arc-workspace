@@ -53,7 +53,7 @@
 - The else is the test negated with its fresh labels projected away, so a test that reads a lib relation with a mode satisfies the mode through outer labels. A chain of tests nests an `IF` in the else of the one before.
 
 ### Universal
-- An `ALL` form holds two lists of atoms: the domain, then what each member of the domain must satisfy. It holds at a binding of the outer labels when the domain has a member there and no member fails the body. A binding with no member fails it: "every member of an empty set" is no claim about the input.
+- An `ALL` form holds two lists of atoms: the domain, then what each member of the domain must satisfy. It holds at a binding of the outer labels when the domain has a member there and no member fails the body. A binding with no member fails it: "every member of an empty set" is no claim about the input. An `ALL` with an empty body would hold wherever its domain has a member, so it is refused.
 - A label fresh inside the form, in either list, is per member and local to the form. A label joined from outside is an outer label of the form. `ALL` binds nothing outside itself: the clause binds its outer labels through its own positive atoms, and the form may end once its own labels are bound. The body may hold `OR`, `NOT` and `ALL` forms, and the domain is any atoms.
 
 ### Frames

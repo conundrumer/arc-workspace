@@ -699,6 +699,9 @@ impl Reader {
             }
             let domain = self.body_list(list.items.get(1), &path.child(0), scope, list.place)?;
             let body = self.body_list(list.items.get(2), &path.child(1), scope, list.place)?;
+            if matches!(&list.items[2], SExpr::List { items, .. } if items.is_empty()) {
+                return self.refuse("an `ALL` form's second list holds a conjunct, since an `ALL` with an empty second list holds wherever its domain has a member", list.items[2].place());
+            }
             Conjunct::All { domain, body }
         } else if let Some(op) = parse(sp::CONSTRAINT_OPS, head) {
             record.token(head_place);
