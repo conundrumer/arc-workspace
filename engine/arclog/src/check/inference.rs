@@ -673,7 +673,7 @@ pub(super) struct Inference<'a> {
     earlier: Option<&'a dyn EarlierForms<'a>>,
     /// The clauses `program` holds, over which a read of the relation's
     /// other clauses runs, made on the first read.
-    held: std::cell::OnceCell<HeldClauses>,
+    held: std::cell::OnceCell<Arc<HeldClauses>>,
     /// Each form inferred, or `None` while its inference runs, so that a
     /// read through a cycle of forms gives no type.
     forms: RefCell<StableHashMap<NodePath, Option<Rc<FormInference<'a>>>>>,
@@ -893,6 +893,11 @@ impl<'a> Inference<'a> {
         let inferred = self.infer_new(form, path);
         *shared.borrow_mut() = Some(inferred.types());
         inferred
+    }
+
+    /// The clauses the program holds.
+    fn held(&self) -> &HeldClauses {
+        self.held.get_or_init(|| self.cases.clauses.held_of(self.program).unwrap_or_else(|| Arc::new(HeldClauses::of(self.program))))
     }
 
     /// The signature of the clause at `path` of the program.
@@ -1355,7 +1360,7 @@ impl<'a> Inference<'a> {
         }
         let own = self.signature(path);
         let reads = self.cases.clauses.column_reads();
-        let entries: Vec<&ClauseEntry> = self.cases.clauses.of_relation_in(&clause.derives, self.held.get_or_init(|| HeldClauses::of(self.program))).filter(|entry| entry.signature != own).collect();
+        let entries: Vec<&ClauseEntry> = self.cases.clauses.of_relation_in(&clause.derives, self.held()).filter(|entry| entry.signature != own).collect();
         let others: Box<[Signature]> = entries.iter().map(|entry| entry.signature.clone()).collect();
         reads.get_or_join((&clause.derives, own, others), column, &clause.columns, &self.cases.reads, || {
             let target = |column: &ColumnName| head_label(clause, column);
@@ -1370,7 +1375,7 @@ impl<'a> Inference<'a> {
     /// program it was found in, or `None` where they give none or have no
     /// join.
     fn solver_clauses_type(&self, clause: &crate::program::Clause, column: &ColumnName) -> Option<ValueType> {
-        let held = self.held.get_or_init(|| HeldClauses::of(self.program));
+        let held = self.held();
         let in_program: Vec<&Signature> = self.cases.clauses.of_relation_in(&clause.derives, held).map(|entry| &entry.signature).collect();
         let target = |column: &ColumnName| head_label(clause, column);
         let entries = self.cases.clauses.of_relation(&FileScope::Program, &clause.derives).iter().filter(|entry| !in_program.contains(&&entry.signature));

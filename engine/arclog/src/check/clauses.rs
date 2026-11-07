@@ -26,10 +26,18 @@ pub struct SolverClauses {
     /// Each case program the clauses were found in, the concept program
     /// first.
     programs: Box<[Arc<ResolvedProgram>]>,
-    clauses: crate::hash::StableHashMap<(FileScope, ProgramRelation), Box<[ClauseEntry]>>,
+    clauses: Arc<ClauseMap>,
+    /// The entries of the keys that [`SolverClauses::of_last_form`] changed,
+    /// which stand in place of those of `clauses`.
+    changed: ClauseMap,
+    /// For a set of the clauses of one program, the top-level clauses it
+    /// holds, as [`HeldClauses::of`] gives them.
+    held: Option<Arc<HeldClauses>>,
     column_reads: super::inference::ClauseColumnReads,
     kept_scopes: super::inference::KeptScopes,
 }
+
+type ClauseMap = crate::hash::StableHashMap<(FileScope, ProgramRelation), Box<[ClauseEntry]>>;
 
 /// One clause of a relation in [`SolverClauses`]. A clause that stands in
 /// several case programs is found once, in the first of them.
@@ -84,19 +92,90 @@ impl SolverClauses {
     pub fn of_shared_program(program: Arc<ResolvedProgram>) -> Self {
         let mut found = ClausesFound::default();
         found.add(program, &|path| (FileOwner::Solver, path.clone()));
-        found.ordered()
+        let mut clauses = found.ordered();
+        clauses.held = Some(Arc::new(clauses.held_of_program()));
+        clauses
+    }
+
+    /// The clauses of `program`, a program of one case whose forms before its
+    /// last are those of the program that `earlier` holds, and whose last
+    /// form is the one that `earlier` does not hold: the clauses that
+    /// [`SolverClauses::of_shared_program`] gives it, with the entries of
+    /// `earlier` and no write of their content again. `None` where `earlier`
+    /// holds the clauses of no one program, or `program` has no form that
+    /// `earlier` leaves out, or `earlier` is itself a set that this gave.
+    ///
+    /// The signature of a clause of the forms before the last, which
+    /// `earlier` holds, is the signature that `program` gives it only where
+    /// `program` resolves those forms as the program of `earlier` does, as
+    /// [`crate::resolver::resolve_last`] gives a program that its last
+    /// resolution layers over. A caller that holds no such program asks
+    /// [`SolverClauses::of_shared_program`].
+    pub fn of_last_form(earlier: &SolverClauses, program: Arc<ResolvedProgram>) -> Option<Self> {
+        let (held, [before]) = (earlier.held.as_ref()?, &earlier.programs[..]) else { return None };
+        if !earlier.changed.is_empty() {
+            return None;
+        }
+        let forms = program.program.value().forms.len();
+        if forms != before.program.value().forms.len() + 1 {
+            return None;
+        }
+        let path = NodePath::top(forms as u32 - 1);
+        let mut found = ClausesFound::default();
+        found.add_form(0, &program, &|path| (FileOwner::Solver, path.clone()), &path, program.program.value().forms.last()?);
+        let mut changed = ClauseMap::default();
+        let mut own: crate::hash::StableHashMap<ProgramRelation, crate::hash::StableHashSet<Signature>> = Default::default();
+        for (key, added) in found.clauses {
+            let mut entries: Vec<ClauseEntry> = earlier.entries(&key).to_vec();
+            entries.extend(added);
+            let kept = ClausesFound::sorted(entries);
+            if key.0 == FileScope::Program {
+                own.entry(key.1.clone()).or_default().extend(kept.iter().map(|entry| entry.signature.clone()));
+            }
+            changed.insert(key, kept);
+        }
+        Some(SolverClauses {
+            programs: Box::new([program]),
+            clauses: Arc::clone(&earlier.clauses),
+            changed,
+            held: Some(Arc::new(HeldClauses { base: Some(Arc::clone(held)), own })),
+            column_reads: Default::default(),
+            kept_scopes: Default::default(),
+        })
+    }
+
+    /// The clauses of each top-level form that this set of one program holds.
+    fn held_of_program(&self) -> HeldClauses {
+        let mut held: crate::hash::StableHashMap<ProgramRelation, crate::hash::StableHashSet<Signature>> = Default::default();
+        for ((scope, relation), entries) in self.clauses.iter() {
+            if *scope == FileScope::Program {
+                held.entry(relation.clone()).or_default().extend(entries.iter().map(|entry| entry.signature.clone()));
+            }
+        }
+        HeldClauses { base: None, own: held }
+    }
+
+    /// The clauses that this set holds for the case program `program`,
+    /// where it holds those of that program alone.
+    pub(super) fn held_of(&self, program: &ResolvedProgram) -> Option<Arc<HeldClauses>> {
+        let [only] = &self.programs[..] else { return None };
+        std::ptr::eq(&**only, program).then(|| self.held.clone()).flatten()
+    }
+
+    /// The entries of `key`.
+    fn entries(&self, key: &(FileScope, ProgramRelation)) -> &[ClauseEntry] {
+        self.changed.get(key).or_else(|| self.clauses.get(key)).map_or(&[], |entries| &entries[..])
     }
 
     /// Each clause of `relation` in the program's name scope that the case
     /// program of `held` holds, in the order of [`Self::of_relation`].
     pub fn of_relation_in<'c>(&'c self, relation: &ProgramRelation, held: &'c HeldClauses) -> impl Iterator<Item = &'c ClauseEntry> {
-        let signatures = held.0.get(relation);
-        self.of_relation(&FileScope::Program, relation).iter().filter(move |entry| signatures.is_some_and(|signatures| signatures.contains(&entry.signature)))
+        self.of_relation(&FileScope::Program, relation).iter().filter(move |entry| held.holds(relation, &entry.signature))
     }
 
     /// Each clause of `relation` in the name scope `scope`.
     pub fn of_relation(&self, scope: &FileScope, relation: &ProgramRelation) -> &[ClauseEntry] {
-        self.clauses.get(&(scope.clone(), relation.clone())).map_or(&[], |entries| &entries[..])
+        self.entries(&(scope.clone(), relation.clone()))
     }
 
     /// The case program `entry` was found in.
@@ -124,7 +203,12 @@ impl SolverClauses {
 /// The signatures of the top-level clauses of one case program, by which a
 /// read of [`SolverClauses`] keeps only the clauses that program holds.
 #[derive(Debug, Default)]
-pub struct HeldClauses(crate::hash::StableHashMap<ProgramRelation, crate::hash::StableHashSet<Signature>>);
+pub struct HeldClauses {
+    /// The clauses of the forms before the last, where this holds those of
+    /// a program that [`SolverClauses::of_last_form`] gives.
+    base: Option<Arc<HeldClauses>>,
+    own: crate::hash::StableHashMap<ProgramRelation, crate::hash::StableHashSet<Signature>>,
+}
 
 impl HeldClauses {
     /// The signatures of the top-level clauses of `program`, by the relation
@@ -136,7 +220,13 @@ impl HeldClauses {
                 held.entry(clause.value().derives.clone()).or_default().insert(clause_signature(program, &path));
             }
         }
-        HeldClauses(held)
+        HeldClauses { base: None, own: held }
+    }
+
+    /// Whether the program holds a top-level clause of `relation` of the
+    /// signature `signature`.
+    fn holds(&self, relation: &ProgramRelation, signature: &Signature) -> bool {
+        self.own.get(relation).is_some_and(|signatures| signatures.contains(signature)) || self.base.as_ref().is_some_and(|base| base.holds(relation, signature))
     }
 }
 
@@ -155,25 +245,31 @@ impl ClausesFound {
     fn add(&mut self, program: Arc<ResolvedProgram>, file_path: &dyn Fn(&NodePath) -> (FileOwner, NodePath)) {
         let program_index = self.programs.len();
         for (path, form) in top_level_forms(&program) {
-            match form {
-                Form::Clause(clause) => self.add_clause((program_index, &*program), file_path, FileScope::Program, &clause.value().derives, &path),
-                Form::Demonstrated(demonstrated) => {
-                    let demonstrated = demonstrated.value();
-                    for (index, rule) in demonstrated.rules.iter().enumerate() {
-                        let rule_path = path.child(demonstrated.position(DemonstratedPart::Rule(index)));
-                        let (owner, file_rule_path) = file_path(&rule_path);
-                        for (index, form) in rule.value().forms.iter().enumerate() {
-                            if let Form::Clause(clause) = form {
-                                let scope = FileScope::DemoRule(owner, file_rule_path.clone());
-                                self.add_clause((program_index, &*program), file_path, scope, &clause.value().derives, &rule_path.child(index as u32));
-                            }
+            self.add_form(program_index, &program, file_path, &path, form);
+        }
+        self.programs.push(program);
+    }
+
+    /// Adds each clause of `form`, the top-level form at `path` of `program`,
+    /// the program at `program_index`.
+    fn add_form(&mut self, program_index: usize, program: &ResolvedProgram, file_path: &dyn Fn(&NodePath) -> (FileOwner, NodePath), path: &NodePath, form: &Form) {
+        match form {
+            Form::Clause(clause) => self.add_clause((program_index, program), file_path, FileScope::Program, &clause.value().derives, path),
+            Form::Demonstrated(demonstrated) => {
+                let demonstrated = demonstrated.value();
+                for (index, rule) in demonstrated.rules.iter().enumerate() {
+                    let rule_path = path.child(demonstrated.position(DemonstratedPart::Rule(index)));
+                    let (owner, file_rule_path) = file_path(&rule_path);
+                    for (index, form) in rule.value().forms.iter().enumerate() {
+                        if let Form::Clause(clause) = form {
+                            let scope = FileScope::DemoRule(owner, file_rule_path.clone());
+                            self.add_clause((program_index, program), file_path, scope, &clause.value().derives, &rule_path.child(index as u32));
                         }
                     }
                 }
-                _ => {}
             }
+            _ => {}
         }
-        self.programs.push(program);
     }
 
     fn add_clause(
@@ -192,21 +288,27 @@ impl ClausesFound {
         }
     }
 
-    /// The clauses, each key's entries in the order [`SolverClauses`] gives.
-    fn ordered(self) -> SolverClauses {
+    /// `entries` in the order [`SolverClauses`] gives a key's.
+    fn sorted(mut entries: Vec<ClauseEntry>) -> Box<[ClauseEntry]> {
         let rank = |owner: &FileOwner| match owner {
             FileOwner::Solver => 0,
             FileOwner::Representative => 1,
         };
-        let clauses = self
-            .clauses
-            .into_iter()
-            .map(|(key, mut entries)| {
-                entries.sort_by(|a, b| (rank(&a.owner), &a.file_path).cmp(&(rank(&b.owner), &b.file_path)));
-                (key, entries.into_boxed_slice())
-            })
-            .collect();
-        SolverClauses { programs: self.programs.into(), clauses, column_reads: Default::default(), kept_scopes: Default::default() }
+        entries.sort_by(|a, b| (rank(&a.owner), &a.file_path).cmp(&(rank(&b.owner), &b.file_path)));
+        entries.into_boxed_slice()
+    }
+
+    /// The clauses, each key's entries in the order [`SolverClauses`] gives.
+    fn ordered(self) -> SolverClauses {
+        let clauses = self.clauses.into_iter().map(|(key, entries)| (key, Self::sorted(entries))).collect();
+        SolverClauses {
+            programs: self.programs.into(),
+            clauses: Arc::new(clauses),
+            changed: ClauseMap::default(),
+            held: None,
+            column_reads: Default::default(),
+            kept_scopes: Default::default(),
+        }
     }
 }
 

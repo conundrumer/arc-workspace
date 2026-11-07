@@ -561,17 +561,36 @@ impl<'a> Decoder<'a> {
     /// where a check refuses it. `resolved` holds the finished forms of the
     /// decode's state, and the check runs with their check cache.
     pub(super) fn checked(&self, resolved: Arc<ResolvedProgram>, form: &NodePath) -> Outcome<CheckedProgram> {
-        self.state.checks().with(|cache| self.checked_with(resolved, form, cache))
+        self.state.checks().with(|cache| self.checked_with(&self.state, resolved, form, cache))
     }
 
-    /// [`Decoder::checked`] with `cache`, which the check fills.
-    fn checked_with(&self, resolved: Arc<ResolvedProgram>, form: &NodePath, cache: &mut CheckCache) -> Outcome<CheckedProgram> {
+    /// [`Decoder::checked`] with `cache`, which the check fills, and
+    /// `finished`, the state whose finished forms `resolved` holds.
+    fn checked_with(&self, finished: &State, resolved: Arc<ResolvedProgram>, form: &NodePath, cache: &mut CheckCache) -> Outcome<CheckedProgram> {
         let registry = self.context.registry;
-        let clauses = SolverClauses::of_shared_program(Arc::clone(&resolved));
+        let clauses = self.clauses_over(finished, &resolved);
         check_shared_program(resolved, &clauses, registry, cache).map_err(|refusals| {
             let messages: Vec<&str> = refusals.iter().map(|refusal| &*refusal.message).collect();
             RunFault { message: format!("a check refuses the program: {}", messages.join("; ")).into(), form: form.clone() }
         })
+    }
+
+    /// The clauses of `resolved`. Where `resolved` is the resolution that
+    /// [`resolve_last`] gives from the resolution of the finished forms of
+    /// `finished`, with one form more, they stand on the clauses of those
+    /// forms, which `finished` makes once for each of its clones, so that
+    /// the content of a finished clause is written once for them.
+    fn clauses_over(&self, finished: &State, resolved: &Arc<ResolvedProgram>) -> SolverClauses {
+        let registry = self.context.registry;
+        let earlier = finished.resolved(registry);
+        // A resolution that layers over another reports the address of that one, and one that does not reports its own, which is
+        // the address of `earlier` where `resolved` is `earlier`, a program of as many forms.
+        let forms = &earlier.program.value().forms;
+        let layered = resolved.stats_finished_id() == Arc::as_ptr(&earlier) as usize
+            && resolved.program.value().forms.len() == forms.len() + 1
+            && forms.iter().zip(resolved.program.value().forms.iter()).all(|(held, form)| crate::solver::equal_forms(held, form));
+        let extended = layered.then(|| finished.with_clauses(registry, |clauses| SolverClauses::of_last_form(clauses, Arc::clone(resolved)))).flatten();
+        extended.unwrap_or_else(|| SolverClauses::of_shared_program(Arc::clone(resolved)))
     }
 
     /// The program of `after`, whose last form just finished, checked: it
@@ -584,7 +603,7 @@ impl<'a> Decoder<'a> {
             let form = NodePath::top(program.value().forms.len() as u32 - 1);
             let registry = self.context.registry;
             let resolved = Arc::new(resolve_last(&before.resolved(registry), program, registry));
-            after.checks().with(|cache| self.checked_with(resolved, &form, cache))
+            after.checks().with(|cache| self.checked_with(before, resolved, &form, cache))
         })
     }
 

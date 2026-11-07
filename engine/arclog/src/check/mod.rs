@@ -672,7 +672,7 @@ fn check_program_with_open(
         }
     }
     let mut alerts = Vec::new();
-    let held = HeldClauses::of(&program);
+    let held = clauses.held_of(&program).unwrap_or_else(|| Arc::new(HeldClauses::of(&program)));
     let forms: Vec<TopLevelForm<'_>> = top_level_forms(&program)
         .map(|(path, form)| {
             let mut search = SearchBudget::new();
