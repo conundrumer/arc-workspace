@@ -905,6 +905,54 @@ impl<'a> Decoder<'a> {
                 }
             }
         }
+        self.check_nested_static_prune(program, open, checks, memo)
+    }
+
+    /// The static prune's verdicts on the conjuncts that this step completed
+    /// in a list other than the top level of a clause's body: a branch of an
+    /// `OR`, a list of an `IF` or an `ALL`, and a body of an `INIT`, `CHOOSE`
+    /// or `RIGID_DET` form. Each such list is a conjunction, of whose rows
+    /// the verdicts speak, with the types of the labels that the list's own
+    /// atoms make: a conjunct that a verdict finds valid leaves the list's
+    /// rows, and one that leaves the list no row makes its enclosing form
+    /// constant. A list's alias or constant takes no replacement here.
+    fn check_nested_static_prune(&self, program: &Node<Program>, open: Option<&NodePath>, checks: &PrefixChecks<'_>, memo: &MaskMemo) -> Result<(), Refusal> {
+        use crate::program::path::{node_at, NodeRef};
+        use crate::program::static_prune::{classify_prefix, makes_earlier_redundant, rule_message, Class};
+        let before = memo.open_lists.get_or_init(|| {
+            let (before, open) = self.state.partial()?;
+            let form = before.value().forms.last()?;
+            Some((before.value().forms.len(), open_lists(form, &open?)))
+        });
+        let Some((forms, lists)) = before else { return Ok(()) };
+        let Some(form) = program.value().forms.last().filter(|_| *forms == program.value().forms.len()) else { return Ok(()) };
+        let type_of = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
+        for (path, prior) in lists {
+            // The top level of a clause's body is `check_static_prune`'s.
+            if matches!(form, crate::program::Form::Clause(_)) && path.0.len() == 1 {
+                continue;
+            }
+            let Some(NodeRef::Body(body)) = node_at(NodeRef::from(form), path) else { continue };
+            let count = match open {
+                Some(open) if open.0.len() > path.0.len() && open.0.starts_with(&path.0) => open.0[path.0.len()].0 as usize,
+                _ => body.conjuncts.len(),
+            };
+            for index in *prior..count.min(body.conjuncts.len()) {
+                let prefix = crate::program::Body { conjuncts: body.conjuncts[..=index].into() };
+                let message = match classify_prefix(&prefix, &type_of) {
+                    Some(found) => match found.class {
+                        Class::Unsatisfiable => Some(rule_message(found.rule).unwrap_or("static prune: no row satisfies the completed atom")),
+                        Class::Valid if found.rule == "membership.subtype" => None,
+                        Class::Valid => Some(rule_message(found.rule).unwrap_or("static prune: the completed atom repeats an existing test")),
+                        Class::Alias | Class::Constant => None,
+                    },
+                    None => makes_earlier_redundant(&prefix).and_then(rule_message),
+                };
+                if let Some(message) = message {
+                    return Err(Refusal::Grammar(message));
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1058,6 +1106,23 @@ struct MaskMemo {
     /// The forms of the state's program with the form in progress, and the
     /// conjuncts complete in that form, where it is a clause.
     before: std::cell::OnceCell<Option<(usize, usize)>>,
+    /// The forms of the state's program with the form in progress, and each
+    /// list on the path of the form's open node, as [`open_lists`] gives.
+    open_lists: std::cell::OnceCell<Option<(usize, Vec<(NodePath, usize)>)>>,
+}
+
+/// Each list on `open`, the path of the open node of `form`: its path in
+/// the form, and the count of its conjuncts that stand before the open one,
+/// which are complete.
+fn open_lists(form: &crate::program::Form, open: &NodePath) -> Vec<(NodePath, usize)> {
+    use crate::program::path::{node_at, NodeRef};
+    let root = NodeRef::from(form);
+    (0..open.0.len())
+        .filter_map(|len| {
+            let path = NodePath(open.0[..len].into());
+            matches!(node_at(root, &path), Some(NodeRef::Body(_))).then(|| (path, open.0[len].0 as usize))
+        })
+        .collect()
 }
 
 /// What the mask has found at a state of the order operators `<`, `<=`, `>`
