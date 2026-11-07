@@ -22,6 +22,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use crate::case_tables::{Base, PyCaseTables, Step};
+use crate::shapes::ShapeRuntime;
 
 /// The tables of the last step of `decoder`, a `Decoder` at any state, a fork
 /// included, for the case `case` of the task `task`, as `stream_tables` gives
@@ -108,6 +109,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
     let cache = decoder.derived(SummaryCache::default);
     let train = decoder.derived(|| train_pairs(evidence));
+    let shapes = decoder.derived(|| ShapeRuntime::new(evidence));
     // The indexes of the tokens the model wrote, which the engine's forced tokens follow in the trace. The last is the index `stream_tables` gives the step; a decode before its first step has none, and no table.
     let written: Vec<usize> = engine.trace().records().iter().enumerate().filter(|(_, record)| record.emitter == Emitter::Model).map(|(index, _)| index).collect();
     let index = written.last().copied();
@@ -162,7 +164,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     let _packing = arclog::stats::span(arclog::stats::Phase::PyPack);
     arclog::stats::units(arclog::stats::Phase::PyPack, columns.tables.token.len());
     let own = stream.count() - earlier.map_or(evidence_tables.len() as u32, |step| step.stream.count());
-    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, base)?.with_step(Step { stream: Arc::new(stream), bodies, token: index, own }))
+    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, base)?.with_shapes(shapes).with_step(Step { stream: Arc::new(stream), bodies, token: index, own }))
 }
 
 /// The base tables of the task of `decoder`: `input`, `ex_input` and
@@ -182,6 +184,7 @@ pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     let (engine, evidence) = (decoder.decoder(), decoder.task());
     let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
     let train = decoder.derived(|| train_pairs(evidence));
+    let shapes = decoder.derived(|| ShapeRuntime::new(evidence));
     let columns = py.detach(|| {
         let limits = engine.limits();
         let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
@@ -194,7 +197,7 @@ pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         }
     });
     complete(&columns)?;
-    PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, None)
+    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, None)?.with_shapes(shapes))
 }
 
 /// What `successor_tables` gives for one id: the tables of its successor,
@@ -289,6 +292,7 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
     written.push(index);
     let earlier = check_before(before.as_deref(), &task, &case, true, &written)?;
     let train = decoder.derived(|| train_pairs(evidence));
+    let shapes = decoder.derived(|| ShapeRuntime::new(evidence));
     let (current, each, unchanged) = py.detach(|| {
         let limits = engine.limits();
         let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
@@ -374,7 +378,7 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
     let _timed = split::span(Part::SuccessorObjects);
     let base = |tokens: usize| earlier.map(|step| Base { case: case.clone(), tokens, tables: step.stream.count() });
     let cap = engine.settings().projection_cap;
-    let pack = |columns: CaseColumns, tokens: usize| PyCaseTables::of(py, task.clone(), case.clone(), false, cap, columns, None, base(tokens));
+    let pack = |columns: CaseColumns, tokens: usize| PyCaseTables::of(py, task.clone(), case.clone(), false, cap, columns, None, base(tokens)).map(|tables| tables.with_shapes(Arc::clone(&shapes)));
     let current = current.map(|columns| Py::new(py, pack(columns, now.unwrap_or(0))?)).transpose()?;
     let unchanged = unchanged.map(|(columns, stream)| -> PyResult<Py<PyCaseTables>> { Py::new(py, pack(columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own: 0 })) }).transpose()?;
     let mut results: Vec<(&'static str, String, Option<Py<PyCaseTables>>)> = Vec::with_capacity(each.len());
