@@ -173,6 +173,30 @@ pub struct GridFacts {
     pub columns_one_color: bool,
 }
 
+impl crate::occurrence::Canvas for GridFacts {
+    fn height(&self) -> i32 {
+        self.h as i32
+    }
+
+    fn width(&self) -> i32 {
+        self.w as i32
+    }
+
+    fn color_at(&self, row: i32, column: i32) -> u32 {
+        u32::from(self.color[row as usize * self.w + column as usize])
+    }
+
+    fn count(&self, color: u32) -> usize {
+        self.counts.get(color as usize).map_or(0, |count| *count as usize)
+    }
+
+    fn each_place(&self, color: u32, mut each: impl FnMut(i32, i32)) {
+        if let Some(cells) = self.by_color.get(color as usize) {
+            cells.each(|at| each((at / self.w) as i32, (at % self.w) as i32));
+        }
+    }
+}
+
 /// The eight images of a cell set, each moved so that its box starts at (0, 0), each sorted.
 pub fn images(cells: &[(u8, u8)]) -> [Vec<(u8, u8)>; 8] {
     let (mut r1, mut c1) = (0u8, 0u8);

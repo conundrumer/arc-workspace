@@ -7,6 +7,7 @@ use std::sync::Arc;
 use crate::catalog_facts::{canon, normalized};
 use crate::gen_constants::{box_bits, encoding, margins_of, number_bits, number_of};
 use crate::native::{first_ids, hash_words, row_word, Cell, FastMap, Grouping, Table, Val};
+use crate::occurrence::{distinct_patterns, each_turned_image, for_each_move, Canvas, PatternCell};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum PartStep {
@@ -656,6 +657,8 @@ pub struct GridView {
     pub at: FastMap<Cell, Cell>,
     /// The places of each color's cells, as (row, column).
     pub of_color: FastMap<Cell, Vec<(i32, i32)>>,
+    /// The places of each shape that `placements_on` has searched for on this grid, and the count of cells of those shapes.
+    searched: std::sync::Mutex<(FastMap<Shape, Arc<Vec<(i32, i32)>>>, usize)>,
 }
 
 thread_local! {
@@ -675,6 +678,7 @@ pub fn clear_views() {
     VIEWS.with(|views| views.borrow_mut().clear());
     FLATS.with(|flats| *flats.borrow_mut() = (HashMap::new(), 0));
     RIGHT_KEYS.with(|keys| keys.borrow_mut().clear());
+    OCCURS.with(|held| *held.borrow_mut() = OccurHeld::default());
     GROUPS.with(|groups| *groups.borrow_mut() = Groups::default());
 }
 
@@ -720,7 +724,7 @@ fn view_of(table: &Arc<Table>) -> Arc<GridView> {
                     colors[(m[0] * w + m[2]) as usize] = row[1];
                 }
             }
-            Arc::new(GridView { h, w, colors, at, of_color })
+            Arc::new(GridView { h, w, colors, at, of_color, searched: Default::default() })
         }).clone()
     })
 }
@@ -1008,87 +1012,156 @@ fn keys_only(heads: &[Vec<Cell>], holds: impl Iterator<Item = bool>, width: usiz
     Val::of_table(Table::distinct(width, out))
 }
 
-/// A cell's margins under an element of D4, in the order ID, LR, TB, HT, CW, CC, DG, AD.
-fn image_margins(which: usize, m: [i32; 4]) -> [i32; 4] {
-    let [t, b, l, r] = m;
-    match which {
-        0 => [t, b, l, r],
-        1 => [t, b, r, l],
-        2 => [b, t, l, r],
-        3 => [b, t, r, l],
-        4 => [l, r, b, t],
-        5 => [r, l, t, b],
-        6 => [l, r, t, b],
-        _ => [r, l, b, t],
+impl Canvas for GridView {
+    fn height(&self) -> i32 {
+        self.h
+    }
+
+    fn width(&self) -> i32 {
+        self.w
+    }
+
+    fn color_at(&self, row: i32, column: i32) -> u32 {
+        self.colors[(row * self.w + column) as usize]
+    }
+
+    fn count(&self, color: u32) -> usize {
+        self.of_color.get(&color).map_or(0, Vec::len)
+    }
+
+    fn each_place(&self, color: u32, mut each: impl FnMut(i32, i32)) {
+        for &(row, column) in self.of_color.get(&color).into_iter().flatten() {
+            each(row, column);
+        }
     }
 }
 
-/// A colored pattern with its top-left corner at (0, 0): (row, column, color) sorted by row, then column, then color.
-type Shape = Vec<(i32, i32, Cell)>;
+/// A colored pattern with its top-left corner at (0, 0).
+type Shape = Vec<PatternCell>;
 
-/// Where the corner of each shape lies on a grid, for each shape that `moves_of` has met on that grid.
+/// The places of a shape on a grid, searched once for the grid.
+fn placements_on(grid: &GridView, shape: Shape) -> Arc<Vec<(i32, i32)>> {
+    let lock = || grid.searched.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(found) = lock().0.get(&shape) {
+        return found.clone();
+    }
+    let places = Arc::new(crate::occurrence::moves(grid, &shape));
+    let mut held = lock();
+    if held.1 + shape.len() <= 1 << 18 {
+        held.1 += shape.len();
+        held.0.insert(shape, places.clone());
+    }
+    places
+}
+
+/// The offsets that move cells of a frame with the given last row and last column onto a grid, added to `out`: each `P` where
+/// `compose` of a cell and `P` is a grid cell of the cell's color, for every cell. The cells are (row, column, color) sorted.
+/// Patterns that differ only by a shift share one search, which the grid keeps.
+fn framed_moves(cells: &[PatternCell], frame: (i32, i32), grid: &GridView, out: &mut Vec<Cell>) {
+    let offset = |dr: i32, dc: i32| box_bits(dr, grid.h - 1 - frame.0 - dr, dc, grid.w - 1 - frame.1 - dc);
+    if cells.len() == 1 {
+        for_each_move(grid, cells, |dr, dc| out.push(offset(dr, dc)));
+        return;
+    }
+    let top = cells.first().map_or(0, |cell| cell.0);
+    let left = cells.iter().map(|cell| cell.1).min().unwrap_or(0);
+    let shape: Shape = cells.iter().map(|&(r, c, color)| (r - top, c - left, color)).collect();
+    let places = placements_on(grid, shape);
+    out.extend(places.iter().map(|&(r, c)| offset(r - top, c - left)));
+}
+
+/// The cells of a pattern whose cells lie in one frame, with the frame's last row and last column.
+type Framed = (Vec<PatternCell>, (i32, i32));
+
+/// The colored patterns of a relation's key groups, each pattern once.
+struct OccurPatterns {
+    /// Each distinct pattern, or none where its cells do not lie in one frame, which leaves no move.
+    distinct: Vec<Option<Framed>>,
+    /// For each key group in order of first appearance, the place of its pattern in `distinct`.
+    of_group: Vec<u32>,
+}
+
+/// What the occurs parts share, held while a table's walks go on, up to [`HELD_GROUP_CELLS`] of cells in all.
 #[derive(Default)]
-struct Placements(FastMap<Shape, Vec<(i32, i32)>>);
-
-/// The offsets that move a colored pattern onto a grid's cells: each `P` where `compose` of a pattern
-/// cell and `P` is a grid cell of the cell's color, for every cell of the pattern.
-/// Patterns that differ only by a shift share one search, through `known`.
-fn moves_of(pattern: &[([i32; 4], Cell)], grid: &GridView, known: &mut Placements) -> Vec<Cell> {
-    let Some(((first, _), rest)) = pattern.split_first() else { return Vec::new() };
-    // A move puts each cell of the pattern on a grid cell, so all of them lie in one frame of the grid's size.
-    let (frame_rows, frame_cols) = (first[0] + first[1], first[2] + first[3]);
-    if rest.iter().any(|(m, _)| m[0] + m[1] != frame_rows || m[2] + m[3] != frame_cols) {
-        return Vec::new();
-    }
-    let (top, left) = pattern.iter().fold((i32::MAX, i32::MAX), |(t, l), (m, _)| (t.min(m[0]), l.min(m[2])));
-    let mut shape: Shape = pattern.iter().map(|(m, color)| (m[0] - top, m[2] - left, *color)).collect();
-    shape.sort_unstable();
-    // Two colors on one cell of the pattern leave no move.
-    if shape.windows(2).any(|pair| pair[0].0 == pair[1].0 && pair[0].1 == pair[1].1) {
-        return Vec::new();
-    }
-    let places = match known.0.get(&shape) {
-        Some(places) => places,
-        None => {
-            let places = placements(&shape, grid);
-            known.0.entry(shape).or_insert(places)
-        }
-    };
-    places.iter().map(|&(r, c)| {
-        let (dr, dc) = (r - top, c - left);
-        box_bits(dr, grid.h - 1 - frame_rows - dr, dc, grid.w - 1 - frame_cols - dc)
-    }).collect()
+struct OccurHeld {
+    patterns: FastMap<(u64, u128), Arc<OccurPatterns>>,
+    moves: FastMap<(u64, u128, u128), Arc<Vec<Vec<Cell>>>>,
+    held: usize,
 }
 
-/// Each place of a shape's corner where every cell of the shape is a grid cell of its color.
-fn placements(shape: &Shape, grid: &GridView) -> Vec<(i32, i32)> {
-    let (height, width) = shape.iter().fold((0, 0), |(h, w), (r, c, _)| (h.max(r + 1), w.max(c + 1)));
-    if height > grid.h || width > grid.w {
-        return Vec::new();
+thread_local! {
+    static OCCURS: std::cell::RefCell<OccurHeld> = std::cell::RefCell::new(OccurHeld::default());
+}
+
+/// The patterns of the key groups of a table, whose rows give a cell at column `p` and its color at column `v`. `ids` is each row's group, and `word` hashes the keys and columns.
+fn occur_patterns(table: &Table, ids: &[u32], groups: usize, (p, v): (u16, u16), word: u128) -> Arc<OccurPatterns> {
+    let key = (table.id, word);
+    if let Some(found) = OCCURS.with(|held| held.borrow().patterns.get(&key).cloned()) {
+        return found;
     }
-    let count = |color: &Cell| grid.of_color.get(color).map_or(0, Vec::len);
-    // A move takes every cell to a cell of its color, so a color that the grid holds fewer times than the shape does leaves no move.
-    let mut by_color: Vec<Cell> = shape.iter().map(|(_, _, color)| *color).collect();
-    by_color.sort_unstable();
-    for run in by_color.chunk_by(|a, b| a == b) {
-        if count(&run[0]) < run.len() {
-            return Vec::new();
-        }
+    let mut per_group: Vec<Vec<([i32; 4], Cell)>> = vec![Vec::new(); groups];
+    for (row, id) in table.rows().zip(ids) {
+        per_group[*id as usize].push((margins_of(row[usize::from(p)]), row[usize::from(v)]));
     }
-    // The cells of the shape's rarest color give every move. Rarer colors are tried first when a place is checked.
-    let mut order: Vec<(i32, i32, Cell)> = shape.clone();
-    order.sort_by_key(|(_, _, color)| (count(color), *color));
-    let (anchor_row, anchor_col, color) = order[0];
-    let mut out = Vec::new();
-    for &(r, c) in &grid.of_color[&color] {
-        let (r0, c0) = (r - anchor_row, c - anchor_col);
-        if r0 < 0 || c0 < 0 || r0 + height > grid.h || c0 + width > grid.w {
-            continue;
+    let (distinct, of_group) = distinct_patterns(per_group);
+    // A pattern sorts by its margins, which in one frame is by row, then column.
+    let distinct = distinct.iter().map(|pattern| {
+        let ((first, _), rest) = pattern.split_first()?;
+        let frame = (first[0] + first[1], first[2] + first[3]);
+        if rest.iter().any(|(m, _)| (m[0] + m[1], m[2] + m[3]) != frame) {
+            return None;
         }
-        if order.iter().all(|&(y, z, held)| grid.colors[((r0 + y) * grid.w + c0 + z) as usize] == held) {
-            out.push((r0, c0));
+        Some((pattern.iter().map(|(m, color)| (m[0], m[2], *color)).collect(), frame))
+    }).collect();
+    let built = Arc::new(OccurPatterns { distinct, of_group });
+    OCCURS.with(|held| {
+        let mut held = held.borrow_mut();
+        held.held += table.len;
+        if held.held > HELD_GROUP_CELLS {
+            *held = OccurHeld { held: table.len, ..OccurHeld::default() };
         }
+        held.patterns.insert(key, built.clone());
+    });
+    built
+}
+
+/// The offsets that move each distinct pattern onto the grid as it stands, for a table, columns and grid that `key` names.
+fn occur_moves(patterns: &OccurPatterns, grid: &GridView, key: (u64, u128, u128)) -> Arc<Vec<Vec<Cell>>> {
+    if let Some(found) = OCCURS.with(|held| held.borrow().moves.get(&key).cloned()) {
+        return found;
     }
+    let built: Arc<Vec<Vec<Cell>>> = Arc::new(patterns.distinct.iter().map(|framed| {
+        let mut moves = Vec::new();
+        if let Some((cells, frame)) = framed {
+            framed_moves(cells, *frame, grid, &mut moves);
+        }
+        moves
+    }).collect());
+    let size: usize = built.iter().map(Vec::len).sum::<usize>() + built.len();
+    OCCURS.with(|held| {
+        let mut held = held.borrow_mut();
+        held.held += size;
+        if held.held > HELD_GROUP_CELLS {
+            *held = OccurHeld { held: size, ..OccurHeld::default() };
+        }
+        held.moves.insert(key, built.clone());
+    });
+    built
+}
+
+/// The offsets that move a pattern, or its image under some element of D4, onto the grid, sorted and without repeats. `plain` holds those of the pattern itself.
+fn turned_moves_of(framed: &Option<Framed>, grid: &GridView, plain: &[Cell]) -> Vec<Cell> {
+    let mut out = plain.to_vec();
+    if let Some((cells, frame)) = framed {
+        each_turned_image(cells, *frame, |which, image| {
+            // A turn by a quarter swaps the frame's height and width.
+            let turned = if which >= 4 { (frame.1, frame.0) } else { *frame };
+            framed_moves(image, turned, grid, &mut out);
+            false
+        });
+    }
+    out.sort_unstable();
+    out.dedup();
     out
 }
 
@@ -2032,22 +2105,23 @@ impl PartStep {
             PartStep::Occurs { keys, p, v, turned } => {
                 let grid = grid_of(children[1])?;
                 let (grouping, first) = key_ids(t, keys);
-                let ids = &grouping.0;
-                let mut patterns: Vec<Vec<([i32; 4], Cell)>> = vec![Vec::new(); first.len()];
-                for (row, id) in t.rows().zip(ids) {
-                    patterns[*id as usize].push((margins_of(row[usize::from(*p)]), row[usize::from(*v)]));
-                }
-                let mut known = Placements::default();
-                let mut out = Vec::new();
-                for (pattern, head) in patterns.iter_mut().zip(&first) {
-                    pattern.sort_unstable();
-                    pattern.dedup();
-                    for which in 0..if *turned { 8 } else { 1 } {
-                        let image: Vec<([i32; 4], Cell)> = pattern.iter().map(|(m, color)| (image_margins(which, *m), *color)).collect();
-                        for moved in moves_of(&image, &grid, &mut known) {
-                            push_key(&mut out, head, keys);
-                            out.push(moved);
-                        }
+                let word = hash_words(keys.iter().map(|at| u64::from(*at)).chain([u64::MAX, u64::from(*p), u64::from(*v)]));
+                let patterns = occur_patterns(t, &grouping.0, first.len(), (*p, *v), word);
+                // The moves of the patterns themselves are shared by the part with and without the turns.
+                let plain = occur_moves(&patterns, &grid, (t.id, word, children[1].hash()));
+                let turned_moves;
+                let moves: &[Vec<Cell>] = if *turned {
+                    turned_moves = patterns.distinct.iter().zip(plain.iter()).map(|(pattern, held)| turned_moves_of(pattern, &grid, held)).collect::<Vec<_>>();
+                    &turned_moves
+                } else {
+                    &plain
+                };
+                let total: usize = patterns.of_group.iter().map(|which| moves[*which as usize].len()).sum();
+                let mut out = Vec::with_capacity(total * (keys.len() + 1));
+                for (head, which) in first.iter().zip(&patterns.of_group) {
+                    for moved in &moves[*which as usize] {
+                        push_key(&mut out, head, keys);
+                        out.push(*moved);
                     }
                 }
                 Val::of_table(Table::distinct(keys.len() + 1, out))

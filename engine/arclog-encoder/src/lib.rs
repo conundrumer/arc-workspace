@@ -51,6 +51,7 @@ pub mod generate;
 pub mod law;
 pub mod library;
 pub mod native;
+pub mod occurrence;
 pub mod program_relations;
 pub mod query_vector;
 pub mod refine;
