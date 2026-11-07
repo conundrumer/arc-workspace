@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::catalog_facts::{canon, normalized};
 use crate::gen_constants::{box_bits, encoding, margins_of, number_bits, number_of};
+use crate::grid_walks::{enclosed_regions, walk_outward};
 use crate::native::{first_ids, hash_words, row_word, Cell, FastMap, Grouping, Table, Val};
 use crate::occurrence::{distinct_patterns, each_turned_image, for_each_move, Canvas, PatternCell};
 
@@ -840,37 +841,14 @@ fn on_one_frame(table: &Table, keys: &[u16], p: u16) -> bool {
 
 /// The fewest eight-neighbor steps from a set of cells to a held cell outside it.
 fn nearest_other(own: &[(u8, u8)], held: &[bool], h: usize, w: usize) -> Option<i64> {
-    let mut seen = vec![false; h * w];
-    let mut frontier: Vec<usize> = own.iter().map(|(r, c)| usize::from(*r) * w + usize::from(*c)).collect();
-    for at in &frontier {
-        seen[*at] = true;
-    }
-    let mut steps = 0;
-    while !frontier.is_empty() {
-        steps += 1;
-        let mut next = Vec::new();
-        for at in frontier {
-            let (r, c) = ((at / w) as i32, (at % w) as i32);
-            for dr in -1..=1 {
-                for dc in -1..=1 {
-                    let (nr, nc) = (r + dr, c + dc);
-                    if nr < 0 || nc < 0 || nr >= h as i32 || nc >= w as i32 {
-                        continue;
-                    }
-                    let near = nr as usize * w + nc as usize;
-                    if !seen[near] {
-                        if held[near] {
-                            return Some(steps);
-                        }
-                        seen[near] = true;
-                        next.push(near);
-                    }
-                }
-            }
+    let mut found = None;
+    walk_outward(own.iter().map(|(r, c)| usize::from(*r) * w + usize::from(*c)), h, w, true, |at, steps| {
+        if held[at] {
+            found = Some(i64::from(steps));
         }
-        frontier = next;
-    }
-    None
+        held[at]
+    });
+    found
 }
 
 /// A class per set of cells, up to a move, and with `turned` also up to a rotation or a reflection.
@@ -942,48 +920,6 @@ fn set_symmetries(cells: &[(u8, u8)]) -> u32 {
 
 fn hash_cells(cells: &[(u8, u8)]) -> u32 {
     hash_words(cells.iter().map(|cell| u64::from(cell.0) << 8 | u64::from(cell.1))) as u32
-}
-
-fn enclosed_regions(list: &[(u8, u8)]) -> i64 {
-    let (rmin, rmax) = (list.iter().map(|x| i32::from(x.0)).min().unwrap_or(0), list.iter().map(|x| i32::from(x.0)).max().unwrap_or(0));
-    let (cmin, cmax) = (list.iter().map(|x| i32::from(x.1)).min().unwrap_or(0), list.iter().map(|x| i32::from(x.1)).max().unwrap_or(0));
-    let (h, w) = ((rmax - rmin + 3) as usize, (cmax - cmin + 3) as usize);
-    let mut seen = vec![false; h * w];
-    for (r, c) in list {
-        seen[(i32::from(*r) - rmin + 1) as usize * w + (i32::from(*c) - cmin + 1) as usize] = true;
-    }
-    let mut regions = 0;
-    let mut stack = Vec::new();
-    for start in 0..h * w {
-        if seen[start] {
-            continue;
-        }
-        regions += 1;
-        seen[start] = true;
-        stack.push(start);
-        while let Some(at) = stack.pop() {
-            let (r, c) = (at / w, at % w);
-            let mut go = |next: usize| {
-                if !seen[next] {
-                    seen[next] = true;
-                    stack.push(next);
-                }
-            };
-            if r > 0 {
-                go(at - w);
-            }
-            if r + 1 < h {
-                go(at + w);
-            }
-            if c > 0 {
-                go(at - 1);
-            }
-            if c + 1 < w {
-                go(at + 1);
-            }
-        }
-    }
-    regions - 1
 }
 
 fn keyed_values(heads: &[Vec<Cell>], values: impl Iterator<Item = Option<Vec<Cell>>>, width: usize) -> Val {
@@ -2065,7 +2001,7 @@ impl PartStep {
                 }
                 let held = cells_by_key(t, keys, *p);
                 let (cells, heads) = (&held.0, &held.1);
-                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(enclosed_regions(held))])), keys.len() + 1)
+                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(i64::from(enclosed_regions(held)))])), keys.len() + 1)
             }
             PartStep::Symmetry { keys, p } => {
                 if !on_one_frame(t, keys, *p) {

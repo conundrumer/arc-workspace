@@ -2,6 +2,7 @@
 
 use crate::catalog::*;
 use crate::catalog_facts::*;
+use crate::grid_walks::{enclosed_regions, for_each_enclosed_region, walk_outward};
 
 pub(crate) const MAX_ROWS: usize = 5000;
 pub(crate) const MAX_CELLS: usize = 900;
@@ -92,10 +93,18 @@ pub(crate) fn dilated(cells: &Bits, h: usize, w: usize) -> Bits {
 
 /// The cells outside a nonempty cell set that it encloses, on the grid.
 fn holes(cells: &Bits, all: &Bits, h: usize, w: usize) -> Bits {
-    walk_in(&all.minus(cells), h, w)
+    let free = all.minus(cells);
+    let mut out = Bits::EMPTY;
+    for_each_enclosed_region((0..h * w).map(|at| !free.get(at)).collect(), h, w, |region| {
+        for at in region {
+            out.set(*at);
+        }
+    });
+    out
 }
 
-fn lines_of(cells: &Bits, w: usize) -> (u32, u32) {
+/// The rows and the columns that hold a cell of the set, each as a mask with a bit per line.
+fn occupied_rows_and_columns(cells: &Bits, w: usize) -> (u32, u32) {
     let (mut rows, mut cols) = (0u32, 0u32);
     cells.each(|at| {
         rows |= 1 << (at / w);
@@ -113,29 +122,15 @@ fn cell_list(cells: &Bits, w: usize) -> Vec<(u8, u8)> {
 /// The fewest eight-neighbor steps from a nonempty cell set to each cell.
 fn distances(cells: &Bits, h: usize, w: usize) -> Vec<u16> {
     let mut out = vec![u16::MAX; h * w];
-    let mut layer = Vec::new();
+    let mut start = Vec::new();
     cells.each(|at| {
         out[at] = 0;
-        layer.push(at);
+        start.push(at);
     });
-    let mut k = 0;
-    while !layer.is_empty() {
-        k += 1;
-        let mut ahead = Vec::new();
-        for at in &layer {
-            let (r, c) = (at / w, at % w);
-            for nr in r.saturating_sub(1)..(r + 2).min(h) {
-                for nc in c.saturating_sub(1)..(c + 2).min(w) {
-                    let next = nr * w + nc;
-                    if out[next] == u16::MAX {
-                        out[next] = k;
-                        ahead.push(next);
-                    }
-                }
-            }
-        }
-        layer = ahead;
-    }
+    walk_outward(start, h, w, true, |at, steps| {
+        out[at] = steps;
+        false
+    });
     out
 }
 
@@ -211,8 +206,8 @@ fn one_column(view: &mut View<'_>, pos: &Pos, group_of: &[u32], groups: u32) {
         if !f.changed.is_empty() {
             let of = f.changed.count();
             holds(view, "C changed cells within Chebyshev distance 1, proportion", Value::Share(f.changed.and(&around).count(), of));
-            let (rows, cols) = lines_of(&s, w);
-            let (changed_rows, changed_cols) = lines_of(&f.changed, w);
+            let (rows, cols) = occupied_rows_and_columns(&s, w);
+            let (changed_rows, changed_cols) = occupied_rows_and_columns(&f.changed, w);
             let mut on_lines = 0;
             f.changed.each(|at| on_lines += u32::from(rows >> (at / w) & 1 == 1 || cols >> (at % w) & 1 == 1));
             holds(view, "C changed cells on its rows or columns, proportion", Value::Share(on_lines, of));
@@ -346,7 +341,7 @@ fn reflection_across_line(view: &mut View<'_>, pos: &Pos) {
         return;
     }
     let w = output.w;
-    let (rows, cols) = lines_of(&s, w);
+    let (rows, cols) = occupied_rows_and_columns(&s, w);
     let (one_row, one_col) = (rows.count_ones() == 1, cols.count_ones() == 1);
     if !one_row && !one_col {
         return;
@@ -605,88 +600,19 @@ fn group_properties(view: &mut View<'_>, pos: &Pos, group_of: &[u32], groups: u3
     }
 }
 
-/// The count of 4-connected regions outside a cell set that it encloses.
-fn enclosed_regions(list: &[(u8, u8)]) -> u32 {
-    let (rmin, rmax) = (list.iter().map(|x| i32::from(x.0)).min().unwrap_or(0), list.iter().map(|x| i32::from(x.0)).max().unwrap_or(0));
-    let (cmin, cmax) = (list.iter().map(|x| i32::from(x.1)).min().unwrap_or(0), list.iter().map(|x| i32::from(x.1)).max().unwrap_or(0));
-    let (h, w) = ((rmax - rmin + 3) as usize, (cmax - cmin + 3) as usize);
-    let mut seen = vec![false; h * w];
-    for (r, c) in list {
-        seen[(i32::from(*r) - rmin + 1) as usize * w + (i32::from(*c) - cmin + 1) as usize] = true;
-    }
-    let mut regions = 0u32;
-    let mut stack = Vec::new();
-    for start in 0..h * w {
-        if seen[start] {
-            continue;
-        }
-        regions += 1;
-        seen[start] = true;
-        stack.push(start);
-        while let Some(at) = stack.pop() {
-            let (r, c) = (at / w, at % w);
-            let mut go = |next: usize| {
-                if !seen[next] {
-                    seen[next] = true;
-                    stack.push(next);
-                }
-            };
-            if r > 0 {
-                go(at - w);
-            }
-            if r + 1 < h {
-                go(at + w);
-            }
-            if c > 0 {
-                go(at - 1);
-            }
-            if c + 1 < w {
-                go(at + 1);
-            }
-        }
-    }
-    regions - 1
-}
-
 /// The colors of the foreground cells outside a cell set that the fewest steps along rows
 /// and columns reach from it.
 fn nearest_colors(cells: &Bits, foreground: &Bits, input: &GridFacts, h: usize, w: usize) -> u16 {
-    let mut seen = *cells;
-    let mut layer = Vec::new();
-    cells.each(|at| layer.push(at));
-    while !layer.is_empty() {
-        let mut ahead = Vec::new();
-        let mut hit = 0u16;
-        for at in &layer {
-            let (r, c) = (at / w, at % w);
-            let mut go = |next: usize| {
-                if !seen.get(next) {
-                    seen.set(next);
-                    ahead.push(next);
-                    if foreground.get(next) {
-                        hit |= 1 << input.color[next];
-                    }
-                }
-            };
-            if r + 1 < h {
-                go(at + w);
-            }
-            if r > 0 {
-                go(at - w);
-            }
-            if c + 1 < w {
-                go(at + 1);
-            }
-            if c > 0 {
-                go(at - 1);
-            }
+    let mut start = Vec::new();
+    cells.each(|at| start.push(at));
+    let mut hit = 0u16;
+    walk_outward(start, h, w, false, |at, _| {
+        if foreground.get(at) {
+            hit |= 1 << input.color[at];
         }
-        if hit != 0 {
-            return hit;
-        }
-        layer = ahead;
-    }
-    0
+        foreground.get(at)
+    });
+    hit
 }
 
 /// The kinds that read a column's cells in any frame.
