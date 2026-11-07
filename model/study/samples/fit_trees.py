@@ -219,7 +219,7 @@ def split_files(folders: list[Path], dev_tasks: set[str]) -> tuple[list[Path], l
     heads = {points_stem(p): header_of(p) for p in paths}
     unknown = dev_tasks - heads.keys()
     if unknown:
-        raise FitError(f'--dev-tasks names tasks with no file in {folder}: {sorted(unknown)}')
+        raise FitError(f'--dev-tasks names tasks with no file in {", ".join(map(str, folders))}: {sorted(unknown)}')
     train: list[Path] = []
     dev: list[Path] = []
     for p in paths:
