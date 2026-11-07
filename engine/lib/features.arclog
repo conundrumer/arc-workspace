@@ -1795,6 +1795,20 @@
   (QUERY &q (&free (:Free (*new P ?R))))
   (gives &q))
 
+(fragment (straight-axis (?R relation) (?keys columns ?R) (?p column ?R))
+  "Each key with an axis whose line holds all its cells."
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &off Cardinality
+    (key ((?R (?keys ^)) (axis_elem (:A ^Line)))
+      (member ((:m (:X X) (:Y Y)))
+        (&cells_of.minimal (:t ?keys (:Cell *X)))
+        (&cells_of.minimal (:t ?keys (:Cell *Y)))
+        (NOT (same_line (:A Line) (:P X) (:Q Y))))))
+  (QUERY &q (?R (?keys *)) (&off.size (:key ?keys (:Line (*new A ?R))) (:N 0)))
+  (gives &q))
+
 (fragment (cell-count (?R relation) (?keys columns ?R) (?p column ?R))
   "The distinct cells per value of the key columns."
   (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))

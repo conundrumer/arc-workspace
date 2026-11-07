@@ -269,7 +269,8 @@ impl Generated {
         Generated::with_column_names_of(types, column_names, d, names, false)
     }
 
-    /// The terms over a table's parts keyed by its one Color or Ident column as a group, whose shapes are those of a table with several such columns.
+    /// The second pass's terms: a table's parts keyed by its one Color or Ident column as a group, whose shapes are those of a table with several such columns,
+    /// and each of its columns of cells against the cells of a grid's parts.
     pub fn one_group(types: &[ValueType], d: usize, names: &NameStore) -> Generated {
         let columns: Vec<String> = (0..types.len()).map(|at| format!("T{at}")).collect();
         Generated::with_column_names_of(types, &columns, d, names, true)
@@ -315,6 +316,9 @@ impl Generated {
                 for at in below {
                     family.extend_term(at, 2, true);
                 }
+            }
+            for at in FIRST_CONSTANT..family.first_term as u32 {
+                family.cells_against(at);
             }
             family.by_size.push(family.terms.len());
             family.name_roots(types, names);
@@ -1399,6 +1403,29 @@ impl Generated {
         }
     }
 
+    /// Each column of the table's cells as a set against the cells of a grid's part: whether each holds the other, whether they are one set, and the share of the column's
+    /// cells that the part holds. The table's other columns do not enter, so the share counts cells and not rows.
+    fn cells_against(&mut self, part: u32) {
+        let (own, theirs) = (self.terms[LEAF_TABLE as usize].columns.clone(), self.terms[part as usize].columns.clone());
+        let part_text = self.terms[part as usize].text.clone();
+        if self.terms[part as usize].flags & (READS_INPUT | READS_OUTPUT) == 0 {
+            return;
+        }
+        let Some(at) = theirs.iter().position(|column| column.ty == ValueType::Position) else { return };
+        let name = theirs[at].name.clone();
+        let there: Box<[u16]> = Box::new([at as u16]);
+        let place: Box<[u16]> = Box::new([0]);
+        for (a, x) in own.iter().enumerate().filter(|(_, column)| column.ty == ValueType::Position) {
+            let own_text = format!("(project T {})", x.name);
+            let found = self.terms.iter().rposition(|term| term.text == own_text).map(|term| term as u32);
+            let Some(values) = found.or_else(|| self.push_forced(Step::Project { columns: vec![a as u16].into_boxed_slice() }, LEAF_TABLE, NO_TERM, vec![x.clone()], 1, own_text.clone(), RootKind::Rows)) else { continue };
+            self.push_forced(Step::Part(Box::new(PartStep::SameRows { left: place.clone(), right: there.clone(), key: false })), values, part, Vec::new(), 2, format!("(rows-equal {own_text} {part_text} T*:{}={name})", x.name), RootKind::Holds);
+            self.push_forced(Step::All { left: place.clone(), right: there.clone(), outer: Box::new([]) }, values, part, Vec::new(), 2, format!("(all {own_text} {part_text} () ({} {name}))", x.name), RootKind::Holds);
+            self.push_forced(Step::All { left: there.clone(), right: place.clone(), outer: Box::new([]) }, part, values, Vec::new(), 2, format!("(all {part_text} {own_text} () ({name} {}))", x.name), RootKind::Holds);
+            self.push_forced(Step::Semijoin { left: place.clone(), right: there.clone() }, values, part, vec![x.clone()], 2, format!("(semijoin {own_text} {part_text} ({} {name}))", x.name), RootKind::Share);
+        }
+    }
+
     /// Whether a table's column and the output color at its cell determine each other over the rows of every example, and whether the column with the input
     /// color at that cell determines the output color. A task-wide family holds these whatever its size.
     fn output_functions(&mut self) {
@@ -1600,6 +1627,9 @@ impl Generated {
                     add(PartStep::FillsBox { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(fills-box {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::Straight { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(straight {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::CellCount { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(cell-count {text} {key_text} {name})"), RootKind::Rows);
+                    if self.one_group {
+                        add(PartStep::StraightAxis { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0)]), format!("(straight-axis {text} {key_text} {name})"), RootKind::Rows);
+                    }
                     add(PartStep::GroupGap { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(group-gap {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::BoxSides { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("N", ValueType::Int, 0)]), format!("(box-sides {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::BoxMargins { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("D", ValueType::Dir, 0), fresh("K", ValueType::Int, 0)]), format!("(box-margins {text} {key_text} {name})"), RootKind::Rows);
@@ -1678,7 +1708,7 @@ impl Generated {
             }
         }
         for (step, b, kept, line, root) in pushes {
-            if !self.one_group || line.contains("(T*:") {
+            if !self.one_group || line.contains("(T*:") || line.starts_with("(straight-axis ") {
                 self.push(step, at, b, kept, size, line, root);
             }
         }

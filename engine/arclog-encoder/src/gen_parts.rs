@@ -88,6 +88,8 @@ pub enum PartStep {
     Complement { p: u16 },
     /// The keys whose cells lie on one row, one column or one diagonal.
     Straight { keys: Box<[u16]>, p: u16 },
+    /// Each key with an axis whose line holds all its cells: keys, A.
+    StraightAxis { keys: Box<[u16]>, p: u16 },
     /// The distinct cells per key: keys, N.
     CellCount { keys: Box<[u16]>, p: u16 },
     /// The fewest eight-neighbor steps from each key's cells to a cell of the column that the key does not hold: keys, N.
@@ -155,7 +157,7 @@ impl PartStep {
             PartStep::DeterminesJointly { p, v, w } => vec![*p, *v, *w],
             PartStep::Displacement { a, b } => vec![*a, *b],
             PartStep::BoxFrameRead { b, x, .. } | PartStep::BoxCellRead { b, x, .. } => vec![*b, *x],
-            PartStep::BoxSides { keys, p } | PartStep::BoxMargins { keys, p } | PartStep::LineCounts { keys, p } | PartStep::Straight { keys, p } | PartStep::CellCount { keys, p } | PartStep::GroupGap { keys, p } | PartStep::Pieces { keys, p, .. } | PartStep::BoxOf { keys, p } | PartStep::RelBox { keys, p } | PartStep::ShapeClass { keys, p, .. } | PartStep::Holes { keys, p } | PartStep::Symmetry { keys, p } | PartStep::TouchesEdge { keys, p } | PartStep::FillsBox { keys, p } | PartStep::FullLines { keys, p } => with(keys, &[*p]),
+            PartStep::BoxSides { keys, p } | PartStep::BoxMargins { keys, p } | PartStep::LineCounts { keys, p } | PartStep::Straight { keys, p } | PartStep::CellCount { keys, p } | PartStep::GroupGap { keys, p } | PartStep::StraightAxis { keys, p } | PartStep::Pieces { keys, p, .. } | PartStep::BoxOf { keys, p } | PartStep::RelBox { keys, p } | PartStep::ShapeClass { keys, p, .. } | PartStep::Holes { keys, p } | PartStep::Symmetry { keys, p } | PartStep::TouchesEdge { keys, p } | PartStep::FillsBox { keys, p } | PartStep::FullLines { keys, p } => with(keys, &[*p]),
             PartStep::Count { keys } | PartStep::ClassOf { keys } => keys.to_vec(),
             PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => with(keys, &[*f]),
             PartStep::Extreme { keys, t, score, .. } => with(keys, &[*t, *score]),
@@ -232,6 +234,7 @@ impl PartStep {
             PartStep::Straight { keys, p } => format!("(straight &r {} {})", list(keys), c(p)),
             PartStep::Product { keys } => format!("(product &r {})", list(keys)),
             PartStep::CellCount { keys, p } => format!("(cell-count &r {} {})", list(keys), c(p)),
+            PartStep::StraightAxis { keys, p } => format!("(straight-axis &r {} {})", list(keys), c(p)),
             PartStep::GroupGap { keys, p } => format!("(group-gap &r {} {})", list(keys), c(p)),
             PartStep::BoxCells { p, outside } => format!("({} &r {})", if *outside { "outside-box" } else { "box-cells" }, c(p)),
             PartStep::HoleCells { p } => format!("(hole-cells &r {})", c(p)),
@@ -1360,6 +1363,25 @@ impl PartStep {
                     }
                 }
                 Val::of_table(Table::distinct(1, out))
+            }
+            PartStep::StraightAxis { keys, p } => {
+                if !on_one_frame(t, keys, *p) {
+                    return None;
+                }
+                let (cells, heads) = cells_by_key(t, keys, *p);
+                let mut out = Vec::new();
+                for (own, head) in cells.iter().zip(&heads) {
+                    let Some(first) = own.first() else { continue };
+                    if own.iter().all(|at| at.1 == first.1) {
+                        out.extend_from_slice(head);
+                        out.push(e.axes[0]);
+                    }
+                    if own.iter().all(|at| at.0 == first.0) {
+                        out.extend_from_slice(head);
+                        out.push(e.axes[1]);
+                    }
+                }
+                Val::of_table(Table::distinct(keys.len() + 1, out))
             }
             PartStep::CellCount { keys, p } => {
                 if !on_one_frame(t, keys, *p) {
