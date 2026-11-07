@@ -2331,6 +2331,664 @@
   (QUERY &q (?L (*others ?L)) (&met ?a))
   (gives &q))
 
+;; How two relations stand to each other as sets of values, as counts of rows, as groups of cells, and in the cells that both hold.
+
+(fragment (set-subset (?L relation) (?S relation) (?a column ?L) (?b column ?S))
+  "Whether every value of a column of the first relation is a value of a column of the second, which has a value more."
+  (INIT &in_first Order
+    (member ((:t ?a))
+      (?L (?a *))))
+  (INIT &in_second Order
+    (member ((:t ?b))
+      (?S (?b *))))
+  (QUERY &extra
+    (?S (?b *))
+    (NOT (&in_first.minimal (:t ?b))))
+  (QUERY &q
+    (ALL ((?L (?a *)))
+      ((&in_second.minimal (:t ?a))))
+    (&extra))
+  (gives &q))
+
+(fragment (set-overlap (?L relation) (?S relation) (?a column ?L) (?b column ?S))
+  "Whether two relations' columns share a value, and each has a value that the other lacks."
+  (INIT &in_first Order
+    (member ((:t ?a))
+      (?L (?a *))))
+  (INIT &in_second Order
+    (member ((:t ?b))
+      (?S (?b *))))
+  (QUERY &only_first
+    (?L (?a *))
+    (NOT (&in_second.minimal (:t ?a))))
+  (QUERY &only_second
+    (?S (?b *))
+    (NOT (&in_first.minimal (:t ?b))))
+  (QUERY &shared
+    (?L (?a *))
+    (&in_second.minimal (:t ?a)))
+  (QUERY &q (&only_first) (&only_second) (&shared))
+  (gives &q))
+
+(fragment (set-disjoint (?L relation) (?S relation) (?a column ?L) (?b column ?S))
+  "Whether the first relation has a row and no value of its column is a value of a column of the second."
+  (INIT &in_second Order
+    (member ((:t ?b))
+      (?S (?b *))))
+  (QUERY &q
+    (ALL ((?L (?a *)))
+      ((NOT (&in_second.minimal (:t ?a))))))
+  (gives &q))
+
+(fragment (cells-disjoint (?L relation) (?S relation) (?a column ?L) (?b column ?S))
+  "Whether two columns of cells share no cell and leave a cell of the first column's frame in neither."
+  (INIT &in_first Order
+    (member ((:t ?a))
+      (?L (?a *))))
+  (INIT &in_second Order
+    (member ((:t ?b))
+      (?S (?b *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?L (?a *))
+      (frame_extent (:P ?a) *A *N)))
+  (QUERY &free
+    (&frame.cell (:P *Free))
+    (NOT (&in_first.minimal (:t Free)))
+    (NOT (&in_second.minimal (:t Free))))
+  (QUERY &q
+    (ALL ((?L (?a *)))
+      ((NOT (&in_second.minimal (:t ?a)))))
+    (&free))
+  (gives &q))
+
+(fragment (cells-complement (?L relation) (?S relation) (?a column ?L) (?b column ?S))
+  "Whether two columns of cells share no cell and every cell of the first column's frame is in one of them."
+  (INIT &in_first Order
+    (member ((:t ?a))
+      (?L (?a *))))
+  (INIT &in_second Order
+    (member ((:t ?b))
+      (?S (?b *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?L (?a *))
+      (frame_extent (:P ?a) *A *N)))
+  (QUERY &free
+    (&frame.cell (:P *Free))
+    (NOT (&in_first.minimal (:t Free)))
+    (NOT (&in_second.minimal (:t Free))))
+  (QUERY &q
+    (ALL ((?L (?a *)))
+      ((NOT (&in_second.minimal (:t ?a)))))
+    (NOT (&free)))
+  (gives &q))
+
+(fragment (count-less (?L relation) (?S relation))
+  "Whether the first relation has fewer rows than the second."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &first Cardinality
+    (key ((&whole ^Whole))
+      (member ((:m (others ?L)))
+        (&whole Whole)
+        (?L (*others ?L)))))
+  (INIT &second Cardinality
+    (key ((&whole ^Whole))
+      (member ((:m (others ?S)))
+        (&whole Whole)
+        (?S (*others ?S)))))
+  (QUERY &fewer
+    (&first.size (:key *Whole) (:N *Few))
+    (&second.size (:key Whole) (:N *Many))
+    (< Few Many))
+  (QUERY &q (&fewer))
+  (gives &q))
+
+(fragment (count-equal (?L relation) (?S relation))
+  "Whether the first relation has as many rows as the second."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &first Cardinality
+    (key ((&whole ^Whole))
+      (member ((:m (others ?L)))
+        (&whole Whole)
+        (?L (*others ?L)))))
+  (INIT &second Cardinality
+    (key ((&whole ^Whole))
+      (member ((:m (others ?S)))
+        (&whole Whole)
+        (?S (*others ?S)))))
+  (QUERY &same
+    (&first.size (:key *Whole) (:N *Count))
+    (&second.size (:key Whole) (:N Count)))
+  (QUERY &q (&same))
+  (gives &q))
+
+(fragment (greatest-less-count (?R relation) (?n column ?R) (?S relation))
+  "Whether the greatest value of a number column is below the count of the second relation's rows."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &o Order
+    (member ((:t ?n))
+      (?R (?n *)))
+    (score ((:t ?n) (:S ?n))
+      (?R (?n *))))
+  (INIT &rows Cardinality
+    (key ((&whole ^Whole))
+      (member ((:m (others ?S)))
+        (&whole Whole)
+        (?S (*others ?S)))))
+  (QUERY &below
+    (&o.maximal (:t *Most))
+    (&rows.size (:key *Whole) (:N *Count))
+    (< Most Count))
+  (QUERY &q (&below))
+  (gives &q))
+
+(fragment (greatest-equal-count (?R relation) (?n column ?R) (?S relation))
+  "Whether the greatest value of a number column is the count of the second relation's rows."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &o Order
+    (member ((:t ?n))
+      (?R (?n *)))
+    (score ((:t ?n) (:S ?n))
+      (?R (?n *))))
+  (INIT &rows Cardinality
+    (key ((&whole ^Whole))
+      (member ((:m (others ?S)))
+        (&whole Whole)
+        (?S (*others ?S)))))
+  (QUERY &same
+    (&o.maximal (:t *Most))
+    (&rows.size (:key *Whole) (:N Most)))
+  (QUERY &q (&same))
+  (gives &q))
+
+(fragment (greatest-more-count (?R relation) (?n column ?R) (?S relation))
+  "Whether the greatest value of a number column is above the count of the second relation's rows."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &o Order
+    (member ((:t ?n))
+      (?R (?n *)))
+    (score ((:t ?n) (:S ?n))
+      (?R (?n *))))
+  (INIT &rows Cardinality
+    (key ((&whole ^Whole))
+      (member ((:m (others ?S)))
+        (&whole Whole)
+        (?S (*others ?S)))))
+  (QUERY &above
+    (&o.maximal (:t *Most))
+    (&rows.size (:key *Whole) (:N *Count))
+    (> Most Count))
+  (QUERY &q (&above))
+  (gives &q))
+
+(fragment (groups-equal (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?others columns ?S) (?b column ?S))
+  "Whether the sets of cells that the keys of the first relation hold are the sets of cells that the keys of the second hold."
+  (INIT &left_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?L (?keys *))))
+  (INIT &right_ids Quotient
+    (equivalent ((:a ?others) (:b ?others))
+      (?S (?others *))))
+  (QUERY &left_cells
+    (?L (?keys *) (?a *))
+    (&left_ids.class (:a ?keys) (:Id *Key))
+    (= *Cell ?a))
+  (QUERY &right_cells
+    (?S (?others *) (?b *))
+    (&right_ids.class (:a ?others) (:Id *Key))
+    (= *Cell ?b))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m Cell))
+      (&right_cells *Key *Cell))
+    (observed ((:observed Key) (:m Cell))
+      (&left_cells *Key *Cell)))
+  (QUERY &left_only
+    (&left_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:observed Key))))
+  (QUERY &right_only
+    (&right_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:pattern Key))))
+  (QUERY &q (&same_set.equal) (NOT (&left_only)) (NOT (&right_only)))
+  (gives &q))
+
+(fragment (groups-subset (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?others columns ?S) (?b column ?S))
+  "Whether the sets of cells that the keys of the first relation hold are sets that the keys of the second hold, and the second holds a set more."
+  (INIT &left_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?L (?keys *))))
+  (INIT &right_ids Quotient
+    (equivalent ((:a ?others) (:b ?others))
+      (?S (?others *))))
+  (QUERY &left_cells
+    (?L (?keys *) (?a *))
+    (&left_ids.class (:a ?keys) (:Id *Key))
+    (= *Cell ?a))
+  (QUERY &right_cells
+    (?S (?others *) (?b *))
+    (&right_ids.class (:a ?others) (:Id *Key))
+    (= *Cell ?b))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m Cell))
+      (&right_cells *Key *Cell))
+    (observed ((:observed Key) (:m Cell))
+      (&left_cells *Key *Cell)))
+  (QUERY &left_only
+    (&left_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:observed Key))))
+  (QUERY &right_only
+    (&right_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:pattern Key))))
+  (QUERY &q (&same_set.equal) (NOT (&left_only)) (&right_only))
+  (gives &q))
+
+(fragment (groups-overlap (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?others columns ?S) (?b column ?S))
+  "Whether the first and the second relation hold a set of cells in common, and each holds a set that the other lacks."
+  (INIT &left_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?L (?keys *))))
+  (INIT &right_ids Quotient
+    (equivalent ((:a ?others) (:b ?others))
+      (?S (?others *))))
+  (QUERY &left_cells
+    (?L (?keys *) (?a *))
+    (&left_ids.class (:a ?keys) (:Id *Key))
+    (= *Cell ?a))
+  (QUERY &right_cells
+    (?S (?others *) (?b *))
+    (&right_ids.class (:a ?others) (:Id *Key))
+    (= *Cell ?b))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m Cell))
+      (&right_cells *Key *Cell))
+    (observed ((:observed Key) (:m Cell))
+      (&left_cells *Key *Cell)))
+  (QUERY &left_only
+    (&left_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:observed Key))))
+  (QUERY &right_only
+    (&right_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:pattern Key))))
+  (QUERY &q (&same_set.equal) (&left_only) (&right_only))
+  (gives &q))
+
+(fragment (groups-disjoint (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?others columns ?S) (?b column ?S))
+  "Whether both relations hold a set of cells, and no set of the first is a set of the second."
+  (INIT &left_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?L (?keys *))))
+  (INIT &right_ids Quotient
+    (equivalent ((:a ?others) (:b ?others))
+      (?S (?others *))))
+  (QUERY &left_cells
+    (?L (?keys *) (?a *))
+    (&left_ids.class (:a ?keys) (:Id *Key))
+    (= *Cell ?a))
+  (QUERY &right_cells
+    (?S (?others *) (?b *))
+    (&right_ids.class (:a ?others) (:Id *Key))
+    (= *Cell ?b))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m Cell))
+      (&right_cells *Key *Cell))
+    (observed ((:observed Key) (:m Cell))
+      (&left_cells *Key *Cell)))
+  (QUERY &q (&left_ids.class) (&right_ids.class) (NOT (&same_set.equal)))
+  (gives &q))
+
+(fragment (shapes-equal (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?others columns ?S) (?b column ?S))
+  "Whether the shapes of the cell sets that the keys of the first relation hold, up to a move, are the shapes that the keys of the second hold."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &left_cells Order
+    (member ((:t ?keys (:Cell ?a)))
+      (?L (?keys *) (?a *))))
+  (INIT &left_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?L (?keys *))))
+  (INIT &left_box BoundingBox
+    (key ((?L (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&left_cells.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &left_placed
+    (?L (?keys *) (?a *))
+    (&left_ids.class (:a ?keys) (:Id *Key))
+    (&left_box.box (:key ?keys) (:B *Box))
+    (relative (:Base Box) (:X ?a) *X_rel))
+  (INIT &right_cells Order
+    (member ((:t ?others (:Cell ?b)))
+      (?S (?others *) (?b *))))
+  (INIT &right_ids Quotient
+    (equivalent ((:a ?others) (:b ?others))
+      (?S (?others *))))
+  (INIT &right_box BoundingBox
+    (key ((?S (?others ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&right_cells.minimal (:t ?others (:Cell *Cell))))))
+  (QUERY &right_placed
+    (?S (?others *) (?b *))
+    (&right_ids.class (:a ?others) (:Id *Key))
+    (&right_box.box (:key ?others) (:B *Box))
+    (relative (:Base Box) (:X ?b) *X_rel))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m X_rel))
+      (&right_placed *Key *X_rel))
+    (observed ((:observed Key) (:m X_rel))
+      (&left_placed *Key *X_rel)))
+  (QUERY &left_only
+    (&left_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:observed Key))))
+  (QUERY &right_only
+    (&right_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:pattern Key))))
+  (QUERY &q (&same_set.equal) (NOT (&left_only)) (NOT (&right_only)))
+  (gives &q))
+
+(fragment (shapes-subset (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?others columns ?S) (?b column ?S))
+  "Whether the shapes of the cell sets that the keys of the first relation hold, up to a move, are shapes that the keys of the second hold, and the second holds a shape more."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &left_cells Order
+    (member ((:t ?keys (:Cell ?a)))
+      (?L (?keys *) (?a *))))
+  (INIT &left_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?L (?keys *))))
+  (INIT &left_box BoundingBox
+    (key ((?L (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&left_cells.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &left_placed
+    (?L (?keys *) (?a *))
+    (&left_ids.class (:a ?keys) (:Id *Key))
+    (&left_box.box (:key ?keys) (:B *Box))
+    (relative (:Base Box) (:X ?a) *X_rel))
+  (INIT &right_cells Order
+    (member ((:t ?others (:Cell ?b)))
+      (?S (?others *) (?b *))))
+  (INIT &right_ids Quotient
+    (equivalent ((:a ?others) (:b ?others))
+      (?S (?others *))))
+  (INIT &right_box BoundingBox
+    (key ((?S (?others ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&right_cells.minimal (:t ?others (:Cell *Cell))))))
+  (QUERY &right_placed
+    (?S (?others *) (?b *))
+    (&right_ids.class (:a ?others) (:Id *Key))
+    (&right_box.box (:key ?others) (:B *Box))
+    (relative (:Base Box) (:X ?b) *X_rel))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m X_rel))
+      (&right_placed *Key *X_rel))
+    (observed ((:observed Key) (:m X_rel))
+      (&left_placed *Key *X_rel)))
+  (QUERY &left_only
+    (&left_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:observed Key))))
+  (QUERY &right_only
+    (&right_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:pattern Key))))
+  (QUERY &q (&same_set.equal) (NOT (&left_only)) (&right_only))
+  (gives &q))
+
+(fragment (shapes-overlap (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?others columns ?S) (?b column ?S))
+  "Whether the first and the second relation hold a shape of cells in common, up to a move, and each holds a shape that the other lacks."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &left_cells Order
+    (member ((:t ?keys (:Cell ?a)))
+      (?L (?keys *) (?a *))))
+  (INIT &left_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?L (?keys *))))
+  (INIT &left_box BoundingBox
+    (key ((?L (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&left_cells.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &left_placed
+    (?L (?keys *) (?a *))
+    (&left_ids.class (:a ?keys) (:Id *Key))
+    (&left_box.box (:key ?keys) (:B *Box))
+    (relative (:Base Box) (:X ?a) *X_rel))
+  (INIT &right_cells Order
+    (member ((:t ?others (:Cell ?b)))
+      (?S (?others *) (?b *))))
+  (INIT &right_ids Quotient
+    (equivalent ((:a ?others) (:b ?others))
+      (?S (?others *))))
+  (INIT &right_box BoundingBox
+    (key ((?S (?others ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&right_cells.minimal (:t ?others (:Cell *Cell))))))
+  (QUERY &right_placed
+    (?S (?others *) (?b *))
+    (&right_ids.class (:a ?others) (:Id *Key))
+    (&right_box.box (:key ?others) (:B *Box))
+    (relative (:Base Box) (:X ?b) *X_rel))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m X_rel))
+      (&right_placed *Key *X_rel))
+    (observed ((:observed Key) (:m X_rel))
+      (&left_placed *Key *X_rel)))
+  (QUERY &left_only
+    (&left_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:observed Key))))
+  (QUERY &right_only
+    (&right_ids.class (:Id *Key))
+    (NOT (&same_set.equal (:pattern Key))))
+  (QUERY &q (&same_set.equal) (&left_only) (&right_only))
+  (gives &q))
+
+(fragment (shapes-disjoint (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?others columns ?S) (?b column ?S))
+  "Whether both relations hold a shape of cells, up to a move, and no shape of the first is a shape of the second."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &left_cells Order
+    (member ((:t ?keys (:Cell ?a)))
+      (?L (?keys *) (?a *))))
+  (INIT &left_ids Quotient
+    (equivalent ((:a ?keys) (:b ?keys))
+      (?L (?keys *))))
+  (INIT &left_box BoundingBox
+    (key ((?L (?keys ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&left_cells.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &left_placed
+    (?L (?keys *) (?a *))
+    (&left_ids.class (:a ?keys) (:Id *Key))
+    (&left_box.box (:key ?keys) (:B *Box))
+    (relative (:Base Box) (:X ?a) *X_rel))
+  (INIT &right_cells Order
+    (member ((:t ?others (:Cell ?b)))
+      (?S (?others *) (?b *))))
+  (INIT &right_ids Quotient
+    (equivalent ((:a ?others) (:b ?others))
+      (?S (?others *))))
+  (INIT &right_box BoundingBox
+    (key ((?S (?others ^)) (&whole ^Whole))
+      (cell ((:P Cell))
+        (&whole Whole)
+        (&right_cells.minimal (:t ?others (:Cell *Cell))))))
+  (QUERY &right_placed
+    (?S (?others *) (?b *))
+    (&right_ids.class (:a ?others) (:Id *Key))
+    (&right_box.box (:key ?others) (:B *Box))
+    (relative (:Base Box) (:X ?b) *X_rel))
+  (INIT &same_set Inclusion
+    (pattern ((:pattern Key) (:m X_rel))
+      (&right_placed *Key *X_rel))
+    (observed ((:observed Key) (:m X_rel))
+      (&left_placed *Key *X_rel)))
+  (QUERY &q (&left_ids.class) (&right_ids.class) (NOT (&same_set.equal)))
+  (gives &q))
+
+(fragment (colors-agree-every (?L relation) (?S relation) (?p column ?L) (?x column ?L) (?q column ?S) (?y column ?S))
+  "Whether, at each cell that both relations hold, they give the same set of colors, and some cell is held by both."
+  (INIT &in_first Order
+    (member ((:t ?p))
+      (?L (?p *))))
+  (INIT &in_second Order
+    (member ((:t ?q))
+      (?S (?q *))))
+  (INIT &sets Inclusion
+    (pattern ((:pattern ?q) (:m ?y))
+      (?S (?q *) (?y *)))
+    (observed ((:observed ?p) (:m ?x))
+      (?L (?p *) (?x *))))
+  (QUERY &shared
+    (&in_first.minimal (:t *Cell))
+    (&in_second.minimal (:t Cell)))
+  (QUERY &same (&sets.equal (:observed *Cell) (:pattern Cell)))
+  (QUERY &differ
+    (&shared *Cell)
+    (NOT (&same Cell)))
+  (QUERY &q (&shared) (NOT (&differ)))
+  (gives &q))
+
+(fragment (colors-agree-none (?L relation) (?S relation) (?p column ?L) (?x column ?L) (?q column ?S) (?y column ?S))
+  "Whether, at each cell that both relations hold, they give different sets of colors, and some cell is held by both."
+  (INIT &in_first Order
+    (member ((:t ?p))
+      (?L (?p *))))
+  (INIT &in_second Order
+    (member ((:t ?q))
+      (?S (?q *))))
+  (INIT &sets Inclusion
+    (pattern ((:pattern ?q) (:m ?y))
+      (?S (?q *) (?y *)))
+    (observed ((:observed ?p) (:m ?x))
+      (?L (?p *) (?x *))))
+  (QUERY &shared
+    (&in_first.minimal (:t *Cell))
+    (&in_second.minimal (:t Cell)))
+  (QUERY &same (&sets.equal (:observed *Cell) (:pattern Cell)))
+  (QUERY &q (&shared) (NOT (&same)))
+  (gives &q))
+
+(fragment (colors-agree-some (?L relation) (?S relation) (?p column ?L) (?x column ?L) (?q column ?S) (?y column ?S))
+  "Whether, at some cells that both relations hold, they give the same set of colors, and at some others different sets."
+  (INIT &in_first Order
+    (member ((:t ?p))
+      (?L (?p *))))
+  (INIT &in_second Order
+    (member ((:t ?q))
+      (?S (?q *))))
+  (INIT &sets Inclusion
+    (pattern ((:pattern ?q) (:m ?y))
+      (?S (?q *) (?y *)))
+    (observed ((:observed ?p) (:m ?x))
+      (?L (?p *) (?x *))))
+  (QUERY &shared
+    (&in_first.minimal (:t *Cell))
+    (&in_second.minimal (:t Cell)))
+  (QUERY &same (&sets.equal (:observed *Cell) (:pattern Cell)))
+  (QUERY &differ
+    (&shared *Cell)
+    (NOT (&same Cell)))
+  (QUERY &q (&same) (&differ))
+  (gives &q))
+
+(fragment (least-distance (?L relation) (?S relation) (?a column ?L) (?b column ?S))
+  "The fewest eight-direction steps from a column's cells of the first relation to a column's cells of the second."
+  (INIT &frame Frame
+    (extent (A N)
+      (?L (?a *))
+      (frame_extent (:P ?a) *A *N)))
+  (INIT &from_first CellDistance
+    (node ((:P Free))
+      (&frame.cell (:P *Free)))
+    (source ((:P ?a))
+      (?L (?a *)))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (INIT &in_second Order
+    (member ((:t ?b))
+      (?S (?b *))))
+  (INIT &near Order
+    (member ((:t K))
+      (&from_first.distance (:P *Cell) (:K *K))
+      (&in_second.minimal (:t Cell)))
+    (score ((:t K) (:S K))
+      (&from_first.distance (:P *Cell) (:K *K))
+      (&in_second.minimal (:t Cell))))
+  (QUERY &q (&near.minimal (:t *K)))
+  (gives &q))
+
+(fragment (on-boundary (?R relation) (?S relation) (?p column ?R) (?b column ?S))
+  "The first relation's rows whose cell is a cell of the second relation with a cardinal neighbor outside it."
+  (INIT &set Boundary
+    (cell ((:P ?b))
+      (?S (?b *))))
+  (QUERY &q (?R (*others ?R)) (&set.boundary (:P ?p)))
+  (gives &q))
+
+(fragment (neighbors-in (?R relation) (?S relation) (?p column ?R) (?b column ?S))
+  "Each row of the first relation with each neighbor of its cell that the second relation holds."
+  (INIT &in_second Order
+    (member ((:t ?b))
+      (?S (?b *))))
+  (QUERY &next
+    (?R (?p *))
+    (neighbor (:P ?p) (:D *Toward) (:Q *Cell))
+    (&in_second.minimal (:t Cell)))
+  (QUERY &q (?R (*others ?R)) (&next ?p (:Cell (*new Q ?R))))
+  (gives &q))
+
+(fragment (on-border (?R relation) (?S relation) (?p column ?R) (?b column ?S))
+  "The first relation's rows whose cell is in a box of the second relation and on that box's border."
+  (QUERY &met
+    (?R (?p *))
+    (?S (?b *))
+    (inside (:A ?p) (:B ?b))
+    (NOT (interior (:A ?p) (:B ?b))))
+  (QUERY &q (?R (*others ?R)) (&met ?p))
+  (gives &q))
+
+(fragment (ray-meets (?R relation) (?S relation) (?p column ?R) (?d column ?R) (?b column ?S))
+  "The first relation's rows whose ray from the cell toward the direction meets a cell of the second relation."
+  (INIT &in_second Order
+    (member ((:t ?b))
+      (?S (?b *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?R (?p *))
+      (frame_extent (:P ?p) *A *N)))
+  (INIT &rays Ray
+    (key ((?R (?p ^) (?d ^)))
+      (source ((:P ?p))
+        (?R ?p ?d)))
+    (node ((:P Free))
+      (&frame.cell (:P *Free))))
+  (QUERY &met
+    (?R (?p *) (?d *))
+    (&rays.ray (:key ?p ?d) (:P *Hit) (:K *Step))
+    (&in_second.minimal (:t Hit))
+    (> Step 0))
+  (QUERY &q (?R (*others ?R)) (&met ?p ?d))
+  (gives &q))
+
+(fragment (most-colors-under (?R relation) (?p column ?R) (?G grid))
+  "The colors that a grid has most often under a relation's cells. Under a tie, every tied color."
+  (INIT &cells Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (INIT &counts Cardinality
+    (key ((?G (:P *Under) (:Col ^Col)) (&cells.minimal (:t Under)))
+      (member ((:m Cell))
+        (?G (:Col Col) (:P *Cell))
+        (&cells.minimal (:t Cell)))))
+  (INIT &order Order
+    (member ((:t Col))
+      (&counts.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&counts.size (:key *Col) *N)))
+  (QUERY &q (&order.maximal (:t *Col)))
+  (gives &q))
+
 (fragment (boxes-holding (?L relation) (?S relation) (?a column ?L) (?b column ?S))
   "The first relation's rows whose box holds a cell of the second."
   (QUERY &met
