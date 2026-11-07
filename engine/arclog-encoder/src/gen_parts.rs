@@ -544,6 +544,11 @@ fn moved(m: [i32; 4], dr: i32, dc: i32) -> Option<Cell> {
     (t >= 0 && b >= 0 && l >= 0 && r >= 0).then(|| box_bits(t, b, l, r))
 }
 
+/// The box that one step moves a box to, which can reach past the frame.
+fn shifted(m: [i32; 4], dr: i32, dc: i32) -> Cell {
+    box_bits(m[0] + dr, m[1] - dr, m[2] + dc, m[3] - dc)
+}
+
 fn rows_with(table: &Table, extra: usize, mut each: impl FnMut(&[Cell], &mut Vec<Cell>)) -> Val {
     let arity = table.arity + extra;
     let mut out: Vec<Cell> = Vec::with_capacity(table.cells.len() * 2);
@@ -886,9 +891,12 @@ pub struct BoxFeatures {
     values: [Option<i32>; 15],
 }
 
-/// The extents of the frame of a relation's cell column, from its first row.
+/// The extents of the frame of a relation's cell column, where its cells lie in one frame.
 fn frame_of_rows(value: &Val, f: u16) -> Option<(i32, i32)> {
     let table = flat(value)?;
+    if !on_one_frame(&table, &[], f) {
+        return None;
+    }
     let m = margins_of(table.rows().next()?[usize::from(f)]);
     Some((m[0] + m[1] + 1, m[2] + m[3] + 1))
 }
@@ -925,18 +933,22 @@ fn box_features(set: &[[i32; 4]], h: i32, w: i32) -> BoxFeatures {
         put(Aligned, i32::from(one_of(&|m| (m[0], m[1])) || one_of(&|m| (m[2], m[3]))));
         put(OneSize, i32::from(!sides.is_empty() && sides.iter().all(|side| *side == sides[0])));
         let spans: Vec<[i32; 4]> = set.iter().map(|m| [m[0], h - 1 - m[1], m[2], w - 1 - m[3]]).filter(|s| s[0] <= s[1] && s[2] <= s[3]).collect();
+        // Two boxes overlap where a cell of the frame lies in both.
+        let held: Vec<[i32; 4]> = spans.iter().map(|s| [s[0].max(0), s[1].min(h - 1), s[2].max(0), s[3].min(w - 1)]).filter(|s| s[0] <= s[1] && s[2] <= s[3]).collect();
         let (mut overlap, mut nested) = (false, false);
+        for (at, x) in held.iter().enumerate() {
+            for (other, y) in held.iter().enumerate() {
+                overlap = overlap || (at != other && x[0] <= y[1] && y[0] <= x[1] && x[2] <= y[3] && y[2] <= x[3]);
+            }
+        }
         for (at, x) in spans.iter().enumerate() {
             for (other, y) in spans.iter().enumerate() {
-                if at != other {
-                    overlap = overlap || (x[0] <= y[1] && y[0] <= x[1] && x[2] <= y[3] && y[2] <= x[3]);
-                    nested = nested || (y[0] <= x[0] && x[1] <= y[1] && y[2] <= x[2] && x[3] <= y[3]);
-                }
+                nested = nested || (at != other && y[0] <= x[0] && x[1] <= y[1] && y[2] <= x[2] && x[3] <= y[3]);
             }
         }
         put(SomeOverlap, i32::from(overlap));
         put(Nested, i32::from(nested));
-        if h > 0 && w > 0 && i64::from(h) * i64::from(w) <= 1_000_000 {
+        if h > 0 && w > 0 {
             let mut seen = vec![false; (h * w) as usize];
             for s in &spans {
                 for r in s[0].max(0)..=s[1].min(h - 1) {
@@ -1304,12 +1316,10 @@ impl PartStep {
                             piece.push(held[at]);
                             let m = margins_of(held[at]);
                             for (dr, dc) in &STEPS[..if *four { 4 } else { 8 }] {
-                                if let Some(next) = moved(m, *dr, *dc) {
-                                    if let Ok(place) = held.binary_search(&next) {
-                                        if !seen[place] {
-                                            seen[place] = true;
-                                            stack.push(place);
-                                        }
+                                if let Ok(place) = held.binary_search(&shifted(m, *dr, *dc)) {
+                                    if !seen[place] {
+                                        seen[place] = true;
+                                        stack.push(place);
                                     }
                                 }
                             }
@@ -1714,7 +1724,7 @@ impl PartStep {
                 let (Some(r0), Some(r1)) = (cells.iter().map(|cell| cell.0).min(), cells.iter().map(|cell| cell.0).max()) else { return Some(Val::Empty) };
                 let (c0, c1) = (cells.iter().map(|cell| cell.1).min().unwrap_or(0), cells.iter().map(|cell| cell.1).max().unwrap_or(0));
                 let (bh, bw) = ((r1 - r0 + 1) as usize, (c1 - c0 + 1) as usize);
-                Val::of_table(Table::unit(bh >= 3 && bw >= 3 && cells.len() == 2 * (bh + bw) - 4 && cells.iter().all(|cell| cell.0 == r0 || cell.0 == r1 || cell.1 == c0 || cell.1 == c1)))
+                Val::of_table(Table::unit(bh >= 2 && bw >= 2 && cells.len() == 2 * (bh + bw) - 4 && cells.iter().all(|cell| cell.0 == r0 || cell.0 == r1 || cell.1 == c0 || cell.1 == c1)))
             }
             PartStep::LineSpacings { p } => {
                 if !on_one_frame(t, &[], *p) {
@@ -1751,7 +1761,9 @@ impl PartStep {
                     ColumnMeasureKind::Consecutive | ColumnMeasureKind::Arithmetic => {
                         let mut numbers: Vec<i64> = values.iter().map(|cell| number_of(*cell)).collect();
                         numbers.sort_unstable();
-                        if *measure == ColumnMeasureKind::Consecutive {
+                        if numbers.len() < 2 {
+                            Val::Empty
+                        } else if *measure == ColumnMeasureKind::Consecutive {
                             Val::of_table(Table::unit(numbers[numbers.len() - 1] - numbers[0] + 1 == numbers.len() as i64))
                         } else if numbers.len() < 3 {
                             Val::Empty
@@ -1785,7 +1797,7 @@ impl PartStep {
             PartStep::CountedByValue { a, second } => {
                 let mut numbers: Vec<i64> = t.rows().map(|row| number_of(row[usize::from(*a)])).collect();
                 numbers.sort_unstable_by(|x, y| y.cmp(x));
-                let Some(chosen) = numbers.get(usize::from(*second)).copied().filter(|chosen| *chosen > 0 && *chosen <= 100_000) else { return Some(Val::Empty) };
+                let Some(chosen) = numbers.get(usize::from(*second)).copied().filter(|chosen| *chosen > 0) else { return Some(Val::Empty) };
                 Val::of_table(Table::new(1, (0..chosen).map(number_bits).collect()))
             }
             PartStep::LeastDistance { a, b } => {

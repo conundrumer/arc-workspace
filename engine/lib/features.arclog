@@ -1768,6 +1768,474 @@
   (QUERY &q (?R (?keys *)) (&margins.minimal (:key ?keys) (:t (:Edge (*new D ?R)) (:Margin (*new K ?R)))))
   (gives &q))
 
+;; What the boxes of a column say together in a frame. The frame is the one of
+;; the cells of a column of a second relation: that relation's cell column
+;; `?f`, or the cells of a grid. Each measure has a value only where the
+;; second relation has a cell.
+
+(fragment (frame-cells (?R relation) (?p column ?R))
+  "Every cell of the frame of a column's cells."
+  (INIT &frame Frame
+    (extent (A N)
+      (?R (?p *))
+      (frame_extent (:P ?p) *A *N)))
+  (QUERY &cells (&frame.cell (:P *Free)))
+  (QUERY &q (&cells (:Free (*new P ?R))))
+  (gives &q))
+
+(fragment (one-box-cells (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "The cells of the frame inside the box of a column, where the column has one box."
+  (INIT &one Singleton
+    (member ((:v ?b))
+      (?R (?b *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?F (?f *))
+      (frame_extent (:P ?f) *A *N)))
+  (QUERY &in
+    (&one.value (:v *Box))
+    (&frame.cell (:P *P))
+    (inside (:A P) (:B Box)))
+  (QUERY &q (&in *P))
+  (gives &q))
+
+(fragment (boxes-least-margin (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "The least margin that a box of a column has on any edge."
+  (INIT &least Order
+    (member ((:t Margin))
+      (?R (?b *))
+      (?F (?f *))
+      (margin (:B ?b) (:D *Edge) (:K *Margin)))
+    (score ((:t Margin) (:S Margin))
+      (?R (?b *))
+      (?F (?f *))
+      (margin (:B ?b) (:D *Edge) (:K *Margin))))
+  (QUERY &q (&least.minimal (:t *N)))
+  (gives &q))
+
+(fragment (boxes-edges-touched-max (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "The most edges that one box of a column touches."
+  (INIT &touched Cardinality
+    (key ((?R (?b ^)) (?F (?f *)))
+      (member ((:m Edge))
+        (margin (:B ?b) (:D *Edge) (:K 0)))))
+  (INIT &most Order
+    (member ((:t N))
+      (&touched.size (:key (?b *)) (:N *N)))
+    (score ((:t N) (:S N))
+      (&touched.size (:key (?b *)) (:N *N))))
+  (QUERY &q (&most.maximal (:t *N)))
+  (gives &q))
+
+(fragment (boxes-edges-touched-min (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "The fewest edges that one box of a column touches."
+  (INIT &touched Cardinality
+    (key ((?R (?b ^)) (?F (?f *)))
+      (member ((:m Edge))
+        (margin (:B ?b) (:D *Edge) (:K 0)))))
+  (INIT &fewest Order
+    (member ((:t N))
+      (&touched.size (:key (?b *)) (:N *N)))
+    (score ((:t N) (:S N))
+      (&touched.size (:key (?b *)) (:N *N))))
+  (QUERY &q (&fewest.minimal (:t *N)))
+  (gives &q))
+
+(fragment (boxes-centered-axes-max (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "The most axes on which one box of a column has equal margins at its two edges."
+  (INIT &centered Cardinality
+    (key ((?R (?b ^)) (?F (?f *)))
+      (member ((:m Axis))
+        (dist_pair (:P ?b) (:D *Edge) (:K *Margin) (:K2 Margin))
+        (axis_of (:D Edge) (:A *Axis)))))
+  (INIT &most Order
+    (member ((:t N))
+      (&centered.size (:key (?b *)) (:N *N)))
+    (score ((:t N) (:S N))
+      (&centered.size (:key (?b *)) (:N *N))))
+  (QUERY &q (&most.maximal (:t *N)))
+  (gives &q))
+
+(fragment (boxes-shorter-side-min (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "The least extent of a box of a column on an axis, over the boxes that hold a cell on each axis."
+  (INIT &least Order
+    (member ((:t Length))
+      (?R (?b *))
+      (?F (?f *))
+      (box_extent (:B ?b) (:P ?f) (:A *Axis) (:N *Length))
+      (ALL ((box_extent (:B ?b) (:P ?f) (:A *Other) (:N *Each)))
+        ((> Each 0))))
+    (score ((:t Length) (:S Length))
+      (?R (?b *))
+      (?F (?f *))
+      (box_extent (:B ?b) (:P ?f) (:A *Axis) (:N *Length))
+      (ALL ((box_extent (:B ?b) (:P ?f) (:A *Other) (:N *Each)))
+        ((> Each 0)))))
+  (QUERY &q (&least.minimal (:t *N)))
+  (gives &q))
+
+(fragment (boxes-longer-side-max (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "The greatest extent of a box of a column on an axis, over the boxes that hold a cell on each axis."
+  (INIT &most Order
+    (member ((:t Length))
+      (?R (?b *))
+      (?F (?f *))
+      (box_extent (:B ?b) (:P ?f) (:A *Axis) (:N *Length))
+      (ALL ((box_extent (:B ?b) (:P ?f) (:A *Other) (:N *Each)))
+        ((> Each 0))))
+    (score ((:t Length) (:S Length))
+      (?R (?b *))
+      (?F (?f *))
+      (box_extent (:B ?b) (:P ?f) (:A *Axis) (:N *Length))
+      (ALL ((box_extent (:B ?b) (:P ?f) (:A *Other) (:N *Each)))
+        ((> Each 0)))))
+  (QUERY &q (&most.maximal (:t *N)))
+  (gives &q))
+
+(fragment (boxes-aligned (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "Whether more than one box of a column has, on some axis, the same margins at both edges."
+  (INIT &boxes Singleton
+    (member ((:v ?b))
+      (?R (?b *))))
+  (INIT &margin_at Singleton
+    (key ((dir_elem (:D ^D)))
+      (member ((:v Margin))
+        (?R (?b *))
+        (?F (?f *))
+        (margin (:B ?b) (:D D) (:K *Margin)))))
+  (QUERY &axes
+    (axis_elem (:A *A))
+    (ALL ((axis_of (:D *D) (:A A)))
+      ((&margin_at.value (:key D)))))
+  (QUERY &q (&boxes.plural) (&axes))
+  (gives &q))
+
+(fragment (boxes-one-size (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "Whether more than one box of a column is given and every box that holds a cell on each axis has one extent on each axis."
+  (INIT &boxes Singleton
+    (member ((:v ?b))
+      (?R (?b *))))
+  (INIT &extent_at Singleton
+    (key ((axis_elem (:A ^A)))
+      (member ((:v Length))
+        (?R (?b *))
+        (?F (?f *))
+        (box_extent (:B ?b) (:P ?f) (:A A) (:N *Length))
+        (ALL ((box_extent (:B ?b) (:P ?f) (:A *Other) (:N *Each)))
+          ((> Each 0))))))
+  (QUERY &sized
+    (&boxes.plural)
+    (ALL ((axis_elem (:A *A)))
+      ((&extent_at.value (:key A)))))
+  (QUERY &q (&sized))
+  (gives &q))
+
+(fragment (boxes-some-overlap (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "Whether two boxes of a column hold one cell of the frame."
+  (INIT &frame Frame
+    (extent (A N)
+      (?F (?f *))
+      (frame_extent (:P ?f) *A *N)))
+  (INIT &holders Singleton
+    (key ((&frame.cell (:P ^Cell)))
+      (member ((:v ?b))
+        (?R (?b *))
+        (inside (:A Cell) (:B ?b)))))
+  (QUERY &shared (&holders.plural (:key *Cell)))
+  (QUERY &q (&shared))
+  (gives &q))
+
+(fragment (boxes-nested (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "Whether one box of a column lies in another box of it, over the boxes that hold a cell on each axis."
+  (QUERY &inner
+    (?R (?b *))
+    (?F (?f *))
+    (ALL ((box_extent (:B ?b) (:P ?f) (:A *Other) (:N *Each)))
+      ((> Each 0)))
+    (= *Inner ?b))
+  (QUERY &outer
+    (?R (?b *))
+    (?F (?f *))
+    (ALL ((box_extent (:B ?b) (:P ?f) (:A *Other) (:N *Each)))
+      ((> Each 0)))
+    (= *Outer ?b))
+  (QUERY &within
+    (&inner *Inner)
+    (&outer *Outer)
+    (!= Inner Outer)
+    (inside (:A Inner) (:B Outer)))
+  (QUERY &q (&within))
+  (gives &q))
+
+(fragment (boxes-cover-frame (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "Whether more than one box of a column is given and every cell of the frame is in one."
+  (INIT &boxes Singleton
+    (member ((:v ?b))
+      (?R (?b *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?F (?f *))
+      (frame_extent (:P ?f) *A *N)))
+  (QUERY &covered
+    (&boxes.plural)
+    (ALL ((&frame.cell (:P *Cell)))
+      ((?R (?b *))
+       (inside (:A Cell) (:B ?b)))))
+  (QUERY &q (&covered))
+  (gives &q))
+
+(fragment (boxes-evenly-spaced (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "Whether the boxes of a column that hold a cell on each axis lie on three or more distinct lines along an axis, no two of them overlapping there, with one gap between each line and the next."
+  (QUERY &bands
+    (?R (?b *))
+    (?F (?f *))
+    (ALL ((box_extent (:B ?b) (:P ?f) (:A *Other) (:N *Each)))
+      ((> Each 0)))
+    (split (:P ?b) (:A *Axis) (:Along *Band)))
+  (INIT &along Order
+    (key ((dir_elem (:D ^D)))
+      (member ((:t Band))
+        (axis_of (:D D) (:A *Axis))
+        (&bands (:Axis Axis) (:Band *Band)))
+      (before ((:a X) (:b Y))
+        (axis_of (:D D) (:A *Axis))
+        (&bands (:Axis Axis) (:Band *X))
+        (&bands (:Axis Axis) (:Band *Y))
+        (nearer (:D D) (:P X) (:Q Y)))))
+  (QUERY &gaps
+    (&along.successor (:key *D) (:a *X) (:b *Y))
+    (?F (?f *))
+    (axis_of (:D D) (:A *Axis))
+    (box_extent (:B X) (:P ?f) (:A Axis) (:N *Long))
+    (opposite (:D D) (:Opp *Away))
+    (jump_offset (:D Away) (:K Long) (:V *Move))
+    (compose (:A X) (:B Move) (:C *Moved))
+    (relative (:Base Moved) (:X Y) (:X_rel *Between))
+    (margin (:B Between) (:D D) (:K *Gap)))
+  (INIT &steady Singleton
+    (key ((dir_elem (:D ^D)))
+      (member ((:v Gap))
+        (&gaps (:D D) (:Gap *Gap)))))
+  (QUERY &overlapping (&gaps *D *Gap) (< Gap 0))
+  (QUERY &chain
+    (&along.successor (:key *D) (:a *X) (:b *Y))
+    (&along.successor (:key D) (:a Y) (:b *Z)))
+  (QUERY &even
+    (&steady.value (:key *D) (:v *Gap))
+    (&chain D)
+    (NOT (&overlapping D)))
+  (QUERY &q (&even))
+  (gives &q))
+
+(fragment (boxes-every-square (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "Whether a box of a column holds a cell on each axis and every such box has one extent on both axes."
+  (INIT &side Singleton
+    (key ((?R (?b ^))
+          (?F (?f *))
+          (ALL ((box_extent (:B ?b) (:P ?f) (:A *Other) (:N *Each)))
+            ((> Each 0))))
+      (member ((:v Length))
+        (?F (?f *))
+        (box_extent (:B ?b) (:P ?f) (:A *Axis) (:N *Length)))))
+  (QUERY &square (&side.value (:key (?b *))))
+  (QUERY &skew (&side.plural (:key (?b *))))
+  (QUERY &q (&square) (NOT (&skew)))
+  (gives &q))
+
+(fragment (boxes-more-than-one-cell (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "Whether a column has one box and it is longer than one cell on each axis."
+  (INIT &one Singleton
+    (member ((:v ?b))
+      (?R (?b *))))
+  (QUERY &long
+    (&one.value (:v *Box))
+    (?F (?f *))
+    (ALL ((axis_elem (:A *Axis)))
+      ((box_extent (:B ?f) (:P ?f) (:A Axis) (:N *Cell))
+       (box_extent (:B Box) (:P ?f) (:A Axis) (:N *Length))
+       (> Length Cell))))
+  (QUERY &q (&long))
+  (gives &q))
+
+(fragment (boxes-whole-frame (?R relation) (?b column ?R) (?F relation) (?f column ?F))
+  "Whether a column has one box and it has margin 0 on every edge."
+  (INIT &one Singleton
+    (member ((:v ?b))
+      (?R (?b *))))
+  (QUERY &whole
+    (&one.value (:v *Box))
+    (?F (?f *))
+    (ALL ((dir_elem (:D *Edge)))
+      ((margin (:B Box) (:D Edge) (:K 0)))))
+  (QUERY &q (&whole))
+  (gives &q))
+
+(fragment (complement-parts (?R relation) (?p column ?R))
+  "The count of parts, by four steps, of the cells of a column's frame that it does not hold."
+  (INIT &have Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?R (?p *))
+      (frame_extent (:P ?p) *A *N)))
+  (INIT &parts Connectivity
+    (node ((:P Free))
+      (&frame.cell (:P *Free))
+      (NOT (&have.minimal (:t Free)))))
+  (INIT &c Cardinality
+    (member ((:m Id))
+      (&parts.component *Id)))
+  (QUERY &held (?R (?p *)))
+  (QUERY &q (&held) (&c.size *N))
+  (gives &q))
+
+(fragment (every-part-straight (?R relation) (?p column ?R))
+  "Whether each part of a column's cells, by eight steps, lies on one row, column or diagonal."
+  (INIT &parts Connectivity
+    (node ((:P ?p))
+      (?R (?p *)))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (INIT &off Cardinality
+    (key ((&parts.component (:Id ^Part)) (axis4_elem (:A ^Line)))
+      (member ((:m (:X X) (:Y Y)))
+        (&parts.component (:Id Part) (:P *X))
+        (&parts.component (:Id Part) (:P *Y))
+        (NOT (same_line (:A Line) (:P X) (:Q Y))))))
+  (INIT &on Cardinality
+    (key ((&parts.component (:Id ^Part)) (axis4_elem (:A *Line)) (&off.size (:key Part Line) (:N 0)))))
+  (QUERY &q
+    (ALL ((&parts.component (:Id *Part)))
+      ((&on.size (:key Part)))))
+  (gives &q))
+
+(fragment (outlines-box (?R relation) (?p column ?R))
+  "Whether the cells of a column are the cells of the outline of their box."
+  (INIT &box BoundingBox
+    (cell ((:P ?p))
+      (?R (?p *))))
+  (INIT &drawn Outlines
+    (node ((:P ?p))
+      (?R (?p *))))
+  (QUERY &outline
+    (&box.box (:B *Box))
+    (&drawn.box (:B Box))
+    (ALL ((?R (?p *)))
+      ((NOT (interior (:A ?p) (:B Box))))))
+  (QUERY &q (&outline))
+  (gives &q))
+
+(fragment (line-spacings (?R relation) (?p column ?R))
+  "On each axis, how many distinct offsets lie between each line that holds a cell of a column and the next line."
+  (QUERY &lines
+    (?R (?p *))
+    (split (:P ?p) (:A *Axis) (:Along *Line)))
+  (INIT &along Order
+    (key ((dir_elem (:D ^D)))
+      (member ((:t Line))
+        (axis_of (:D D) (:A *Axis))
+        (&lines (:Axis Axis) (:Line *Line)))
+      (before ((:a X) (:b Y))
+        (axis_of (:D D) (:A *Axis))
+        (&lines (:Axis Axis) (:Line *X))
+        (&lines (:Axis Axis) (:Line *Y))
+        (nearer (:D D) (:P X) (:Q Y)))))
+  (QUERY &steps
+    (&along.successor (:key *D) (:a *X) (:b *Y))
+    (relative (:Base X) (:X Y) (:X_rel *Step)))
+  (INIT &spacings Cardinality
+    (key ((axis_of (:D ^D) (:A ^A)) (&lines (:Axis A)))
+      (member ((:m Step))
+        (&steps (:D D) (:Step *Step)))))
+  (QUERY &q (&spacings.size (:key (:A *A)) (:N *N)))
+  (gives &q))
+
+(fragment (directions-on-one-axis (?R relation) (?d column ?R))
+  "Whether the directions of a column lie on one axis."
+  (INIT &axes Singleton
+    (member ((:v Axis))
+      (?R (?d *))
+      (axis4_of (:D ?d) (:A *Axis))))
+  (QUERY &one (&axes.value (:v *Axis)))
+  (QUERY &q (&one))
+  (gives &q))
+
+(fragment (directions-opposite-pair (?R relation) (?d column ?R))
+  "Whether a column has two directions that are opposite."
+  (INIT &have Order
+    (member ((:t ?d))
+      (?R (?d *))))
+  (QUERY &met
+    (&have.minimal (:t *Dir))
+    (dir8_opposite (:D Dir) (:D2 *Opp))
+    (&have.minimal (:t Opp)))
+  (QUERY &q (&met))
+  (gives &q))
+
+(fragment (offsets-one-length (?R relation) (?v column ?R))
+  "Whether every offset of a column has the same length, the greater of its two moves."
+  (INIT &length Order
+    (key ((?R (?v ^)))
+      (member ((:t Margin))
+        (margin (:B ?v) (:D *Edge) (:K *Margin)))
+      (score ((:t Margin) (:S Margin))
+        (margin (:B ?v) (:D *Edge) (:K *Margin)))))
+  (INIT &lengths Singleton
+    (member ((:v Margin))
+      (?R (?v *))
+      (&length.maximal (:key ?v) (:t *Margin))))
+  (QUERY &one (&lengths.value (:v *Margin)))
+  (QUERY &q (&one))
+  (gives &q))
+
+(fragment (values-consecutive (?R relation) (?n column ?R))
+  "Whether each distinct value of a number column is one more than the value before it, with at least two values."
+  (INIT &have Order
+    (member ((:t ?n))
+      (?R (?n *)))
+    (score ((:t ?n) (:S ?n))
+      (?R (?n *))))
+  (QUERY &q
+    (ALL ((&have.successor (:a *Low) (:b *High)))
+      ((dir_elem (:D *Toward))
+       (jump_offset (:D Toward) (:K Low) (:V *Before))
+       (step_offset (:D Toward) (:V *Step))
+       (compose (:A Before) (:B Step) (:C *After))
+       (jump_offset (:D Toward) (:K High) (:V After)))))
+  (gives &q))
+
+(fragment (values-arithmetic (?R relation) (?n column ?R))
+  "Whether three or more distinct values of a number column are each the same step from the value before."
+  (INIT &have Order
+    (member ((:t ?n))
+      (?R (?n *)))
+    (score ((:t ?n) (:S ?n))
+      (?R (?n *))))
+  (QUERY &chain
+    (&have.successor (:a *First) (:b *Second))
+    (&have.successor (:a Second) (:b *Third)))
+  (INIT &gaps Singleton
+    (key ((dir_elem (:D ^Toward)))
+      (member ((:v Gap))
+        (&have.successor (:a *Low) (:b *High))
+        (jump_offset (:D Toward) (:K Low) (:V *Before))
+        (jump_offset (:D Toward) (:K High) (:V *After))
+        (relative (:Base Before) (:X After) (:X_rel *Gap)))))
+  (QUERY &steady (&gaps.value (:key *Toward) (:v *Gap)))
+  (QUERY &q (&chain) (&steady))
+  (gives &q))
+
+(fragment (extents-distinct (?R relation) (?p column ?R))
+  "The count of distinct extents of the frames of a column's cells."
+  (INIT &frames Cardinality
+    (key ((axis_elem (:A ^A)) (?R (?p *)))
+      (member ((:m N1 N2))
+        (?R (?p *))
+        (axis_extents (:P ?p) (:A A) (:N1 *N1) (:N2 *N2)))))
+  (QUERY &q (&frames.size (:N *N)))
+  (gives &q))
+
 (fragment (line-counts (?R relation) (?keys columns ?R) (?p column ?R))
   "Each key's cells on each of its rows and columns."
   (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))

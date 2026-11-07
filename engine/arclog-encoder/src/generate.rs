@@ -1794,7 +1794,7 @@ impl Generated {
                 this.push_forced(Step::Part(Box::new(PartStep::ColumnMeasure { a: at, measure })), LEAF_TABLE, NO_TERM, Vec::new(), 1, format!("({word} T {name})"), RootKind::Holds);
             };
             match column.ty {
-                ValueType::Position | ValueType::Box => {
+                ValueType::Position => {
                     let P = |this: &Self| vec![Column { name: unique("P", &this.terms[LEAF_TABLE as usize].columns), ty: ValueType::Position, source: 0 }];
                     if let Some(term) = self.push_forced(Step::Part(Box::new(PartStep::ComplementParts { p: at })), LEAF_TABLE, NO_TERM, number(), 1, format!("(complement-parts T {name})"), RootKind::Number) {
                         self.refined[term as usize].count_follows = true;
@@ -1856,8 +1856,12 @@ impl Generated {
         self.one_group = one_group;
         let options: Vec<Vec<(Box<[u16]>, String)>> = (0..columns.len()).map(|place| self.keys_of(&columns, &[place])).collect();
         self.one_group = false;
-        let measures = |this: &mut Self, boxes: u32, b: u16, b_name: &str, boxes_text: &str, frame: u32, f: u16, f_name: &str, frame_text: &str| {
+        // Over a table's own Box column in a grid's frame, the least margin and the sides are what `least` and `greatest` give over `box-margin` and `box-extent`, at size 2.
+        let measures = |this: &mut Self, boxes: u32, b: u16, b_name: &str, boxes_text: &str, frame: u32, f: u16, f_name: &str, frame_text: &str, in_grid: bool| {
             for measure in BoxMeasureKind::ALL {
+                if in_grid && matches!(measure, BoxMeasureKind::LeastMargin | BoxMeasureKind::ShorterSideMin | BoxMeasureKind::LongerSideMax) {
+                    continue;
+                }
                 let text = format!("({} {boxes_text} {b_name} {frame_text} {f_name})", measure.fragment());
                 let step = Step::Part(Box::new(PartStep::BoxMeasure { b, f, measure }));
                 if measure.is_number() {
@@ -1877,7 +1881,7 @@ impl Generated {
             }
             let (p, name) = (place as u16, column.name.clone());
             let frame_text = format!("(frame-cells T {name})");
-            for (keys, key_text) in &options[place] {
+            for (keys, key_text) in options[place].iter().filter(|_| column.ty == ValueType::Position) {
                 let grouped = key_text.starts_with("(T*");
                 let one_column = grouped && !key_text.contains(',');
                 if !(keys.is_empty() || grouped) || (one_group && !one_column) {
@@ -1889,9 +1893,10 @@ impl Generated {
                 let mut own: Vec<Column> = keys.iter().map(|key| columns[usize::from(*key)].clone()).collect();
                 own.push(Column { name: box_name.clone(), ty: ValueType::Box, source: 0 });
                 let Some(boxes) = found.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::BoxOf { keys: keys.clone(), p })), LEAF_TABLE, NO_TERM, own, 1, boxes_text.clone(), RootKind::Rows)) else { continue };
-                let one = measures(self, boxes, keys.len() as u16, &box_name, &boxes_text, LEAF_TABLE, p, &name, "T");
+                let one = measures(self, boxes, keys.len() as u16, &box_name, &boxes_text, LEAF_TABLE, p, &name, "T", false);
                 let frame = self.terms.iter().rposition(|term| term.text == frame_text).map(|held| held as u32);
-                let frame = frame.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::FrameCells { p })), LEAF_TABLE, NO_TERM, cell(), 1, frame_text.clone(), RootKind::Rows));
+                let frame_columns = vec![Column { name: unique("P", &columns), ty: ValueType::Position, source: 0 }];
+                let frame = frame.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::FrameCells { p })), LEAF_TABLE, NO_TERM, frame_columns, 1, frame_text.clone(), RootKind::Rows));
                 if let (Some(one), Some(frame)) = (one, frame) {
                     let one_text = format!("(one-box-cells {boxes_text} {box_name} T {name})");
                     self.push_forced(Step::Part(Box::new(PartStep::Same)), one, frame, Vec::new(), 3, format!("{one_text} {frame_text}"), RootKind::Against);
@@ -1899,7 +1904,7 @@ impl Generated {
             }
             if column.ty == ValueType::Box && !one_group {
                 for (grid, label) in [(LEAF_INPUT, "input"), (LEAF_OUTPUT, "output")] {
-                    let one = measures(self, LEAF_TABLE, p, &name, "T", grid, 0, "P", label);
+                    let one = measures(self, LEAF_TABLE, p, &name, "T", grid, 0, "P", label, true);
                     if let Some(one) = one {
                         let one_text = format!("(one-box-cells T {name} {label} P)");
                         self.push_forced(Step::Part(Box::new(PartStep::Same)), one, grid, Vec::new(), 3, format!("{one_text} {label}"), RootKind::Against);
@@ -1995,36 +2000,46 @@ impl Generated {
                 }
             }
             if matches!(column.ty, ValueType::Position | ValueType::Box) {
+                // A Box column has the parts that read its values as boxes. The others read each value as one cell of a frame.
+                let cells = column.ty == ValueType::Position;
                 for (keys, key_text) in self.keys_of(&columns, &[place]) {
                     let heads = key_columns(&keys);
                     let extended = |extra: Vec<Column>| -> Vec<Column> { heads.iter().cloned().chain(extra).collect() };
                     add(PartStep::Pieces { keys: keys.clone(), p, four: false }, NO_TERM, extended(vec![column.clone(), fresh("Id", ValueType::OPEN_IDENT, id_source)]), format!("(pieces {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::Pieces { keys: keys.clone(), p, four: true }, NO_TERM, extended(vec![column.clone(), fresh("Id", ValueType::OPEN_IDENT, id_source)]), format!("(pieces4 {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::FullLines { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("Along", ValueType::Box, 0)]), format!("(full-lines {text} {key_text} {name})"), RootKind::Rows);
+                    if cells {
+                        add(PartStep::FullLines { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("Along", ValueType::Box, 0)]), format!("(full-lines {text} {key_text} {name})"), RootKind::Rows);
+                    }
                     add(PartStep::BoxOf { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("B", ValueType::Box, 0)]), format!("(box-of {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::RelBox { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("X_rel", ValueType::Box, 0)]), format!("(cells-in-box {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::ShapeClass { keys: keys.clone(), p, turned: false }, NO_TERM, extended(vec![fresh("Id", ValueType::OPEN_IDENT, 900)]), format!("(shape-class {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::ShapeClass { keys: keys.clone(), p, turned: true }, NO_TERM, extended(vec![fresh("Id", ValueType::OPEN_IDENT, 901)]), format!("(shape-class-d4 {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::Holes { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(holes {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::Symmetry { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(symmetry {text} {key_text} {name})"), RootKind::Rows);
+                    if cells {
+                        add(PartStep::ShapeClass { keys: keys.clone(), p, turned: false }, NO_TERM, extended(vec![fresh("Id", ValueType::OPEN_IDENT, 900)]), format!("(shape-class {text} {key_text} {name})"), RootKind::Rows);
+                        add(PartStep::ShapeClass { keys: keys.clone(), p, turned: true }, NO_TERM, extended(vec![fresh("Id", ValueType::OPEN_IDENT, 901)]), format!("(shape-class-d4 {text} {key_text} {name})"), RootKind::Rows);
+                        add(PartStep::Holes { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(holes {text} {key_text} {name})"), RootKind::Rows);
+                        add(PartStep::Symmetry { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(symmetry {text} {key_text} {name})"), RootKind::Rows);
+                    }
                     if !keys.is_empty() {
                         for (output, grid_name) in [(true, "output"), (false, "input")] {
                             add(PartStep::DiffGroupsOff { keys: keys.clone(), p, output }, LEAF_GRIDS, heads.clone(), format!("(groups-off-{grid_name}-diff {text} {key_text} {name})"), RootKind::Rows);
                         }
                     }
                     add(PartStep::TouchesEdge { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(touches-edge {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::FillsBox { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(fills-box {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::Straight { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(straight {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::CellCount { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(cell-count {text} {key_text} {name})"), RootKind::Rows);
-                    if self.one_group {
+                    if cells {
+                        add(PartStep::FillsBox { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(fills-box {text} {key_text} {name})"), RootKind::Rows);
+                        add(PartStep::Straight { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(straight {text} {key_text} {name})"), RootKind::Rows);
+                        add(PartStep::CellCount { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(cell-count {text} {key_text} {name})"), RootKind::Rows);
+                    }
+                    if self.one_group && cells {
                         add(PartStep::StraightAxis { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0)]), format!("(straight-axis {text} {key_text} {name})"), RootKind::Rows);
                     }
-                    add(PartStep::GroupGap { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(group-gap {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::BoxSides { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("N", ValueType::Int, 0)]), format!("(box-sides {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::BoxMargins { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("D", ValueType::Dir, 0), fresh("K", ValueType::Int, 0)]), format!("(box-margins {text} {key_text} {name})"), RootKind::Rows);
-                    add(PartStep::LineCounts { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("Along", ValueType::Box, 0), fresh("N", ValueType::Nat, 0)]), format!("(line-counts {text} {key_text} {name})"), RootKind::Rows);
+                    if cells {
+                        add(PartStep::GroupGap { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(group-gap {text} {key_text} {name})"), RootKind::Rows);
+                        add(PartStep::BoxSides { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("N", ValueType::Int, 0)]), format!("(box-sides {text} {key_text} {name})"), RootKind::Rows);
+                        add(PartStep::BoxMargins { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("D", ValueType::Dir, 0), fresh("K", ValueType::Int, 0)]), format!("(box-margins {text} {key_text} {name})"), RootKind::Rows);
+                        add(PartStep::LineCounts { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("Along", ValueType::Box, 0), fresh("N", ValueType::Nat, 0)]), format!("(line-counts {text} {key_text} {name})"), RootKind::Rows);
+                    }
                     for (v, value) in columns.iter().enumerate() {
-                        if value.ty == ValueType::Color && v != place && !keys.contains(&(v as u16)) {
+                        if cells && value.ty == ValueType::Color && v != place && !keys.contains(&(v as u16)) {
                             for (turned, label) in [(false, "occurs"), (true, "occurs-d4")] {
                                 for (grid, grid_label) in [(LEAF_OUTPUT, "output"), (LEAF_INPUT, "input")] {
                                     add(PartStep::Occurs { keys: keys.clone(), p, v: v as u16, turned }, grid, extended(vec![fresh("V", ValueType::Box, 0)]), format!("({label} {text} {key_text} {name} {} {grid_label})", value.name), RootKind::Rows);
