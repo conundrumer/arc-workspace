@@ -148,6 +148,7 @@ class ClauseWriter:
         self.clause_vars: set[str] = set()   # the labels of the lists written so far
         self.fields: dict[str, dict[str, str]] = {}   # a variable spread into fields: field name -> the field's variable
         self.stuck = False   # a top-level body whose algebra atoms no order makes safe
+        self.heads: frozenset[str] | None = None   # the labels of the clause's head columns, where the writer knows them
 
     def label(self, v: str) -> str:
         return self.rename.get(v, v)
@@ -277,11 +278,22 @@ class ClauseWriter:
                         isinstance(t, Variable) and self.label(t.name) == site.field for site, t in kept):
                     continue
                 inner = []
+                at_field: dict[str, str] = {}   # a field of the key -> the label of its site
                 for site, t in kept:
                     if isinstance(t, Wildcard):
                         continue
+                    if site.field in at_field and re.fullmatch(r"[A-Z]\w*", at_field[site.field]) \
+                            and isinstance(t, Variable) and bound is not None and self.label(t.name) not in bound \
+                            and (t.name not in self.rename if self.heads is None else self.label(t.name) not in self.heads):
+                        # a field takes one site (`docs/arclog/arclog.md#sites`): a second leaf at the field holds
+                        # the field's value, so its variable, written nowhere yet and no column of the clause's head,
+                        # takes the label of the field's site
+                        self.rename[t.name] = at_field[site.field]
                     s = self.one(t, bound)
                     lab = s.lstrip("*^")
+                    if at_field.get(site.field) == lab:
+                        continue
+                    at_field.setdefault(site.field, lab)
                     inner.append(s if lab == site.field else f"(:{site.field} {s})")
                 if inner:
                     out.append("(:key " + " ".join(inner) + ")")

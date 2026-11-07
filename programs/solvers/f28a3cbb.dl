@@ -272,8 +272,8 @@ heading(Q, U, L, Col, Id, H) :-
 
 // --- $Merge ---
 // @claim stray-in-band-attaches
-.init fall_alone = Gravity<Mover, Ident>
-fall_alone.cell([L, [Q, U, Id]], Id, P) :-
+.init fall_alone = Gravity<Mover, Unit>
+fall_alone.cell([L, [Q, U, Id]], $U(), P) :-
     placed(Q, U, L, Col, Id, P), heading(Q, U, L, Col, Id, _).
 fall_alone.dir([L, [Q, U, Id]], H) :- heading(Q, U, L, _, Id, H).
 fall_alone.blocked([L, [Q, U, Id]], P) :- heading(Q, U, L, _, Id, _), square_cell(Q, P, _).
@@ -291,7 +291,7 @@ fall_stack.blocked([Q, U, L, Col, H], P) :- heading(Q, U, L, Col, _, H), square_
 
 // --- $Merge ---
 landed($Merge(), Q, U, L, Col, P2) :-
-    fall_alone.travel([L, [Q, U, Id]], Id, V), placed(Q, U, L, Col, Id, P), compose(P, V, P2).
+    fall_alone.travel([L, [Q, U, Id]], $U(), V), placed(Q, U, L, Col, Id, P), compose(P, V, P2).
 
 // --- $Pile ---
 landed($Pile(), Q, U, L, Col, P2) :-

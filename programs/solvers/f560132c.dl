@@ -19,9 +19,8 @@
 //  key's color at the same corner of the key as the corner of the square the
 //  piece covers.
 
-// A piece, a turn of it, and a placement of the turned piece in the square
-// of side n.
-.type Cand = [id: Ident, d: D4, n: number, b: Position]
+// A piece, a turn of it, and a placement of the turned piece in the square.
+.type Cand = [id: Ident, d: D4, b: Position]
 // A tiling: the key piece's placement and those of the other three.
 .type TiebreakResolution = [key: Cand, c2: Cand, c3: Cand, c4: Cand]
 
@@ -90,21 +89,22 @@ square_area.item(N, P) :- square.cell(N, P).
 // --- the candidate placements ---
 
 // A placement of a turned piece that lands one of its cells on a corner of
-// the square: each piece covers a corner.
+// the square: each piece covers a corner. The square's area is the pieces',
+// so the input has one square.
 .decl corner_place(c: Cand)
-corner_place([Id, D, N, B]) :-
+corner_place([Id, D, B]) :-
     area.tally($U(), K), square_area.tally(N, K),      // the square of the pieces' area
     square.cell(N, Q), corner_dist(Q, _, 0),           // a corner of it
     foot(Id, D, S), relative(S, Q, B).                  // a piece cell on it
 
 // Some cell of the placed piece falls off the square.
 .decl off_square(c: Cand)
-off_square([Id, D, N, B]) :-
-    corner_place([Id, D, N, B]), foot(Id, D, S), compose(B, S, P), !inside(P, ZERO).
+off_square([Id, D, B]) :-
+    corner_place([Id, D, B]), foot(Id, D, S), compose(B, S, P), !inside(P, ZERO).
 
 .decl covers(c: Cand, p: Position)
-covers([Id, D, N, B], P) :-
-    corner_place([Id, D, N, B]), !off_square([Id, D, N, B]), foot(Id, D, S), compose(B, S, P).
+covers([Id, D, B], P) :-
+    corner_place([Id, D, B]), !off_square([Id, D, B]), foot(Id, D, S), compose(B, S, P).
 
 // The candidate covers the square's corner d.
 .decl corner_cand(c: Cand, d: DiagDir)
@@ -117,12 +117,12 @@ overlap(C, C2) :- covers(C, P), covers(C2, P), C != C2.
 // pairwise disjoint: with the pieces' area the square's, they tile it.
 .decl tiling(t: TiebreakResolution)
 tiling([C1, C2, C3, C4]) :-
-    C1 = [Id1, D1, N, _], key_cell(P), piece.label($U(), P, Id1),   // the key piece
+    C1 = [Id1, D1, _], key_cell(P), piece.label($U(), P, Id1),   // the key piece
     params.unturned(D1), corner_cand(C1, _),
-    C2 = [Id2, _, N, _], corner_cand(C2, _), Id2 != Id1, !overlap(C1, C2),
-    C3 = [Id3, _, N, _], corner_cand(C3, _), Id3 != Id1, Id3 != Id2,
+    C2 = [Id2, _, _], corner_cand(C2, _), Id2 != Id1, !overlap(C1, C2),
+    C3 = [Id3, _, _], corner_cand(C3, _), Id3 != Id1, Id3 != Id2,
     !overlap(C1, C3), !overlap(C2, C3),
-    C4 = [Id4, _, N, _], corner_cand(C4, _), Id4 != Id1, Id4 != Id2, Id4 != Id3,
+    C4 = [Id4, _, _], corner_cand(C4, _), Id4 != Id1, Id4 != Id2, Id4 != Id3,
     !overlap(C1, C4), !overlap(C2, C4), !overlap(C3, C4).
 
 // --- the output ---

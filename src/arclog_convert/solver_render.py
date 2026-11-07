@@ -629,16 +629,26 @@ class RenderMixin:
         """A concept relation whose head repeats a column that an alt's
         clause varies leaves the repeat out: the concept's readers read the
         column it repeats, and each alt that rederives the relation rederives
-        them with its own columns, in the alt's own block."""
+        them with its own columns, in the alt's own block. An alt each of whose
+        clauses of the relation repeats the same columns leaves them out too,
+        and its cases read the concept's readers."""
         for f in list(main):
             if not f.head_repeat or f.side != "RULE" or sum(g.name == f.name for g in main) != 1:
                 continue
             alts = [g for g in branch_forms if g.name == f.name]
             if not alts:
                 continue
-            each = {frozenset(g.branches) - concept for g in alts}
-            bs = set().union(*each)
             drop = dict(f.head_repeat)   # the dropped column -> the column it repeats
+            by_alt: dict[frozenset[str], list[Form]] = defaultdict(list)
+            for g in alts:
+                by_alt[frozenset(g.branches) - concept].append(g)
+            same = {b for b, gs in by_alt.items()
+                    if all(g.side == "RULE" and set(drop.items()) <= set(g.head_repeat) for g in gs)}
+            for i, g in enumerate(branch_forms):
+                if g.name == f.name and frozenset(g.branches) - concept in same:
+                    branch_forms[i] = without_repeats(g, drop)
+            each = set(by_alt) - same
+            bs = set().union(*each)
             new = without_repeats(f, drop)
             main[main.index(f)] = new
             for g in list(main):

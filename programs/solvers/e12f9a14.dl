@@ -47,12 +47,12 @@
 // A ray of a case, by its gap cell.
 .type RayKey = [ch: Choice, g: Position]
 
-// A straight path of a ray: the cell it starts at and its direction.
-.type PathKey = [ch: Choice, g: Position, s: Position, d: Dir8]
+// The straight path of a ray from its gap: the ray and its direction.
+.type PathKey = [ch: Choice, g: Position, d: Dir8]
 
-// A stop of a ray's walk on one of its straight paths: the cell before a crossing, or the path's
-// last cell.
-.type Stop = [s: Position, d: Dir8, at: Position]
+// A stop of a ray's walk on its straight path: the cell before a crossing, or the path's last
+// cell.
+.type Stop = [d: Dir8, at: Position]
 
 // A core of an example's input.
 .type CoreKey = [e: Example, id: Ident]
@@ -144,31 +144,24 @@ steps_cross(A1, D1, A2, D2) :-
       neighbor(X, C_opp, B2), neighbor(A2, D2, B2)
     ).
 
-// The straight path each ray runs along, where it can meet a ray: the path from its gap, k cells
-// from the start s.
-// @ignore: head-repeat — the path from the gap starts at the gap
-.decl seg_path(ch: Choice, g: Position, s: Position, d: Dir8, p: Position, k: number)
-seg_path(Ch, G, G, D, P, K) :- path(Ch, G, D, P, K).
+// A step of the straight path of a ray: from a, its k-th cell, to the next cell along d.
+.decl seg_step(ch: Choice, g: Position, d: Dir8, a: Position, k: number)
+seg_step(Ch, G, D, A, K) :-
+    path(Ch, G, D, A, K), neighbor(A, D, B), path(Ch, G, D, B, _).
 
-// A step of one of those paths: from a, its k-th cell, to the next cell along d.
-.decl seg_step(ch: Choice, g: Position, s: Position, d: Dir8, a: Position, k: number)
-seg_step(Ch, G, S, D, A, K) :-
-    seg_path(Ch, G, S, D, A, K), neighbor(A, D, B), seg_path(Ch, G, S, D, B, _).
-
-// Path (s1, d1) of ray g1 would cross path (s2, d2) of ray g2 just past a1, its k1-th cell.
-.decl cross(ch: Choice, g1: Position, s1: Position, d1: Dir8, a1: Position, k1: number,
-            g2: Position, s2: Position, d2: Dir8)
-cross(Ch, G1, S1, D1, A1, K1, G2, S2, D2) :-
-    seg_step(Ch, G1, S1, D1, A1, K1), steps_cross(A1, D1, A2, D2), seg_step(Ch, G2, S2, D2, A2, _),
+// The path d1 of ray g1 would cross the path d2 of ray g2 just past a1, its k1-th cell.
+.decl cross(ch: Choice, g1: Position, d1: Dir8, a1: Position, k1: number, g2: Position, d2: Dir8)
+cross(Ch, G1, D1, A1, K1, G2, D2) :-
+    seg_step(Ch, G1, D1, A1, K1), steps_cross(A1, D1, A2, D2), seg_step(Ch, G2, D2, A2, _),
     G1 != G2.
 
 // The stops of each path, in order along it: its crossings and its last cell.
 // @claim meeting
 .init along = Order<PathKey, Position>
-along.elem([Ch, G, S, D], A) :- along.score([Ch, G, S, D], A, _).
-along.score([Ch, G, S, D], A, K) :-
-    ( cross(Ch, G, S, D, A, K, _, _, _)
-    ; seg_path(Ch, G, S, D, A, K), !seg_step(Ch, G, S, D, A, K)   // the last cell
+along.elem([Ch, G, D], A) :- along.score([Ch, G, D], A, _).
+along.score([Ch, G, D], A, K) :-
+    ( cross(Ch, G, D, A, K, _, _)
+    ; path(Ch, G, D, A, K), !seg_step(Ch, G, D, A, K)   // the last cell
     ).
 
 // Each ray walks the stops of its path from the gap in order. At a crossing it meets the other ray
@@ -176,28 +169,28 @@ along.score([Ch, G, S, D], A, K) :-
 // met a ray before it on its path.
 // @claim meeting
 .init walk = Take<RayKey, Stop, Stop>
-walk.start([[B, S], G], [G, D, A]), walk.init_taken([[B, S], G], [G, D, A]) :-
-    gap(S, G, D, _), along.first([[B, S], G, G, D], A).
-walk.take([Ch, G1], [S1, D1, A1], [S1, D1, A1]) :-
-    cross(Ch, G1, S1, D1, A1, _, G2, S2, D2), cross(Ch, G2, S2, D2, A2, _, G1, S1, D1),
-    walk.taken([Ch, G1], [S1, D1, A1], _), walk.taken([Ch, G2], [S2, D2, A2], _).
-walk.skip([Ch, G1], [S1, D1, A1], [S1, D1, A]) :-
-    along.next([Ch, G1, S1, D1], A1, A), walk.taken([Ch, G1], [S1, D1, A1], _),
-    cross(Ch, G1, S1, D1, A1, _, G2, S2, D2), cross(Ch, G2, S2, D2, A2, K2, G1, S1, D1),
-    walk.take([Ch, G2], [S2, D2, A3], _),                           // it met before the crossing
-    cross(Ch, G2, S2, D2, A3, K3, _, _, _), K3 < K2.
+walk.start([[B, S], G], [D, A]), walk.init_taken([[B, S], G], [D, A]) :-
+    gap(S, G, D, _), along.first([[B, S], G, D], A).
+walk.take([Ch, G1], [D1, A1], [D1, A1]) :-
+    cross(Ch, G1, D1, A1, _, G2, D2), cross(Ch, G2, D2, A2, _, G1, D1),
+    walk.taken([Ch, G1], [D1, A1], _), walk.taken([Ch, G2], [D2, A2], _).
+walk.skip([Ch, G1], [D1, A1], [D1, A]) :-
+    along.next([Ch, G1, D1], A1, A), walk.taken([Ch, G1], [D1, A1], _),
+    cross(Ch, G1, D1, A1, _, G2, D2), cross(Ch, G2, D2, A2, K2, G1, D1),
+    walk.take([Ch, G2], [D2, A3], _),                           // it met before the crossing
+    cross(Ch, G2, D2, A3, K3, _, _), K3 < K2.
 
 // A walk that stops at a crossing it neither meets at nor walks past: the rays' crossings depend on
 // one another in a cycle, and the rule decides none of them.
 .decl stuck(ch: Choice)
 stuck(Ch) :-
-    walk.taken([Ch, G], [S, D, A], _), cross(Ch, G, S, D, A, _, _, _, _),
-    !walk.take([Ch, G], [S, D, A], _), !walk.skip([Ch, G], [S, D, A], _).
+    walk.taken([Ch, G], [D, A], _), cross(Ch, G, D, A, _, _, _),
+    !walk.take([Ch, G], [D, A], _), !walk.skip([Ch, G], [D, A], _).
 
-// Ray g meets a ray on path (s, d) and stops at a1, its k1-th cell; the other ray's direction is d2.
-.decl meeting(ch: Choice, g: Position, s: Position, d: Dir8, a1: Position, k1: number, d2: Dir8)
-meeting(Ch, G, S, D, A1, K1, D2) :-
-    walk.take([Ch, G], [S, D, A1], _), cross(Ch, G, S, D, A1, K1, _, _, D2).
+// Ray g meets a ray on its path d and stops at a1, its k1-th cell; the other ray's direction is d2.
+.decl meeting(ch: Choice, g: Position, d: Dir8, a1: Position, k1: number, d2: Dir8)
+meeting(Ch, G, D, A1, K1, D2) :-
+    walk.take([Ch, G], [D, A1], _), cross(Ch, G, D, A1, K1, _, D2).
 
 // The sum of two directions, where it is one of the eight.
 .decl dir_sum(d1: Dir8, d2: Dir8, e: Dir8)
@@ -208,12 +201,12 @@ dir_sum(D1, D2, C2) :-                                              // a cardina
     ( D1 = C, D2 = G ; D1 = G, D2 = C ).
 
 .decl bend_dir(ch: Choice, g: Position, s1: Position, e: Dir8)
-bend_dir(Ch, G, A1, E) :- meeting(Ch, G, _, D1, A1, _, D2), dir_sum(D1, D2, E).
+bend_dir(Ch, G, A1, E) :- meeting(Ch, G, D1, A1, _, D2), dir_sum(D1, D2, E).
 
 // The sum of a cardinal c and a diagonal gd that shares it: c and gd in turn.
 .decl bend_slope(ch: Choice, g: Position, s1: Position, c: Dir, gd: DiagDir)
 bend_slope(Ch, G, A1, C, Gd) :-
-    meeting(Ch, G, _, D1, A1, _, D2), dir_of(Gd, _, C),
+    meeting(Ch, G, D1, A1, _, D2), dir_of(Gd, _, C),
     ( D1 = C, D2 = Gd ; D1 = Gd, D2 = C ).
 
 // @claim meeting
@@ -225,10 +218,10 @@ bent.mark(Gd, A1) :- bend_slope(_, _, A1, _, Gd).
 
 // The cells each ray paints, in its core's color.
 .decl paint(ch: Choice, p: Position, col: Color)
-paint([B, S], P, Col) :-                                            // each path it walks, up to where it meets
-    walk.taken([[B, S], G], [S1, D, _], _), seg_path([B, S], G, S1, D, P, K), gap(S, G, _, Col),
-    ( !meeting([B, S], G, S1, D, _, _, _)
-    ; meeting([B, S], G, S1, D, _, K1, _), K <= K1
+paint([B, S], P, Col) :-                                            // the path it walks, up to where it meets
+    walk.taken([[B, S], G], [D, _], _), path([B, S], G, D, P, K), gap(S, G, _, Col),
+    ( !meeting([B, S], G, D, _, _, _)
+    ; meeting([B, S], G, D, _, K1, _), K <= K1
     ).
 paint([B, S], P, Col) :-                                            // a bend that meets no ray
     bend_dir([B, S], G, A1, E), gap(S, G, _, Col),

@@ -226,6 +226,7 @@ class InstancesMixin:
                         rename[k] = rename[v]
         w = ClauseWriter(c, scope, sub, rename)
         w.drop_neg = frozenset(drop_neg)
+        w.heads = frozenset(n for n, _ in head_cols)
         bound: set[str] = set()
         try:
             lines = w.lits(body, bound)
@@ -764,19 +765,23 @@ class InstancesMixin:
                 (own_read and len(u.body) == 1) or not residual.get(id(u), list(u.body)))
 
         def unfilled(lr) -> list[str] | None:
-            """A clause of the input that no solver clause writes, which derives no row,
-            where the engine would fill the input from the key: the registry marks the
-            input `from-key`, it has a kept leaf beside the key, and for each such leaf
-            the key has exactly one label of its type. The clause's head sites are
-            those labels, and its body is false at each of them. None elsewhere. The
-            Souffle input holds no row, and the fill would add one per key."""
+            """A TODO for an input that no solver clause writes, where the engine
+            would fill the input from the key: the registry marks the input
+            `from-key`, it has a kept leaf beside the key, and for each such leaf
+            the key has exactly one label of its type. None elsewhere. The Souffle
+            input holds no row, and the fill would add one per key. No clause keeps
+            the input empty, since a body that holds nowhere is a self comparison,
+            which the grammar refuses. A solver keeps such an input empty by a key
+            or a body type that the fill does not take, as a `Unit` body does where
+            each key holds one body."""
             hts = [(col, [l for l in leaves if l.kind in ("keep", "example")]) for col, leaves in column_leaves(lr)]
             hts = [(col, kept) for col, kept in hts if kept]
             labs = [[key_label(l) for l in kept] for _, kept in hts]
             if not (hts and from_key(lr) and all(lab for ls in labs for lab in ls)):
                 return None
-            sites_ = [site_text(col, ls, kept) for (col, kept), ls in zip(hts, labs)]
-            return [f"  ({lr.name} ({' '.join(sites_)})", f"    (!= {labs[0][0]} {labs[0][0]}))"]
+            detail = f"{lr.name}: the key fills the input, whose Souffle relation holds no row"
+            self.todo.add("unfilled-input", detail)
+            return [f"  ;; TODO unfilled-input: {detail}"]
 
         def without_grounding(u, lr, ren) -> list:
             """The clause's body, less each positive atom that shares no variable

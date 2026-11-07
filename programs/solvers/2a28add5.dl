@@ -27,15 +27,13 @@ ink_at(Across, P) :-
     in(P, Col), !params.bg(Col),
     params.axis(A), split(P, A, _, Across).
 
-// Each side of a line, keyed by the heading toward its marker.
-.type Side = [p_across: Position, d: Dir]
-
 // Each ink cell travels toward its line's marker and stops against the marker
-// or against the ink already packed ahead of it.
-.init pack = Gravity<Side, Position>
-pack.dir([Across, D], D) :- marker_at(Across, _), params.axis(A), axis_of(D, A).
-pack.cell([Across, D], P, P) :- ink_at(Across, P), marker_at(Across, M), nearer(D, M, P).
-pack.blocked([Across, D], M) :- marker_at(Across, M), params.axis(A), axis_of(D, A).
+// or against the ink already packed ahead of it. A cell meets no cell of
+// another line, so the cells of every line that head one way fall together.
+.init pack = Gravity<Dir, Position>
+pack.dir(D, D) :- params.axis(A), axis_of(D, A).
+pack.cell(D, P, P) :- ink_at(Across, P), marker_at(Across, M), nearer(D, M, P).
+pack.blocked(D, M) :- marker_at(_, M), params.axis(A), axis_of(D, A).
 
 // The marker stays put; the ink packs against it.
 .decl packed(p: Position)

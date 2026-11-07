@@ -141,10 +141,14 @@ out(P, Col, $Cover()) :-
     .init color_id = IdentOf<Color>
     color_id.value(Col) :- shown_step(Col, _, _).
 
-    // One copy of the chart per piece color and open corner the pairs show.
-    // @ignore: head-repeat — the key columns tell the copies apart, and the chart's own columns hold the same values
-    .decl piece_step(col: Color, corner: DiagDir, id: Ident, src: Color, open: DiagDir, dir: DiagDir)
-    piece_step(Col, Diag, Id, Col, Diag, D) :- shown_step(Col, Diag, D), color_id.id(Col, Id).
+    // One copy of the chart per piece the pairs show, which the piece's
+    // example and its component id tell apart.
+    .decl piece_step(e: Example, o: Ident, id: Ident, src: Color, open: DiagDir, dir: DiagDir)
+    piece_step(E, O, Id, Col, Diag, D) :-
+        parse.open_diag([E, Col, O], Diag),        // a piece's open corner
+        copy.occurrence([E, Col, O], V),           // where its copy lies
+        diag_dir_elem(D), step_offset(D, V),       // one diagonal step away
+        color_id.id(Col, Id).
 
     // The piece's copy, under the determined step.
     .decl copy_cell(o: ExObj, p: Position)

@@ -50,9 +50,6 @@
 // Where two shapes show, each is one output.
 .type TiebreakResolution = [shown: Color]
 
-// A block of k along axis a and k2 across.
-.type Scale = [a: Axis, k: number, k2: number]
-
 .decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
 
 .comp Params {
@@ -83,8 +80,9 @@ impl_choice([S, C]) :-
 
     .decl cell(k: Key, p: Position, col: Color)
 
-    // The scales to try on each candidate copy.
-    .decl try(k: Key, l: Color, sc: Scale)
+    // The scales to try on each candidate copy: the side of the square block
+    // each cell becomes.
+    .decl try(k: Key, l: Color, sc: number)
 
     // @claim background
     .init bg_mode = Mode<Key, Color, Position>
@@ -118,43 +116,42 @@ impl_choice([S, C]) :-
     enlarging(K, L, A, N) :-
         span(K, L, A, N), block_line.cell(N, A, P), axis_of(D, A), dist(P, D, N2), N2 > 0.
 
-    .init block = Frame2D<Scale>
-    block.extent(Sc, A, N) :- try(_, _, Sc), Sc = [A, N, _].
-    block.extent(Sc, A2, N2) :- try(_, _, Sc), Sc = [A, _, N2], perp(A, A2).
+    .init block = Frame2D<number>
+    block.extent(Sc, A, Sc) :- try(_, _, Sc), axis_elem(A).
 
     // Small shape s against copy l at scale sc.
-    .decl pairing(k: Key, sc: Scale, s: Color, l: Color)
+    .decl pairing(k: Key, sc: number, s: Color, l: Color)
     pairing(K, Sc, S, L) :- try(K, L, Sc), shape_cell(K, S, _), S != L.
 
     // The enlarged form: each cell of the shape's box becomes a block.
-    .decl enlarged(k: Key, sc: Scale, s: Color, p_inner: Position)
+    .decl enlarged(k: Key, sc: number, s: Color, p_inner: Position)
     enlarged(K, Sc, S, P_inner) :-
         shape_form(K, S, P_tile), block.cell(Sc, P_intile),
         concat_2d(P_tile, P_intile, 0, P_inner).
 
     // The box the enlarged form's frame takes in the grid when its cell
     // P_inner lands on the copy's cell P.
-    .decl placement(k: Key, sc: Scale, s: Color, l: Color, b: Box)
+    .decl placement(k: Key, sc: number, s: Color, l: Color, b: Box)
     placement(K, Sc, S, L, B) :-
         pairing(K, Sc, S, L), enlarged(K, Sc, S, P_inner), shape_cell(K, L, P),
         relative(P_inner, P, B).
 
     // A cell of the copy that the placed form leaves uncovered.
-    .decl uncovered(k: Key, sc: Scale, s: Color, l: Color, b: Box)
+    .decl uncovered(k: Key, sc: number, s: Color, l: Color, b: Box)
     uncovered(K, Sc, S, L, B) :-
         placement(K, Sc, S, L, B), shape_cell(K, L, P), relative(B, P, P_inner),
         !enlarged(K, Sc, S, P_inner).
 
     // A cell of the placed form inside the grid that is not the copy's,
     // checked only where the form covers the copy.
-    .decl stray(k: Key, sc: Scale, s: Color, l: Color, b: Box)
+    .decl stray(k: Key, sc: number, s: Color, l: Color, b: Box)
     stray(K, Sc, S, L, B) :-
         placement(K, Sc, S, L, B), !uncovered(K, Sc, S, L, B),
         cell(K, P, _), !shape_cell(K, L, P), relative(B, P, P_inner),
         enlarged(K, Sc, S, P_inner).
 
     // The copy's cells are the part of s's enlarged form inside the grid.
-    .decl shows(k: Key, sc: Scale, s: Color, l: Color)
+    .decl shows(k: Key, sc: number, s: Color, l: Color)
     shows(K, Sc, S, L) :-
         placement(K, Sc, S, L, B), !uncovered(K, Sc, S, L, B), !stray(K, Sc, S, L, B).
 }
@@ -170,7 +167,7 @@ shape_cell(S, P) :- parse.shape_cell($U(), S, P).
 // on each.
 .decl copy(ch: Choice, l: Color)
 // @ignore: case section — the match is keyed by scale and shared; each case reads it only at its own scales
-.decl factor(ch: Choice, l: Color, sc: Scale)
+.decl factor(ch: Choice, l: Color, sc: number)
 
 out(P_inner, Col, Ch, [S]) :-
     factor(Ch, L, Sc), parse.shows($U(), Sc, S, L),                // the shown shape
@@ -200,23 +197,22 @@ copy([F, $LargeByEdge()], L) :-
     impl_choice([F, $LargeByEdge()]), shape_cell(L, P), dir_elem(D), dist(P, D, 0).
 
 // --- $Stored ---
-factor([$Stored(), C], L, [A, K, K]) :-
-    copy([$Stored(), C], L), params.scale(K), axis_elem(A).
+factor([$Stored(), C], L, K) :- copy([$Stored(), C], L), params.scale(K).
 
 // --- $ScaleDerived ---
-factor([$ScaleDerived(), C], L, [A, K, K]) :-
+factor([$ScaleDerived(), C], L, K) :-
     copy([$ScaleDerived(), C], L),
     parse.enlarging($U(), L, A, K), perp(A, A2), parse.enlarging($U(), L, A2, K).
 
 .comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
-    parse.try(E, L, [A, K, K]) :-
+    parse.try(E, L, K) :-
         parse.enlarging(E, L, A, K), perp(A, A2), parse.enlarging(E, L, A2, K).
 
     // A factor at which some shape shows as the cut enlarged form of another.
     .decl shown_at(e: Example, k: number)
-    shown_at(E, K) :- parse.shows(E, [_, K, K], _, _).
+    shown_at(E, K) :- parse.shows(E, K, _, _).
 
     // A train example where it does not.
     .decl missed(k: number)

@@ -151,13 +151,13 @@ live([L, M, $NearerWall()]) :- impl_choice([L, M, $NearerWall()]), !tie(M).
 
 // Each piece falls alone toward each wall it aims at, and stops against it.
 // @claim dot-to-wall
-.init drop = Gravity<Fall, Piece>
-drop.cell([W, D, Pc], Pc, P) :- aim(W, Pc, D), piece(Pc, P, _).
+.init drop = Gravity<Fall, Unit>
+drop.cell([W, D, Pc], $U(), P) :- aim(W, Pc, D), piece(Pc, P, _).
 drop.dir([W, D, Pc], D) :- aim(W, Pc, D).
 drop.blocked([W, D, Pc], P) :- aim(W, Pc, D), in(P, _), !inner(P).
 
 landed([$Merge(), M, W], Q, Col) :-
-    drop.travel([W, _, [M, B]], [M, B], V), piece([M, B], P, Col), compose(P, V, Q).
+    drop.travel([W, _, [M, B]], $U(), V), piece([M, B], P, Col), compose(P, V, Q).
 
 // --- $Stack ---
 
