@@ -2465,6 +2465,15 @@ enum RootNumber {
     Undefined,
 }
 
+/// The cells that a stored value holds: those of its tables, or of a joined value's sides and ids.
+fn held_of(value: &Val) -> usize {
+    match value {
+        Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
+        Val::Joined(joined) => joined.held_cells(),
+        _ => 0,
+    }
+}
+
 /// The value of a root at an instance, from the counts of rows.
 fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> RootNumber {
     let share = |top: u32, bottom: u32| -> RootNumber {
@@ -2531,6 +2540,46 @@ impl<'a> Walker<'a> {
         }
     }
 
+    /// Drops every stored value that no list of `ids` holds, and every memo entry, so that a walk's memory stays bounded between its terms. The lists are renumbered. A later evaluation computes again what it needs, and it forces the same lazy values, so no value and no cost changes.
+    fn compact(&mut self, ids: &mut [Vec<u32>]) {
+        let mut hash_of: Vec<u128> = vec![0; self.values.len()];
+        for (hash, at) in &self.value_index {
+            hash_of[*at as usize] = *hash;
+        }
+        let mut values = vec![Val::None, Val::Empty];
+        let mut index: FastMap<u128, u32> = FastMap::default();
+        let mut renumbered: FastMap<u32, u32> = FastMap::default();
+        let mut held = 0usize;
+        for list in ids.iter_mut() {
+            for id in list.iter_mut() {
+                let old = *id;
+                if old > 1 {
+                    *id = *renumbered.entry(old).or_insert_with(|| {
+                        let value = self.values[old as usize].clone();
+                        held += held_of(&value);
+                        index.insert(hash_of[old as usize], values.len() as u32);
+                        values.push(value);
+                        values.len() as u32 - 1
+                    });
+                }
+            }
+        }
+        if crate::bounds::enabled() {
+            crate::bounds::tally("compact", "walks' compactions".to_string(), 1);
+            crate::bounds::tally("compact", "cells dropped".to_string(), self.held_cells.saturating_sub(held) as u64);
+        }
+        self.values = values;
+        self.value_index = index;
+        self.held_cells = held;
+        self.memo = FastMap::default();
+        self.counts = FastMap::default();
+        self.groupings = FastMap::default();
+        self.group_counts = FastMap::default();
+        self.written_of = FastMap::default();
+        // The tables those values held are gone, so an address they had can hold another.
+        clear_views();
+    }
+
     fn value_id(&mut self, value: Val) -> u32 {
         match value {
             Val::None => 0,
@@ -2541,15 +2590,10 @@ impl<'a> Walker<'a> {
                     return *found;
                 }
                 let at = self.values.len() as u32;
-                if let Val::Rows(parts) = &value {
-                    self.held_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
-                }
-                if let Val::Joined(joined) = &value {
-                    self.held_cells += joined.held_cells();
-                    if crate::bounds::enabled() {
-                        crate::bounds::tally("stored", "joined values".to_string(), 1);
-                        crate::bounds::tally("stored", "cells of joined values, held".to_string(), joined.held_cells() as u64);
-                    }
+                self.held_cells += held_of(&value);
+                if let (Val::Joined(joined), true) = (&value, crate::bounds::enabled()) {
+                    crate::bounds::tally("stored", "joined values".to_string(), 1);
+                    crate::bounds::tally("stored", "cells of joined values, held".to_string(), joined.held_cells() as u64);
                 }
                 self.values.push(value);
                 self.value_index.insert(hash, at);
@@ -2749,6 +2793,22 @@ impl<'a> Walker<'a> {
         let mut table = RootTable { stride: instances, ..RootTable::default() };
         let mut left_out = false;
         self.forced.clear();
+        // The last term that reads each term, among those the walk walks: its values are dropped after that, where they are the only users of stored values.
+        let mut last_read: Vec<Option<usize>> = vec![None; family.terms.len()];
+        for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
+            if mask.is_none_or(|mask| mask.needed[at]) {
+                last_read[term.a as usize] = Some(at);
+                if term.b != NO_TERM {
+                    last_read[term.b as usize] = Some(at);
+                }
+            }
+        }
+        let mut release: Vec<Vec<usize>> = vec![Vec::new(); family.terms.len()];
+        for (read, last) in last_read.iter().enumerate() {
+            release[last.unwrap_or(read)].push(read);
+        }
+        // The cells held after the last compaction: the next one waits until the walk holds twice as many.
+        let mut floor = 0usize;
         // Per term, whether the walk's stop left it unevaluated, or it reads a term so left. Such a term has no value, and so has each root over it.
         let mut stopped: Vec<bool> = vec![false; leaves.len()];
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
@@ -2934,6 +2994,14 @@ impl<'a> Walker<'a> {
             }
             ids.push(own);
             stopped.push(is_stopped);
+            for read in &release[at] {
+                ids[*read] = Vec::new();
+            }
+            let entries = self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len();
+            if self.held_cells > self.budget.0.max(2 * floor) || entries > self.budget.1 {
+                self.compact(&mut ids);
+                floor = self.held_cells;
+            }
         }
         // A root that every one of its bindings leaves out at an instance has no value there.
         let out_scope = train.min(instances);
