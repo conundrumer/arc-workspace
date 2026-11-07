@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Whether a model's row gives each first-version feature, on the tables that v1_dump.py wrote.
 
-  v1_cover.py OUT.tsv --v1 DIR --blocks DIR --lists DIR [DIR ...] [--named DIR] [--state DIR] [--skip FILE] [--form shape|place] [--base] [--no-mutants] [--nearest] [--counts FILE] [--disposition FILE] [--tasks N] [--procs N]
+  v1_cover.py OUT.tsv --v1 DIR --blocks DIR --lists DIR [DIR ...] [--named DIR] [--state DIR] [--skip FILE] [--form shape|place] [--base] [--no-mutants] [--nearest] [--counts FILE] [--one-binding] [--disposition FILE] [--tasks N] [--procs N]
 
 A row is one table, of the ground-truth program or of a dumped mutant, at one train pair. Its columns are the table's shapes at that pair, from its list and its list in
 `--named`, and the columns of a store's `base`, `qv`, `graph`, `relations` and `wide` at its candidate. `--skip` names tasks to leave out.
@@ -22,6 +22,9 @@ met once counts for nothing.
 Each feature is judged again with its values shuffled across the rows where it has a value, so a reader can see how often the criterion passes by
 chance: more columns and fewer rows raise that rate. `--counts` names a file of v1_column_counts.py, and then a column stands only where a store's train
 rows hold an entry of it on at least a leaf's least count of rows, since no fit can read another. A column the file does not count stands.
+
+A shape reads every column of a type, and a first-version feature reads those in a frame, so the two can differ where a table has two columns of a type.
+Under `--one-binding`, a feature that names a column stands only on the rows where its table has one column of that type.
 
 `--disposition` names a file that gives each group of features the sources of the columns that may give it, by the form the specification states it in:
 `shape`, `named`, or a store's source. A line gives its feature's group.
@@ -97,10 +100,12 @@ def number(value):
     return float(value) if isinstance(value, (bool, int, float)) else None
 
 
-def collect(pair, name, types_of, tables, form, out, row, coordinates, coordinate_of):
-    """Adds to `out` a row's values of the features of one table at one pair. `types_of` gives each table's column tokens' types by its name."""
+def collect(pair, name, types_of, tables, form, out, row, coordinates, coordinate_of, one_binding=False):
+    """Adds to `out` a row's values of the features of one table at one pair. `types_of` gives each table's column tokens' types by its name. Under
+    `one_binding`, a feature that names a column stands only where its table has one column of that type."""
     prefix = name + '|'
     own = types_of.get(name, {})
+    of_type = collections.Counter(own.values())
     place_of = {}
     pooled = {}
     words = {}
@@ -123,6 +128,8 @@ def collect(pair, name, types_of, tables, form, out, row, coordinates, coordinat
             other = types_of.get(tables.get(match[1], ''), {})
             return f'{place_of.get(match[1], "table")}.?{other.get(match[2], "")}'
 
+        if one_binding and any(of_type[own.get(match[0], '')] > 1 for match in TOKEN.finditer(OTHER_COLUMN.sub('', feature))):
+            continue
         shape = OTHER_COLUMN.sub(of_other, feature)
         shape = TOKEN.sub(lambda match: '?' + own.get(match[0], BASE_TYPES.get(match[0], '')), shape)
         shape = TABLE.sub(lambda match: place_of.get(match[0], 'table'), shape)
@@ -157,6 +164,7 @@ def main():
     parser.add_argument('--no-mutants', action='store_true')
     parser.add_argument('--nearest', action='store_true')
     parser.add_argument('--counts')
+    parser.add_argument('--one-binding', action='store_true')
     parser.add_argument('--disposition')
     parser.add_argument('--tasks', type=int)
     parser.add_argument('--procs', type=int, default=3)
@@ -262,7 +270,7 @@ def main():
                         row_of.append(np.full(len(columns), row, dtype=np.int32))
                         shape_of.append(np.uint64(offset[source]) + columns.astype(np.uint64))
                         value_of.append(values)
-                collect(pair, name, own_types, tables, args.form, features, row, coordinates, coordinate_of)
+                collect(pair, name, own_types, tables, args.form, features, row, coordinates, coordinate_of, args.one_binding)
 
         for item_at, item in enumerate(head['items']):
             name, place = item['table'], item['gold']
@@ -297,11 +305,11 @@ def main():
             parts = line.rstrip('\n').split('\t')
             if len(parts) == 4 and int(parts[0], 16) in wanted:
                 name_of[int(parts[0], 16)] = parts[1]
-    source_at = {OTHER + (place << 32): source for place, source in enumerate(extra)}
+    source_at = {offset[source] + column: source for source, names in extra.items() for column in names}
 
     def source_of(key):
-        if key >= OTHER:
-            return source_at[OTHER + ((key - OTHER) >> 32 << 32)]
+        if key in source_at:
+            return source_at[key]
         name = name_of.get(key, '')
         return 'named' if name.startswith('(named') else 'query' if name.startswith('(query') else 'shape'
 
