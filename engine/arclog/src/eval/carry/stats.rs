@@ -18,6 +18,7 @@
 //! - `call`: the calls that found no entry in the walk's own cache, and
 //!   `unshaped.call`, the calls that no shape was offered for.
 //! - `hit`: a kept computation replayed; `work` is the table work it counted.
+//!   `hit.stop` is the hits of a computation whose value is a stop.
 //! - `miss`: no kept computation replayed. Then exactly one of `miss.noentry`
 //!   (nothing is kept under the key), `miss.work` (a kept computation would
 //!   pass the cap on table work) and `miss.lookups` (the lookups of each kept
@@ -25,10 +26,11 @@
 //! - `noentry.<cause>`: why nothing is kept, by what the process saw before
 //!   under the same request (its content, example, and the rows and layout of
 //!   its reads and parameters):
-//!   - `again.<kept|dropped|unkept|open>`: a capture ended under the same key
-//!     before, and its computation is kept (but not in this store), not kept
-//!     for a full key or for size, not kept as it stopped or faulted, or
-//!     not ended;
+//!   - `again.<kept|dropped|unkept|open>.<same_store|other_store>`: a capture
+//!     ended under the same key before, and its computation was kept, was not
+//!     kept for a full key or for size, was not kept as it stopped or faulted,
+//!     or had not ended; the call runs against the store that the earlier one
+//!     ran against, or another;
 //!   - `shape.raw[<components>].canon[<components>]`: the same request has been
 //!     seen with another shape; the components of the shape that differ from
 //!     the nearest shape seen, as the digests of the key's shape hold them
@@ -38,10 +40,14 @@
 //!   - `reads`: the content and example were seen, with other relations;
 //!   - `new`: the content was not seen.
 //! - `capture.<outcome>`: the end of a computation that the walk made. The
-//!   outcomes are `kept`, `dropped.full` (too many kept under the key),
-//!   `dropped.big` (more than a tier's share), `stopped` (a value that is not
-//!   kept) and `fault`. `work` is the table work counted and `ms` the time
+//!   outcomes are `kept`, `kept.stop` (kept, with a stop as its value),
+//!   `dropped.full` (too many kept under the key), `dropped.big` (more than a
+//!   tier's share), `stopped.<bound>` (a stop that is not kept) and `fault`. `work` is the table work counted and `ms` the time
 //!   of the computation, with the computations nested in it.
+//! - `store.new`, `store.turn`, `store.promote`, `kept.alone`, `kept.fresh`: with
+//!   no kind, the stores made (`work` is their bytes), the turns of a store's
+//!   tiers (the bytes of the tier dropped), the promotions (bytes added), and
+//!   the bytes of each kept computation, alone and beside what its tier holds.
 //! - `captured.<noentry cause class>`: the same, by the class of the cause
 //!   above: `again`, `shape`, `reads`, `new`, `entries` (some are kept, and
 //!   none replayed).
@@ -186,6 +192,8 @@ pub(super) struct Note {
     request: u64,
     shape: u128,
     class: &'static str,
+    /// The store that the call ran against.
+    store: u64,
 }
 
 struct Current {
@@ -209,8 +217,9 @@ struct State {
     tally: BTreeMap<String, (u64, u64, u64)>,
     contents: StableHashSet<u64>,
     requests: StableHashMap<u64, Vec<Seen>>,
-    /// The end of the capture under a key: 0 none yet, 1 kept, 2 dropped, 3 not kept.
-    keys: StableHashMap<(u64, u128), u8>,
+    /// The end of the capture under a key, and the store it ran against: 0
+    /// none yet, 1 kept, 2 dropped, 3 not kept.
+    keys: StableHashMap<(u64, u128), (u8, u64)>,
 }
 
 fn state() -> &'static Mutex<State> {
@@ -273,7 +282,7 @@ fn content_id(key: &CarryKey) -> u64 {
 
 /// Starts the count of a call that found no entry in the walk's cache, for
 /// `key`, whose shape [`offer`] gave components of.
-pub(super) fn begin(key: &CarryKey) {
+pub(super) fn begin(key: &CarryKey, store: u64) {
     if !enabled() {
         return;
     }
@@ -281,7 +290,7 @@ pub(super) fn begin(key: &CarryKey) {
     let components = PENDING.with(|pending| pending.borrow_mut().take());
     match components.as_ref().map(|components| components.kind) {
         Some(kind) => {
-            let note = Note { kind, content: content_id(key), request: request_id(key), shape: key.shape.0, class: "entries" };
+            let note = Note { kind, content: content_id(key), request: request_id(key), shape: key.shape.0, class: "entries", store };
             CURRENT.with(|current| *current.borrow_mut() = Current { note: Some(note), components, reason: Reason::NoEntry });
             add(&mut state().lock().expect("the counters are not poisoned"), format!("{}.call", kind.name()), 0, 0);
         }
@@ -303,12 +312,30 @@ pub(super) fn reason(reason: Reason) {
 }
 
 /// Counts a hit of the call in progress, of a computation that counted `work`.
-pub(super) fn hit(work: u64) {
+pub(super) fn hit(work: u64, stop: bool) {
     if !enabled() {
         return;
     }
     let Some(note) = CURRENT.with(|current| current.borrow().note) else { return };
-    add(&mut state().lock().expect("the counters are not poisoned"), format!("{}.hit", note.kind.name()), work, 0);
+    let mut state = state().lock().expect("the counters are not poisoned");
+    add(&mut state, format!("{}.hit", note.kind.name()), work, 0);
+    if stop {
+        add(&mut state, format!("{}.hit.stop", note.kind.name()), work, 0);
+    }
+}
+
+/// The id of a new store of kept computations.
+pub(super) fn store_id() -> u64 {
+    static IDS: AtomicU64 = AtomicU64::new(0);
+    IDS.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Counts an event of the store, with `amount`, which the report gives as
+/// `work`.
+pub(super) fn event(name: &str, amount: u64) {
+    if enabled() {
+        add(&mut state().lock().expect("the counters are not poisoned"), name.to_string(), amount, 0);
+    }
 }
 
 /// Counts the miss of the call in progress and its cause, and notes what the
@@ -332,8 +359,9 @@ pub(super) fn missed() {
         Reason::Lookups => add(state, format!("{kind}.miss.lookups"), 0, 0),
         Reason::NoEntry => {
             add(state, format!("{kind}.miss.noentry"), 0, 0);
-            let (class, label) = if let Some(&ended) = state.keys.get(&key) {
-                ("again", format!("again.{}", ["open", "kept", "dropped", "unkept"][usize::from(ended)]))
+            let (class, label) = if let Some(&(ended, store)) = state.keys.get(&key) {
+                let place = if store == note.store { "same_store" } else { "other_store" };
+                ("again", format!("again.{}.{place}", ["open", "kept", "dropped", "unkept"][usize::from(ended)]))
             } else if let Some(seen) = state.requests.get(&note.request) {
                 let names = note.kind.components();
                 let differs = |one: &[u64], other: &[u64]| -> Vec<&'static str> {
@@ -359,7 +387,7 @@ pub(super) fn missed() {
         if seen.len() < SEEN_PER_REQUEST && !seen.iter().any(|seen| seen.raw == components.raw) {
             seen.push(Seen { raw: components.raw, canon: components.canon });
         }
-        state.keys.entry(key).or_insert(0);
+        state.keys.entry(key).or_insert((0, note.store));
     }
     CURRENT.with(|current| current.borrow_mut().note = Some(note));
 }
@@ -379,8 +407,11 @@ pub(super) fn dropped(why: &'static str) {
 /// How a capture ended.
 pub(super) enum End {
     Kept,
+    /// Kept, with a stop as its value.
+    KeptStop,
     Dropped,
-    Stopped,
+    /// Not kept, with the stop that is its value.
+    Stopped(Option<crate::eval::ReachedBound>),
     Fault,
 }
 
@@ -390,15 +421,16 @@ pub(super) fn captured(note: Note, end: End, work: u64, started: Instant) {
     let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
     let kind = note.kind.name();
     let (name, mark) = match end {
-        End::Kept => ("kept", 1),
-        End::Dropped => (DROPPED.with(Cell::get), 2),
-        End::Stopped => ("stopped", 3),
-        End::Fault => ("fault", 3),
+        End::Kept => ("kept".to_string(), 1),
+        End::KeptStop => ("kept.stop".to_string(), 1),
+        End::Dropped => (DROPPED.with(Cell::get).to_string(), 2),
+        End::Stopped(bound) => (format!("stopped.{}", bound.map_or("other".to_string(), |bound| format!("{bound:?}").split([' ', '(']).next().unwrap_or("").to_string())), 3),
+        End::Fault => ("fault".to_string(), 3),
     };
     let mut state = state().lock().expect("the counters are not poisoned");
     add(&mut state, format!("{kind}.capture.{name}"), work, nanos);
     add(&mut state, format!("{kind}.captured.{}", note.class), work, nanos);
-    state.keys.insert((note.request, note.shape), mark);
+    state.keys.insert((note.request, note.shape), (mark, note.store));
 }
 
 fn report(calls: u64) {

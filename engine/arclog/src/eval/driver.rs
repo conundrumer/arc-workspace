@@ -402,7 +402,7 @@ impl<'e, 'a> Driver<'e, 'a> {
             Ok(value)
         };
         let shape = || carry::part_shape(&body.clause, part, order, &entry.columns);
-        match self.carrying(&request, &shape, compute) {
+        match self.carrying(form, &request, &shape, compute) {
             Ok(value) => value,
             Err(fault) => unreachable!("the evaluation of a part gives no fault: {fault:?}"),
         }
@@ -478,7 +478,7 @@ impl<'e, 'a> Driver<'e, 'a> {
                 None => {
                     let run = || self.holding_stops(request, compute).inspect(|value| cache::store(session, request, value));
                     match shape {
-                        Some(shape) => self.carrying(request, shape, run),
+                        Some(shape) => self.carrying(form, request, shape, run),
                         None => run(),
                     }
                 }
@@ -500,16 +500,16 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// of a kept computation that replays, and otherwise `compute` is
     /// captured and kept. `shape` is the digest of what the search of the
     /// entry reads beside its request.
-    fn carrying(&self, request: &cache::EntryRequest<'_>, shape: &dyn Fn() -> StableHash, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
+    fn carrying(&self, form: &NodePath, request: &cache::EntryRequest<'_>, shape: &dyn Fn() -> StableHash, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
         let limits = self.evaluation.limits;
         let (Some(carry), Some(work), None, None, None) = (&limits.carry, &limits.table_work, &limits.held_stops, &limits.deadline, &limits.copies) else {
             return compute();
         };
         let session = self.evaluation.session;
         let key = carry::CarryKey::new(request, shape());
-        match carry.replay(session, work, &key) {
+        match carry.replay(session, work, &key, form) {
             Some(value) => Ok(value),
-            None => carry.capture(session, work, key, compute),
+            None => carry.capture(session, work, key, form, compute),
         }
     }
 

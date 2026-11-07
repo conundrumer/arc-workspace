@@ -375,12 +375,22 @@ const UNPOISONED: &str = "a store that no panic poisoned";
 pub struct TableWork {
     count: Arc<AtomicU64>,
     cap: u64,
+    crossing: Arc<Crossing>,
+}
+
+/// The counts on the two sides of the charge that first took a count past
+/// its cap, where that charge began within the cap.
+#[derive(Debug)]
+struct Crossing {
+    set: AtomicBool,
+    before: AtomicU64,
+    after: AtomicU64,
 }
 
 impl TableWork {
     /// An observation with no work counted, under `cap`.
     pub fn new(cap: u64) -> Self {
-        TableWork { count: Arc::new(AtomicU64::new(0)), cap }
+        TableWork { count: Arc::new(AtomicU64::new(0)), cap, crossing: Arc::new(Crossing { set: AtomicBool::new(false), before: AtomicU64::new(0), after: AtomicU64::new(0) }) }
     }
 
     /// A count with no observation budget.
@@ -395,7 +405,42 @@ impl TableWork {
             unreachable!("an update that always gives a count")
         };
         let count = before.saturating_add(bindings);
-        if count > self.cap { Err(ReachedBound::TableWork { cap: self.cap }) } else { Ok(()) }
+        if count > self.cap {
+            if before <= self.cap {
+                self.cross(before, count);
+            }
+            Err(ReachedBound::TableWork { cap: self.cap })
+        } else {
+            Ok(())
+        }
+    }
+
+    fn cross(&self, before: u64, after: u64) {
+        if !self.crossing.set.swap(true, Ordering::Relaxed) {
+            self.crossing.before.store(before, Ordering::Relaxed);
+            self.crossing.after.store(after, Ordering::Relaxed);
+        }
+    }
+
+    /// The counts before and after the charge that first took the count past
+    /// the cap, where that charge began within the cap, and `None` where no
+    /// charge did.
+    pub fn crossing(&self) -> Option<(u64, u64)> {
+        self.crossing.set.load(Ordering::Relaxed).then(|| (self.crossing.before.load(Ordering::Relaxed), self.crossing.after.load(Ordering::Relaxed)))
+    }
+
+    /// Adds `bindings` to a count that stays within the cap before `before`
+    /// more of them and passes it with `after` more, as the charges of an
+    /// evaluation that stopped at the cap did: the count then passes the cap,
+    /// at the charge that [`TableWork::crossing`] gives, `before` and `after`
+    /// bindings from the count now.
+    pub fn charge_crossing(&self, bindings: u64, before: u64, after: u64) {
+        let Ok(from) = self.count.try_update(Ordering::Relaxed, Ordering::Relaxed, |count| Some(count.saturating_add(bindings))) else {
+            unreachable!("an update that always gives a count")
+        };
+        if from.saturating_add(before) <= self.cap && from.saturating_add(after) > self.cap {
+            self.cross(from.saturating_add(before), from.saturating_add(after));
+        }
     }
 
     /// Whether the count is past the cap: each batch of an evaluation that
