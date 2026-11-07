@@ -46,7 +46,8 @@ import draw_file  # noqa: E402
 POPPED = ('WRITER_TREE', 'WRITER_PLAN', 'SEARCH_PARTITION', 'SEARCH_READ_SCOPE', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'ARCLOG_IDENT_SOURCE', 'WRITER', 'SEARCH_STATE_SCORE')
 ARMS = {'tree': {'WRITER_TREE': None}, 'tok': {'WRITER_TREE': None}, 'fast': {'WRITER_TREE': None}, 'tok_read': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '8', 'SEARCH_READ_SCOPE': '1'}, 'hand': {}, 'tree_reads': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
         'tree_fp': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '4'}, 'tree_first_fp': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst', 'FIRST_PASS_SECONDS': '4'},
-        'tree_any': {'WRITER_TREE': None, 'SEARCH_PARTITION': '1', 'FIRST_PASS_SECONDS': '4'}}  # WRITER_TREE None: --tree; the checks of the ReadsScope rules; tok and fast: tree under other names, so that two runs of different kits or sites pair by reach.py's --arms
+        'tree_any': {'WRITER_TREE': None, 'SEARCH_PARTITION': '1', 'FIRST_PASS_SECONDS': '4'},
+        'base': {'WRITER_TREE': None}}  # WRITER_TREE None: --tree; the checks of the ReadsScope rules; tok and fast: tree under other names, so that two runs of different kits or sites pair by reach.py's --arms
 RSS_LIMIT_MIB = 2888
 STOP_AFTER = 4  # the run stops where its first STOP_AFTER jobs all die with no draw
 LOCK = threading.Lock()
@@ -144,6 +145,11 @@ def cpu_job(a, w, task, seed, env, samp, sup):
     return rc, text, json.loads((w / 'submission.json').read_text())
 
 
+def arm_tree(a, arm):
+    """The tree of an arm: --base-tree for the arm base, which runs beside the others under one load, and --tree for every other arm."""
+    return a.base_tree if arm == 'base' and a.base_tree else a.tree
+
+
 def parity_gate(a, out, arm, tasks):
     """Refuses a live run whose worker gives a model other input rows than training rows: a short worker on a few tasks writes a sample of its points (WRITER_PARITY_DIR), and sampler/serving_parity.py rebuilds them at a session as rows make it. A stamp in the code's folder keeps a pass for this sampler code, site, tree and writer settings."""
     samp = Path(a.code) / 'model/study/sampler'
@@ -151,7 +157,8 @@ def parity_gate(a, out, arm, tasks):
         raise SystemExit('this kit has no serving parity check: %s has no serving_parity.py. --no-parity runs it unchecked.' % samp)
     settings = sorted((k, v) for k, v in os.environ.items() if k.startswith('WRITER_') and k not in ('WRITER_ATOM_LOG_DIR', 'WRITER_PARITY_DIR'))
     code = hashlib.sha256(b''.join(p.read_bytes() for p in sorted(samp.glob('*.py')))).hexdigest()  # a change to the sampler's code needs a new check
-    key = hashlib.sha256(json.dumps([a.site, str(a.tree), a.plan, settings, code]).encode()).hexdigest()[:16]
+    tree = arm_tree(a, arm)
+    key = hashlib.sha256(json.dumps([a.site, str(tree), a.plan, settings, code]).encode()).hexdigest()[:16]
     stamp = Path(a.code) / 'parity' / (key + '.json')
     if stamp.exists():
         return
@@ -169,12 +176,12 @@ def parity_gate(a, out, arm, tasks):
     env = job_env(a, folder, arm, 0)
     env.update(ARC_ROOT=str(MAIN_ROOT), WRITER_ROW_DEADLINE='3600', ARCLOG_IDENT_SOURCE='value', PYTHONPATH='%s:%s:%s' % (a.site, samp, Path(a.code) / 'model/study/samples'))
     env.pop('ARC_DRAW_RECORD', None)
-    got = subprocess.run([str(PY), str(samp / 'serving_parity.py'), str(folder), '--tree', str(a.tree), '--models', str(a.models)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    got = subprocess.run([str(PY), str(samp / 'serving_parity.py'), str(folder), '--tree', str(tree), '--models', str(a.models)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     print(got.stdout[-3000:], flush=True)
     if got.returncode:
         raise SystemExit('serving parity failed: this run would read other rows than its model was fit on. Details above; --no-parity runs it anyway.')
     stamp.parent.mkdir(exist_ok=True)
-    stamp.write_text(json.dumps(dict(site=a.site, tree=str(a.tree), plan=a.plan, settings=settings, report=got.stdout[-2000:])))
+    stamp.write_text(json.dumps(dict(site=a.site, tree=str(tree), plan=a.plan, settings=settings, report=got.stdout[-2000:])))
 
 
 def job_env(a, w, arm, seed):
@@ -185,7 +192,7 @@ def job_env(a, w, arm, seed):
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
     for k in POPPED:
         env.pop(k, None)
-    env.update({k: v if v is not None else str(a.tree) for k, v in ARMS[arm].items()}, WRITER_PLAN=a.plan)
+    env.update({k: v if v is not None else str(arm_tree(a, arm)) for k, v in ARMS[arm].items()}, WRITER_PLAN=a.plan)
     return env
 
 
@@ -256,8 +263,14 @@ def run_plan(a):
     assert spec is not None and spec.loader is not None
     wp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(wp)
-    tree = str(a.tree) if any('WRITER_TREE' in ARMS[arm] for arm in a.arms.split(',')) else None
-    return wp.plan_of_process(tree, os.environ.get('WRITER_PLAN'))[0]
+    tree = str(a.tree) if any('WRITER_TREE' in ARMS[arm] for arm in a.arms.split(',') if arm != 'base') else None
+    plan = wp.plan_of_process(tree, os.environ.get('WRITER_PLAN'))[0]
+    if 'base' in a.arms.split(','):
+        other = wp.plan_of_process(str(a.base_tree or a.tree), os.environ.get('WRITER_PLAN'))[0]
+        if tree is not None and other != plan:
+            raise SystemExit('--base-tree gives the plan %s and --tree gives %s: a run has one plan' % (other, plan))
+        plan = other
+    return plan
 
 
 def main():
@@ -267,6 +280,7 @@ def main():
     ap.add_argument('--site', required=True)
     ap.add_argument('--models', default=str(DATASET))
     ap.add_argument('--tree', default=str(TREE))
+    ap.add_argument('--base-tree', help='the tree of the arm base, which runs beside the other arms under one load; --tree where not given')
     ap.add_argument('--skip', default='')
     ap.add_argument('--arms', default='tree,hand')
     ap.add_argument('--source', choices=('search', 'state'), default='search', help='search: the pool search (superdag_search.py); state: the state search (state_search.py)')
