@@ -10,6 +10,7 @@ use std::sync::OnceLock;
 
 use arclog::layout::SourceFile;
 use arclog::read::{read_sexprs, SExpr};
+use arclog::types::ValueType;
 
 use crate::expand::{label_of, Col, Expander, Mark, Rows};
 use crate::expression::Written;
@@ -429,7 +430,7 @@ impl Expander<'_> {
                     let body = list[2..].iter().map(|atom| self.conjunct(atom, &mut call)).collect::<Result<Vec<_>, _>>()?;
                     let columns = kept_labels(&body)?;
                     self.forms.push(format!("({} {name}\n  {})", self.keyword(), body.join("\n  ")));
-                    given = Some(Rows { relation: name, columns: columns.into_iter().map(Col::plain).collect() });
+                    given = Some(Rows { relation: name, columns: columns.into_iter().map(kept_column).collect() });
                 }
                 Some("INIT") => {
                     let name = call.renamed(symbol_of(list.get(1).ok_or("an `INIT` holds its name")?)?)?;
@@ -448,7 +449,7 @@ impl Expander<'_> {
                     let body: Vec<String> = body.iter().map(|atom| atom.replace('^', "*")).collect();
                     let columns = kept_labels(&body)?;
                     self.forms.push(format!("({} {name}\n  {})", self.keyword(), body.join("\n  ")));
-                    given = Some(Rows { relation: name, columns: columns.into_iter().map(Col::plain).collect() });
+                    given = Some(Rows { relation: name, columns: columns.into_iter().map(kept_column).collect() });
                 }
                 Some("gives") => {
                     let name = call.renamed(symbol_of(list.get(1).ok_or("a `gives` names a relation")?)?)?;
@@ -614,7 +615,7 @@ impl Expander<'_> {
         }
         // A macro states no pairs: its atom on a grid joins the example of the
         // macro's relation, and a body in an instance keeps a site on `E`.
-        if let Ok(at) = rows.index("E") {
+        if let Some(at) = crate::expand::example_index(&rows) {
             if !marks.iter().any(|(held, _)| *held == at) {
                 let joined = rows_is_grid(&rows) && call.taken.iter().any(|label| label == "E") && !call.in_instance;
                 if joined {
@@ -788,6 +789,13 @@ fn unique_in(call: &Call, name: &str) -> String {
 /// relation: a label that a site makes outside a `NOT` and an `ALL`, and, in an
 /// `OR`, one that its first branch makes and every later branch names, as
 /// `docs/arclog/arclog.md#disjunction` gives. No label of a test is kept.
+/// The column that a kept label makes. The label `E` is an Example's, since a
+/// table's own column named `E` is read under another label.
+fn kept_column(label: String) -> Col {
+    let ty = (label == "E").then_some(ValueType::Example);
+    Col::typed(label, ty)
+}
+
 fn kept_labels(conjuncts: &[String]) -> Result<Vec<String>, String> {
     let text = conjuncts.join("\n");
     let (exprs, _) = read_sexprs(&text, SourceFile::Arclog).map_err(|diagnostics| format!("{diagnostics:?}"))?;
