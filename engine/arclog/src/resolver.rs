@@ -506,17 +506,23 @@ impl ResolvedProgram {
     }
 
     /// This program resolved with the read columns of `widening` in place
-    /// of those its atoms name, made once for each `widening`. It is a
-    /// resolution of the whole program ([`resolve`]), so a call that finds no
-    /// resolution held costs as much as the program. A layered resolution
-    /// builds on a result of this call, which then holds each form.
+    /// of those its atoms name, made once for each `widening`. It is the
+    /// resolution of the whole program that [`resolve`] gives for the scope
+    /// that holds `widening`, and a layered resolution builds on it, so it
+    /// holds each form. The passes over the whole program that decide the
+    /// nodes, the targets of the names, the reads, the sides and the sites
+    /// run again, and the content of a node that the widening does not reach,
+    /// with its columns and key ranks, is taken from this resolution
+    /// ([`build::resolve_reusing`] says why that gives [`resolve`]'s result);
+    /// where that cannot be shown for the program, the call resolves it whole.
     fn widened(&self, widening: Vec<(ProgramRelation, Vec<ColumnName>)>, registry: &Registry) -> Arc<ResolvedProgram> {
         let mut held = self.widened.lock().expect("no thread panics while it holds the cache");
         if let Some(found) = held.get(&widening) {
             return Arc::clone(found);
         }
         let scope = SolverScope { derived: Default::default(), read_columns: widening.iter().cloned().collect() };
-        let resolved = Arc::new(resolve(&self.program, None, &scope, registry).value);
+        let resolved = build::resolve_reusing(self, &scope, registry).unwrap_or_else(|| resolve(&self.program, None, &scope, registry).value);
+        let resolved = Arc::new(resolved);
         held.insert(widening, Arc::clone(&resolved));
         resolved
     }
@@ -1102,7 +1108,8 @@ pub const MAX_LAYERS: usize = 16;
 /// parameter that no earlier read names is resolved over `earlier` resolved
 /// again with that column kept, once for each such set of columns
 /// ([`ResolvedProgram::widened`]), and that resolution of the whole program
-/// is the one step whose time follows the program.
+/// is the one step whose time follows the program, apart from the content of
+/// the nodes that the added columns do not reach, which it takes from `earlier`.
 ///
 /// `earlier` may be a layered resolution, so each form of a program can be
 /// resolved from the resolution of the forms before it. A layer holds what

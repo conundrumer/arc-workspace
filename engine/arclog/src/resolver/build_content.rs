@@ -37,6 +37,177 @@ impl Builder<'_> {
         }
     }
 
+    /// [`Builder::contents`] for a resolution of the program of `earlier`, an
+    /// exact resolution of that program, that differs from it in the columns
+    /// the reads of some `DET` nodes name ([`SolverScope::read_columns`]): the
+    /// content, the columns, the kept columns and the key ranks of each node
+    /// that the difference does not reach are those of `earlier`, and the
+    /// others are written as `contents` writes them. `None` where the
+    /// argument below cannot be applied, so no entry of this build is used.
+    ///
+    /// Why the result is `contents`'s. The passes that run before this one are
+    /// the passes of `resolve`, so the nodes, their forms, the targets of each
+    /// name and the reads of each form are those that `earlier` has for the
+    /// same program, whatever the columns of the reads: they are checked for
+    /// each node that is taken, by its kind, its scope and its forms. What
+    /// `contents` writes for a node is a function of these:
+    /// - the forms of the node, and of an `INIT` form the whole form, since
+    ///   each node of the form is written from all of it;
+    /// - for each name that those forms read and that resolves to a node, the
+    ///   content, the columns and their orders of that node, and, for a field of
+    ///   a key, the rank that the node's `INIT` form gave it, which is made from
+    ///   the content of what that form reads;
+    /// - the columns that the node keeps, which are decided by the columns its
+    ///   reads name ([`Builder::keeps`]).
+    /// A name that resolves to no node holds the same columns in both
+    /// resolutions. So the entries of a node are the same where the columns it
+    /// keeps are the same, and the entries of each node it depends on are the
+    /// same. The nodes with other columns are the seeds, found by comparing the
+    /// columns that each node's reads name with `earlier`'s, and the affected
+    /// nodes are the seeds, each node that reads an affected node by a name or
+    /// by an edge of the graph, from a form of its own, each node of a form
+    /// that an affected node has, and, by this rule again, each node that
+    /// depends on those, until no node is added. Each other node depends on
+    /// no node that differs, by induction on the order in which `contents`
+    /// writes the nodes: it writes each node after the nodes it reads, and the
+    /// check in [`Builder::affected_nodes`] shows that each node a node depends
+    /// on has a lower index, so the nodes are written by increasing index, and a
+    /// node that is taken finds, in every node before it, the entries that
+    /// `contents` would have written.
+    pub(super) fn contents_reusing(&mut self, earlier: &crate::resolver::ResolvedProgram) -> Option<()> {
+        let count = self.nodes.len();
+        if count != earlier.graph.nodes.len() {
+            return None;
+        }
+        let affected = self.affected_nodes(earlier)?;
+        self.names.contents = vec![None; count];
+        self.names.node_columns = vec![None; count];
+        self.names.node_orders = vec![ColumnOrders::default(); count];
+        self.names.unwritten = (0..count).map(|_| None).collect();
+        let unread = vec![false; count];
+        let mut visited = vec![false; count];
+        for node in 0..count {
+            if affected[node] {
+                self.content_of(node, &mut visited, &unread);
+            } else {
+                visited[node] = true;
+                self.take_content(node, earlier)?;
+            }
+        }
+        Some(())
+    }
+
+    /// Whether each node of this build, a resolution of the whole program,
+    /// reads a node whose columns differ from those of `earlier`, as
+    /// [`Builder::contents_reusing`] says, or `None` where a node reads a node
+    /// of a higher index, or the program holds a `DEMONSTRATED` form, whose
+    /// content reads the content of the nodes of its rules, or a `RIGID_DET`
+    /// form, whose content reads the content of an instance's output that none
+    /// of its atoms resolves to.
+    fn affected_nodes(&self, earlier: &crate::resolver::ResolvedProgram) -> Option<Vec<bool>> {
+        let count = self.nodes.len();
+        let unhandled = |node: &crate::resolver::DependencyNode| {
+            matches!(node.kind, crate::resolver::DependencyKind::Demonstrated(_) | crate::resolver::DependencyKind::RigidAssembly(_))
+        };
+        if self.nodes.iter().any(unhandled) {
+            return None;
+        }
+        let same = |old: Option<&[ColumnName]>, new: Option<&Vec<ColumnName>>| match (old, new) {
+            (None, None) => true,
+            (Some(old), Some(new)) => old.len() == new.len() && new.iter().all(|column| old.contains(column)),
+            _ => false,
+        };
+        let mut affected = vec![false; count];
+        let mut open = Vec::new();
+        for node in 0..count {
+            if !same(earlier.read_columns_of(crate::resolver::GraphNodeIndex(node as u32)), self.read_columns[node].as_ref()) {
+                affected[node] = true;
+                open.push(node);
+            }
+        }
+        if open.is_empty() {
+            return Some(affected);
+        }
+        // The nodes of each form, found by the form's first step, and the nodes that read each node.
+        let mut of_form: crate::hash::StableHashMap<u32, Vec<(&NodePath, Vec<usize>)>> = crate::hash::StableHashMap::default();
+        for (node, forms) in self.forms.iter().enumerate() {
+            for form in forms {
+                let Some(top) = form.0.first() else { continue };
+                let held = of_form.entry(top.0).or_default();
+                match held.iter_mut().find(|(path, _)| *path == form) {
+                    Some((_, nodes)) => nodes.push(node),
+                    None => held.push((form, vec![node])),
+                }
+            }
+        }
+        let mut readers: Vec<Vec<usize>> = vec![Vec::new(); count];
+        for atom in &self.atoms {
+            let Some(Resolution::Node(read)) = self.resolutions.get(&atom.path) else { continue };
+            let Some(top) = atom.path.0.first() else { continue };
+            for (_, nodes) in of_form.get(&top.0).into_iter().flatten().filter(|(form, _)| atom.path.0.starts_with(&form.0)) {
+                for &node in nodes {
+                    if read.0 as usize > node {
+                        return None;
+                    }
+                    readers[read.0 as usize].push(node);
+                }
+            }
+        }
+        for (node, reads) in self.reads.iter().enumerate() {
+            for &read in reads {
+                if read as usize > node {
+                    return None;
+                }
+                readers[read as usize].push(node);
+            }
+        }
+        while let Some(node) = open.pop() {
+            let same_form = self.forms[node].iter().filter_map(|form| of_form.get(&form.0.first()?.0)?.iter().find(|(path, _)| *path == form)).flat_map(|(_, nodes)| nodes);
+            for &other in readers[node].iter().chain(same_form) {
+                if !std::mem::replace(&mut affected[other], true) {
+                    open.push(other);
+                }
+            }
+        }
+        Some(affected)
+    }
+
+    /// Records the entries that [`Builder::content_of`] records for `node`,
+    /// as `earlier` holds them, where the node is one that
+    /// [`Builder::contents_reusing`] takes. `None` where `earlier` holds none
+    /// of them or a different node.
+    fn take_content(&mut self, node: usize, earlier: &crate::resolver::ResolvedProgram) -> Option<()> {
+        let index = crate::resolver::GraphNodeIndex(node as u32);
+        if earlier.graph.nodes[node] != self.nodes[node] || earlier.forms_of(index) != &self.forms[node][..] {
+            return None;
+        }
+        for path in &self.forms[node] {
+            if let Some(columns) = earlier.names.kept_at(path) {
+                self.names.kept.insert(path.clone(), columns.clone());
+            }
+        }
+        let scope = self.nodes[node].scope.clone();
+        for path in &self.forms[node] {
+            let Some(NodeRef::Instance(instance)) = node_at(NodeRef::Program(self.case.value()), path) else { continue };
+            if instance.key.is_none() || self.names.key_ranks.get(&scope).is_some_and(|ranks| ranks.contains_key(&instance.name)) {
+                continue;
+            }
+            let ranks = earlier.names.key_ranks_in(&scope, &instance.name)?;
+            let own = earlier.names.own_key_ranks_in(&scope, &instance.name)?;
+            self.names.own_key_ranks.entry(scope.clone()).or_default().insert(instance.name.clone(), own.into());
+            self.names.key_ranks.entry(scope.clone()).or_default().insert(instance.name.clone(), ranks.into());
+        }
+        let content = earlier.written_content(node)?.cloned();
+        let columns = earlier.names.node_columns_of(node).cloned();
+        if let Some(columns) = &columns {
+            self.label_positions(node, columns);
+        }
+        self.names.contents[node] = content;
+        self.names.node_orders[node] = earlier.names.node_orders_of(node).into();
+        self.names.node_columns[node] = columns;
+        Some(())
+    }
+
     /// Whether no read of the last form resolves to each node of this build, in
     /// the order of its nodes, for a node of a layered resolution of one form,
     /// and `false` for every node of another resolution. A node that only another node reads in the

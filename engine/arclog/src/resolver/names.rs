@@ -263,7 +263,7 @@ impl Names {
         ranks.iter().find(|(name, _)| name == field).map(|(_, rank)| *rank)
     }
 
-    fn key_ranks_in(&self, scope: &NameScope, instance: &InstanceName) -> Option<&[(ColumnName, u32)]> {
+    pub(super) fn key_ranks_in(&self, scope: &NameScope, instance: &InstanceName) -> Option<&[(ColumnName, u32)]> {
         let own = self.key_ranks.get(scope).and_then(|ranks| ranks.get(instance));
         match own {
             Some(ranks) => Some(ranks),
@@ -279,7 +279,7 @@ impl Names {
         ranks.iter().find(|(name, _)| name == field).map(|(_, rank)| *rank)
     }
 
-    fn own_key_ranks_in(&self, scope: &NameScope, instance: &InstanceName) -> Option<&[(ColumnName, u32)]> {
+    pub(super) fn own_key_ranks_in(&self, scope: &NameScope, instance: &InstanceName) -> Option<&[(ColumnName, u32)]> {
         let own = self.own_key_ranks.get(scope).and_then(|ranks| ranks.get(instance));
         match own {
             Some(ranks) => Some(ranks),
@@ -297,7 +297,7 @@ impl Names {
 
     /// The orders of the columns of `node` under which its content is the
     /// same, none where they are not known.
-    fn node_orders_of(&self, node: usize) -> &[Box<[u16]>] {
+    pub(super) fn node_orders_of(&self, node: usize) -> &[Box<[u16]>] {
         match &self.earlier {
             Some(earlier) if node < self.first_node() => earlier.names.node_orders_of(node),
             _ => self.node_orders.get(node - self.first_node()).map_or(&[], |orders| orders),
@@ -324,7 +324,7 @@ impl Names {
     }
 
     /// The columns that the relation of the clause at `path` keeps.
-    fn kept_at(&self, path: &NodePath) -> Option<&Columns> {
+    pub(super) fn kept_at(&self, path: &NodePath) -> Option<&Columns> {
         self.kept.get(path).or_else(|| self.earlier.as_ref()?.names.kept_at(path))
     }
 

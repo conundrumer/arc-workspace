@@ -259,7 +259,8 @@ impl<'a> Builder<'a> {
 /// result shares the graph of `earlier` ([`ResolvedProgram`] says what each
 /// layer holds). A read of the last form that names a column of a `DET`
 /// parameter that `earlier` does not keep is the one case that builds on
-/// `earlier.widened`, a resolution of the whole program.
+/// `earlier.widened`, a resolution of the whole program that takes the content
+/// of the nodes it does not reach from `earlier` ([`resolve_reusing`]).
 fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry, demonstrated: bool, signed: bool, proposers: bool) -> Option<ResolvedProgram> {
     let scope = SolverScope::default();
     let (last, complete) = program.value().forms.split_last()?;
@@ -411,27 +412,7 @@ pub(super) fn resolve_with(
     let mut builder = Builder::new(case, scope, registry, None);
     builder.canonical_kept = canonical_kept;
     builder.names.feature_sites = canonical_kept;
-    for fact in [FactRelation::Input, FactRelation::ExInput, FactRelation::ExOutput].into_iter().chain(feature_facts(case)) {
-        let node = builder.node(DependencyKind::Fact(fact), &NameScope::Program, None);
-        let columns = Columns::of_names(registry.fact_columns(fact).iter().map(|column| column.name.clone()));
-        builder.target(&NameScope::Program, RelationRef::Fact(fact), Target { node, columns: ColumnsOf::Fixed(columns) });
-    }
-    if let Some(concept) = concept {
-        builder.take_concept(concept);
-    }
-    let forms = &case.value().forms;
-    let mut pending = Vec::new();
-    for (index, form) in forms.iter().enumerate() {
-        builder.declare(form, NodePath::top(index as u32), &NameScope::Program, &mut pending);
-    }
-    for (scope, relation, target) in pending {
-        builder.target(&scope, relation, target);
-    }
-    for (index, form) in forms.iter().enumerate() {
-        builder.read_form(form, NodePath::top(index as u32), &NameScope::Program);
-    }
-    builder.read_columns();
-    builder.sides();
+    builder.declare_and_read_whole(case, concept, registry);
     builder.contents();
     builder.sites();
     builder.proposers();
@@ -442,7 +423,52 @@ pub(super) fn resolve_with(
     builder.finish(concept)
 }
 
+/// The resolution of `earlier`'s program with the scope `scope`, which is
+/// [`resolve`]'s on that program with that scope, made by writing again the
+/// content of the nodes that `scope` changes, and of the nodes that read them
+/// ([`Builder::contents_reusing`]), and taking the content of every other
+/// node from `earlier`, an exact resolution of the program. `None` where this
+/// cannot be shown for the program, so the caller resolves it whole.
+pub(super) fn resolve_reusing(earlier: &ResolvedProgram, scope: &SolverScope, registry: &Registry) -> Option<ResolvedProgram> {
+    if earlier.concept().is_some() {
+        return None;
+    }
+    let mut builder = Builder::new(&earlier.program, scope, registry, None);
+    builder.declare_and_read_whole(&earlier.program, None, registry);
+    builder.contents_reusing(earlier)?;
+    builder.sites();
+    builder.proposers();
+    Some(builder.finish(None).value)
+}
+
 impl<'a> Builder<'a> {
+    /// The passes of [`resolve`] before the content of the nodes: the facts
+    /// and the declarations and the reads of each form of `case`, the columns
+    /// that the reads decide, and the sides.
+    fn declare_and_read_whole(&mut self, case: &'a Node<Program>, concept: Option<ConceptReads<'_>>, registry: &Registry) {
+        for fact in [FactRelation::Input, FactRelation::ExInput, FactRelation::ExOutput].into_iter().chain(feature_facts(case)) {
+            let node = self.node(DependencyKind::Fact(fact), &NameScope::Program, None);
+            let columns = Columns::of_names(registry.fact_columns(fact).iter().map(|column| column.name.clone()));
+            self.target(&NameScope::Program, RelationRef::Fact(fact), Target { node, columns: ColumnsOf::Fixed(columns) });
+        }
+        if let Some(concept) = concept {
+            self.take_concept(concept);
+        }
+        let forms = &case.value().forms;
+        let mut pending = Vec::new();
+        for (index, form) in forms.iter().enumerate() {
+            self.declare(form, NodePath::top(index as u32), &NameScope::Program, &mut pending);
+        }
+        for (scope, relation, target) in pending {
+            self.target(&scope, relation, target);
+        }
+        for (index, form) in forms.iter().enumerate() {
+            self.read_form(form, NodePath::top(index as u32), &NameScope::Program);
+        }
+        self.read_columns();
+        self.sides();
+    }
+
     fn is_fact(&self, node: GraphNodeIndex) -> bool {
         matches!(self.node_def(node.0 as usize).kind, DependencyKind::Fact(_))
     }
