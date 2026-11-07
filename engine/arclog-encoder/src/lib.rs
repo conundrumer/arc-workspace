@@ -29,6 +29,7 @@ pub mod catalog;
 mod catalog_boxes;
 mod catalog_cells;
 pub mod catalog_facts;
+pub mod candidate_progress;
 pub mod catalog_lists;
 mod catalog_orient;
 mod catalog_pairs;

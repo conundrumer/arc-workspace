@@ -609,7 +609,7 @@ pub fn table_numbers(facts: &ProgramFacts, name: &str, form: Option<usize>) -> V
     out.insert("uses with no column carried".to_string(), used.iter().filter(|read| !carried_from.contains(**read)).count() as f64);
     out.insert("every column is a copy".to_string(), f64::from(u8::from(copies_only && !rows.is_empty())));
     if let Some(detail) = facts.columns.get(identity) {
-        add_column_numbers(&mut out, detail);
+        add_column_numbers(&mut out, detail, facts, name);
     }
     if let Some(query) = query {
         let mut sites: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
@@ -641,7 +641,7 @@ pub fn table_numbers(facts: &ProgramFacts, name: &str, form: Option<usize>) -> V
 
 /// The values of the provenance and dependence features of a table, over its columns. Where several columns have one type, a count is the
 /// greatest or the sum as the lineage numbers above give it, and a flag holds where it holds for one of them.
-fn add_column_numbers(out: &mut BTreeMap<String, f64>, detail: &TableColumns) {
+fn add_column_numbers(out: &mut BTreeMap<String, f64>, detail: &TableColumns, facts: &ProgramFacts, name: &str) {
     const KINDS: [&str; 5] = ["grid", "proposer", "lib", "component", "constant"];
     for kind in KINDS {
         out.insert(format!("columns of {kind} origin"), detail.columns.iter().filter(|column| column.kinds.contains(kind)).count() as f64);
@@ -649,6 +649,40 @@ fn add_column_numbers(out: &mut BTreeMap<String, f64>, detail: &TableColumns) {
     out.insert("every column is a copy".to_string(), f64::from(u8::from(!detail.columns.is_empty() && detail.columns.iter().all(|column| column.copies_only))));
     out.insert("some column from the train outputs".to_string(), f64::from(u8::from(detail.columns.iter().any(|column| column.output))));
     out.insert("some column from a task parameter".to_string(), f64::from(u8::from(detail.columns.iter().any(|column| column.parameter))));
+    // Its place in the program, where a relation or an instance is one step.
+    let head = |spelled: &'_ str| -> String { spelled.split('.').next().unwrap_or(spelled).to_string() };
+    let spelled = |identity: &String| -> String { head(facts.table_names.get(identity).unwrap_or(identity)) };
+    let mut graph: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for query in &facts.queries {
+        for computed in &query.computes {
+            let own = spelled(computed);
+            let reads: Vec<String> = query.reads.iter().map(&spelled).filter(|read| *read != own).collect();
+            graph.entry(own).or_default().extend(reads);
+        }
+    }
+    fn steps(graph: &BTreeMap<String, BTreeSet<String>>, node: &str, memo: &mut BTreeMap<String, i64>) -> i64 {
+        if let Some(found) = memo.get(node) {
+            return *found;
+        }
+        memo.insert(node.to_string(), 0);
+        let deepest = graph.get(node).map_or(-1, |reads| reads.iter().filter(|read| read.as_str() != node).map(|read| steps(graph, read, memo)).max().unwrap_or(-1));
+        memo.insert(node.to_string(), 1 + deepest);
+        1 + deepest
+    }
+    let own = head(name);
+    out.insert("steps from the input grid".to_string(), steps(&graph, &own, &mut BTreeMap::new()) as f64);
+    let mut before: BTreeSet<&str> = BTreeSet::new();
+    let mut stack: Vec<&str> = graph.get(&own).map_or_else(Vec::new, |reads| reads.iter().map(String::as_str).collect());
+    while let Some(next) = stack.pop() {
+        if before.insert(next) {
+            if let Some(reads) = graph.get(next) {
+                stack.extend(reads.iter().map(String::as_str));
+            }
+        }
+    }
+    let facts_read = ["input", "ex_input", "ex_output"];
+    out.insert("tables before it".to_string(), before.iter().filter(|name| !facts_read.contains(*name) && **name != own).count() as f64);
+    out.insert("reads the input grid".to_string(), f64::from(u8::from(graph.get(&own).is_some_and(|reads| reads.contains("input")))));
     if let Some(body) = &detail.body {
         out.insert("reads one table twice".to_string(), f64::from(u8::from(body.reads_one_table_twice)));
         for (word, count) in [("relation atoms", body.relation_atoms), ("lib atoms", body.lib_atoms), ("comparisons", body.comparisons), ("NOTs", body.nots), ("ALLs", body.alls), ("ORs", body.ors), ("joined variables", body.joined_variables), ("variables not at a column", body.variables_not_at_a_column)] {

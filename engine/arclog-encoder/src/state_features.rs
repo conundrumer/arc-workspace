@@ -54,23 +54,29 @@ impl Relation {
 
 /// The nodes earlier than a form, each with its relation to a candidate at that form that reads `parents`.
 pub fn relations<'n>(nodes: &'n [Node], form: u64, parents: &[String]) -> Vec<(&'n Node, Relation)> {
-    let by_name: HashMap<&str, &Node> = nodes.iter().filter(|node| node.form < form).map(|node| (node.name.as_str(), node)).collect();
-    let direct: HashSet<&str> = parents.iter().map(String::as_str).collect();
+    // A relation or an instance is one step, so reading one table of an instance reads them all.
+    let head = |name: &'n str| -> &'n str { name.split('.').next().unwrap_or(name) };
+    let mut reads_of: HashMap<&str, Vec<&str>> = HashMap::new();
+    for node in nodes.iter().filter(|node| node.form < form) {
+        reads_of.entry(head(node.name.as_str())).or_default().extend(node.reads.iter().map(|read| read.split('.').next().unwrap_or(read.as_str())));
+    }
+    let direct: HashSet<&str> = parents.iter().map(|name| name.split('.').next().unwrap_or(name.as_str())).collect();
     let mut reached: HashSet<&str> = HashSet::new();
     let mut stack: Vec<&str> = direct.iter().copied().collect();
     while let Some(name) = stack.pop() {
-        if let Some(node) = by_name.get(name) {
-            for read in &node.reads {
-                if reached.insert(read.as_str()) {
-                    stack.push(read.as_str());
+        if let Some(reads) = reads_of.get(name) {
+            for read in reads {
+                if reached.insert(read) {
+                    stack.push(read);
                 }
             }
         }
     }
     nodes.iter().filter(|node| node.form < form).map(|node| {
-        let relation = if direct.contains(node.name.as_str()) {
+        let own = head(node.name.as_str());
+        let relation = if direct.contains(own) {
             Relation::Parent
-        } else if reached.contains(node.name.as_str()) {
+        } else if reached.contains(own) {
             Relation::Ancestor
         } else {
             Relation::Other

@@ -60,9 +60,22 @@ fn stable_of(owner: serde_json::Value, vector: &TableVector) -> Written {
 /// A table's list of named shapes. A shape that reads the output has the train pairs as its scope, and past them it is 0. Under `only_output`, the
 /// list holds only those.
 fn named_of(owner: serde_json::Value, table: &Stored, grids: &Grids, families: &Generators, examples: usize, only_output: bool) -> Written {
+    let shapes = named_shapes(table, &grids.facts, &grids.test_facts, &grids.input_facts);
+    written_shapes(owner, shapes, "named", &[], grids, families, examples, only_output)
+}
+
+/// A list of shapes given by name, each written as `(head name)`, with `numbers` that hold at every example beside them.
+#[allow(clippy::too_many_arguments)]
+fn written_shapes(owner: serde_json::Value, shapes: Vec<crate::catalog_lists::NamedShape>, head: &str, numbers: &[(String, f64)], grids: &Grids, families: &Generators, examples: usize, only_output: bool) -> Written {
     let mut stable: Vec<(u64, f32)> = Vec::new();
     let mut others: Vec<((u64, f32, f32, f32), Vec<f32>)> = Vec::new();
-    for shape in named_shapes(table, &grids.facts, &grids.test_facts, &grids.input_facts) {
+    for (name, value) in numbers.iter().filter(|(_, value)| *value != 0.0) {
+        let text = format!("({head} {name})");
+        let hash = hash_words(text.bytes().map(u64::from));
+        families.names.add_root(hash, text, 0);
+        stable.push((hash as u64, *value as f32));
+    }
+    for shape in shapes {
         let output = reads_output(&shape.name);
         if only_output && !output {
             continue;
@@ -72,7 +85,7 @@ fn named_of(owner: serde_json::Value, table: &Stored, grids: &Grids, families: &
         if values.iter().all(|value| *value == 0.0) {
             continue;
         }
-        let text = format!("(named {})", shape.name);
+        let text = format!("({head} {})", shape.name);
         let hash = hash_words(text.bytes().map(u64::from));
         let input = if shape.name.contains("input") || shape.name.contains("change") { READS_INPUT } else { 0 };
         families.names.add_root(hash, text, READS_TABLE | (if output { READS_OUTPUT } else { 0 }) | input);
@@ -647,16 +660,27 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
     }
     if lists_of == ListsOf::Named && !only_output {
         lists.push(named_of("ex_output".into(), &Stored::of_grids(&grids.outputs), &grids, families, examples, only_output));
+        let input_table = Stored::of_grids(&grids.inputs);
+        let mut claims: FastMap<usize, Vec<Option<crate::catalog_lists::Claims>>> = FastMap::default();
+        let mut sets = crate::candidate_progress::ValueSets::default();
+        let changed: Vec<Option<usize>> = grids.facts.iter().map(|fact| fact.same.then(|| fact.changed.count() as usize)).chain(grids.test_facts.iter().map(|_| None)).collect();
         for (at, members) in query_numbers.iter().enumerate() {
+            let form = candidates[at].0;
             for (member, numbers) in members.iter().enumerate() {
-                let mut written: Vec<(u64, f32)> = numbers.iter().filter(|(_, value)| *value != 0.0).map(|(name, value)| {
-                    let text = format!("(query {name})");
-                    let hash = hash_words(text.bytes().map(u64::from));
-                    families.names.add_root(hash, text, 0);
-                    (hash as u64, *value as f32)
-                }).collect();
-                written.sort_unstable_by_key(|entry| entry.0);
-                lists.push(Written { owner: format!("{at}/{member}/query").into(), ids: written.iter().map(|entry| entry.0).collect(), values: written.iter().map(|entry| entry.1).collect(), graded: Vec::new(), pairs: 0, at_pairs: Vec::new() });
+                let (table, parents) = &candidates[at].1[member];
+                let mut upstream: Vec<usize> = relations(&nodes, form, parents).into_iter().filter(|(_, relation)| matches!(relation, Relation::Parent | Relation::Ancestor)).filter_map(|(node, _)| prefix.get(&node.name).copied()).collect();
+                upstream.sort_unstable();
+                upstream.dedup();
+                for index in upstream.iter().chain([table]) {
+                    claims.entry(*index).or_insert_with(|| crate::catalog_lists::claims_of(&stored[*index], &grids.facts, &grids.test_facts, &grids.input_facts));
+                }
+                let before: Vec<&[Option<crate::catalog_lists::Claims>]> = upstream.iter().filter(|index| *index != table).map(|index| claims[index].as_slice()).collect();
+                let mut shapes = crate::candidate_progress::progress_shapes(&claims[table], &before, grids.train, &changed);
+                let up: Vec<&Stored> = upstream.iter().filter(|index| *index != table).map(|index| &stored[*index]).collect();
+                let direct: Vec<&Stored> = parents.iter().filter_map(|name| prefix.get(name)).map(|index| &stored[*index]).collect();
+                let reads_input = numbers.iter().any(|(name, value)| name == "reads the input grid" && *value != 0.0);
+                shapes.extend(crate::candidate_progress::structure_shapes(&stored[*table], &up, &direct, &input_table, reads_input, &mut sets));
+                lists.push(written_shapes(format!("{at}/{member}/query").into(), shapes, "query", numbers, &grids, families, examples, false));
             }
         }
     }
