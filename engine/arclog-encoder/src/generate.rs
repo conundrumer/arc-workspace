@@ -2309,6 +2309,8 @@ pub struct Slot {
     pub digest: u64,
     /// 0 where every value is the default, 1 where one is not, 2 where a bound stopped one.
     pub state: u8,
+    /// The count of ground expressions that the root's definition leaves out here, as a ratio whose denominator counts 0.
+    pub undefined: u32,
 }
 
 pub const SLOT_DEFAULT: u8 = 0;
@@ -2323,6 +2325,8 @@ pub struct RootTable {
     pub stride: usize,
     /// What each root reads, its size, and which kind of root it is.
     pub meta: Vec<(u8, u8, RootOf)>,
+    /// Per root, the count of terms that give it a value at every instance, and of those that give it one at the train instances alone.
+    bindings: FastMap<u128, (u32, u32)>,
 }
 
 impl RootTable {
@@ -2393,16 +2397,22 @@ pub struct Walker<'a> {
     eval: Evaluator<'a>,
     values: Vec<Val>,
     value_index: FastMap<u128, u32>,
-    memo: FastMap<(u32, u32, u32), (u32, usize)>,
-    counts: FastMap<(u32, u32, u32), (u32, u32, usize)>,
+    memo: FastMap<(u32, u32, u32), (u32, Forced)>,
+    counts: FastMap<(u32, u32, u32), (u32, u32, Forced)>,
     /// How keys group a value's rows: a hash of the grouping, and the count of groups.
     groupings: FastMap<(u32, u32), (u128, u32)>,
     /// A part's count of rows at a grouping of its first value, with its second value.
-    group_counts: FastMap<(u32, u32, u128, u32), (u32, usize)>,
+    group_counts: FastMap<(u32, u32, u128, u32), (u32, Forced)>,
     /// The cells that `values` holds.
     held_cells: usize,
-    /// The cells of `inside` rows that the walk in progress has written out.
+    /// The cells of the rows of lazy values that the walk in progress has written out, each lazy value once.
     written_cells: usize,
+    /// The lazy values that the walk in progress has charged for, by id.
+    charged: FastMap<u32, ()>,
+    /// The lazy values, with the cells of their written rows, that the evaluations in progress have forced, in order.
+    forced: Vec<(u32, usize)>,
+    /// For a lazy value by id, the id of its written rows and their cells.
+    written_of: FastMap<u32, (u32, usize)>,
     /// The count of examples of a task-wide walk.
     pub examples: u32,
     /// The cells and the memo entries it holds at most between walks.
@@ -2410,6 +2420,9 @@ pub struct Walker<'a> {
     /// Whether the last walk passed `WALK_CELLS` cells of values, so that the terms it extends after that point, and every term that reads one, have no value.
     pub over_budget: bool,
 }
+
+/// The lazy values that an evaluation forced, by id, with the cells of the rows written out for each.
+type Forced = Option<Arc<[(u32, usize)]>>;
 
 /// What a walker holds at most between walks.
 const HELD_CELLS: usize = 3_000_000;
@@ -2428,6 +2441,7 @@ fn rows_of(value: &Val) -> Option<u64> {
         Val::None => None,
         Val::Empty => Some(0),
         Val::Boxes(boxes) => Some(boxes.rows()),
+        Val::Joined(joined) => Some(joined.rows()),
         Val::Rows(parts) => Some(parts.iter().fold(1u64, |count, part| count.saturating_mul(part.table.len as u64))),
     }
 }
@@ -2440,40 +2454,52 @@ fn gcd(a: u64, b: u64) -> u64 {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
-/// The value of a root at an instance: no value, or a number and the word that hashes it.
-fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Option<(Number, u64)> {
-    let share = |top: u32, bottom: u32| -> Option<(Number, u64)> {
-        // A ratio with no rows in its second relation is left out, and stands at its default.
+/// What a root is at an instance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RootNumber {
+    /// A number, and the word that hashes it.
+    Value(Number, u64),
+    /// Unknown: a bound stopped the term, or it reads a relation that has no value. Its true value could change the greatest, the sum or the least of the root's values.
+    Unknown,
+    /// Undefined by the root's definition: a ratio whose denominator counts 0, or a set without exactly one member. It leaves the root's values, and the others stand.
+    Undefined,
+}
+
+/// The value of a root at an instance, from the counts of rows.
+fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> RootNumber {
+    let share = |top: u32, bottom: u32| -> RootNumber {
         if top == NO_COUNT || bottom == NO_COUNT {
-            return None;
+            return RootNumber::Unknown;
         }
-        if bottom == 0 || top == 0 {
-            return Some((Number::whole(0), 0));
+        // A ratio whose denominator counts 0 is undefined, 0 over 0 included. A zero numerator over a denominator that counts rows is 0.
+        if bottom == 0 {
+            return RootNumber::Undefined;
+        }
+        if top == 0 {
+            return RootNumber::Value(Number::whole(0), 0);
         }
         let held = Number::fraction(u64::from(top), u64::from(bottom));
-        Some((held, WORD_SET | (hash_words([u64::from(held.top as u32), u64::from(held.bottom)]) as u64 & PAYLOAD)))
+        RootNumber::Value(held, WORD_SET | (hash_words([u64::from(held.top as u32), u64::from(held.bottom)]) as u64 & PAYLOAD))
     };
     match of {
-        RootOf::Nonempty => (rows != NO_COUNT).then(|| (Number::whole(i64::from(rows > 0)), if rows > 0 { WORD_NONEMPTY | 1 } else { 0 })),
-        RootOf::Cardinality => (rows != NO_COUNT).then(|| (Number::whole(i64::from(rows)), if rows > 0 { WORD_COUNT | u64::from(rows) } else { 0 })),
+        RootOf::Nonempty if rows == NO_COUNT => RootNumber::Unknown,
+        RootOf::Nonempty => RootNumber::Value(Number::whole(i64::from(rows > 0)), if rows > 0 { WORD_NONEMPTY | 1 } else { 0 }),
+        RootOf::Cardinality if rows == NO_COUNT => RootNumber::Unknown,
+        RootOf::Cardinality => RootNumber::Value(Number::whole(i64::from(rows)), if rows > 0 { WORD_COUNT | u64::from(rows) } else { 0 }),
         RootOf::Share => share(rows, left),
         RootOf::Over => share(rows, other),
         RootOf::Under => share(other, rows),
         RootOf::OverExamples => share(rows, other),
-        RootOf::ValueSet => {
-            if rows == NO_COUNT {
-                return None;
-            }
-            // One member gives a number, and any other set gives no value, which here is the
-            // default of a set with no member.
-            (number > 0).then(|| (Number::whole(number_of_word(number)), WORD_SET | u64::from(number))).or(Some((Number::whole(0), 0)))
-        }
+        RootOf::ValueSet if rows == NO_COUNT => RootNumber::Unknown,
+        // One member gives a number. A set with no member, or with several, is undefined.
+        RootOf::ValueSet if number > 0 => RootNumber::Value(Number::whole(number_of_word(number)), WORD_SET | u64::from(number)),
+        RootOf::ValueSet => RootNumber::Undefined,
     }
 }
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, charged: FastMap::default(), forced: Vec::new(), written_of: FastMap::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
     }
 
     /// A walker that holds more between walks than [`Walker::new`], for many related tables.
@@ -2498,6 +2524,7 @@ impl<'a> Walker<'a> {
             self.counts = FastMap::default();
             self.groupings = FastMap::default();
             self.group_counts = FastMap::default();
+            self.written_of = FastMap::default();
             self.held_cells = 0;
             // The tables those values held are gone, so an address they had can hold another.
             clear_views();
@@ -2508,7 +2535,7 @@ impl<'a> Walker<'a> {
         match value {
             Val::None => 0,
             Val::Empty => 1,
-            Val::Rows(_) | Val::Boxes(_) => {
+            Val::Rows(_) | Val::Boxes(_) | Val::Joined(_) => {
                 let hash = value.hash();
                 if let Some(found) = self.value_index.get(&hash) {
                     return *found;
@@ -2517,6 +2544,13 @@ impl<'a> Walker<'a> {
                 if let Val::Rows(parts) = &value {
                     self.held_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
                 }
+                if let Val::Joined(joined) = &value {
+                    self.held_cells += joined.held_cells();
+                    if crate::bounds::enabled() {
+                        crate::bounds::tally("stored", "joined values".to_string(), 1);
+                        crate::bounds::tally("stored", "cells of joined values, held".to_string(), joined.held_cells() as u64);
+                    }
+                }
                 self.values.push(value);
                 self.value_index.insert(hash, at);
                 at
@@ -2524,29 +2558,86 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// The id of the value at `id` with the rows of `inside` written out, unless `step` takes what it needs from the boxes they come from, as its first relation or, where `first` is false, its second: the id of no value where they pass `CELL_CAP` cells.
+    /// The id of the value at `id` with the rows of `inside` or of a `join` written out, unless `step` takes what it needs from the relations they come from, as its first relation or, where `first` is false, its second: the id of no value where they pass `CELL_CAP` cells. A walk charges the cells of a lazy value's written rows once, however many evaluations force it.
     fn written_id(&mut self, step: &Step, id: u32, first: bool) -> u32 {
-        let Val::Boxes(boxes) = &self.values[id as usize] else { return id };
-        if if first { boxes.reads(step) } else { boxes.reads_second(step) } {
+        let held = &self.values[id as usize];
+        if !held.is_lazy() || held.lazy_reads(step, first) {
             return id;
         }
-        let value = boxes.written();
-        // The cells of the written rows count whether or not an earlier walk left them held, so a stop does not depend on what was walked before.
-        let cells = match &value {
-            Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
-            _ => 0,
+        let (written, cells) = match self.written_of.get(&id) {
+            Some(&found) => found,
+            None => {
+                let value = self.values[id as usize].written();
+                // The cells of the written rows count whether or not an earlier walk left them held, so a stop does not depend on what was walked before.
+                let cells = match &value {
+                    Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
+                    _ => 0,
+                };
+                let written = self.value_id(value);
+                self.written_of.insert(id, (written, cells));
+                (written, cells)
+            }
         };
-        let written = self.value_id(value);
-        self.written_cells += cells;
+        self.force(id, cells);
         written
     }
 
-    /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` that `step` would write out past `CELL_CAP` cells.
+    /// An evaluation forces the lazy value at `id`: the walk in progress charges its `cells` if it has not, and the evaluation records it.
+    fn force(&mut self, id: u32, cells: usize) {
+        self.forced.push((id, cells));
+        if self.charged.insert(id, ()).is_none() {
+            self.written_cells += cells;
+            if crate::bounds::enabled() {
+                crate::bounds::tally("charge", "cells charged, each lazy value once per walk".to_string(), cells as u64);
+            }
+        } else if crate::bounds::enabled() {
+            crate::bounds::tally("charge", "cells that a repeated force would have charged".to_string(), cells as u64);
+        }
+    }
+
+    /// The lazy values that the evaluations since `mark` forced.
+    fn forced_since(&self, mark: usize) -> Forced {
+        if self.forced.len() == mark {
+            return None;
+        }
+        let mut list = self.forced[mark..].to_vec();
+        list.sort_unstable();
+        list.dedup();
+        Some(list.into())
+    }
+
+    /// A memo hit forces the lazy values that its evaluation forced when it ran, as a fresh evaluation does.
+    fn replay(&mut self, forced: &Forced) {
+        if let Some(list) = forced {
+            for &(id, cells) in list.iter() {
+                self.force(id, cells);
+            }
+        }
+    }
+
+    /// Whether the value at `id` is a lazy value that `step` cannot read as its first relation and that passes `CELL_CAP` cells written out: a bound cuts it off.
+    fn cut_by_cap(&self, step: &Step, id: u32) -> bool {
+        let held = &self.values[id as usize];
+        held.is_lazy() && !held.lazy_reads(step, true) && !held.lazy_fits()
+    }
+
+    /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` or of a `join` that `step` would write out past `CELL_CAP` cells.
     fn has_no_value(&self, step: &Step, id: u32) -> bool {
-        match &self.values[id as usize] {
-            Val::None => true,
-            Val::Boxes(boxes) => !boxes.reads(step) && !boxes.fits(),
-            _ => false,
+        matches!(self.values[id as usize], Val::None) || self.cut_by_cap(step, id)
+    }
+
+    /// Whether the value at `id` gives `step` no value as its second relation: no value, or the rows of `inside` or of a `join` that `step` would write out past `CELL_CAP` cells.
+    fn second_has_no_value(&self, step: &Step, id: u32) -> bool {
+        let held = &self.values[id as usize];
+        matches!(held, Val::None) || (held.is_lazy() && !held.lazy_reads(step, false) && !held.lazy_fits())
+    }
+
+    /// The count of rows that an idle term gives at one instance, as the evaluation gives it: no value where the first relation has none, or the second has none. Any other idle term has no rows.
+    fn idle_rows(&self, step: &Step, first: u32, second: Option<u32>) -> u32 {
+        if self.has_no_value(step, first) || second.is_some_and(|second| self.second_has_no_value(step, second)) {
+            NO_COUNT
+        } else {
+            0
         }
     }
 
@@ -2567,8 +2658,8 @@ impl<'a> Walker<'a> {
 
     /// A term's count of rows and, for a number root, its number, with what can be left unbuilt left so.
     fn count_only(&mut self, step: &Step, at: usize, id: u32, b: u32, number: bool, steps: &StepIds) -> (u32, u32) {
-        if let Some(&(found, cost)) = self.memo.get(&(steps.ids[at], id, b)) {
-            self.written_cells += cost;
+        if let Some((found, forced)) = self.memo.get(&(steps.ids[at], id, b)).cloned() {
+            self.replay(&forced);
             let value = &self.values[found as usize];
             return (count_of(value), if number { number_word(value) } else { 0 });
         }
@@ -2590,20 +2681,38 @@ impl<'a> Walker<'a> {
                     return (groups, 0);
                 }
                 let key = (part, written, grouping, b);
-                if let Some(&(found, cost)) = self.group_counts.get(&key) {
-                    self.written_cells += cost;
+                if let Some((found, forced)) = self.group_counts.get(&key).cloned() {
+                    self.replay(&forced);
                     return (found, 0);
                 }
-                let before = self.written_cells;
+                let mark = self.forced.len();
                 let found = count_of(&self.apply(step, written, b));
-                self.group_counts.insert(key, (found, self.written_cells - before));
+                let forced = self.forced_since(mark);
+                self.group_counts.insert(key, (found, forced));
                 return (found, 0);
             }
         }
+        // The count of distinct tuples of a `join`'s rows is read from its sides, with no tuples written.
+        if !number {
+            let joined = match &self.values[id as usize] {
+                Val::Joined(joined) => Some(joined.clone()),
+                _ => None,
+            };
+            if let Some(joined) = joined {
+                crate::bounds::begin();
+                if let Some(found) = joined.count_of(step) {
+                    crate::bounds::end(false);
+                    return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
+                }
+            }
+        }
+        // The count of a `join` or an `antijoin` is read from its sides' histograms, with no rows written. Their sides are written where they stand as the rows of `inside` or of a `join`.
         if !number && matches!(step, Step::Join { .. } | Step::Antijoin { .. }) {
-            let first = self.values[id as usize].clone();
-            let second = self.values[b as usize].clone();
             crate::bounds::begin();
+            let first_id = self.written_id(step, id, true);
+            let second_id = self.written_id(step, b, false);
+            let first = self.values[first_id as usize].clone();
+            let second = self.values[second_id as usize].clone();
             if let Some(found) = self.eval.count(step, &[&first, &second]) {
                 crate::bounds::end(id == 0 || b == 0);
                 return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
@@ -2639,7 +2748,10 @@ impl<'a> Walker<'a> {
         }
         let mut table = RootTable { stride: instances, ..RootTable::default() };
         let mut walk_cells = 0usize;
+        let mut left_out = false;
         self.written_cells = 0;
+        self.charged.clear();
+        self.forced.clear();
         // Per term, whether the walk's stop left it unevaluated, or it reads a term so left. Such a term has no value, and so has each root over it.
         let mut stopped: Vec<bool> = vec![false; leaves.len()];
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
@@ -2666,10 +2778,15 @@ impl<'a> Walker<'a> {
             let extended = term.used;
             let mut own = Vec::new();
             let on_no_rows = matches!(step, Step::Part(part) if part.gives_rows_on_no_rows());
-            // A term whose first relation has no value, or the rows of `inside` that `step` cannot write, has no value at any instance.
-            let idle = (!on_no_rows && first[..scope].iter().all(|id| *id == 1)) || first[..scope].iter().all(|id| self.has_no_value(step, *id)) || (matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1));
+            // A term whose first relation is empty, or whose second relation of a `join` or a `semijoin` is, has no rows. One whose first relation has no value, or is the rows of `inside` or of a `join` that `step` cannot write, has no value.
+            let first_empty = !on_no_rows && first[..scope].iter().all(|id| *id == 1);
+            let first_cut = first[..scope].iter().all(|id| self.has_no_value(step, *id));
+            let second_empty = matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1);
+            let idle = first_empty || first_cut || second_empty;
+            // A first relation that a bound cut off, at an instance, leaves the term with no value there: a stop, which spreads to the terms that read it.
+            let cut_by_bound = first_cut && first[..scope].iter().any(|id| self.cut_by_cap(step, *id));
             let past_bound = extended && walk_cells + self.written_cells > WALK_CELLS;
-            let is_stopped = past_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]);
+            let is_stopped = past_bound || cut_by_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]);
             if extended {
                 own.reserve(instances);
                 if past_bound {
@@ -2680,20 +2797,22 @@ impl<'a> Walker<'a> {
                 for pair in 0..if past_bound { 0 } else { scope } {
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
                     let key = (step_id, first[pair], b);
-                    // A memo hit adds the cells that the evaluation wrote out when it ran, as a fresh evaluation adds them.
-                    let id = match self.memo.get(&key) {
-                        Some(&(found, cost)) => {
-                            self.written_cells += cost;
+                    // A memo hit charges the lazy values that the evaluation forced when it ran, as a fresh evaluation does, those that the walk has not charged.
+                    let mark = self.forced.len();
+                    let id = match self.memo.get(&key).cloned() {
+                        Some((found, forced)) => {
+                            self.replay(&forced);
                             found
                         }
                         None => {
-                            let before = self.written_cells;
                             let value = self.apply(step, first[pair], b);
                             let id = self.value_id(value);
-                            self.memo.insert(key, (id, self.written_cells - before));
+                            let forced = self.forced_since(mark);
+                            self.memo.insert(key, (id, forced));
                             id
                         }
                     };
+                    self.forced.truncate(mark);
                     if let Val::Rows(parts) = &self.values[id as usize] {
                         walk_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
                     }
@@ -2703,32 +2822,52 @@ impl<'a> Walker<'a> {
             }
             if wanted && is_stopped && listed != 0 {
                 // A root over a stopped term has no value at any instance, which is not its default.
+                let counted = cut_by_bound && !(past_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]));
                 for (place, (hash, of)) in term.roots.iter().enumerate() {
                     if listed & (1 << place) != 0 {
+                        if counted {
+                            crate::bounds::tally("stopped: first cut by cap", format!("{of:?}"), scope as u64);
+                        }
                         let base = table.slots_of(*hash, term.flags, term.size, *of);
                         table.slots[base..base + scope].iter_mut().for_each(|slot| slot.state = SLOT_NO_VALUE);
                     }
                 }
-            } else if wanted && !idle && listed != 0 && !term.roots.is_empty() {
+            } else if wanted && listed != 0 && !term.roots.is_empty() {
+                for (place, (hash, _)) in term.roots.iter().enumerate() {
+                    if listed & (1 << place) != 0 {
+                        let held = table.bindings.entry(*hash).or_insert((0, 0));
+                        if reads_output {
+                            held.1 += 1;
+                        } else {
+                            held.0 += 1;
+                        }
+                    }
+                }
                 for pair in 0..scope {
                     let (id, b) = (first[pair], if term.b == NO_TERM { NO_TERM } else { second[pair] });
-                    let (rows, number) = if extended {
+                    // An idle term gives what the evaluation gives, with no evaluation.
+                    let (rows, number) = if idle {
+                        (self.idle_rows(step, id, if term.b == NO_TERM { None } else { Some(b) }), 0)
+                    } else if extended {
                         let value = &self.values[own[pair] as usize];
                         (count_of(value), if term.root == RootKind::Number { number_word(value) } else { 0 })
                     } else {
                         let key = (step_id, id, b);
-                        match self.counts.get(&key) {
-                            Some(&(rows, number, cost)) => {
-                                self.written_cells += cost;
+                        let mark = self.forced.len();
+                        let counted = match self.counts.get(&key).cloned() {
+                            Some((rows, number, forced)) => {
+                                self.replay(&forced);
                                 (rows, number)
                             }
                             None => {
-                                let before = self.written_cells;
                                 let found = self.count_only(step, at, id, b, term.root == RootKind::Number, steps);
-                                self.counts.insert(key, (found.0, found.1, self.written_cells - before));
+                                let forced = self.forced_since(mark);
+                                self.counts.insert(key, (found.0, found.1, forced));
                                 found
                             }
-                        }
+                        };
+                        self.forced.truncate(mark);
+                        counted
                     };
                     let left = count_of(&self.values[id as usize]);
                     let other = if term.b == NO_TERM { NO_COUNT } else { count_of(&self.values[b as usize]) };
@@ -2738,14 +2877,30 @@ impl<'a> Walker<'a> {
                         }
                         let value = root_value(*of, rows, left, if *of == RootOf::OverExamples { self.examples } else { other }, number);
                         // Nothing to add at a default value, which is a slot's own state.
-                        if matches!(value, Some((_, 0))) {
+                        if matches!(value, RootNumber::Value(_, 0)) {
                             continue;
+                        }
+                        if crate::bounds::enabled() {
+                            let cause = match value {
+                                RootNumber::Undefined if idle => Some("left out: idle term"),
+                                RootNumber::Undefined => Some("left out: full path"),
+                                RootNumber::Unknown if idle && first_cut => Some("no value: idle, first has no value"),
+                                RootNumber::Unknown if idle => Some("no value: idle, second has no value"),
+                                _ => None,
+                            };
+                            if let Some(cause) = cause {
+                                crate::bounds::tally(cause, format!("{of:?}"), 1);
+                            }
                         }
                         let base = table.slots_of(*hash, term.flags, term.size, *of);
                         let slot = &mut table.slots[base + pair];
                         match value {
-                            None => slot.state = SLOT_NO_VALUE,
-                            Some((held, word)) => {
+                            RootNumber::Unknown => slot.state = SLOT_NO_VALUE,
+                            RootNumber::Undefined => {
+                                slot.undefined += 1;
+                                left_out = true;
+                            }
+                            RootNumber::Value(held, word) => {
                                 if slot.state == SLOT_DEFAULT {
                                     slot.state = SLOT_VALUE;
                                     slot.greatest = held;
@@ -2773,6 +2928,20 @@ impl<'a> Walker<'a> {
             ids.push(own);
             stopped.push(is_stopped);
         }
+        // A root that every one of its bindings leaves out at an instance has no value there.
+        let out_scope = train.min(instances);
+        let RootTable { index, slots, bindings, stride, meta } = &mut table;
+        for (hash, at) in index.iter().filter(|_| left_out) {
+            let (full, out) = bindings.get(hash).copied().unwrap_or((0, 0));
+            for (pair, slot) in slots[*at as usize * *stride..*at as usize * *stride + instances].iter_mut().enumerate() {
+                if slot.undefined > 0 && slot.state == SLOT_DEFAULT && slot.undefined == full + if pair < out_scope { out } else { 0 } {
+                    slot.state = SLOT_NO_VALUE;
+                    if crate::bounds::enabled() {
+                        crate::bounds::tally("no value: every binding left out", format!("{:?}", meta[*at as usize].2), 1);
+                    }
+                }
+            }
+        }
         // A task keeps a walker per schema, so one large walk leaves nothing behind.
         self.keep_within_budget();
         crate::bounds::flush();
@@ -2782,6 +2951,8 @@ impl<'a> Walker<'a> {
     /// The count of rows at each instance of each term whose text holds `pattern`, leaves
     /// included, for a check against the expression that a term stands for.
     pub fn term_counts(&mut self, leaves: &[Vec<Val>], train: usize, pattern: &str) -> Vec<(String, Vec<Option<u64>>)> {
+        self.charged.clear();
+        self.forced.clear();
         let family = self.family;
         let pairs = leaves[0].len();
         let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
@@ -3015,8 +3186,8 @@ impl Walker<'_> {
 
 /// The word of a relation's one number, where it has one row.
 fn number_word(value: &Val) -> u32 {
-    // The rows of `inside` have three columns at least.
-    if matches!(value, Val::Boxes(_)) {
+    // The rows of `inside` have three columns at least, and a number stands in a relation of one column.
+    if value.is_lazy() {
         return 0;
     }
     let Some(table) = flat(value) else { return 0 };

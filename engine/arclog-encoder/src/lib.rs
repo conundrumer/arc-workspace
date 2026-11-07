@@ -26,6 +26,8 @@
 //!   what those forms compute.
 //! - [`boxes`]: the rows of `inside`, as the boxes they come from, written out where an
 //!   operator needs the rows themselves.
+//! - [`joined`]: the rows of a `join`, as the two sides they come from, written out where an
+//!   operator needs the rows themselves.
 pub mod atom_lists;
 pub mod body_features;
 pub mod bounds;
@@ -50,6 +52,7 @@ pub mod gen_constants;
 pub mod gen_parts;
 pub mod generate;
 pub mod grid_walks;
+pub mod joined;
 pub mod law;
 pub mod library;
 pub mod native;

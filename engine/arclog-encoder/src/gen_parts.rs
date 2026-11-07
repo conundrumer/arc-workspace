@@ -321,8 +321,8 @@ impl PartStep {
 
 /// A value's rows in the order of its columns.
 pub fn flat(value: &Val) -> Option<Arc<Table>> {
-    if let Val::Boxes(boxes) = value {
-        return flat(&boxes.written());
+    if value.is_lazy() {
+        return flat(&value.written());
     }
     let Val::Rows(parts) = value else { return Some(Table::new(1, Vec::new())) };
     if let [one] = parts.as_slice() {

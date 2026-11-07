@@ -17,17 +17,17 @@ use std::sync::{Mutex, OnceLock};
 pub enum Bound {
     /// `inside-boxes` and `boxes-holding`: the rows of the left side times the boxes of the right side pass 4,000,000.
     BoxesGuard,
-    /// A side of a `join`, as a product of parts, passes `CELL_CAP` cells.
+    /// A side of a `join`, as a product of parts, passes `CELL_CAP` cells. No step marks it: a `join` reads the parts of a side in place, or joins them one at a time.
     JoinSide,
-    /// The rows that a `join` builds pass `CELL_CAP` cells.
+    /// The rows of a `join` that an operator reads, written out or as the tuples at the columns it names, pass `CELL_CAP` cells.
     JoinOutput,
-    /// A side of an `antijoin` passes `CELL_CAP` cells.
+    /// The product of the parts of an `antijoin`'s left that hold its paired columns passes `CELL_CAP` cells. One part is read in place at any size.
     AntijoinSide,
-    /// The touched parts of a `select` pass `CELL_CAP` cells as a product.
+    /// The pairs of rows that a `select` keeps from two parts, where it compares a column of one with a column of the other, pass `CELL_CAP` cells.
     SelectSide,
     /// A side or the output of a `union` passes `CELL_CAP` cells.
     Union,
-    /// The rows that a count of a `join` stands for pass `CELL_CAP` cells.
+    /// The groups that a count over a `join` stands for pass `CELL_CAP` cells, or the work of counting the distinct tuples of its rows passes its bound.
     CountOutput,
     /// A product of parts that `flat` writes passes 2^18 rows.
     Flat,
@@ -162,6 +162,16 @@ pub fn skipped(bound: Bound, count: u64) {
     }
 }
 
+/// Counts of a walk by group and by label, for the checks of a change.
+static TALLIES: OnceLock<Mutex<HashMap<(&'static str, String), u64>>> = OnceLock::new();
+
+/// `count` more under a label of a group.
+pub fn tally(group: &'static str, label: String, count: u64) {
+    if enabled() && count > 0 {
+        *TALLIES.get_or_init(Default::default).lock().unwrap().entry((group, label)).or_insert(0) += count;
+    }
+}
+
 /// Adds this thread's counts to the totals.
 pub fn flush() {
     if !enabled() {
@@ -188,6 +198,14 @@ pub fn summary() -> String {
         out.push_str(&format!("bounds\t{name}\t(all heads)\t{whole}\n"));
         for (head, count) in heads {
             out.push_str(&format!("bounds\t{name}\t{head}\t{count}\n"));
+        }
+    }
+    out.push_str("bounds\ttally\tgroup\tlabel\tcount\n");
+    if let Some(tallies) = TALLIES.get() {
+        let mut rows: Vec<_> = tallies.lock().unwrap().iter().map(|((group, label), count)| (*group, label.clone(), *count)).collect();
+        rows.sort();
+        for (group, label, count) in rows {
+            out.push_str(&format!("bounds\ttally\t{group}\t{label}\t{count}\n"));
         }
     }
     out.push_str("bounds\thead\tevaluations\tinput had no value\n");

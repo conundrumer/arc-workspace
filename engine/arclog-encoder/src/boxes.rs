@@ -323,7 +323,7 @@ impl Boxes {
                 [one] if one.table.arity == usize::from(self.width()) && one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) => one.table.clone(),
                 _ => return None,
             },
-            Val::Boxes(_) => return None,
+            Val::Boxes(_) | Val::Joined(_) => return None,
         };
         Some(self.with_rows(&table))
     }
@@ -374,7 +374,7 @@ impl Boxes {
 }
 
 /// The columns of `step`'s second relation that it reads, where what it gives depends on the distinct tuples of the rows at those columns alone.
-fn second_columns(step: &Step) -> Option<Vec<u16>> {
+pub(crate) fn second_columns(step: &Step) -> Option<Vec<u16>> {
     match step {
         Step::Semijoin { right, .. } | Step::Antijoin { right, .. } | Step::All { right, .. } => Some(right.to_vec()),
         Step::Part(part) => part.second_columns(),

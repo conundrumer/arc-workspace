@@ -1302,6 +1302,7 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
 
 /// Each row of a value, or none where the value has none.
 fn value_rows(value: &arclog_encoder::native::Val) -> Option<Vec<Vec<u32>>> {
+    let value = &value.written();
     if matches!(value, arclog_encoder::native::Val::None) {
         return None;
     }
