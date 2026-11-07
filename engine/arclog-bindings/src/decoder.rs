@@ -362,6 +362,24 @@ impl PyDecoder {
         Ok(written_query_hash(query).0)
     }
 
+    /// For each part of the finished `RIGID_DET` form at `index`, in the
+    /// order that the form lists its parts, `(path, position)`: the path of
+    /// the part's output after the form's name, as the program spells it,
+    /// and the position of the part in the form's canonical form. A part that
+    /// ties with an earlier part has the earlier part's position. The Name
+    /// that `step_tables` gives the part's output table is `slot <index of
+    /// the part>`, and `arclog.rigid_slot_name` gives the Name of a read,
+    /// which holds the position and the steps of the path after the part's
+    /// own. Index -1 is the last finished query. `IndexError` where there is
+    /// no finished query at `index`, `ValueError` where it is no `RIGID_DET`
+    /// form.
+    #[pyo3(signature = (index=-1))]
+    fn rigid_parts(&self, index: isize) -> PyResult<Vec<(String, u32)>> {
+        let decoder = self.decoder();
+        let (position, _) = finished_query(decoder.program(), index)?;
+        arclog::resolver::rigid_parts(decoder.program(), position, Registry::get()).map_err(PyValueError::new_err)
+    }
+
     /// The program so far, as an arclog file.
     fn program_form(&self) -> String {
         arclog::write::write_synthesized(self.decoder().program(), Registry::get())

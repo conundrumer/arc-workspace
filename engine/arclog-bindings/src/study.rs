@@ -253,6 +253,15 @@ impl PyStudyProgram {
         Ok(lists)
     }
 
+    /// For each part of the `RIGID_DET` form at `index`, in the order that
+    /// the form lists its parts, `(path, position)`, as `Decoder.rigid_parts`
+    /// gives them. `IndexError` where the program has no form at `index`,
+    /// `ValueError` where it is no `RIGID_DET` form.
+    fn rigid_parts(&self, index: isize) -> PyResult<Vec<(String, u32)>> {
+        let (position, _) = finished_query(self.program.program(), index)?;
+        arclog::resolver::rigid_parts(self.program.program(), position, Registry::get()).map_err(PyValueError::new_err)
+    }
+
     fn sexp(&self) -> String {
         self.program.sexp(Registry::get())
     }

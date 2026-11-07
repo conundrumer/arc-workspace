@@ -1094,6 +1094,33 @@ pub fn rigid_read_name(program: &Node<Program>, read: &str, registry: &Registry)
     crate::program::rigid_output_name(rigid, &path, |part| positions[part]).ok_or_else(unread)
 }
 
+/// For each part of the `RIGID_DET` form at the top-level position `position`
+/// of `program`, in the order that the form lists its parts: the path of the
+/// part's output after the form's name, as a file writes it (`glyph`,
+/// `bbox.box`), and the position of the part in the form's canonical form,
+/// with a part that ties with an earlier part ([`ResolvedProgram::rigid_part_positions`])
+/// at the least such part's position. The Name of the part's output is
+/// `slot <position>`, followed by the steps of the path after the part's own,
+/// as [`rigid_read_name`] gives it. The error says that `position` names no
+/// `RIGID_DET` form of `program`.
+pub fn rigid_parts(program: &Node<Program>, position: usize, registry: &Registry) -> Result<Vec<(String, u32)>, String> {
+    let Some(crate::program::Form::RigidDet(rigid)) = program.value().forms.get(position) else {
+        return Err(format!("the form at position {position} is no `RIGID_DET` form of the program"));
+    };
+    let prefix = Node::new(Program { forms: program.value().forms[..=position].into() });
+    let positions = resolve(&prefix, None, &SolverScope::default(), registry)
+        .value
+        .rigid_part_positions(position, registry)
+        .ok_or_else(|| format!("the form at position {position} has no part positions"))?;
+    Ok(rigid
+        .value()
+        .parts
+        .iter()
+        .zip(positions.iter())
+        .map(|(part, &at)| (form_columns::part_steps(&part.value().relation).map_or_else(String::new, |steps| crate::program::output_path_spelled(&steps)), at))
+        .collect())
+}
+
 /// The most layers over the lowest that a chain of layered resolutions holds.
 /// A lookup of an entry in a lower layer takes one step for each layer above
 /// it, so the chain is cut at this count by a full resolution.
