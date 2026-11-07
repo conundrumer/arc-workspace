@@ -2338,6 +2338,55 @@ impl RootTable {
     }
 }
 
+/// A list of shapes, each by the low 64 bits of its hash, which is how a vector names it.
+#[derive(Clone, Debug, Default)]
+pub struct ShapeList {
+    shapes: HashSet<u64>,
+}
+
+impl ShapeList {
+    pub fn new(shapes: impl IntoIterator<Item = u64>) -> ShapeList {
+        ShapeList { shapes: shapes.into_iter().collect() }
+    }
+
+    /// The hash of a shape's text, as the vector names it.
+    pub fn hash_of_text(text: &str) -> u64 {
+        hash_words(text.bytes().map(u64::from)) as u64
+    }
+
+    pub fn of_texts<'t>(texts: impl IntoIterator<Item = &'t str>) -> ShapeList {
+        ShapeList::new(texts.into_iter().map(ShapeList::hash_of_text))
+    }
+
+    pub fn contains(&self, shape: u64) -> bool {
+        self.shapes.contains(&shape)
+    }
+
+    pub fn len(&self) -> usize {
+        self.shapes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.shapes.is_empty()
+    }
+}
+
+/// The terms of one family that a list of shapes needs: the terms with a listed root, and every term that a term
+/// of the mask reads, directly or through other terms. It is made for one family and one list.
+pub struct ShapeMask {
+    /// Per term, whether a walk over the mask walks it.
+    needed: Vec<bool>,
+    /// Per term, a bit for each of its roots that the list holds.
+    listed: Vec<u8>,
+}
+
+impl ShapeMask {
+    /// The count of terms that a walk over the mask walks, and the count of roots it writes.
+    pub fn counts(&self) -> (usize, usize) {
+        (self.needed.iter().filter(|held| **held).count(), self.listed.iter().map(|bits| bits.count_ones() as usize).sum())
+    }
+}
+
 /// One family's evaluation on one task.
 pub struct Walker<'a> {
     family: &'a Generated,
@@ -2358,6 +2407,8 @@ pub struct Walker<'a> {
     pub examples: u32,
     /// The cells and the memo entries it holds at most between walks.
     budget: (usize, usize),
+    /// Whether the last walk passed `WALK_CELLS` cells of values, so that the terms after that point have no value.
+    pub over_budget: bool,
 }
 
 /// What a walker holds at most between walks.
@@ -2422,7 +2473,7 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Opti
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, examples: 0, budget: (HELD_CELLS, HELD_MEMO) }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
     }
 
     /// A walker that holds more between walks than [`Walker::new`], for many related tables.
@@ -2559,7 +2610,18 @@ impl<'a> Walker<'a> {
     /// output: a root that reads the output has a value at those alone, and any other root at
     /// every instance. With `only_output`, only the roots that read the output enter.
     pub fn walk(&mut self, leaves: &[Vec<Val>], train: usize, only_output: bool) -> RootTable {
+        self.walk_of(leaves, train, only_output, None)
+    }
+
+    /// [`Walker::walk`] over the terms that `mask` marks, which are those whose roots the mask's list holds and every term they read. Only the listed roots enter the table, and they hold what a full walk gives them, unless a walk's bound stops a term: this walk adds up the cells of the terms it walks alone.
+    pub fn walk_shapes(&mut self, leaves: &[Vec<Val>], train: usize, only_output: bool, mask: &ShapeMask) -> RootTable {
+        assert_eq!(mask.needed.len(), self.family.terms.len(), "a mask is made for the family it walks");
+        self.walk_of(leaves, train, only_output, Some(mask))
+    }
+
+    fn walk_of(&mut self, leaves: &[Vec<Val>], train: usize, only_output: bool, mask: Option<&ShapeMask>) -> RootTable {
         self.keep_within_budget();
+        self.over_budget = false;
         let family = self.family;
         let steps = family.step_ids();
         let instances = leaves[0].len();
@@ -2572,6 +2634,15 @@ impl<'a> Walker<'a> {
         let mut walk_cells = 0usize;
         self.written_cells = 0;
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
+            // A term that no listed root reads stands as an empty value, which no term that is walked reads.
+            let listed = match mask {
+                Some(mask) if !mask.needed[at] => {
+                    ids.push(Vec::new());
+                    continue;
+                }
+                Some(mask) => mask.listed[at],
+                None => u8::MAX,
+            };
             if let Some(head) = family.bound_heads.get(at) {
                 crate::bounds::set_head(*head);
             }
@@ -2590,6 +2661,7 @@ impl<'a> Walker<'a> {
             if extended {
                 own.reserve(instances);
                 if walk_cells + self.written_cells > WALK_CELLS {
+                    self.over_budget = true;
                     crate::bounds::skipped(crate::bounds::Bound::Walk, scope as u64);
                 }
                 // Past the bound, what a term gives has no value, so a walk's memory stays bounded.
@@ -2612,7 +2684,7 @@ impl<'a> Walker<'a> {
                 }
                 own.resize(instances, 0);
             }
-            if wanted && !idle && !term.roots.is_empty() {
+            if wanted && !idle && listed != 0 && !term.roots.is_empty() {
                 for pair in 0..scope {
                     let (id, b) = (first[pair], if term.b == NO_TERM { NO_TERM } else { second[pair] });
                     let (rows, number) = if extended {
@@ -2631,7 +2703,10 @@ impl<'a> Walker<'a> {
                     };
                     let left = count_of(&self.values[id as usize]);
                     let other = if term.b == NO_TERM { NO_COUNT } else { count_of(&self.values[b as usize]) };
-                    for (hash, of) in &term.roots {
+                    for (place, (hash, of)) in term.roots.iter().enumerate() {
+                        if listed & (1 << place) == 0 {
+                            continue;
+                        }
                         let value = root_value(*of, rows, left, if *of == RootOf::OverExamples { self.examples } else { other }, number);
                         // Nothing to add at a default value, which is a slot's own state.
                         if matches!(value, Some((_, 0))) {
@@ -2708,6 +2783,35 @@ impl<'a> Walker<'a> {
 }
 
 impl Generated {
+    /// The terms that `list` needs, for [`Walker::walk_shapes`] over this family.
+    pub fn shape_mask(&self, list: &ShapeList) -> ShapeMask {
+        let count = self.terms.len();
+        let mut needed = vec![false; count];
+        let mut listed = vec![0u8; count];
+        for (at, term) in self.terms.iter().enumerate().skip(self.first_term) {
+            assert!(term.roots.len() <= 8, "a term has up to 8 roots");
+            for (place, (hash, _)) in term.roots.iter().enumerate() {
+                if list.contains(*hash as u64) {
+                    listed[at] |= 1 << place;
+                }
+            }
+            needed[at] = listed[at] != 0;
+        }
+        // A term reads terms before it, so one pass from the last term to the first marks all that a term reads.
+        for at in (self.first_term..count).rev() {
+            if !needed[at] {
+                continue;
+            }
+            let term = &self.terms[at];
+            for read in [term.a, term.b] {
+                if read != NO_TERM {
+                    needed[read as usize] = true;
+                }
+            }
+        }
+        ShapeMask { needed, listed }
+    }
+
     fn step_ids(&self) -> &StepIds {
         self.step_ids.get_or_init(|| {
             let mut steps: FastMap<u128, u32> = FastMap::default();
