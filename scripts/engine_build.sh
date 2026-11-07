@@ -5,6 +5,7 @@
 #   checkout/      the build checkout, a detached worktree of the repo. Each build moves it to SHA, so git rewrites only the files that differ.
 #   target/        the cargo target folder. Only the build checkout builds into it, so cargo never reuses a crate built from another tree.
 #   builds/NAME/   the engine build: the arclog and arclog_features packages, for PYTHONPATH.
+#   linux/NAME/    Linux x86_64 wheels of arclog and arclog_features, with SHA256SUMS and COMMIT, for a pod.
 #   bin/           tool binaries, each as TOOL-NAME.
 #   logs/NAME.log  each step's time and cargo's output.
 #   build.lock     held while a build step runs.
@@ -13,6 +14,7 @@
 #   wheel    arclog and arclog_features into builds/NAME/.
 #   encoder  feature-encoder into bin/feature-encoder-NAME.
 #   cli      arclog-cli's arclog-cli, verdicts and stream_round_trip into bin/.
+#   linux    Linux x86_64 wheels, cross-built with zig into the same target folder, into linux/NAME/.
 #   tests    the tests of the arclog crate.
 #
 # A step that fails prints the end of its cargo output and ends the build with status 1.
@@ -23,7 +25,7 @@ PARTS=${*:-wheel}
 MAIN=$(dirname "$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)")
 R=${ENGINE_BUILD_ROOT:-$MAIN/work/engine-builds}
 B=$R/checkout; T=$R/target; LOG=$R/logs/$NAME.log; LOCK=$R/build.lock
-mkdir -p "$R/builds" "$R/bin" "$R/logs" "$R/wheels"
+mkdir -p "$R/builds" "$R/bin" "$R/logs" "$R/wheels" "$R/linux"
 : > "$LOG"
 step() { echo "$(date +%H:%M:%S) $*" | tee -a "$LOG"; }
 
@@ -56,6 +58,14 @@ cli() {
   for TOOL in arclog-cli verdicts stream_round_trip; do cp "$T/tool/$TOOL" "$R/bin/$TOOL-$NAME"; done
 }
 
+linux() {
+  rm -rf "$R/linux/$NAME" && mkdir -p "$R/linux/$NAME" &&
+  for P in arclog-py arclog-features-py; do
+    CARGO_TARGET_DIR=$T PYTHONDONTWRITEBYTECODE=1 maturin build --offline --profile tool --target x86_64-unknown-linux-gnu --zig --manifest-path "$B/engine/$P/Cargo.toml" -o "$R/linux/$NAME" || return 1
+  done &&
+  (cd "$R/linux/$NAME" && shasum -a 256 *.whl > SHA256SUMS && git -C "$B" rev-parse HEAD > COMMIT)
+}
+
 tests() {
   CARGO_TARGET_DIR=$T cargo test --offline -p arclog --manifest-path "$B/engine/Cargo.toml"
 }
@@ -71,6 +81,7 @@ for PART in $PARTS; do
       step "engine build $R/builds/$NAME";;
     encoder) locked encoder || fail encoder; step "$R/bin/feature-encoder-$NAME";;
     cli) locked cli || fail cli; step "$R/bin/{arclog-cli,verdicts,stream_round_trip}-$NAME";;
+    linux) locked linux || fail linux; step "$R/linux/$NAME";;
     tests) locked tests || fail tests; step "tests: $(grep -E '^test result' "$LOG" | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')";;
     *) step "unknown part $PART"; exit 1;;
   esac
