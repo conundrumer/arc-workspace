@@ -495,11 +495,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
     let cap = 2000;
     let mut stored: Vec<Stored> = Vec::new();
     let mut content_at: FastMap<u128, usize> = FastMap::default();
-    let mut add_table = |value: &serde_json::Value, stored: &mut Vec<Stored>| -> Option<usize> {
-        if value["too_large"].as_bool() == Some(true) {
-            return None;
-        }
-        let table = Stored::of_json(value, train, test, cap)?;
+    let mut place = |table: Stored, stored: &mut Vec<Stored>| -> Option<usize> {
         if table.types.len() > 8 {
             return None;
         }
@@ -508,15 +504,42 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
             stored.len() - 1
         }))
     };
+    // A candidate's table has no value at an example of more than `cap` rows.
+    let candidate_table = |value: &serde_json::Value| -> Option<Stored> {
+        if value["too_large"].as_bool() == Some(true) {
+            return None;
+        }
+        Stored::of_json(value, train, test, cap)
+    };
+    // `prefix` places the tables of the state that a walk reads as T: a table with no train example past `cap`, and no value at its test examples past it.
+    // `as_u` places each table of the state as U, with all its rows. A table with an example past `cap` has a second copy for U, placed after the
+    // tables that a walk reads as T.
     let mut prefix: BTreeMap<String, usize> = BTreeMap::new();
+    let mut as_u: BTreeMap<String, usize> = BTreeMap::new();
+    let mut whole_parents: Vec<(String, Stored)> = Vec::new();
     let mut read_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut note_names = |names: &serde_json::Value| {
         read_names.extend(names.as_array().into_iter().flatten().filter_map(|name| name.as_str().map(str::to_string)));
     };
     if let Some(tables) = data["prefix"].as_object() {
         for (name, value) in tables {
-            if let Some(at) = add_table(value, &mut stored) {
-                prefix.insert(name.clone(), at);
+            if value["too_large"].as_bool() == Some(true) {
+                continue;
+            }
+            let Some(whole) = Stored::of_json(value, train, test, usize::MAX) else { continue };
+            let past = whole.examples_past(cap);
+            if past.is_empty() {
+                if let Some(at) = place(whole, &mut stored) {
+                    prefix.insert(name.clone(), at);
+                    as_u.insert(name.clone(), at);
+                }
+            } else if whole.types.len() <= 8 {
+                if past.iter().all(|example| *example >= train) {
+                    if let Some(at) = place(whole.without_examples(&past), &mut stored) {
+                        prefix.insert(name.clone(), at);
+                    }
+                }
+                whole_parents.push((name.clone(), whole));
             }
         }
     }
@@ -564,7 +587,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
         for mutant in item["mutants"].as_array().into_iter().flatten() {
             note_names(&mutant["parents"]);
         }
-        let Some(gold) = add_table(&item["gold"], &mut stored) else {
+        let Some(gold) = candidate_table(&item["gold"]).and_then(|table| place(table, &mut stored)) else {
             left_out += 1;
             continue;
         };
@@ -576,7 +599,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
         let mut own_numbers = vec![numbers_of(&item["text"], &item["gold"], table_name, form_at)];
         for mutant in item["mutants"].as_array().ok_or("an item's mutants")? {
             // A mutant too large to read leaves the item its other mutants.
-            let Some(table) = add_table(&mutant["table"], &mut stored) else {
+            let Some(table) = candidate_table(&mutant["table"]).and_then(|table| place(table, &mut stored)) else {
                 whole &= mutant["table"]["too_large"].as_bool() == Some(true);
                 if whole {
                     continue;
@@ -594,6 +617,13 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
         candidates.push((item["form"].as_u64().unwrap_or(0), own_candidates));
         query_numbers.push(own_numbers);
         items.push(serde_json::json!({"query": item["query"], "form": item["form"], "table": item["table"], "last": item["query"].as_str() == Some(last_query.as_str()), "gold": gold, "parents": reads(&item["parents"]), "types": item["gold"]["types"], "task_level": item["gold"]["task_level"], "assignments": item["gold"]["assignments"], "mutants": mutants}));
+    }
+    // The tables that walks read as T end here, and the copies that only U reads follow.
+    let walked_as_t = stored.len();
+    for (name, whole) in whole_parents {
+        if let Some(at) = place(whole, &mut stored) {
+            as_u.insert(name, at);
+        }
     }
     let header_rest = (data["case"].clone(), data["budget_cut"].clone(), data["left_out"].clone());
     // The names a candidate reads and the lists have no table for: one too large, or one no item stores.
@@ -630,7 +660,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
     let mut rows_at: Vec<serde_json::Value> = Vec::new();
     // The tables of one schema together, so a schema's family and walker leave memory with its last table.
     if matches!(lists_of, ListsOf::Tables | ListsOf::TablesOnly) {
-        let mut by_schema: Vec<usize> = (0..stored.len()).collect();
+        let mut by_schema: Vec<usize> = (0..walked_as_t).collect();
         by_schema.sort_by(|a, b| stored[*a].key.cmp(&stored[*b].key).then(a.cmp(b)));
         let mut next = 0;
         while next < by_schema.len() {
@@ -644,9 +674,9 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
                 next += 1;
             }
         }
-        lists.next_rank = stored.len();
+        lists.next_rank = walked_as_t;
     }
-    for (at, table) in stored.iter().enumerate() {
+    for (at, table) in stored[..walked_as_t].iter().enumerate() {
         match lists_of {
             ListsOf::Wide(size) => lists.push(wide_of(at.into(), table, &grids, families, size, only_output)),
             ListsOf::Named => lists.push(named_of(at.into(), table, &grids, families, examples, only_output)),
@@ -654,7 +684,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
         }
         rows_at.push(serde_json::json!(table.rows[..train].iter().map(|models| models.iter().map(|model| model.len).max().map_or(serde_json::Value::Null, Into::into)).collect::<Vec<serde_json::Value>>()));
     }
-    let mut walks = stored.len() as u64;
+    let mut walks = walked_as_t as u64;
     if lists_of == ListsOf::Named {
         lists.push(named_of("input".into(), &Stored::of_grids(&grids.inputs), &grids, families, examples, only_output));
     }
@@ -672,7 +702,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
         for (form, members) in &candidates {
             for (table, _) in members {
                 for node in nodes.iter().filter(|node| node.form < *form) {
-                    if let Some(other) = prefix.get(&node.name) {
+                    if let Some(other) = as_u.get(&node.name) {
                         pairs.push((*table, *other));
                     }
                 }
@@ -702,7 +732,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
             for (member, (table, parents)) in members.iter().enumerate() {
                 let related = relations(&nodes, *form, parents);
                 for relation in Relation::ALL {
-                    let others: Vec<&PairValues> = related.iter().filter(|(_, own)| *own == relation).filter_map(|(node, _)| prefix.get(&node.name)).filter_map(|other| vectors.get(&(*table, *other))).collect();
+                    let others: Vec<&PairValues> = related.iter().filter(|(_, own)| *own == relation).filter_map(|(node, _)| as_u.get(&node.name)).filter_map(|other| vectors.get(&(*table, *other))).collect();
                     if !others.is_empty() {
                         let owner = format!("{at}/{member}/{}", relation.word());
                         lists.push(if lists_of == ListsOf::StateEach { pooled_each(owner, &others, examples) } else { pooled(owner, &others) });
@@ -724,8 +754,8 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
                 // A later gold query joins two gold tables, so the edges of gold tables are the ones to read.
                 if member == 0 {
                     for (node, _) in &related {
-                        if let Some(other) = prefix.get(&node.name) {
-                            if other != table {
+                        if let Some(other) = as_u.get(&node.name) {
+                            if prefix.get(&node.name) != Some(table) {
                                 edges.insert((*table, *other), ());
                             }
                         }

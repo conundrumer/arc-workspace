@@ -24,6 +24,7 @@
 //!   what those forms compute.
 pub mod atom_lists;
 pub mod body_features;
+pub mod bounds;
 pub mod candidate_lists;
 pub mod catalog;
 mod catalog_boxes;

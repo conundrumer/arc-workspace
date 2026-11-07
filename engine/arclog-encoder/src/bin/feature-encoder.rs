@@ -704,6 +704,9 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
     for (_, _, families) in &kinds {
         families.names.flush();
     }
+    if arclog_encoder::bounds::enabled() {
+        eprint!("{}", arclog_encoder::bounds::summary());
+    }
     Ok(())
 }
 

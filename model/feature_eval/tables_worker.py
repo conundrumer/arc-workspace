@@ -6,7 +6,8 @@
 It draws each query's mutants as the first run did, and also draws argument edits whose query has
 gold's structure, marked `extra`. It keeps the mutants and the tables' train rows under ROOT as zstd,
 and prints to stdout the tables with their test rows too. Test rows go nowhere else, so a caller
-reads them from the pipe and keeps none of them. On a fault it prints only the fault's type.
+reads them from the pipe and keeps none of them. A table in `prefix` has all its rows at any size. A table in `items` has none at an
+example with more than ROW_CAP rows, and a train example of that kind marks it `too_large`. On a fault it prints only the fault's type.
 """
 import importlib.util
 import json
@@ -49,8 +50,12 @@ def keep(path, value):
     os.replace(temporary, path)
 
 
-def read_table(tb, name, prefer=None, sources=False):
-    """A table at one assignment, the preferred one where the table has it and the least otherwise, or a reason it can't be read."""
+def read_table(tb, name, prefer=None, sources=False, cap=ROW_CAP):
+    """A table at one assignment, the preferred one where the table has it and the least otherwise, or a reason it can't be read.
+
+    A table read as a candidate has the default `cap`: an example with more rows than that has none, and a train example of that kind marks the table `too_large`. A table read as a parent of a candidate
+    passes `cap=None` and keeps all its rows.
+    """
     if name not in tb.names:
         return None, 'no table'
     t = tb.names.index(name)
@@ -82,7 +87,7 @@ def read_table(tb, name, prefer=None, sources=False):
     counts = {ex: max(len(raw) for raw in held.values()) for ex, held in by_example.items() if held}
     for ex, held in by_example.items():
         tables = list(held.values())
-        if any(len(raw) > ROW_CAP for raw in tables):
+        if cap is not None and any(len(raw) > cap for raw in tables):
             if not ex.startswith('test/'):
                 large = True
             continue
@@ -239,7 +244,7 @@ def worker(root, task):
     def with_parents(names):
         for name in names:
             if name not in prefix:
-                table, _ = read(gtb, name)
+                table, _ = read(gtb, name, cap=None)
                 prefix[name] = table
         return [name for name in names if prefix[name] is not None]
 

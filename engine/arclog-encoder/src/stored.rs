@@ -209,6 +209,20 @@ impl Stored {
         Some(stored)
     }
 
+    /// The examples that have a TableRows of more than `cap` rows.
+    pub fn examples_past(&self, cap: usize) -> Vec<usize> {
+        (0..self.rows.len()).filter(|example| self.rows[*example].iter().any(|table| table.len > cap)).collect()
+    }
+
+    /// The table with no value at each of `examples`.
+    pub fn without_examples(&self, examples: &[usize]) -> Stored {
+        let mut out = self.clone();
+        for example in examples {
+            out.rows[*example] = Vec::new();
+        }
+        out
+    }
+
     /// The rows of a grid's table as a table of `Col` and `P`, whose columns stand in type order.
     pub fn of_grids(tables: &[Arc<Table>]) -> Stored {
         let rows = tables.iter().map(|table| {

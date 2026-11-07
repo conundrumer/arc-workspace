@@ -170,8 +170,8 @@ def worker(old_root, pool_dir, new_root, task):
 
     def with_parents(names):
         for name in names:
-            if name in known:
-                prefix[name] = known[name]
+            if name in known and name not in prefix:
+                prefix[name] = read_table(gold_tables, name, sources=True, cap=None)[0]
         return [name for name in names if name in known]
 
     for form_at in choices:
