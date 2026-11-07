@@ -1377,6 +1377,13 @@ impl Runs {
 /// in that order, sorted by their cells, rows of equal cells in the order of
 /// [`arclog::eval::join::each_row`].
 pub(crate) fn sorted_rows(materializer:&Materializer<'_>,rows: &Relation, types: &[ValueType]) -> Result<(Vec<i32>, Vec<usize>),arclog::eval::ReachedBound> {
+    let places: Vec<usize> = (0..types.len()).collect();
+    sorted_rows_at(materializer, rows, &places, types)
+}
+
+/// [`sorted_rows`] of rows whose cells are those of the values at `places`, in
+/// that order, where `types` holds the type of each.
+pub(crate) fn sorted_rows_at(materializer:&Materializer<'_>,rows: &Relation, places: &[usize], types: &[ValueType]) -> Result<(Vec<i32>, Vec<usize>),arclog::eval::ReachedBound> {
     assert_eq!(usize::from(rows.arity()), types.len(), "native relation arity differs from its packed schema");
     let width = row_width(types) as usize;
     let count = usize::try_from(rows.len()).expect("a count of rows within a usize");
@@ -1385,8 +1392,8 @@ pub(crate) fn sorted_rows(materializer:&Materializer<'_>,rows: &Relation, types:
     let by_digest = arclog::types::ident_mode() == arclog::types::IdentMode::Value;
     let mut idents = Vec::new();
     materializer.walk(rows, &mut |row| {
-        for (&id, ty) in row.iter().zip(types) {
-            push_cells(&mut written, id, ty, by_digest.then_some(&mut idents));
+        for (&place, ty) in places.iter().zip(types) {
+            push_cells(&mut written, row[place], ty, by_digest.then_some(&mut idents));
         }
         visited += 1;
     })?;

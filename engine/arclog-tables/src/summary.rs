@@ -70,7 +70,7 @@ use arclog::program::RigidDetName;
 use arclog::types::{AssemblyId, IdentSource, SourceId, ValueType};
 use arclog_features::{Grid as FeatureGrid, Input, Pair, TableRows};
 
-use crate::columns::{row_width, sorted_rows, type_names};
+use crate::columns::{row_width, sorted_rows, sorted_rows_at, type_names};
 use crate::split::{self, Part};
 use crate::tables::{example_axis, Contents, Table, TableDet, TableRelation};
 
@@ -375,23 +375,80 @@ fn encode(materializer: &Materializer<'_>, rows: &Relation, types: &[ValueType],
     Ok(Encoded { count, cells, key: hasher.finish128() })
 }
 
+/// The rows of a part of a relation in the order of their cells, with the cells
+/// of the part's columns in the order of the columns of the relation.
+struct SortedPart {
+    cells: Vec<i32>,
+    width: usize,
+    count: usize,
+}
+
+/// A run of neighbouring columns of a relation that one part holds. The product
+/// of the parts is written level by level, in the order of the columns.
+struct ProductLevel {
+    part: usize,
+    /// The place of the run's first cell among the cells of a row of the part.
+    in_part: usize,
+    /// The place of the run's first cell among the cells of a row of the product.
+    in_row: usize,
+    len: usize,
+    /// Whether no later level reads the part, so that each of its rows counts as a row.
+    last: bool,
+}
+
+/// The cells of the rows of a product, in the order of their cells.
+struct ProductCells<'m, 'a> {
+    materializer: &'m Materializer<'a>,
+    parts: Vec<SortedPart>,
+    levels: Vec<ProductLevel>,
+    /// The first row and the end of the rows of each part that the levels above leave.
+    ranges: Vec<(usize, usize)>,
+    row: Vec<i32>,
+    cells: Vec<i32>,
+    written: usize,
+}
+
+impl ProductCells<'_, '_> {
+    /// Writes the rows from `level` down. Each part's rows stand in the order of
+    /// their cells, so the rows with one value at a level stand next to each other.
+    fn write(&mut self, level: usize) -> Result<(), ReachedBound> {
+        let Some(&ProductLevel { part, in_part, in_row, len, last }) = self.levels.get(level) else {
+            if self.written % (1 << 16) == 0 {
+                self.materializer.check()?;
+            }
+            self.written += 1;
+            self.cells.extend_from_slice(&self.row);
+            return Ok(());
+        };
+        let (first, end) = self.ranges[part];
+        let width = self.parts[part].width;
+        let mut at = first;
+        while at < end {
+            let start = at * width + in_part;
+            let mut next = at + 1;
+            if !last {
+                while next < end && self.parts[part].cells[next * width + in_part..next * width + in_part + len] == self.parts[part].cells[start..start + len] {
+                    next += 1;
+                }
+            }
+            self.row[in_row..in_row + len].copy_from_slice(&self.parts[part].cells[start..start + len]);
+            self.ranges[part] = (at, next);
+            self.write(level + 1)?;
+            at = next;
+        }
+        self.ranges[part] = (first, end);
+        Ok(())
+    }
+}
+
 /// The count of `rows`, of columns of `types`, and their cells in the order of
-/// their cells. `held` takes the admission of the cells. Where each part of
-/// `rows` holds a run of the columns in order, the rows of the product of the
-/// parts, each part's rows in the order of their cells, stand in the order of
-/// their cells, so no row of the product takes part in a sort.
+/// their cells. `held` takes the admission of the cells. Each part's rows are put
+/// in the order of their cells, and the order of the product's rows follows from
+/// them, so no row of the product takes part in a sort.
 fn sorted_cells(materializer: &Materializer<'_>, rows: &Relation, types: &[ValueType], held: &mut Vec<Arc<SessionAllocation>>) -> Result<(u64, Vec<i32>), ReachedBound> {
     let width = row_width(types) as usize;
     held.push(materializer.admit(rows, Materializer::row_bytes(width.saturating_mul(32).saturating_add(32), 4))?);
-    let mut parts: Vec<&arclog::relations::RelationPart> = rows.parts().iter().collect();
-    parts.sort_by_key(|part| part.columns.first().map(|column| column.0));
-    let mut next = 0u16;
-    let in_order = parts.iter().all(|part| part.columns.iter().all(|column| {
-        let holds = column.0 == next;
-        next += 1;
-        holds
-    }));
-    if parts.len() < 2 || !in_order {
+    if rows.parts().len() < 2 || rows.parts().iter().any(|part| part.columns.is_empty()) {
         let (written, order) = sorted_rows(materializer, rows, types)?;
         let mut cells = Vec::with_capacity(written.len());
         for &at in &order {
@@ -400,44 +457,46 @@ fn sorted_cells(materializer: &Materializer<'_>, rows: &Relation, types: &[Value
         return Ok((order.len() as u64, cells));
     }
     let count = usize::try_from(rows.len()).expect("a count of rows within a usize");
-    let mut sorted: Vec<Vec<i32>> = Vec::with_capacity(parts.len());
-    let mut first = 0usize;
-    for part in &parts {
-        let part_types = &types[first..first + part.columns.len()];
-        first += part.columns.len();
-        let (written, order) = sorted_rows(materializer, &arclog::eval::join::one_part(part.rows.clone()), part_types)?;
-        let part_width = row_width(part_types) as usize;
+    // The part of each column, and the place of its first cell in a row of the part.
+    let mut owner = vec![(0usize, 0usize); types.len()];
+    let mut parts: Vec<SortedPart> = Vec::with_capacity(rows.parts().len());
+    for (index, part) in rows.parts().iter().enumerate() {
+        let mut places: Vec<usize> = (0..part.columns.len()).collect();
+        places.sort_unstable_by_key(|&place| part.columns[place].0);
+        let part_types: Vec<ValueType> = places.iter().map(|&place| types[usize::from(part.columns[place].0)].clone()).collect();
+        let (written, order) = sorted_rows_at(materializer, &arclog::eval::join::one_part(part.rows.clone()), &places, &part_types)?;
+        let part_width = row_width(&part_types) as usize;
         let mut cells = Vec::with_capacity(written.len());
         for &at in &order {
             cells.extend_from_slice(&written[at * part_width..(at + 1) * part_width]);
         }
-        sorted.push(cells);
+        let mut first = 0;
+        for (&place, ty) in places.iter().zip(&part_types) {
+            owner[usize::from(part.columns[place].0)] = (index, first);
+            first += row_width(std::slice::from_ref(ty)) as usize;
+        }
+        parts.push(SortedPart { cells, width: part_width, count: order.len() });
     }
-    let widths: Vec<usize> = parts.iter().scan(0usize, |first, part| {
-        let part_types = &types[*first..*first + part.columns.len()];
-        *first += part.columns.len();
-        Some(row_width(part_types) as usize)
-    }).collect();
-    let mut cells: Vec<i32> = Vec::with_capacity(count.saturating_mul(width));
-    let mut places = vec![0usize; parts.len()];
-    for at in 0..count {
-        if at % (1 << 16) == 0 {
-            materializer.check()?;
+    let mut levels: Vec<ProductLevel> = Vec::new();
+    let mut in_row = 0;
+    for ((part, in_part), ty) in owner.iter().copied().zip(types) {
+        let len = row_width(std::slice::from_ref(ty)) as usize;
+        match levels.last_mut() {
+            Some(level) if level.part == part => level.len += len,
+            _ => levels.push(ProductLevel { part, in_part, in_row, len, last: false }),
         }
-        for ((part, place), part_width) in sorted.iter().zip(&places).zip(&widths) {
-            cells.extend_from_slice(&part[place * part_width..(place + 1) * part_width]);
-        }
-        // The last part's rows turn fastest, as the next column of a row in order does.
-        for (index, place) in places.iter_mut().enumerate().rev() {
-            *place += 1;
-            if *place * widths[index] < sorted[index].len() || widths[index] == 0 && *place < parts[index].rows.len() {
-                break;
-            }
-            *place = 0;
+        in_row += len;
+    }
+    for index in 0..parts.len() {
+        if let Some(level) = levels.iter_mut().rev().find(|level| level.part == index) {
+            level.last = true;
         }
     }
+    let ranges = parts.iter().map(|part| (0, part.count)).collect();
+    let mut product = ProductCells { materializer, parts, levels, ranges, row: vec![0; width], cells: Vec::with_capacity(count.saturating_mul(width)), written: 0 };
+    product.write(0)?;
     materializer.check()?;
-    Ok((count as u64, cells))
+    Ok((count as u64, product.cells))
 }
 
 /// The hash of the rows of `rows` that an atom's table holds in the place of a
