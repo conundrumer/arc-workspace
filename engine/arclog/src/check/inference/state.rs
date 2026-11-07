@@ -14,7 +14,7 @@ use std::cell::OnceCell;
 use std::sync::Arc;
 
 use super::Inference;
-use crate::hash::StableHashMap;
+use crate::hash::{StableHashMap, StableHashSet};
 use crate::program::path::NodePath;
 use crate::program::{Atom, Body, Conjunct, Form, LabelId, Negated, Node, Operand, Program};
 use crate::resolver::{resolve_for_checks, ResolvedProgram};
@@ -29,11 +29,12 @@ pub(in crate::check) struct HeldState {
     program: Node<Program>,
     resolved: OnceCell<ResolvedProgram>,
     types: OnceCell<Option<StateTypes>>,
+    flat: OnceCell<Option<StateFlat>>,
 }
 
 impl HeldState {
     pub(in crate::check) fn new(earlier: Arc<ResolvedProgram>, program: Node<Program>) -> Self {
-        HeldState { earlier, program, resolved: OnceCell::new(), types: OnceCell::new() }
+        HeldState { earlier, program, resolved: OnceCell::new(), types: OnceCell::new(), flat: OnceCell::new() }
     }
 }
 
@@ -45,6 +46,58 @@ pub(super) struct StateTypes {
     body: Node<Body>,
     labels: StableHashMap<LabelId, LabelTypes>,
     pairs: Vec<(LabelId, LabelId)>,
+}
+
+/// The entries that [`Inference::flat_form`] takes of the form in progress at
+/// a mask's state, where it is a clause of atoms alone that `flat_form`
+/// types: for each label that stands at a site, the meet of its site types
+/// read under [`PoseOr::Open`] and under [`PoseOr::Given`].
+///
+/// An entry reads only the sites at which its label stands, with the types
+/// that the state's resolution and inference give them. A candidate whose
+/// clause holds the state's atoms, each with the relation it has in the
+/// state, and whose sites differ from the state's in some atoms alone, holds
+/// each other atom as the state does, so a label that stands at none of the
+/// atoms that differ has the sites, in the order, and the types it has in the
+/// state. The state's form is read as an inference in progress reads it: a
+/// read of the clause's own relation gives no type.
+pub(super) struct StateFlat {
+    path: NodePath,
+    body: Node<Body>,
+    pub(super) open: StableHashMap<LabelId, Option<ValueType>>,
+    pub(super) given: StableHashMap<LabelId, Option<ValueType>>,
+}
+
+impl StateFlat {
+    /// The labels that stand at an atom of `body` that differs from the atom
+    /// at its place in the state's clause, each at any of its sites; `None`
+    /// where `body` is not the state's with the sites of some atoms changed:
+    /// a conjunct that is no atom, another number of conjuncts, or an atom of
+    /// another relation, which can change what a read of a form's other atoms
+    /// gives.
+    fn touched(&self, body: &Body) -> Option<StableHashSet<LabelId>> {
+        let old = &self.body.value().conjuncts;
+        if old.len() != body.conjuncts.len() {
+            return None;
+        }
+        let mut touched = StableHashSet::default();
+        for (old, new) in old.iter().zip(body.conjuncts.iter()) {
+            let (Conjunct::Atom(old), Conjunct::Atom(new)) = (old, new) else { return None };
+            if std::ptr::eq(old.value(), new.value()) {
+                continue;
+            }
+            let (old, new) = (old.value(), new.value());
+            if old.relation != new.relation {
+                return None;
+            }
+            if old.sites[..] != new.sites[..] {
+                for site in old.sites.iter().chain(new.sites.iter()) {
+                    each_site_label(site, &mut Vec::new(), &mut |use_, _| touched.extend(use_label(use_)));
+                }
+            }
+        }
+        Some(touched)
+    }
 }
 
 /// The labels whose sites or constraints differ between two forms of one
@@ -200,6 +253,41 @@ impl<'a> Inference<'a> {
                 })
             })
             .as_ref()
+    }
+
+    /// The state's entries for [`Inference::flat_form`], made on the first
+    /// read.
+    fn state_flat(&self) -> Option<&'a StateFlat> {
+        let earlier = self.earlier?;
+        let held = earlier.held_state()?;
+        held.flat
+            .get_or_init(|| {
+                let Some(Form::Clause(_)) = held.program.value().forms.last() else { return None };
+                let resolved = held.resolved.get_or_init(|| resolve_for_checks(&held.earlier, &held.program, self.registry));
+                let Some(form @ Form::Clause(clause)) = resolved.program.value().forms.last() else { return None };
+                let path = NodePath::top(resolved.program.value().forms.len() as u32 - 1);
+                let inference = Inference { splits: false, any_label_order: true, fast: true, ..Inference::layered(resolved, self.cases, earlier) };
+                // The form's types are in progress while its sites are read.
+                inference.forms.borrow_mut().insert(path.clone(), None);
+                let (open, given) = inference.flat_entries(form, &path)?;
+                Some(StateFlat { path, body: clause.value().body.clone(), open, given })
+            })
+            .as_ref()
+    }
+
+    /// The state's entries and the labels that stand at an atom of `form`,
+    /// at `path`, that differs from the state's, where `form` is the state's
+    /// clause with the sites of some atoms changed, as [`StateFlat`] gives.
+    pub(super) fn flat_split(&self, form: &Form, path: &NodePath) -> Option<(&'a StateFlat, StableHashSet<LabelId>)> {
+        let Form::Clause(clause) = form else { return None };
+        if !self.splits {
+            return None;
+        }
+        let state = self.state_flat()?;
+        if state.path != *path {
+            return None;
+        }
+        Some((state, state.touched(clause.value().body.value())?))
     }
 
     /// The labels of `form`, at `path`, whose types the state's inference

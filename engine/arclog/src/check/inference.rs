@@ -827,6 +827,12 @@ impl<'a> Inference<'a> {
     /// them. It gives `None` where a meet is empty, the form is no form of
     /// atoms alone, or it holds a site at a column that a rule types, and
     /// `infer_new` runs.
+    ///
+    /// Where the form is a clause that has the state's atoms with the same
+    /// relations, and differs from the state's clause in the sites of some
+    /// atoms alone ([`Inference::flat_split`]), a label that stands at none
+    /// of those atoms takes its entry from the state's, and the other labels
+    /// are typed again.
     fn flat_form(&self, form: &'a Form, path: &NodePath) -> Option<FormInference<'a>> {
         let component = match form {
             Form::Instance(instance) => {
@@ -838,44 +844,32 @@ impl<'a> Inference<'a> {
         };
         if !bodies(NodeRef::from(form)).iter().all(|b| b.body.value().conjuncts.iter().all(|c| matches!(c, Conjunct::Atom(_)))) { return None; }
         let walk = FormWalk::of(form);
-        if self.holds_ruled_site(&walk) { return None; }
+        // Where the form is the state's clause but for the sites of some atoms, only the labels at those atoms are typed again.
+        let split = if component.is_none() { self.flat_split(form, path) } else { None };
+        let touched = split.as_ref().map(|(_, touched)| touched);
+        if walk.uses.iter().any(|site| touched.is_none_or(|touched| touched.contains(&site.label)) && self.is_ruled_use(site)) { return None; }
         let mut bindings = StableHashMap::default();
-        let type_all = |pose_or, bindings: &StableHashMap<TypeParameter, ValueType>| -> Option<StableHashMap<LabelId, Option<ValueType>>> {
-            let reading = SiteReading { path, walk: &walk, labels: &[], component, bindings, pose_or, grids: None };
-            let sites = walk.uses.iter().map(|site| {
-                let head;
-                let atom = match site.atom {
-                    Some(atom) => atom,
-                    None => {
-                        // Head sites read their input's declared port.
-                        let mut at = site.at.clone();
-                        let port = loop {
-                            if let Some(NodeRef::InstanceInput(input)) = crate::program::path::node_at(NodeRef::from(form), &at) { break &input.name; }
-                            if at.0.is_empty() { return None; }
-                            at = NodePath(at.0[..at.0.len() - 1].into());
-                        };
-                        head = Atom { relation: RelationRef::DefinedPort(port.clone()), sites: Arc::from([]) };
-                        &head
-                    }
-                };
-                Some((site.label, self.site_type(reading, atom, &site.column)))
-            });
-            flat_label_types(sites.collect::<Option<Vec<_>>>()?)
-        };
-        let mut all = type_all(PoseOr::Open, &bindings)?;
+        let mut all = self.flat_types(form, path, &walk, component, &bindings, PoseOr::Open, touched)?;
         if let (Form::Instance(instance), Some(component)) = (form, component) {
             if !component.type_parameters.is_empty() {
                 bindings = bind(instance.value(), component, &|label| all.get(&label).cloned().flatten());
-                all = type_all(PoseOr::Open, &bindings)?;
+                all = self.flat_types(form, path, &walk, Some(component), &bindings, PoseOr::Open, None)?;
             }
         }
         let members = self.scope_labels_of(form);
-        let mut given = if members.iter().any(|label| all.get(label).and_then(Option::as_ref).is_none()) { type_all(PoseOr::Given, &bindings)? } else { StableHashMap::default() };
+        let open_of = |label: &LabelId| match &split {
+            Some((state, touched)) if !touched.contains(label) => state.open.get(label),
+            _ => all.get(label),
+        };
+        let given = if members.iter().any(|label| open_of(label).and_then(Option::as_ref).is_none()) { self.flat_types(form, path, &walk, component, &bindings, PoseOr::Given, touched)? } else { StableHashMap::default() };
+        let given_of = |label: &LabelId| match &split {
+            Some((state, touched)) if !touched.contains(label) => state.given.get(label),
+            _ => given.get(label),
+        };
         let mut given_labels = Vec::new();
         let mut labels: Vec<_> = members.iter().map(|label| {
-            let open = all.remove(label).flatten();
-            let ty = open.or_else(|| {
-                let ty = given.remove(label).flatten();
+            let ty = open_of(label).cloned().flatten().or_else(|| {
+                let ty = given_of(label).cloned().flatten();
                 if ty.is_some() { given_labels.push(*label); }
                 ty
             });
@@ -883,6 +877,58 @@ impl<'a> Inference<'a> {
         }).collect();
         self.share_pose(SiteReading { path, walk: &walk, labels: &[], component, bindings: &bindings, pose_or: PoseOr::Open, grids: None }, &mut labels);
         Some(FormInference { owner: ScopeOwner::Form(form), path: path.clone(), labels, bindings, walk, component, zero_typed: Vec::new(), given: given_labels, source_base: Default::default(), program: self.program, registry: self.registry })
+    }
+
+    /// The entries of [`flat_label_types`] under [`PoseOr::Open`] and under
+    /// [`PoseOr::Given`] for each label of `form`, a clause of atoms alone at
+    /// `path` that [`Inference::flat_form`] types; `None` where it does not.
+    pub(super) fn flat_entries(&self, form: &'a Form, path: &NodePath) -> Option<(StableHashMap<LabelId, Option<ValueType>>, StableHashMap<LabelId, Option<ValueType>>)> {
+        if !bodies(NodeRef::from(form)).iter().all(|b| b.body.value().conjuncts.iter().all(|c| matches!(c, Conjunct::Atom(_)))) { return None; }
+        let walk = FormWalk::of(form);
+        if self.holds_ruled_site(&walk) { return None; }
+        let bindings = StableHashMap::default();
+        let open = self.flat_types(form, path, &walk, None, &bindings, PoseOr::Open, None)?;
+        let given = self.flat_types(form, path, &walk, None, &bindings, PoseOr::Given, None)?;
+        Some((open, given))
+    }
+
+    /// The meet of the site types of each label of `walk`, as
+    /// [`flat_label_types`] gives it, read under `pose_or`, for the labels
+    /// that `only` holds where it is given, and for each label otherwise.
+    /// A label's entry reads only the sites at which the label stands, in
+    /// their order, so it is the entry that the run over every label gives.
+    /// `None` where a meet is empty.
+    fn flat_types(
+        &self,
+        form: &'a Form,
+        path: &NodePath,
+        walk: &FormWalk<'a>,
+        component: Option<&'a Component>,
+        bindings: &StableHashMap<TypeParameter, ValueType>,
+        pose_or: PoseOr,
+        only: Option<&StableHashSet<LabelId>>,
+    ) -> Option<StableHashMap<LabelId, Option<ValueType>>> {
+        let reading = SiteReading { path, walk, labels: &[], component, bindings, pose_or, grids: None };
+        let uses = walk.uses.iter().filter(|site| only.is_none_or(|only| only.contains(&site.label)));
+        let sites = uses.map(|site| {
+            let head;
+            let atom = match site.atom {
+                Some(atom) => atom,
+                None => {
+                    // Head sites read their input's declared port.
+                    let mut at = site.at.clone();
+                    let port = loop {
+                        if let Some(NodeRef::InstanceInput(input)) = crate::program::path::node_at(NodeRef::from(form), &at) { break &input.name; }
+                        if at.0.is_empty() { return None; }
+                        at = NodePath(at.0[..at.0.len() - 1].into());
+                    };
+                    head = Atom { relation: RelationRef::DefinedPort(port.clone()), sites: Arc::from([]) };
+                    &head
+                }
+            };
+            Some((site.label, self.site_type(reading, atom, &site.column)))
+        });
+        flat_label_types(sites.collect::<Option<Vec<_>>>()?)
     }
 
     /// A scalar column type fixed by the already finished forms. No type
@@ -1294,6 +1340,10 @@ impl<'a> Inference<'a> {
     /// shares it with the labels at such columns of each other atom it
     /// stands at. `labels` holds the types of the form read under `reading`.
     fn share_pose(&self, reading: SiteReading<'_, 'a>, labels: &mut [(LabelId, Result<Option<ValueType>, LabelFault>)]) {
+        // It gives a type to a label that stands at no type alone.
+        if !labels.iter().any(|(_, ty)| matches!(ty, Ok(None))) {
+            return;
+        }
         let mut atoms: Vec<(*const Atom, Vec<LabelId>)> = Vec::new();
         for site in &reading.walk.uses {
             let Some(atom) = site.atom else { continue };
