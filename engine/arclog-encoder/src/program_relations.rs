@@ -651,6 +651,9 @@ fn add_column_numbers(out: &mut BTreeMap<String, f64>, detail: &TableColumns) {
     out.insert("some column from a task parameter".to_string(), f64::from(u8::from(detail.columns.iter().any(|column| column.parameter))));
     if let Some(body) = &detail.body {
         out.insert("reads one table twice".to_string(), f64::from(u8::from(body.reads_one_table_twice)));
+        for (word, count) in [("relation atoms", body.relation_atoms), ("lib atoms", body.lib_atoms), ("comparisons", body.comparisons), ("NOTs", body.nots), ("ALLs", body.alls), ("ORs", body.ors), ("joined variables", body.joined_variables), ("variables not at a column", body.variables_not_at_a_column)] {
+            out.insert(word.to_string(), count as f64);
+        }
     }
     for column in detail.columns.iter().filter(|column| !column.ty.is_empty()) {
         let ty = &column.ty;

@@ -15,8 +15,8 @@ enum Node {
     Lib { relation: String, args: Vec<Option<String>>, computes: Vec<String> },
     Comparison { first: String, makes: bool },
     Or { exported: Vec<String>, branches: Vec<Body> },
-    /// A `NOT` or an `ALL`, whose body no feature of a column here reads.
-    Filter,
+    /// A `NOT` or an `ALL`, whose body only the table's counts read.
+    Filter { all: bool, body: Body },
 }
 
 struct Body {
@@ -60,7 +60,7 @@ fn node(value: &Value) -> Node {
         },
         "cmp" => Node::Comparison { first: value["first"].as_str().unwrap_or("").to_string(), makes: value["binds_first"].as_bool().unwrap_or(false) },
         "or" => Node::Or { exported: strings(&value["exported"]), branches: value["branches"].as_array().into_iter().flatten().map(|branch| Body { columns: Vec::new(), nodes: clause(branch) }).collect() },
-        _ => Node::Filter,
+        kind => Node::Filter { all: kind == "all", body: Body { columns: Vec::new(), nodes: clause(&value["body"]) } },
     }
 }
 
@@ -120,6 +120,14 @@ pub struct ColumnBody {
 #[derive(Clone, Debug, Default)]
 pub struct TableBody {
     pub reads_one_table_twice: bool,
+    pub relation_atoms: usize,
+    pub lib_atoms: usize,
+    pub comparisons: usize,
+    pub nots: usize,
+    pub alls: usize,
+    pub ors: usize,
+    pub joined_variables: usize,
+    pub variables_not_at_a_column: usize,
     /// The pairs of columns, in each order, that one relation atom holds.
     pub shared: BTreeSet<(usize, usize)>,
 }
@@ -172,6 +180,48 @@ fn table_body(body: &Body) -> bool {
     })
 }
 
+/// Every node of `nodes`, those of its `NOT`, `ALL` and `OR` bodies included.
+fn walk<'n>(nodes: &'n [Node], out: &mut Vec<&'n Node>) {
+    for node in nodes {
+        out.push(node);
+        match node {
+            Node::Filter { body, .. } => walk(&body.nodes, out),
+            Node::Or { branches, .. } => branches.iter().for_each(|branch| walk(&branch.nodes, out)),
+            _ => {}
+        }
+    }
+}
+
+/// What one body holds, counted, with each count the greatest over the bodies so far.
+fn count_body(body: &Body, table: &mut TableBody) {
+    let mut nodes = Vec::new();
+    walk(&body.nodes, &mut nodes);
+    let count = |test: &dyn Fn(&Node) -> bool| nodes.iter().filter(|node| test(node)).count();
+    table.relation_atoms = table.relation_atoms.max(count(&|node| matches!(node, Node::Atom { .. })));
+    table.lib_atoms = table.lib_atoms.max(count(&|node| matches!(node, Node::Lib { .. })));
+    table.comparisons = table.comparisons.max(count(&|node| matches!(node, Node::Comparison { .. })));
+    table.nots = table.nots.max(count(&|node| matches!(node, Node::Filter { all: false, .. })));
+    table.alls = table.alls.max(count(&|node| matches!(node, Node::Filter { all: true, .. })));
+    table.ors = table.ors.max(count(&|node| matches!(node, Node::Or { .. })));
+    let mut all = Vec::new();
+    conjunctions(&body.nodes, &mut all);
+    let mut joined = 0;
+    for conjunction in all {
+        let mut per_variable: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        for node in conjunction.iter().filter(|node| matches!(node, Node::Atom { .. })) {
+            let distinct: BTreeSet<&str> = held(node).into_iter().collect();
+            for variable in distinct {
+                *per_variable.entry(variable).or_insert(0) += 1;
+            }
+        }
+        joined += per_variable.values().filter(|count| **count >= 2).count();
+    }
+    table.joined_variables = table.joined_variables.max(joined);
+    let variables: BTreeSet<&str> = nodes.iter().flat_map(|node| held(node)).collect();
+    let at_columns: BTreeSet<&str> = body.columns.iter().flatten().map(String::as_str).collect();
+    table.variables_not_at_a_column = table.variables_not_at_a_column.max(variables.difference(&at_columns).count());
+}
+
 /// The column features and the table's, over `bodies`, the JSON bodies of a table whose columns have the identities `idents`. None where the
 /// table has no body.
 pub fn features(bodies: &[Value], idents: &[String]) -> Option<(Vec<ColumnBody>, TableBody)> {
@@ -198,6 +248,7 @@ pub fn features(bodies: &[Value], idents: &[String]) -> Option<(Vec<ColumnBody>,
             own.alternatives_differ |= found.alternatives_differ;
         }
         table.reads_one_table_twice |= table_body(&body);
+        count_body(&body, &mut table);
         for i in 0..idents.len() {
             for j in 0..idents.len() {
                 let (Some(a), Some(b)) = (body.columns[i].as_deref(), body.columns[j].as_deref()) else { continue };
