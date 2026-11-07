@@ -21,7 +21,7 @@ from common import read_pickle  # noqa: E402
 
 OTHER = 1 << 63
 # Each source at the place v1_cover.py numbers it.
-SOURCES = {'base': 0, 'qv': 1, 'graph': 2, 'relations': 3, 'wide': 4, 'relations_least': 6, 'relations_most': 7}
+SOURCES = {'base': 0, 'qv': 1, 'graph': 2, 'relations': 3, 'wide': 4, 'relations_least': 6, 'relations_most': 7, 'relations_each': 8}
 
 
 def frames(path):

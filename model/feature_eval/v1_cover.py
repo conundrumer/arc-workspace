@@ -205,6 +205,8 @@ def main():
     for pool in ('relations_least', 'relations_most'):
         if (blocks / 'blocks' / f'train.{pool}.zst').exists():
             extra[pool] = {place: pool + ':' + name.split(':', 1)[0] + ':' + name.split(':', 1)[1] for place, name in extra['relations'].items()}
+    if (blocks / 'blocks' / 'train.relations_each.zst').exists():
+        extra['relations_each'] = {place: 'each:' + name for place, name in extra['relations'].items()}
     offset = {source: OTHER + (place << 32) for place, source in enumerate(extra)}
     name_of = {offset[source] + column: name for source, names in extra.items() for column, name in names.items()}
     skipped = set(Path(args.skip).read_text().split()) if args.skip else set()
@@ -213,7 +215,14 @@ def main():
     paths = [path for path in paths if path.name.split('.')[0] in in_store and any((Path(folder) / (path.name.split('.')[0] + '.lists.zst')).exists() for folder in args.lists)]
     paths = paths[:args.tasks] if args.tasks else paths
     tasks = {path.name.split('.')[0] for path in paths}
-    extras = {} if args.base else {source: read_source(blocks, source, {at for key, at in candidate_of.items() if key[0] in tasks}) for source in extra}
+    extras = {} if args.base else {source: read_source(blocks, source, {at for key, at in candidate_of.items() if key[0] in tasks}) for source in extra if source != 'relations_each'}
+    # A candidate's rows of `relations_each` stand together, one per example.
+    each_rows, first_each = {}, None
+    if 'relations_each' in extra and not args.base:
+        example_of = np.asarray(read_pickle(blocks / 'train.example_of.pkl'))
+        first_each = np.searchsorted(example_of, np.arange(len(candidates)))
+        wanted = np.isin(example_of, np.array([at for key, at in candidate_of.items() if key[0] in tasks]))
+        each_rows = read_source(blocks, 'relations_each', set(np.flatnonzero(wanted).tolist()))
     print(f'sources read {time.time() - begun_at:.0f}s', flush=True)
     rows = 0
     row_of, shape_of, value_of = [], [], []
@@ -317,6 +326,11 @@ def main():
                         row_of.append(np.full(len(columns), row, dtype=np.int32))
                         shape_of.append(np.uint64(offset[source]) + columns.astype(np.uint64))
                         value_of.append(values)
+                if first_each is not None and int(first_each[candidate]) + at in each_rows:
+                    columns, values = each_rows[int(first_each[candidate]) + at]
+                    row_of.append(np.full(len(columns), row, dtype=np.int32))
+                    shape_of.append(np.uint64(offset['relations_each']) + columns.astype(np.uint64))
+                    value_of.append(values)
                 collect(table_at, name, own_types, tables, args.form, features, row, coordinates, coordinate_of, args.one_binding)
 
         for item_at, item in enumerate(head['items']):
