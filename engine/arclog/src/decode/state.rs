@@ -37,7 +37,7 @@ use crate::program::{
 };
 use crate::read::columns::{key_labels, made_labels, slot_columns};
 use crate::read::is_type_parameter_column;
-use crate::registry::{Component, LibEntry, LibName};
+use crate::registry::{Component, InputPort, LibEntry, LibName, Need};
 use crate::registry::Registry;
 use crate::resolver::columns::example;
 use crate::resolver::{resolve, resolve_in_progress, ResolvedProgram, SolverScope};
@@ -1891,6 +1891,9 @@ impl State {
                 Ok(Offer::Again)
             }
             (true, Naming::Named(Some(position)), Token::Control(Control::Skip)) => {
+                if let Some(refusal) = self.declines_a_need(context, position) {
+                    return Err(refusal);
+                }
                 self.name_input(context, position + 1, forced);
                 Ok(Offer::Taken)
             }
@@ -1900,6 +1903,43 @@ impl State {
                 Ok(Offer::Again)
             }
             _ => Err("an `INIT` names its component"),
+        }
+    }
+
+    /// The refusal of a `SKIP` after the engine's name of the input at
+    /// `position` of the `INIT` form on top, after its key clause, where the
+    /// `SKIP` leaves the component with no output for certain
+    /// (`docs/engine/arclog-stream.md#token-stream`): the input is marked
+    /// `required`, or it is the last input marked `one-of` and the form
+    /// writes no input so marked, and the `SKIP`s leave each input in
+    /// question with no row. A `SKIP` leaves an input with no row for certain
+    /// where the input has no default rows, and it is not marked `from-key`
+    /// or the form's key has no column. The registry gives the marks to no
+    /// input with default rows, and to no input marked `from-key` whose one
+    /// column is `key`, which the instance fills where its key has no column
+    /// too. A `DEMONSTRATED` form's inputs take no refusal.
+    fn declines_a_need(&self, context: &Context<'_>, position: usize) -> Option<Unexpected> {
+        let instance = self.instance();
+        if instance.demonstrated {
+            return None;
+        }
+        let inputs = &self.component(context).inputs;
+        let key = instance.key.as_ref();
+        let key_columns = key.is_some_and(|key| !key.value().key.columns.is_empty());
+        let empty = |input: &InputPort| input.default.is_none() && !(input.from_key && key_columns);
+        let input = &inputs[position];
+        match input.need {
+            Some(Need::Required) if empty(input) => {
+                Some("an `INIT` form writes each input that its component requires, where no key column fills the input: `SKIP` leaves it with no row, and the component then gives no output")
+            }
+            Some(Need::OneOf) => {
+                let written: Vec<&PortName> = written_inputs(key, &instance.inputs).map(|input| &input.name).collect();
+                let group = || inputs.iter().enumerate().filter(|(_, input)| input.need == Some(Need::OneOf));
+                let last = group().map(|(at, _)| at).max() == Some(position);
+                let none = group().all(|(_, input)| !written.contains(&&input.port.name) && empty(input));
+                (last && none).then_some("an `INIT` form writes an input of its component's `one-of` group, where no key column fills one: `SKIP` at the group's last input leaves the group with no row, and the component then gives no output")
+            }
+            _ => None,
         }
     }
 

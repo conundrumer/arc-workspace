@@ -25,6 +25,7 @@ pub(crate) fn ports() -> &'static Component {
             default: None,
             reads_outputs: false,
             from_key: false,
+            need: None,
         };
         Component {
             kind: ComponentKind::TaskStructure,

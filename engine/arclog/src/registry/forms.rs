@@ -322,9 +322,13 @@ impl FileReader {
         let type_parameters: Box<[TypeParameter]> = parameters?.into();
         let inputs = self.headed(rest.get(3), INPUTS, place)?;
         let inputs: Option<Vec<InputPort>> = inputs.iter().map(|input| self.input(input, &type_parameters)).collect();
+        let inputs = inputs?;
+        if inputs.iter().filter(|input| input.need == Some(Need::OneOf)).count() == 1 {
+            return self.refuse(format!("the component marks one input `{ONE_OF}`: its inputs so marked are a group of two or more, and one input that the component needs alone is marked `{REQUIRED}`"), place);
+        }
         let outputs = self.headed(rest.get(4), OUTPUTS, place)?;
         self.no_more(rest.get(5..).unwrap_or_default())?;
-        Some(ComponentHead { name, kind, type_parameters, inputs: inputs?.into(), outputs })
+        Some(ComponentHead { name, kind, type_parameters, inputs: inputs.into(), outputs })
     }
 
     /// `(component <Name> <kind> (type-parameters ...) (inputs ...) (outputs ...))`,
@@ -428,19 +432,32 @@ impl FileReader {
         Some(CopiedFrom { input, columns: pairs.into() })
     }
 
-    /// An input, `(<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key])`.
+    /// An input, `(<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key] [required | one-of])`.
     fn input(&mut self, expr: &SExpr, parameters: &[TypeParameter]) -> Option<InputPort> {
         let SExpr::List { items, place, .. } = expr else {
             return self.refuse("an input is a list of its name and its columns", expr.place());
         };
         let name = PortName(self.symbol(items.first(), "the input's name", *place)?.into());
         let mut rest = &items[1..];
+        let need = if take_mark(&mut rest, REQUIRED) {
+            Some(Need::Required)
+        } else if take_mark(&mut rest, ONE_OF) {
+            Some(Need::OneOf)
+        } else {
+            None
+        };
+        if need.is_some() && (take_mark(&mut rest, REQUIRED) || take_mark(&mut rest, ONE_OF)) {
+            return self.refuse(format!("an input takes one of the marks `{REQUIRED}` and `{ONE_OF}`, not both"), *place);
+        }
         let from_key = take_mark(&mut rest, FROM_KEY);
         let reads_outputs = take_mark(&mut rest, READS_OUTPUTS);
         let default_rows = rest.last().and_then(|last| headed(last, DEFAULT));
         if default_rows.is_some() {
             if from_key {
                 return self.refuse("an input with default rows takes no `from-key` mark", *place);
+            }
+            if need.is_some() {
+                return self.refuse(format!("an input with default rows takes no `{REQUIRED}` or `{ONE_OF}` mark, since its default rows hold where the instance writes no clause for it"), *place);
             }
             rest = &rest[..rest.len() - 1];
         }
@@ -451,11 +468,14 @@ impl FileReader {
             columns.push(column);
             written.push(name);
         }
+        if need.is_some() && from_key && columns.iter().all(is_key) {
+            return self.refuse(format!("an input marked `{FROM_KEY}` whose one column is `key` takes no `{REQUIRED}` or `{ONE_OF}` mark, since the key fills it where the instance writes no clause for it"), *place);
+        }
         let default = match default_rows {
             Some(rows) => Some(DefaultRows { written: self.read(read_param_value(rows, &written))? }),
             None => None,
         };
-        Some(InputPort { port: Port { name, columns: columns.into(), copies: Box::default(), frames: Box::default() }, default, reads_outputs, from_key })
+        Some(InputPort { port: Port { name, columns: columns.into(), copies: Box::default(), frames: Box::default() }, default, reads_outputs, from_key, need })
     }
 
     /// `(proposer <name> native [domain] (columns ...))` or

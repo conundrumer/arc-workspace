@@ -35,7 +35,7 @@
 //!   `<frames>` is a `(frames ...)` form, as the section on frames gives it,
 //!   and `<types>` a `(types ...)` form, as the section on type rules gives it.
 //! - `(component <name> <construction|detector|task-structure> (type-parameters <t> ...)
-//!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key]) ...)
+//!   (inputs (<input> (<column> <type>) ... [(default <rows>)] [reads-outputs] [from-key] [required | one-of]) ...)
 //!   (outputs (<output> (<column> <type>) ... [(copies <row> ...)] [<frames>]) ...))`: a construction, a
 //!   detector or a task-structure component, its inputs in the order the component declares them. Each
 //!   `<t>` is a parameter's name or `(<name> <type>)`, a parameter with a bound. An `INIT` form's binding of a
@@ -48,7 +48,16 @@
 //!   `skip` and `take` do. An input marked `from-key`, which writes no
 //!   `default`, is filled from the key where the instance writes no clause
 //!   for it, as Cardinality's `domain`; an input with neither mark nor
-//!   `default` holds no row there. An output may share its name with an input of
+//!   `default` holds no row there. An input marked `required` is one where
+//!   the component gives no output while the input holds no row, as
+//!   Connectivity's `node`. The inputs marked `one-of` are a group of two
+//!   inputs or more, where the component gives no output while none of them
+//!   holds a row, as Quotient's `equivalent` and `edge`. An input with
+//!   `default` rows takes neither mark, and neither does an input marked
+//!   `from-key` whose one column is `key`, since the instance fills each where
+//!   it writes no clause for it. The stream's decoder refuses the `SKIP` that
+//!   leaves a required input, or each input of the group, with no row
+//!   (`docs/engine/arclog-stream.md#token-stream`). An output may share its name with an input of
 //!   the same form, as `Unfold`'s `take` does: an instance's output of that
 //!   name, where the instance writes no clause for it, reads the input's
 //!   relation. An output's `(copies <row> ...)` form declares the rows of the
@@ -415,6 +424,21 @@ pub struct InputPort {
     /// key where the instance writes no clause for it, as Cardinality's
     /// `domain`.
     pub from_key: bool,
+    /// What the component needs of the input to give any output, where the
+    /// file marks it.
+    pub need: Option<Need>,
+}
+
+/// What a component needs of an input to give any output, as the file marks
+/// it on an input that has no default.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Need {
+    /// The input is marked `required`: the component gives no output where
+    /// the input holds no row.
+    Required,
+    /// The input is marked `one-of`: the component gives no output where
+    /// none of its inputs so marked holds a row.
+    OneOf,
 }
 
 /// The default rows of an input, as the file writes them, read by

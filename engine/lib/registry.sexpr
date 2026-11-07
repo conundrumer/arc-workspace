@@ -159,7 +159,7 @@
 (refines Cardinality.size (key key) (each-key) (covered member (at-least N 1)) (single member (at-most N 1)))
 ;;; For each key, how many more members the plus set has than the minus set, where that is more than 0.
 (component Excess construction (type-parameters Key Member)
-  (inputs (plus (key Key) (m Member))
+  (inputs (plus (key Key) (m Member) required)
     (minus (key Key) (m Member)))
   (outputs (excess (key Key) (N Nat)
     (copies (plus)))))
@@ -168,7 +168,7 @@
 ;;; - `value`: the value, where every member has it.
 ;;; - `plural`: the members have more than one value.
 (component Singleton construction (type-parameters Key Val)
-  (inputs (member (key Key) (v Val)))
+  (inputs (member (key Key) (v Val) required))
   (outputs (value (key Key) (v Val)
       (copies (member (v v))))
     (plural (key Key)
@@ -181,7 +181,7 @@
 ;;; - A pair of sets that share no member has no row.
 (component Inclusion construction (type-parameters Key Pat Member)
   (inputs (pattern (pattern Pat) (m Member))
-    (observed (observed Key) (m Member)))
+    (observed (observed Key) (m Member) required))
   (outputs (superset (observed Key) (pattern Pat)
       (copies (observed (observed observed)) (pattern (pattern pattern))))
     (equal (observed Key) (pattern Pat)
@@ -189,8 +189,8 @@
 ;;; One label per class of an equivalence. A row of `equivalent` or `edge` puts a and b in one class, and the classes are closed over chains of rows.
 ;;; - `class`: a's class. An element in neither input has no class; `equivalent(a, a)` gives it a class of its own.
 (component Quotient construction (type-parameters T)
-  (inputs (equivalent (a T) (b T))
-    (edge (a T) (b T)))
+  (inputs (equivalent (a T) (b T) one-of)
+    (edge (a T) (b T) one-of))
   (outputs (class (a T) (Id Ident)
     (copies (either (equivalent (a a)) (equivalent (b a)) (edge (a a)) (edge (b a)))))))
 (refines Quotient.class (key a))
@@ -208,11 +208,11 @@
 ;;; - `successor`: b comes next after a. Under ties, each member of one score level is followed by each member of the next, and tied members don't follow each other.
 ;;; - `cyclic_successor`: `successor`, with the first after the last.
 (component Order construction (type-parameters Key T)
-  (inputs (member (key Key) (t T))
+  (inputs (member (key Key) (t T) one-of)
     (before (key Key) (a T) (b T))
     (score (key Key) (t T) (S Int))
     (secondary_score (key Key) (t T) (S Int))
-    (probe (key Key) (t T)))
+    (probe (key Key) (t T) one-of))
   (outputs (rank (key Key) (t T) (R Nat)
       (copies (either (member (t t)) (probe (t t)))))
     (dual_rank (key Key) (t T) (R Nat)
@@ -232,7 +232,7 @@
 ;;; The member a count of steps along a successor relation reaches.
 ;;; - `walk`: N steps from p0 reach p, for every N from 0 to the greatest N of `steps`. A walk starts only at a member that has a successor, and a walk that runs out of successors has no row past its end.
 (component Walk construction (type-parameters Key T)
-  (inputs (successor (key Key) (p T) (p_next T))
+  (inputs (successor (key Key) (p T) (p_next T) required)
     (steps (key Key) (N Int)))
   (outputs (walk (key Key) (p0 T) (N Nat) (p T)
     (copies (successor (p p0)) (either (successor (p p)) (successor (p_next p)))))))
@@ -245,14 +245,14 @@
 ;;; - The input `take` is the item taken at t. The output `take` has a row where `score` gives it.
 ;;; - With `score`, a tie forks the walk. An item taken on one branch and left on another is in both `taken` and `untaken` at a state both branches reach.
 (component Unfold construction (type-parameters Key T Item)
-  (inputs (start (key Key) (t T))
-    (initial_taken (key Key) (item Item))
-    (initial_untaken (key Key) (item Item))
+  (inputs (start (key Key) (t T) required)
+    (initial_taken (key Key) (item Item) one-of)
+    (initial_untaken (key Key) (item Item) one-of)
     (conflict (key Key) (item Item) (item2 Item))
     (score (key Key) (t T) (item Item) (S Int))
     (step (key Key) (t T) (t2 T) reads-outputs)
     (skip (key Key) (t T) (t2 T) reads-outputs)
-    (take (key Key) (t T) (item Item) reads-outputs))
+    (take (key Key) (t T) (item Item) reads-outputs one-of))
   (outputs (taken (key Key) (t T) (item Item))
     (untaken (key Key) (t T) (item Item))
     (excluded (key Key) (t T) (item Item))
@@ -261,7 +261,7 @@
 ;;; - `source`: the nodes reached at the start.
 ;;; - `edge`: b is reached once a is.
 (component Propagation construction (type-parameters Key Node)
-  (inputs (source (key Key) (n Node) from-key)
+  (inputs (source (key Key) (n Node) from-key required)
     (edge (key Key) (a Node) (b Node))
     (join (key Key) (a Node) (b Node) (c Node)))
   (outputs (reached (key Key) (n Node)
@@ -283,7 +283,7 @@
 ;;; The parts of a cell set that no walk through the set reaches from the grid's edge. The walk starts at the set's cells on the grid's edge and takes the four cardinal steps.
 ;;; - `enclosed`: each enclosed part under its own label.
 (component Enclosure construction (type-parameters Key)
-  (inputs (cell (key Key) (P Position)))
+  (inputs (cell (key Key) (P Position) required))
   (outputs (enclosed (key Key) (P Position) (Id Ident)
     (copies (cell (P P))))))
 (refines Enclosure.enclosed (key key P))
@@ -299,7 +299,7 @@
       (copies (cell (P P)) (dir (D D))))))
 ;;; The least box that holds a set.
 (component BoundingBox construction (type-parameters Key (Point Box))
-  (inputs (cell (key Key) (P Point) from-key))
+  (inputs (cell (key Key) (P Point) from-key required))
   (outputs (box (key Key) (B Box)
     (copies (cell)))))
 (refines BoundingBox.box (key key) (each-row cell key))
@@ -308,7 +308,7 @@
 ;;; - `conflict`: for some source cell, its image is a target cell of another value. A missing target cell is no conflict.
 ;;; - A D in `transform` with no `mismatch` row takes the source into the target. Target cells that are no source cell's image are not tested.
 (component Agreement construction (type-parameters Key Val)
-  (inputs (source (key Key) (P Box) (v Val))
+  (inputs (source (key Key) (P Box) (v Val) required)
     (target (key Key) (P Box) (v Val))
     (transform (D D4) (default (D4_ID) (D4_CW) (D4_HT) (D4_CC) (D4_LR) (D4_TB) (D4_DG) (D4_AD))))
   (outputs (mismatch (key Key) (D D4)
@@ -321,7 +321,7 @@
 ;;; - `gap`: G cells between each two copies along A. An axis with no row has gap 0.
 ;;; - `cell`: P is the cell P_inner of the copy at P_outer.
 (component Tiling construction (type-parameters Key)
-  (inputs (outer (key Key) (P Position))
+  (inputs (outer (key Key) (P Position) required)
     (inner (key Key) (P Position))
     (gap (key Key) (A Axis) (G Int)))
   (outputs (cell (key Key) (P_outer Position) (P_inner Position) (P Position)
@@ -330,13 +330,13 @@
 ;;; The cells of a frame of given extents.
 ;;; - `extent`: N cells along A. An axis with no row has extent 1 where the other axis has a row. A key with no row on either axis has no cell.
 (component Frame construction (type-parameters Key)
-  (inputs (extent (key Key) (A Axis) (N Int) from-key))
+  (inputs (extent (key Key) (A Axis) (N Int) from-key required))
   (outputs (cell (key Key) (P Position)
     (frames (P new)))))
 ;;; The rectangles drawn in a cell set.
 ;;; - `box`: every cell of B's outline is in the set. B is at least two cells long on each axis, and its interior may hold any cells.
 (component Outlines detector (type-parameters Key)
-  (inputs (node (key Key) (P Position)))
+  (inputs (node (key Key) (P Position) required))
   (outputs (box (key Key) (B Box)
     (copies (node)))))
 ;;; Where a shape appears among valued cells.
@@ -344,8 +344,8 @@
 ;;; - `occurrence`: as `candidate`, for every shape cell S of value v. P moves the D-image of the shape onto the cells.
 ;;; - Only the cells `cell` holds count.
 (component Occurrences detector (type-parameters Key Val)
-  (inputs (cell (key Key) (P Position) (v Val))
-    (shape (key Key) (P Box) (v Val))
+  (inputs (cell (key Key) (P Position) (v Val) required)
+    (shape (key Key) (P Box) (v Val) required)
     (transform (D D4) (default (D4_ID))))
   (outputs (candidate (key Key) (D D4) (P Box)
       (copies (transform (D D)) (cell) (shape))
@@ -358,7 +358,7 @@
 ;;; - `fundamental_period`: the least period along A that compares at least one pair of cells.
 ;;; - `approximate_period`: a period read through damage: the line pairs the move breaks do not outnumber those it keeps.
 (component Periods detector (type-parameters Key Val)
-  (inputs (cell (key Key) (P Position) (v Val)))
+  (inputs (cell (key Key) (P Position) (v Val) required))
   (outputs (period (key Key) (A Axis) (K Nat)
       (copies (cell)))
     (fundamental_period (key Key) (A Axis) (K Nat)
@@ -372,7 +372,7 @@
 ;;; The equal divisions a frame's extent admits.
 ;;; - `division`: along A, N parts of K cells with G cells between each two fill the extent exactly. N is 2 or more and K is 1 or more. G can be less than 0, down to 1 less K: then two neighboring parts share that many lines.
 (component ExtentDivisions detector (type-parameters Key)
-  (inputs (frame (key Key) (P Position)))
+  (inputs (frame (key Key) (P Position) required))
   (outputs (division (key Key) (A Axis) (N Nat) (K Nat) (G Int)
     (copies (frame)))))
 ;;; @rare
@@ -386,7 +386,7 @@
 (component Wallpaper detector (type-parameters Key Val)
   (inputs (transform (D D4))
     (cell (key Key) (P Position) (v Val))
-    (grid (key Key) (P Position))
+    (grid (key Key) (P Position) required)
     (period (key Key) (A Axis) (K Int)))
   (outputs (symmetry (key Key) (D D4) (Delta Offset)
       (copies (transform (D D)) (cell)))
@@ -415,7 +415,7 @@
 ;;; - `step`: the steps that join two cells. The default is the four cardinal steps.
 ;;; - A source outside `node` reaches nothing.
 (component Flood construction (type-parameters Key)
-  (inputs (node (key Key) (P Position))
+  (inputs (node (key Key) (P Position) required)
     (source (key Key) (P Position) from-key)
     (step (Delta Offset) (default (grid
         (_ 1 _)
@@ -428,7 +428,7 @@
 ;;; - `distance`: K steps from the nearest source reach P. A source is at 0. A source outside `node` is at 0 and reaches nothing.
 (component CellDistance construction (type-parameters Key)
   (inputs (node (key Key) (P Position))
-    (source (key Key) (P Position))
+    (source (key Key) (P Position) required)
     (step (Delta Offset) (default (grid
         (_ 1 _)
         (1 @_ 1)
@@ -441,7 +441,7 @@
 ;;; The connected pieces of a cell set.
 ;;; - `step`: as in `Flood`. To join cells that touch at a corner too, the clause gives all eight steps.
 (component Connectivity construction (type-parameters Key)
-  (inputs (node (key Key) (P Position))
+  (inputs (node (key Key) (P Position) required)
     (step (Delta Offset) (default (grid
         (_ 1 _)
         (1 @_ 1)
@@ -471,7 +471,7 @@
 ;;; - `tile`: P is the cell P_inner of the part at P_outer. P_outer is a cell of the frame of parts.
 ;;; - A cell in a gap, or in a leftover shorter than a part, has no row. Where the parts and gaps don't fill an extent exactly, no cell has a row.
 (component Division construction (type-parameters Key)
-  (inputs (cell (key Key) (P Position))
+  (inputs (cell (key Key) (P Position) required)
     (parts (key Key) (A Axis) (N Int))
     (side (key Key) (A Axis) (K Int))
     (gap (key Key) (A Axis) (G Int)))
