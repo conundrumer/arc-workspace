@@ -9,12 +9,14 @@
 //!
 //! The report goes to standard error, as lines that start with
 //! `carry-stats @<calls>`, each cumulative since the start of the process, at
-//! each power of two of the count of calls from 1024 and at each multiple of
-//! 131072. The lines with the greatest `<calls>` are the last report. Each
+//! each multiple of 16384 calls and at the first call after each two seconds
+//! since the last report. The lines with the greatest `<calls>` are the last
+//! report; the calls after it are missing from it. Each
 //! line is `<kind>.<name> n=<count> work=<table work> ms=<time>`, where
 //! `<kind>` is `part` or `clause`:
 //!
-//! - `call`: the calls that found no entry in the walk's own cache.
+//! - `call`: the calls that found no entry in the walk's own cache, and
+//!   `unshaped.call`, the calls that no shape was offered for.
 //! - `hit`: a kept computation replayed; `work` is the table work it counted.
 //! - `miss`: no kept computation replayed. Then exactly one of `miss.noentry`
 //!   (nothing is kept under the key), `miss.work` (a kept computation would
@@ -224,6 +226,22 @@ thread_local! {
 
 static CALLS: AtomicU64 = AtomicU64::new(0);
 
+/// The calls between two reports, at most.
+const REPORT_EVERY: u64 = 16_384;
+
+/// The seconds between two reports, at most.
+const REPORT_SECONDS: u64 = 2;
+
+/// Whether `REPORT_SECONDS` have passed since the last report or the first
+/// call; where they have, this call is the one that reports.
+fn due() -> bool {
+    static START: OnceLock<Instant> = OnceLock::new();
+    static LAST: AtomicU64 = AtomicU64::new(0);
+    let now = START.get_or_init(Instant::now).elapsed().as_secs();
+    let last = LAST.load(Ordering::Relaxed);
+    now >= last + REPORT_SECONDS && LAST.compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed).is_ok()
+}
+
 fn add(state: &mut State, name: String, work: u64, nanos: u64) {
     let entry = state.tally.entry(name).or_default();
     entry.0 += 1;
@@ -259,13 +277,20 @@ pub(super) fn begin(key: &CarryKey) {
     if !enabled() {
         return;
     }
-    let components = PENDING.with(|pending| pending.borrow_mut().take());
-    let Some(kind) = components.as_ref().map(|components| components.kind) else { return };
-    let note = Note { kind, content: content_id(key), request: request_id(key), shape: key.shape.0, class: "entries" };
-    CURRENT.with(|current| *current.borrow_mut() = Current { note: Some(note), components, reason: Reason::NoEntry });
     let calls = CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-    add(&mut state().lock().expect("the counters are not poisoned"), format!("{}.call", kind.name()), 0, 0);
-    if (calls >= 1024 && calls.is_power_of_two()) || calls % 131_072 == 0 {
+    let components = PENDING.with(|pending| pending.borrow_mut().take());
+    match components.as_ref().map(|components| components.kind) {
+        Some(kind) => {
+            let note = Note { kind, content: content_id(key), request: request_id(key), shape: key.shape.0, class: "entries" };
+            CURRENT.with(|current| *current.borrow_mut() = Current { note: Some(note), components, reason: Reason::NoEntry });
+            add(&mut state().lock().expect("the counters are not poisoned"), format!("{}.call", kind.name()), 0, 0);
+        }
+        None => {
+            CURRENT.with(|current| current.borrow_mut().note = None);
+            add(&mut state().lock().expect("the counters are not poisoned"), "unshaped.call".to_string(), 0, 0);
+        }
+    }
+    if calls % REPORT_EVERY == 0 || due() {
         report(calls);
     }
 }
