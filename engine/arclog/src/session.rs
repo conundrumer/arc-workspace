@@ -1000,6 +1000,9 @@ impl TaskSession {
     ///   batch of rows that a walk of rows passes;
     /// - [`TaskSession::reserve`], before a buffer is allocated, against the
     ///   ledger and the buffer's bytes;
+    /// - [`TaskSession::would_reserve`], as the rows of an exported relation
+    ///   accrue, against the ledger and the least bytes that the export
+    ///   reserves for those rows ([`crate::eval::join::Budget::charge_rows`]);
     /// - [`TaskSession::within_room`], before an index is built, where the
     ///   rows that the build walks give its bytes
     ///   ([`crate::eval::join::Budget::charge_build`]).
@@ -1047,6 +1050,16 @@ impl TaskSession {
                 Err(actual) => held = actual,
             }
         }
+    }
+
+    /// Whether [`TaskSession::reserve`] of `bytes` would pass now: it makes
+    /// the same check against the ledger and reserves nothing. A stop gives
+    /// the bytes that the reservation would bring the ledger to.
+    pub fn would_reserve(&self, bytes: usize, bound: Option<SessionBound>) -> Result<(), ReachedSessionBound> {
+        let bound = bound.unwrap_or(self.bound);
+        let held = self.allocated.load(Ordering::Relaxed);
+        let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
+        self.check_bytes(intern, held.saturating_add(bytes), bound)
     }
 
     /// The bytes that the session's bound counts: its charged intern storage,

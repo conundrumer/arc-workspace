@@ -81,13 +81,35 @@ pub struct Budget<'a> {
     nested_rows: u64,
     /// The bindings charged since [`Budget::logged`] began a log.
     log: Option<Charges>,
+    /// The reservation that the rows of this evaluation will take, where it
+    /// feeds an export ([`Budget::with_row_floor`]).
+    floor: Option<RowFloor>,
+}
+
+/// What [`Budget::charge_rows`] checks as rows accrue: the reservation of
+/// at least `bytes_per_row` for each of `multiplier` copies of the rows, which
+/// the next check of rows follows at `next` rows.
+#[derive(Clone, Copy, Debug)]
+struct RowFloor {
+    bytes_per_row: usize,
+    multiplier: u64,
+    next: u64,
 }
 
 impl<'a> Budget<'a> {
     /// A budget with no work and no rows counted, under `limits` and the
     /// caps of `session`.
     pub fn new(limits: &'a Limits, session: &'a TaskSession) -> Self {
-        Budget { limits, session, bindings: 0, rows: 0, nested_rows: 0, log: None }
+        Budget { limits, session, bindings: 0, rows: 0, nested_rows: 0, log: None, floor: None }
+    }
+
+    /// This budget for an evaluation whose rows feed an export that reserves
+    /// `bytes_per_row` at the least for each row of the relation, where the
+    /// relation's rows are those of this evaluation, `multiplier` times: the
+    /// product of the other parts' rows, each of which holds a row. The
+    /// evaluation then stops as [`Budget::charge_rows`] gives.
+    pub fn with_row_floor(self, bytes_per_row: usize, multiplier: u64) -> Self {
+        Budget { floor: Some(RowFloor { bytes_per_row, multiplier, next: 1 }), ..self }
     }
 
     /// The caps of the session.
@@ -196,10 +218,32 @@ impl<'a> Budget<'a> {
     }
 
     /// Counts `rows` more rows held, and checks the row cap.
+    ///
+    /// Where the budget has a row floor ([`Budget::with_row_floor`]), it also
+    /// checks, at the first row and then once per [`BATCH`] rows, that
+    /// [`TaskSession::reserve`] of the floor's bytes for the rows held so far
+    /// would pass. The export of the relation reserves at least that for its
+    /// rows, and the rows only grow, so the evaluation that gets a stop here
+    /// would give a relation whose export stops at the same bound. The stop
+    /// gives the bytes that the reservation would bring the ledger to, and
+    /// comes before the rest of the rows are found. The check costs the loads
+    /// and two short locks of [`TaskSession::would_reserve`] once per [`BATCH`]
+    /// rows, each of which took at least one binding; a budget with no floor
+    /// pays one comparison.
     pub fn charge_rows(&mut self, rows: u64) -> Result<(), ReachedBound> {
         self.rows += rows;
         let cap = self.session.caps.rows;
-        if self.rows > cap { Err(ReachedBound::Rows { cap }) } else { Ok(()) }
+        if self.rows > cap {
+            return Err(ReachedBound::Rows { cap });
+        }
+        if let Some(floor) = self.floor
+            && self.rows >= floor.next
+        {
+            self.floor = Some(RowFloor { next: self.rows.saturating_add(BATCH), ..floor });
+            let held = usize::try_from(self.rows.saturating_mul(floor.multiplier)).unwrap_or(usize::MAX);
+            self.session.would_reserve(held.saturating_mul(floor.bytes_per_row), self.limits.byte_bound).map_err(ReachedBound::SessionBytes)?;
+        }
+        Ok(())
     }
 
     /// Runs `evaluate`, an evaluation nested in a join, and gives its result.
@@ -211,7 +255,10 @@ impl<'a> Budget<'a> {
     /// evaluation around it.
     pub fn nested<T>(&mut self, evaluate: impl FnOnce(&mut Self) -> Result<T, ReachedBound>) -> Result<T, ReachedBound> {
         let outer = std::mem::take(&mut self.rows);
+        // The rows of a nested evaluation are no rows of the export.
+        let floor = self.floor.take();
         let result = evaluate(self);
+        self.floor = floor;
         let held = std::mem::replace(&mut self.rows, outer);
         if result.is_ok() {
             self.nested_rows = self.nested_rows.max(held);

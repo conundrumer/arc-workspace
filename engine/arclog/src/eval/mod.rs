@@ -59,7 +59,7 @@ pub use determinations::Domain;
 pub use driver::FormBodies;
 pub use lookup::{input_relation, output_relation, relation_of};
 pub use models::ModelsEnd;
-pub use values::{BodyValue, Caps, Cancellation, GridValue, Limits, Outcome, ReachedBound, RelationValue, RunFault, Stop, TableWork};
+pub use values::{BodyValue, Caps, Cancellation, GridValue, Limits, Outcome, ReachedBound, RelationValue, RowReserve, RunFault, Stop, TableWork};
 
 use crate::check::CheckedProgram;
 use crate::hash::StableHashMap;

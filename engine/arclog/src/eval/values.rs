@@ -450,12 +450,38 @@ pub struct Limits {
     /// The bound on the session's bytes under these limits, where it is not
     /// the session's own.
     pub byte_bound: Option<crate::session::SessionBound>,
+    /// What a materialization of the rows of an exported relation reserves
+    /// for each row at the least; none where the operation's export is not
+    /// known to reserve. See [`RowReserve`].
+    pub row_reserve: Option<RowReserve>,
+    /// The node of the relation that the operation exports, which
+    /// [`Limits::row_reserve`] applies to: the evaluation of that node's
+    /// clauses stops as soon as the rows it has found would take a
+    /// reservation past the session's room ([`crate::eval::join::Budget::charge_rows`]).
+    pub exported: Option<crate::resolver::GraphNodeIndex>,
+}
+
+/// The bytes that the export of a relation's rows reserves for each row at
+/// the least, as `per_column` for each column and `fixed` for the row. A
+/// column holds at least one cell, so a caller gives the reservation's bytes
+/// for one cell of each column.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct RowReserve {
+    pub per_column: usize,
+    pub fixed: usize,
+}
+
+impl RowReserve {
+    /// The bytes reserved for each row of `arity` columns at the least.
+    pub fn bytes_per_row(self, arity: usize) -> usize {
+        self.per_column.saturating_mul(arity).saturating_add(self.fixed)
+    }
 }
 
 impl Limits {
     /// The limits of an evaluation outside a table and outside a decode.
     pub fn new(deadline: Option<std::time::Instant>, cancellation: Cancellation) -> Self {
-        Limits { deadline, cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default(), byte_bound: None }
+        Limits { deadline, cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default(), byte_bound: None, row_reserve: None, exported: None }
     }
 
     /// These limits with the evaluation checking the declared rows of the
@@ -473,6 +499,19 @@ impl Limits {
     /// session's own bound.
     pub fn bound_by(self, bound: crate::session::SessionBound) -> Self {
         Limits { byte_bound: Some(bound), ..self }
+    }
+
+    /// These limits with the export of the rows of a relation reserving
+    /// `reserve` for each row at the least.
+    pub fn reserving_rows(self, reserve: RowReserve) -> Self {
+        Limits { row_reserve: Some(reserve), ..self }
+    }
+
+    /// These limits with the relation of `node` exported: where
+    /// [`Limits::row_reserve`] is set, the evaluation of its clauses stops at
+    /// the rows whose reservation would pass the session's room.
+    pub fn exporting(self, node: crate::resolver::GraphNodeIndex) -> Self {
+        Limits { exported: Some(node), ..self }
     }
 
     /// These limits with the evaluation taking and holding stops in `stops`.

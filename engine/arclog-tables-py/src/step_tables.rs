@@ -113,7 +113,14 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     let index = written.last().copied();
     let earlier = check_before(before.as_deref(), &task, &case, bodies, &written)?;
     let (columns, stream, left) = py.detach(|| {
-        let limits=engine.limits();
+        // With the rows packed, the export reserves for each row at least what the packing
+        // reserves: the cells of the row, at least one for each column, four times over, and
+        // the row's own two slots.
+        let limits=if by_assignment && summaries && rows {
+            engine.limits().reserving_rows(arclog::eval::RowReserve {per_column:16,fixed:16})
+        } else {
+            engine.limits()
+        };
         let operation=engine.clone().with_operation_limits(limits.clone());
         let engine=&operation;
         let tables: Vec<(usize, Table)> = match index {

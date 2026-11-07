@@ -296,14 +296,17 @@ impl<'e, 'a> Driver<'e, 'a> {
         };
         let all: Vec<usize> = (0..body.clause.nodes.len()).collect();
         let reads = self.reads(&body.clause, &all, &inputs);
-        self.cached(form, &reads.request(&content, example), || Ok(self.body_relation(form, &body, &inputs, example)))
+        // The rows of a clause of the exported relation are held by its export.
+        let exported = self.evaluation.limits.exported.is_some_and(|node| self.program().forms_of(node).contains(form));
+        let reserve = self.evaluation.limits.row_reserve.filter(|_| exported).map(|reserve| reserve.bytes_per_row(body.clause.columns.len()));
+        self.cached(form, &reads.request(&content, example), || Ok(self.body_relation(form, &body, &inputs, example, reserve)))
     }
 
     /// The relation of the conjuncts at `kept` of the body of the clause at
     /// `form` on `example`, as [`Driver::body_relation`] gives it.
     pub(super) fn body(&self, form: &NodePath, kept: &[u32], example: Option<Example>) -> Outcome<RelationValue> {
         match self.compiled(form, kept, example)? {
-            Ok((body, inputs)) => Ok(self.body_relation(form, &body, &inputs, example)),
+            Ok((body, inputs)) => Ok(self.body_relation(form, &body, &inputs, example, None)),
             Err(value) => Ok(value),
         }
     }
@@ -325,15 +328,27 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// the value of its own entry in the result cache, as
     /// `docs/engine/synthesis.md#factorized-bodies` gives. The first part
     /// that stops stops the relation.
-    fn body_relation(&self, form: &NodePath, body: &CompiledBody, inputs: &JoinInputs, example: Option<Example>) -> RelationValue {
+    ///
+    /// Where `reserve` gives the bytes that an export of the relation
+    /// reserves for each row at the least, the last part is evaluated under a
+    /// row floor ([`Budget::with_row_floor`]) whose multiplier is the product
+    /// of the rows of the parts before it, where each of them holds a row. No
+    /// other part has a floor: a part after it may hold no row, and then the
+    /// relation holds no row to export.
+    fn body_relation(&self, form: &NodePath, body: &CompiledBody, inputs: &JoinInputs, example: Option<Example>, reserve: Option<usize>) -> RelationValue {
         let clause = &body.clause;
         let order = plan::variable_order(clause, &join::sizes(clause, inputs), &[]);
         let all: Vec<usize> = (0..clause.nodes.len()).collect();
-        let mut placed = Vec::new();
+        let mut placed: Vec<RelationPart> = Vec::new();
         let mut value = None;
-        for part in join::parts(clause, &all, &|node| body.conjuncts[node]) {
+        let parts = join::parts(clause, &all, &|node| body.conjuncts[node]);
+        let last = parts.len().saturating_sub(1);
+        for (at, part) in parts.into_iter().enumerate() {
             let entry = self.part_entry(form, body, &part, inputs);
-            match self.part_value(form, body, &part, &entry, inputs, &order, example) {
+            let floor = reserve.filter(|_| at == last && placed.iter().all(|found| !found.rows.is_empty())).map(|bytes| {
+                (bytes, placed.iter().filter(|found| !found.columns.is_empty()).fold(1u64, |rows, found| rows.saturating_mul(found.rows.len() as u64)))
+            });
+            match self.part_value(form, body, &part, &entry, inputs, &order, example, floor) {
                 RelationValue::Rows(relation) => placed.extend(relation.parts().iter().map(|found| RelationPart {
                     columns: found.columns.iter().map(|column| entry.columns[usize::from(column.0)]).collect(),
                     rows: found.rows.clone(),
@@ -362,6 +377,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         inputs: &JoinInputs,
         order: &plan::VariableOrder,
         example: Option<Example>,
+        floor: Option<(usize, u64)>,
     ) -> RelationValue {
         let evaluation = self.evaluation;
         let request = entry.reads.request(&entry.content, example);
@@ -369,6 +385,9 @@ impl<'e, 'a> Driver<'e, 'a> {
             return value;
         }
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
+        if let Some((bytes_per_row, multiplier)) = floor {
+            budget = budget.with_row_floor(bytes_per_row, multiplier);
+        }
         let Ok(value) = self.holding_stops::<Infallible>(&request, || {
             let relation = join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget);
             Ok(match relation {
