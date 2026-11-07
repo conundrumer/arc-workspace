@@ -307,6 +307,8 @@ impl Generated {
         family.push(Step::Part(Box::new(PartStep::Same)), LEAF_TABLE, NO_TERM, own_columns, 0, "T".to_string(), RootKind::Rows);
         let own_rows = family.terms.len() as u32 - 1;
         if one_group {
+            // The table's own count is the first pass's.
+            family.refined[own_rows as usize].count_follows = true;
             family.one_group = true;
             family.parts_of(LEAF_TABLE, 1);
             family.one_group = false;
@@ -1419,6 +1421,8 @@ impl Generated {
             let own_text = format!("(project T {})", x.name);
             let found = self.terms.iter().rposition(|term| term.text == own_text).map(|term| term as u32);
             let Some(values) = found.or_else(|| self.push_forced(Step::Project { columns: vec![a as u16].into_boxed_slice() }, LEAF_TABLE, NO_TERM, vec![x.clone()], 1, own_text.clone(), RootKind::Rows)) else { continue };
+            // The column's own count is the first pass's.
+            self.refined[values as usize].count_follows = true;
             self.push_forced(Step::Part(Box::new(PartStep::SameRows { left: place.clone(), right: there.clone(), key: false })), values, part, Vec::new(), 2, format!("(rows-equal {own_text} {part_text} T*:{}={name})", x.name), RootKind::Holds);
             self.push_forced(Step::All { left: place.clone(), right: there.clone(), outer: Box::new([]) }, values, part, Vec::new(), 2, format!("(all {own_text} {part_text} () ({} {name}))", x.name), RootKind::Holds);
             self.push_forced(Step::All { left: there.clone(), right: place.clone(), outer: Box::new([]) }, part, values, Vec::new(), 2, format!("(all {part_text} {own_text} () ({name} {}))", x.name), RootKind::Holds);
@@ -1708,7 +1712,9 @@ impl Generated {
             }
         }
         for (step, b, kept, line, root) in pushes {
-            if !self.one_group || line.contains("(T*:") || line.starts_with("(straight-axis ") {
+            // The second pass holds a key of one group column, and no shape that the first pass's family has.
+            let one_column = line.find("(T*:").is_some_and(|place| !line[place..].split(')').next().unwrap_or("").contains(','));
+            if !self.one_group || one_column || line.starts_with("(straight-axis ") {
                 self.push(step, at, b, kept, size, line, root);
             }
         }

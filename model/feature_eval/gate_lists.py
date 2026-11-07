@@ -164,12 +164,16 @@ def with_named(lists, others, folder, name, items):
             continue
         ids = np.concatenate((lists[owner][0], held[0]))
         order = np.argsort(ids)
+        if len(np.unique(ids)) != len(ids):
+            raise ValueError(f'{folder} repeats a shape of {name} at {owner}')
         lists[owner] = (ids[order], np.concatenate((lists[owner][1], held[1]))[order])
         own, theirs = others[owner], named_others[owner]
         if not len(theirs[0]):
             continue
         ids = np.concatenate((own[0], theirs[0]))
         order = np.argsort(ids)
+        if len(np.unique(ids)) != len(ids):
+            raise ValueError(f'{folder} repeats a shape of {name} at {owner}')
         # A list of the train outputs has only the train pairs, and a named shape is 0 past those.
         pairs = own[4].size // len(own[0]) if len(own[0]) else theirs[4].shape[1]
         at_pairs = np.concatenate((own[4].reshape(len(own[0]), pairs), theirs[4][:, :pairs]))[order]
