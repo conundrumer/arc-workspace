@@ -20,7 +20,7 @@ holds a number, sets how many jobs run at once while the run goes on.
 The run stops where its first STOP_AFTER jobs all die with no draw. Held-out tasks never run, and --skip leaves out the tasks it lists. With --record, each worker writes one draw record per draw to the
 job's draws.jsonl (sampler/draw_record.py), which becomes draws.jsonl.zst when the job ends (draw_file.py).
 """
-import argparse
+import argparse, random
 import collections
 import concurrent.futures as cf
 import hashlib
@@ -288,6 +288,7 @@ def main():
     ap.add_argument('--seconds', type=int, default=120)
     ap.add_argument('--jobs', type=int, default=4)
     ap.add_argument('--tasks', type=int, default=0)
+    ap.add_argument('--shuffle', type=int, help='takes the split\'s tasks in an order that this seed shuffles, so that --tasks gives a mixed sample')
     ap.add_argument('--split', default='dev')
     ap.add_argument('--record', action='store_true', help='each worker writes its draw records')
     ap.add_argument('--no-parity', action='store_true', help='runs with no check that a worker gives the model the rows it was fit on (parity_gate)')
@@ -304,7 +305,10 @@ def main():
     done = set()
     if (out / 'results.jsonl').exists():
         done = {(r['task'], r['arm'], r['seed']) for r in map(json.loads, open(out / 'results.jsonl'))}
-    tasks = [t for t in split_tasks(a.split) if t not in a.skip.split(',')][:a.tasks or None]
+    tasks = [t for t in split_tasks(a.split) if t not in a.skip.split(',')]
+    if a.shuffle is not None:
+        random.Random(a.shuffle).shuffle(tasks)
+    tasks = tasks[:a.tasks or None]
     todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
     if not a.no_parity and a.budget == 'cpu':
         for arm in a.arms.split(','):
