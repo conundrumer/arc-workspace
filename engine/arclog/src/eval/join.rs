@@ -40,6 +40,31 @@ use crate::types::ValueType;
 /// The bindings a [`Batch`] counts before it charges its budget.
 const BATCH: u64 = 1024;
 
+/// The bytes of an index build below which [`Budget::charge_index_build`]
+/// takes no check of the session's bytes: a build this small adds less than
+/// the next batch's check can miss, and nearly every build is under it.
+pub const BUILD_CHECK_MIN: usize = 1 << 20;
+
+/// The rows that the build of the index of `relation` in `order` walks, where
+/// they are known before it: `work` where the build reads several parts,
+/// which counts one row for each combination of their rows, and the rows of
+/// the one part that it reads where all that part's columns are in `order`.
+/// Zero otherwise, as for a part that the build reads by its distinct
+/// projections, whose count the build alone gives.
+fn index_rows(relation: &Relation, order: &ColumnOrder, work: u64) -> u64 {
+    if work > 0 {
+        return work;
+    }
+    if relation.is_empty() || order.0.is_empty() {
+        return 0;
+    }
+    let mut read = relation.parts().iter().filter(|part| part.columns.iter().any(|column| order.0.contains(column)));
+    match (read.next(), read.next()) {
+        (Some(part), None) if part.columns.iter().all(|column| order.0.contains(column)) => part.rows.len() as u64,
+        _ => 0,
+    }
+}
+
 /// The counts of one evaluation against its caps and its other bounds: the
 /// bindings tried and the rows held. A native construction counts its own
 /// bindings and rows through the same counter. The rows it counts are those
@@ -72,6 +97,15 @@ impl<'a> Budget<'a> {
 
     /// Counts a batch of `bindings` tried, and checks the caps, the
     /// session's byte bound, the deadline and the cancellation.
+    ///
+    /// The byte bound is checked here as [`TaskSession::within_bound`] gives,
+    /// once per call. A caller charges once per [`BATCH`] bindings, and a
+    /// walk of rows once per [`BATCH`] rows, so a check follows at most a
+    /// batch of work, and its cost, a few loads and two short locks, stands
+    /// against that work. The bytes that one batch can add are far under the
+    /// bound, so while the session is far from it no stop comes from here.
+    /// A build that adds bytes in one piece, an index, is checked before it
+    /// starts: [`Budget::charge_index_build`].
     pub fn charge_work(&mut self, bindings: u64) -> Result<(), ReachedBound> {
         if let Some(log) = &mut self.log {
             *log = log.saturating_add(bindings);
@@ -107,6 +141,33 @@ impl<'a> Budget<'a> {
             [] | [_] => Ok(()),
             _ => self.charge_work(relation.len()),
         }
+    }
+
+    /// Stops where the index of `relation` in `order`, which this call finds
+    /// not yet built, would take the session past its byte bound. `work` is
+    /// what [`Relation::index_work`] gives for `order`.
+    ///
+    /// A build walks the rows of the parts of `relation` that hold a column
+    /// of `order`, as many as `work` counts where it reads several parts, and
+    /// holds, until it ends, a cell for each column of
+    /// `order` for each row, and a place for each row. No check stands inside
+    /// the build, so the check stands before it, and the stop gives the bytes
+    /// that the session would hold at the build's peak at the least.
+    ///
+    /// The call costs a sum of a few terms where the build is under
+    /// [`BUILD_CHECK_MIN`] bytes, which are most builds. A larger build takes
+    /// the check of [`TaskSession::within_room`] and a read of the relation's
+    /// count of indexes, against the build's work of at least
+    /// [`BUILD_CHECK_MIN`] bytes of writes. The call checks only while the
+    /// relation holds no index, since a caller cannot read which orders it
+    /// holds an index for.
+    pub fn charge_index_build(&mut self, relation: &Relation, order: &ColumnOrder, work: u64) -> Result<(), ReachedBound> {
+        let bytes = index_rows(relation, order, work).saturating_mul(order.0.len().saturating_mul(std::mem::size_of::<TermId>()).saturating_add(std::mem::size_of::<u32>()) as u64);
+        let bytes = usize::try_from(bytes).unwrap_or(usize::MAX);
+        if bytes < BUILD_CHECK_MIN || relation.index_bytes().0 != 0 {
+            return Ok(());
+        }
+        self.session.within_room(&self.limits.heap_starts, self.limits.byte_bound, bytes).map_err(ReachedBound::SessionBytes)
     }
 
     /// Admits a new full-row buffer before it reserves memory. The compact
@@ -909,7 +970,9 @@ impl Plan {
                 _ => (0, column.0 as usize),
             });
             let order=ColumnOrder(columns.iter().map(|(c, _)| *c).collect());
-            budget.charge_work(relation.index_work(&order))?;
+            let work = relation.index_work(&order);
+            budget.charge_work(work)?;
+            budget.charge_index_build(relation, &order, work)?;
             let index = relation.index(&order);
             Ok(AtomTrie { index, levels: columns.into_iter().map(|(_, a)| a).collect(), empty: relation.is_empty() })
         };

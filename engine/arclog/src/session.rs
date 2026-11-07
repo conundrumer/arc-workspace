@@ -992,14 +992,43 @@ impl TaskSession {
     /// and indexes of relations that a driver, a memo or a table holds, also
     /// after the result cache evicts them, and the scratch of a walk. It
     /// counts the growth of every thread of the process.
+    ///
+    /// The checks of an operation stand at these places:
+    ///
+    /// - [`crate::eval::join::Budget::charge_work`], once per batch of
+    ///   bindings that a join, a walk or a construction charges, and once per
+    ///   batch of rows that a walk of rows passes;
+    /// - [`TaskSession::reserve`], before a buffer is allocated, against the
+    ///   ledger and the buffer's bytes;
+    /// - [`TaskSession::within_room`], before an index is built, where the
+    ///   rows that the build walks give its bytes
+    ///   ([`crate::eval::join::Budget::charge_build`]).
+    ///
+    /// A check reads the intern table's bytes, the result cache's bytes, the
+    /// reservations and the heap's live bytes: a few loads and two short
+    /// locks. A batch holds enough work to hide that cost, and a build is
+    /// checked only where it holds [`crate::eval::join::BUILD_CHECK_MIN`]
+    /// bytes or more. So while the session's bytes are far from the bound,
+    /// the checks take a small share of the work between them.
     pub fn within_bound(&self, starts: &HeapStarts, bound: Option<SessionBound>) -> Result<(), ReachedSessionBound> {
+        self.within_room(starts, bound, 0)
+    }
+
+    /// [`TaskSession::within_bound`], where `growth` more bytes are about to
+    /// be built: whether the session's bytes now, as that method counts them,
+    /// plus `growth`, lie within the bound. A stop gives the bytes that the
+    /// build would bring the session to. A caller gives the bytes that the
+    /// build holds at the least, so a stop comes only where the build passes
+    /// the bound.
+    pub fn within_room(&self, starts: &HeapStarts, bound: Option<SessionBound>, growth: usize) -> Result<(), ReachedSessionBound> {
         let bound = bound.unwrap_or(self.bound);
         let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
         let ledger = intern.saturating_add(self.results.bytes()).saturating_add(self.allocated.load(Ordering::Relaxed));
-        let bytes = match crate::heap::live() {
+        let now = match crate::heap::live() {
             None => ledger,
             Some(heap) => ledger.max(starts.grown(Arc::as_ptr(&self.allocated) as usize, heap, ledger)),
         };
+        let bytes = now.saturating_add(growth);
         if bytes > bound.bytes { Err(ReachedSessionBound { bytes, bound }) } else { Ok(()) }
     }
 
