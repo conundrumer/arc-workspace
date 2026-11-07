@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """atom_rows_full.py OUT SET SKELETON TASK... [--samples K] [--targets N]: whole-atom rows over a decision's full candidate set: every atom that Decoder.atoms lists, with its table from arclog.atom_tables, and the mask's tokens that start no atom in the list (group tokens, proposers, the first token of a comparison).
 
-A file per task, <task>.full.zst, streamable zstd JSON lines. The first line is the header: {record: 'header', task, point_names, tok_names, av_names}. Each other line is one decision: {task, decision, sample, target, kind, length, phase, positive: the true candidate's place or null, n, tokens: [a token list per candidate], first: [each distinct first token], first_of: [per candidate, its place in first], table_of: [per candidate, its place in tables or -1], point: base64 f4, tok: base64 f4 (first x tok columns), tables: base64 f4 (tables x av columns), base: base64 f4 (the body's av), base_defined, first_bits: [the token tree's bits per entry of first], truncated, over_cap, walk_seconds, table_seconds}. A true atom is matched by its tokens, then by the same tokens in another site order, which is counted in `twin`. A rerun skips the finished tasks. Run with the kit's runtime python, the overlay's folders and a site with Decoder.atoms first on PYTHONPATH."""
-import argparse, base64, importlib, io, json, os, random, time, types
+A file per task, <task>.full.zst, streamable zstd JSON lines. The first line is the header: {record: 'header', task, point_names, tok_names, av_names}. Each other line is one decision: {task, decision, sample, target, kind, length, phase, positive: the true candidate's place or null, n, tokens: [a token list per candidate], first: [each distinct first token], first_of: [per candidate, its place in first], table_of: [per candidate, its place in tables or -1], point: base64 f4, tok: base64 f4 (first x tok columns), tables: base64 f4 (tables x av columns), base: base64 f4 (the body's av), base_defined, first_bits: [the token tree's bits per entry of first], truncated, over_cap, walk_seconds, table_seconds}. A true atom is matched by its tokens, then by the same tokens in another site order, which is counted in `twin`. A rerun skips the finished tasks. A task stops at WRITER_ROW_MAX_GIB of footprint or WRITER_ROW_TASK_CPU CPU seconds, with its finished decisions kept. Run with the kit's runtime python, the overlay's folders and a site with Decoder.atoms first on PYTHONPATH."""
+import argparse, base64, ctypes, ctypes.util, importlib, io, json, os, random, time, types
 from pathlib import Path
 import numpy as np
 import zstandard
@@ -143,6 +143,21 @@ def process_target(run, core, plan, sink, task, sample, scope, kind, stream, tar
     return n
 
 
+class _Usage(ctypes.Structure):
+    _fields_ = [('uuid', ctypes.c_uint8 * 16)] + [(n, ctypes.c_uint64) for n in ('user', 'system', 'idle', 'interrupt', 'pageins', 'wired', 'resident', 'footprint', 'start', 'exit')]
+
+
+def footprint_gib():
+    """The process's physical footprint, compressed pages included, in GiB; 0 where the call fails."""
+    u = _Usage()
+    libc = ctypes.CDLL(ctypes.util.find_library('c'))
+    return u.footprint / 2 ** 30 if libc.proc_pid_rusage(os.getpid(), 0, ctypes.byref(u)) == 0 else 0.0
+
+
+MAX_GIB = float(os.environ.get('WRITER_ROW_MAX_GIB', 3.0))  # a task stops where the process passes this footprint
+TASK_CPU = float(os.environ.get('WRITER_ROW_TASK_CPU', 300.0))  # or this much CPU time; its finished decisions stay
+
+
 def load_verdicts():
     """The walk's verdicts that earlier batches kept (WRITER_ROW_VERDICTS), so that a new process doesn't walk cold."""
     path = os.environ.get('WRITER_ROW_VERDICTS')
@@ -186,7 +201,11 @@ def main():
         dec_order = train_rows.order_env(run)
         with io.TextIOWrapper(zstandard.ZstdCompressor(level=3).stream_writer(open(tmp, 'wb')), encoding='utf-8') as sink:
             sink.write(json.dumps(dict(record='header', task=task, point_names=point_names, tok_names=tok_names, struct_names=AW.STRUCT, av_names=['a:' + x for x in writer.AV_NAMES])) + '\n')
+            capped = None
+            c0 = time.process_time()
             for sample in samples[:a.samples]:
+                if capped:
+                    break
                 try:
                     texts, label = pw.scope_of(sample['state']['queries'], queries)
                     scope = tuple(texts)
@@ -194,6 +213,9 @@ def main():
                 except Exception:
                     continue
                 for h in sample['target_queries'][:a.targets]:
+                    if footprint_gib() > MAX_GIB or time.process_time() - c0 > TASK_CPU:
+                        capped = 'footprint %.1f GiB, %.0f CPU s' % (footprint_gib(), time.process_time() - c0)
+                        break
                     try:
                         kind, stream = pw.query_stream(env, scope, pw.rewrite(queries[h], label, f'&r{len(scope)}'))
                         walk, _, _ = order.canonical_stream(dec_order, dec0, kind, stream, train_rows.ORDER_SECONDS)
@@ -204,7 +226,7 @@ def main():
                         print('target failed', task, h[:8], type(e).__name__, str(e)[:160], flush=True)
                 sink.flush()
         os.replace(tmp, path)
-        print(f'{task}: {n} decisions, {time.time() - t0:.1f}s', flush=True)
+        print(f'{task}: {n} decisions, {time.time() - t0:.1f}s' + (f', stopped at {capped}' if capped else ''), flush=True)
     keep_verdicts()
 
 

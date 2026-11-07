@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """off_skeleton.py SKELETON_OUT SPLIT RUN [RUN ...] [--states K] [--seed S]: a skeleton file per task whose samples are the states that a recorded search visited.
 
-For each task with draw records in a run of dev_run.py, it takes up to K distinct non-empty states of the draws' last steps (docs/sample-build/training-rows.md, "States off the samples"). A state's queries that the union holds are its gold part. Its targets are the union's target queries that aren't in the state and whose closure lies in the gold part. A query outside the union becomes a query record whose program is its text with local labels, and whose closure comes from what its text reads in the draw. `points_write.py SPLIT --skeleton SKELETON_OUT --samples-per-task 0` then writes the points."""
+For each task with draw records in a run of dev_run.py, it takes up to K distinct non-empty states of the draws' last steps (docs/sample-build/training-rows.md, "States off the samples"). A state's queries that the union holds are its gold part. Its targets are the union's target queries that aren't in the state and whose closure lies in the gold part. A query that reads no query is a target only with --all-targets. A query outside the union becomes a query record whose program is its text with local labels, and whose closure comes from what its text reads in the draw. `points_write.py SPLIT --skeleton SKELETON_OUT --samples-per-task 0` then writes the points."""
 import argparse, collections, hashlib, json, re, sys
 from pathlib import Path
 
@@ -46,7 +46,7 @@ def step_records(steps, known):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('split'); ap.add_argument('runs', nargs='+'); ap.add_argument('--states', type=int, default=12); ap.add_argument('--seed', type=int, default=0)
+    ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('split'); ap.add_argument('runs', nargs='+'); ap.add_argument('--states', type=int, default=12); ap.add_argument('--seed', type=int, default=0); ap.add_argument('--all-targets', action='store_true', help='a state\'s targets include the queries that read no query')
     a = ap.parse_args()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     jobs = {}
@@ -89,7 +89,7 @@ def main():
             if any(not closure[h] <= gold for h in gold):
                 totals['states whose gold queries lack their closure'] += 1
                 continue
-            aim = sorted(t for t in targets if t not in state and closure[t] <= gold and closure[t])  # a query that reads none of the state belongs to the empty state
+            aim = sorted(t for t in targets if t not in state and closure[t] <= gold and (closure[t] or a.all_targets))  # without --all-targets, a query that reads none of the state belongs to the empty state
             if not aim:
                 totals['states with no target'] += 1
                 continue
