@@ -170,6 +170,8 @@ pub struct Generated {
     task_wide: bool,
     /// Whether the next term stands whatever a rule says of it: a named feature, whose parts read more than a count.
     force_next: bool,
+    /// While it holds, the parts of a table are only those keyed by its one Color or Ident column as a group.
+    one_group: bool,
     /// The terms that a part of the base tables names.
     diff_terms: Vec<u32>,
     /// Whether the family's roots read the base tables and no other table.
@@ -264,6 +266,21 @@ impl Generated {
     /// As [`Generated::of`], with the columns under the names a program gives them, so a term's text
     /// reads that program's table. A shape's name reads the names of [`Generated::of`].
     pub fn with_column_names(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore) -> Generated {
+        Generated::with_column_names_of(types, column_names, d, names, false)
+    }
+
+    /// The terms over a table's parts keyed by its one Color or Ident column as a group, whose shapes are those of a table with several such columns.
+    pub fn one_group(types: &[ValueType], d: usize, names: &NameStore) -> Generated {
+        let columns: Vec<String> = (0..types.len()).map(|at| format!("T{at}")).collect();
+        Generated::with_column_names_of(types, &columns, d, names, true)
+    }
+
+    /// As [`Generated::one_group`], with the columns under the names a program gives them.
+    pub fn one_group_with_names(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore) -> Generated {
+        Generated::with_column_names_of(types, column_names, d, names, true)
+    }
+
+    fn with_column_names_of(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore, one_group: bool) -> Generated {
         let mut family = Generated::empty();
         let source_of = |at: usize| -> u16 {
             let first = types.iter().position(|other| *other == types[at] && *other != ValueType::OPEN_IDENT).unwrap_or(at);
@@ -288,6 +305,21 @@ impl Generated {
         let own_columns = family.terms[LEAF_TABLE as usize].columns.clone();
         family.push(Step::Part(Box::new(PartStep::Same)), LEAF_TABLE, NO_TERM, own_columns, 0, "T".to_string(), RootKind::Rows);
         let own_rows = family.terms.len() as u32 - 1;
+        if one_group {
+            family.one_group = true;
+            family.parts_of(LEAF_TABLE, 1);
+            family.one_group = false;
+            family.by_size.push(family.terms.len());
+            if d >= 2 {
+                let below: Vec<u32> = (family.first_term as u32..family.by_size[0] as u32).filter(|at| family.terms[*at as usize].size > 0).collect();
+                for at in below {
+                    family.extend_term(at, 2, true);
+                }
+            }
+            family.by_size.push(family.terms.len());
+            family.name_roots(types, names);
+            return family;
+        }
         family.unary_operators(LEAF_TABLE, 1);
         family.product();
         family.parts_of(LEAF_TABLE, 1);
@@ -911,7 +943,7 @@ impl Generated {
     }
 
     fn empty() -> Generated {
-        Generated { terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false }
+        Generated { one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false }
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
@@ -1482,6 +1514,18 @@ impl Generated {
         }
     }
 
+    /// The keys of a term's parts. Under `one_group`, also the one Color or Ident column as a group, which stands under the name of several such columns.
+    fn keys_of(&self, columns: &[Column], not: &[usize]) -> Vec<(Box<[u16]>, String)> {
+        let mut out = Self::key_options(columns, not);
+        if self.one_group {
+            let group: Vec<u16> = columns.iter().enumerate().filter(|(at, column)| !not.contains(at) && matches!(column.ty, ValueType::Color | ValueType::Ident(_))).map(|(at, _)| at as u16).collect();
+            if let [only] = group[..] {
+                out.push((vec![only].into_boxed_slice(), format!("(T*:{})", columns[usize::from(only)].name)));
+            }
+        }
+        out
+    }
+
     /// The parts with holes over a term.
     fn parts_of(&mut self, at: u32, size: u8) {
         let columns = self.terms[at as usize].columns.clone();
@@ -1535,7 +1579,7 @@ impl Generated {
                 add(PartStep::CornerDist { p }, NO_TERM, with(&[("Diag", ValueType::DiagDir, 0), ("K", ValueType::Int, 0)]), format!("(corner-dist {text} {name})"), RootKind::Rows);
                 add(PartStep::Parity { p }, NO_TERM, with(&[("Diag", ValueType::DiagDir, 0), ("K", ValueType::Nat, 0)]), format!("(parity {text} {name})"), RootKind::Rows);
                 add(PartStep::BorderDistance { p }, NO_TERM, with(&[("K", ValueType::Int, 0)]), format!("(border-distance {text} {name})"), RootKind::Rows);
-                for (keys, key_text) in Self::key_options(&columns, &[place]) {
+                for (keys, key_text) in self.keys_of(&columns, &[place]) {
                     let heads = key_columns(&keys);
                     let extended = |extra: Vec<Column>| -> Vec<Column> { heads.iter().cloned().chain(extra).collect() };
                     add(PartStep::Pieces { keys: keys.clone(), p, four: false }, NO_TERM, extended(vec![column.clone(), fresh("Id", ValueType::OPEN_IDENT, id_source)]), format!("(pieces {text} {key_text} {name})"), RootKind::Rows);
@@ -1600,7 +1644,7 @@ impl Generated {
                     if columns.len() >= 2 {
                         for (other, value) in columns.iter().enumerate() {
                             if other != place {
-                                for (keys, key_text) in Self::key_options(&columns, &[place, other]) {
+                                for (keys, key_text) in self.keys_of(&columns, &[place, other]) {
                                     let kept: Vec<Column> = key_columns(&keys).into_iter().chain([value.clone()]).collect();
                                     add(PartStep::Extreme { keys, t: other as u16, score: p, greatest }, NO_TERM, kept, format!("({label}-by {text} {key_text} {} {name})", value.name), RootKind::Rows);
                                 }
@@ -1610,7 +1654,7 @@ impl Generated {
                 }
             }
         }
-        for (keys, key_text) in Self::key_options(&columns, &[]) {
+        for (keys, key_text) in self.keys_of(&columns, &[]) {
             let heads = key_columns(&keys);
             let with_n: Vec<Column> = heads.iter().cloned().chain([fresh("N", ValueType::Nat, 0)]).collect();
             if !keys.is_empty() {
@@ -1634,7 +1678,9 @@ impl Generated {
             }
         }
         for (step, b, kept, line, root) in pushes {
-            self.push(step, at, b, kept, size, line, root);
+            if !self.one_group || line.contains("(T*:") {
+                self.push(step, at, b, kept, size, line, root);
+            }
         }
     }
 
@@ -2313,6 +2359,8 @@ pub struct Generators {
     pub names: NameStore,
     /// The terms that the cache holds at most, where it is not 0, in place of [`CACHED_TERMS`].
     pub term_limit: usize,
+    /// Whether [`Generators::get`] gives [`Generated::one_group`].
+    pub one_group: bool,
 }
 
 impl Generators {
@@ -2364,7 +2412,7 @@ impl Generators {
 
     pub fn get(&self, stored: &crate::stored::Stored, d: usize) -> Arc<Generated> {
         let hash = hash_words(stored.key.bytes().map(u64::from));
-        self.family_of(hash, || Generated::of(&stored.types, d, &self.names))
+        self.family_of(hash, || if self.one_group { Generated::one_group(&stored.types, d, &self.names) } else { Generated::of(&stored.types, d, &self.names) })
     }
 }
 

@@ -279,6 +279,7 @@ def build(root, out):
     wide_root = root.parent / 'wide'
     state_root = root.parent / 'state'
     named_root = root.parent / 'named'
+    more_root = root.parent / 'more'
     query_seen = []
     told_wide = []
     pair_seen = []
@@ -296,6 +297,8 @@ def build(root, out):
         null_lists, null_others = read_lists(null_path, graded=True)[1:] if null_path.exists() else ({}, {})
         query_lists = with_named(lists, others, named_root / 'lists', path.name, head['items'])
         with_named(null_lists, null_others, named_root / 'null', path.name, head['items'])
+        with_named(lists, others, more_root / 'lists', path.name, head['items'])
+        with_named(null_lists, null_others, more_root / 'null', path.name, head['items'])
         if query_lists:
             query_seen.append(np.unique(np.concatenate([held[0] for held in query_lists.values()])))
         seen = {kind: [] for kind in told}
@@ -358,7 +361,7 @@ def build(root, out):
     names, flags, sizes = {}, {}, {}
     rows_key = 0
     wanted = set(columns.tolist())
-    for folder in (root / 'lists', named_root / 'lists'):
+    for folder in (root / 'lists', named_root / 'lists', more_root / 'lists'):
         for line in name_lines(folder):
             parts_line = line.rstrip('\n').split('\t')
             if len(parts_line) != 4:
@@ -423,6 +426,8 @@ def build(root, out):
             null_lists, null_others = read_lists(null_path, graded=True)[1:] if null_path.exists() else ({}, {})
             query_lists = with_named(lists, others, named_root / 'lists', path.name, head['items'])
             with_named(null_lists, null_others, named_root / 'null', path.name, head['items'])
+            with_named(lists, others, more_root / 'lists', path.name, head['items'])
+            with_named(null_lists, null_others, more_root / 'null', path.name, head['items'])
             wide, wide_others = wide_lists(wide_root / 'lists', path.name, head['items'])
             wide_null, _ = wide_lists(wide_root / 'null', path.name, head['items'])
             pair_numbers = wide_others.get('constant-values', (np.zeros(0, dtype=np.uint64),) + (np.zeros(0, dtype=np.float32),) * 3)

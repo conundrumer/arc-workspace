@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Whether a model's row gives each first-version feature, on the tables that v1_dump.py wrote.
 
-  v1_cover.py OUT.tsv --v1 DIR --blocks DIR --lists DIR [DIR ...] [--named DIR] [--state DIR] [--skip FILE] [--form shape|place] [--base] [--no-mutants] [--nearest] [--counts FILE] [--one-binding] [--disposition FILE] [--tasks N] [--procs N]
+  v1_cover.py OUT.tsv --v1 DIR --blocks DIR --lists DIR [DIR ...] [--named DIR] [--more DIR] [--state DIR] [--skip FILE] [--form shape|place] [--base] [--no-mutants] [--nearest] [--counts FILE] [--one-binding] [--disposition FILE] [--tasks N] [--procs N]
 
 A row is one table, of the ground-truth program or of a dumped mutant, at one train pair. Its columns are the table's shapes at that pair, from its list and its list in
 `--named`, and the columns of a store's `base`, `qv`, `graph`, `relations` and `wide` at its candidate. `--skip` names tasks to leave out.
@@ -37,6 +37,10 @@ is `yes` where its value at each row is a function of the two columns' values an
 share of the rows it gives, with its names in `pair`, and `one share` and `one` give the best single column. `two columns shuffled` is that status on the shuffled values. `--only FILE` judges only the features whose
 status in that earlier output is `missing`.
 
+A store's `relations`, `relations_least`, `relations_most`, `graph`, `query`, `base`, `qv` and `wide` have one value per candidate over its examples, so they can't give a feature that
+varies across a candidate's examples at each row. A missing feature is also judged on one row per candidate, where its value is its mean over the candidate's rows and its
+columns are these: `on candidates` gives that status.
+
 Streams one line per distinct feature, with the first version's metadata of the feature (what it reads, its aggregation level and what else it
 reads) and the names that share its values.
 """
@@ -71,6 +75,7 @@ OTHER = 1 << 63
 MIN_DATA = 20
 PAIR_COLUMNS = 40
 PAIR_VALUES = 12
+CANDIDATE_SOURCES = ['relations', 'relations_least', 'relations_most', 'graph', 'query', 'base', 'qv', 'wide']
 JUDGE = None
 
 
@@ -169,6 +174,7 @@ def main():
     parser.add_argument('--blocks', required=True)
     parser.add_argument('--lists', nargs='+', required=True)
     parser.add_argument('--named')
+    parser.add_argument('--more')
     parser.add_argument('--state')
     parser.add_argument('--skip')
     parser.add_argument('--form', choices=['shape', 'place'], default='shape')
@@ -202,7 +208,8 @@ def main():
     name_of = {offset[source] + column: name for source, names in extra.items() for column, name in names.items()}
     skipped = set(Path(args.skip).read_text().split()) if args.skip else set()
     paths = sorted(path for path in Path(args.v1).glob('*.json.zst') if path.name.split('.')[0] not in skipped)
-    paths = [path for path in paths if any((Path(folder) / (path.name.split('.')[0] + '.lists.zst')).exists() for folder in args.lists)]
+    in_store = {row[0] for row in candidates}
+    paths = [path for path in paths if path.name.split('.')[0] in in_store and any((Path(folder) / (path.name.split('.')[0] + '.lists.zst')).exists() for folder in args.lists)]
     paths = paths[:args.tasks] if args.tasks else paths
     tasks = {path.name.split('.')[0] for path in paths}
     extras = {} if args.base else {source: read_source(blocks, source, {at for key, at in candidate_of.items() if key[0] in tasks}) for source in extra}
@@ -216,6 +223,7 @@ def main():
     other_assignment = [0]
     no_rows = [0]
     row_width = []
+    row_candidate = []
 
     def add_list(row, held, other, at):
         """A row's entries from a table's list at a pair."""
@@ -240,6 +248,9 @@ def main():
         named_lists, named_others = {}, {}
         if args.named and (Path(args.named) / f'{task}.lists.zst').exists():
             named_lists, named_others = read_lists(Path(args.named) / f'{task}.lists.zst', graded=True)[1:]
+        more_lists, more_others = {}, {}
+        if args.more and (Path(args.more) / f'{task}.lists.zst').exists():
+            more_lists, more_others = read_lists(Path(args.more) / f'{task}.lists.zst', graded=True)[1:]
         coordinates = data.get('coordinates', {})
         tables = data.get('tables', {})
         types_of = {name: {token: ty for token, ty in columns} for name, columns in data['columns'].items()}
@@ -286,9 +297,12 @@ def main():
                 row = rows
                 rows += 1
                 row_width.append(len(own_types.get(name, {})))
+                row_candidate.append(candidate)
                 add_list(row, lists[place], others[place], at)
                 if own_named:
                     add_list(row, own_named[0], own_named[1], at)
+                if place in more_lists:
+                    add_list(row, more_lists[place], more_others[place], at)
                 if query_list in named_lists:
                     add_list(row, named_lists[query_list], named_others[query_list], at)
                 for source, by in extras.items():
@@ -327,7 +341,7 @@ def main():
     unique_ids, shape = np.unique(ids, return_inverse=True)
     del ids
     wanted = set(unique_ids.tolist())
-    for folder in [args.lists[-1]] + ([args.named] if args.named else []) + ([args.state] if args.state else []):
+    for folder in [args.lists[-1]] + ([args.named] if args.named else []) + ([args.more] if args.more else []) + ([args.state] if args.state else []):
         for line in g.name_lines(Path(folder)):
             parts = line.rstrip('\n').split('\t')
             if len(parts) == 4 and int(parts[0], 16) in wanted:
@@ -476,7 +490,7 @@ def main():
             return 'no', 0.0, '', one_share, name_at(0)
         return 'yes' if found else 'no', round(top / n, 3), ' ;; '.join(name_at(at) for at in top_pair), one_share, name_at(0)
 
-    def judged(feature, at, with_nearest):
+    def judged(feature, at, with_nearest, sources=None):
         counts = collections.Counter(key_of(value) for value in at.values())
         keys = {key: place for place, key in enumerate(sorted(counts))}
         k = len(keys)
@@ -509,6 +523,8 @@ def main():
         allowed = group_of(feature)[1]
         if allowed is not None:
             candidate_shapes &= allowed
+        if sources is not None:
+            candidate_shapes &= np.isin(source_here, sources)
 
         def missing():
             if not with_nearest or (coordinate_of.get(feature) or ['', '', ''])[2] != 'owner':
@@ -545,6 +561,17 @@ def main():
         best_name = min((name_of.get(int(unique_ids[columns_here[place]]), '?') for place in best), key=len)
         return feature, len(at), off, k, 'covered', len(found), best_name, '', ''
 
+    def on_candidates(feature, at):
+        """The feature's status where a row is a candidate and its value the mean over that candidate's rows, against the columns with one value per candidate."""
+        held = collections.defaultdict(list)
+        for own, value in at.items():
+            if isinstance(value, (bool, int, float)):
+                held[row_candidate[own]].append((own, float(value)))
+        if not held or len(held) == len(at):
+            return ''
+        means = {values[0][0]: round(sum(value for _, value in values) / len(values), 6) for values in held.values()}
+        return judged(feature, means, False, CANDIDATE_SOURCES)[4]
+
     def one(item):
         feature, at = item
         values = list(at.values())
@@ -559,9 +586,10 @@ def main():
                 wider = judged(feature, narrow, False)[4]
         shuffled = dict(zip(at, values))
         pair = ('', '', '', '', '', '')
+        whole = on_candidates(feature, at) if real[4] == 'missing' and not args.base else ''
         if args.pairs and real[4] == 'missing':
             pair = by_pairs(feature, at) + (by_pairs(feature, shuffled)[0],)
-        return real + (judged(feature, shuffled, False)[4], group_of(feature)[0], wider) + pair
+        return real + (judged(feature, shuffled, False)[4], group_of(feature)[0], wider, whole) + pair
 
     JUDGE = one
     same_values = collections.defaultdict(list)
@@ -578,7 +606,7 @@ def main():
     begun = time.time()
     tally = collections.Counter()
     with open(args.out, 'w') as sink, mp.get_context('fork').Pool(args.procs) as pool:
-        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tnearest\tnearest share\tshuffled\tgroup\ton wider tables\ttwo columns\tpair share\tpair\tone share\tone\ttwo columns shuffled\treads\tlevel\tarity\tsame values\n')
+        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tnearest\tnearest share\tshuffled\tgroup\ton wider tables\ton candidates\ttwo columns\tpair share\tpair\tone share\tone\ttwo columns shuffled\treads\tlevel\tarity\tsame values\n')
         for done, result in enumerate(pool.imap_unordered(judge, items, chunksize=4), 1):
             coordinate = coordinate_of.get(result[0]) or ['', '', '']
             sink.write('\t'.join(map(str, result)) + '\t' + '\t'.join(coordinate) + '\t' + ' ;; '.join(others_of[result[0]][:6]) + '\n')

@@ -614,6 +614,7 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
         }
         let mut families = Generators::default();
         families.term_limit = term_limit;
+        families.one_group = folder == "more";
         let names_file = format!("{root}/{folder}/lists/names.tsv.zst");
         let names_file = if std::path::Path::new(&names_file).exists() { format!("{root}/{folder}/lists/names-{}.tsv.zst", std::process::id()) } else { names_file };
         families.names = NameStore::to_file(&names_file)?;
@@ -621,7 +622,10 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
     };
     let chosen = |folder: &str| arguments.kinds.as_ref().is_none_or(|kinds| kinds.iter().any(|kind| kind == folder));
     let mut kinds: Vec<(&str, ListsOf, Generators)> = Vec::new();
-    for (folder, lists_of, term_limit) in [("state", ListsOf::State, 500_000), ("wide", ListsOf::Wide(wide), 500_000), ("on", ListsOf::Tables, 2_500_000), ("named", ListsOf::Named, 0)] {
+    for (folder, lists_of, term_limit) in [("state", ListsOf::State, 500_000), ("wide", ListsOf::Wide(wide), 500_000), ("on", ListsOf::Tables, 2_500_000), ("named", ListsOf::Named, 0), ("more", ListsOf::TablesOnly, 2_500_000)] {
+        if folder == "more" && arguments.kinds.is_none() {
+            continue;
+        }
         if chosen(folder) {
             kinds.push((folder, lists_of, families_of(folder, term_limit)?));
         }
@@ -1069,7 +1073,7 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
             let label = &value.row_names[*at];
             schema.columns.iter().find(|column| column.name == *label || arclog_encoder::schema::label_name(&column.name) == *label).map_or_else(|| label.clone(), |column| column.name.clone())
         }).collect();
-        let family = Generated::with_column_names(&stored.types, &names, arguments.size.max(1), &store);
+        let family = if std::env::var_os("GENERATE_CHECK_ONE_GROUP").is_some() { Generated::one_group_with_names(&stored.types, &names, arguments.size.max(1), &store) } else { Generated::with_column_names(&stored.types, &names, arguments.size.max(1), &store) };
         let example_of: Vec<usize> = (0..train).collect();
         let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
         let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);

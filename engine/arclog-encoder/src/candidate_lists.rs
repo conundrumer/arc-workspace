@@ -179,6 +179,8 @@ fn constant_values(grids: &Grids, families: &Generators) -> Written {
 pub enum ListsOf {
     /// Each table's lists, at its place among the task's tables, and the base tables'.
     Tables,
+    /// Each table's lists of the family that its `Generators` give, with no base table's.
+    TablesOnly,
     /// Each table's task-wide roots at this size.
     Wide(usize),
     /// The lists of the tables that the `parents` of the candidates name, each under its name.
@@ -334,7 +336,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
 
     let mut held: Vec<(String, Arc<Generated>)> = Vec::new();
     let walked: Vec<usize> = match lists_of {
-        ListsOf::Tables => (0..stored.len()).collect(),
+        ListsOf::Tables | ListsOf::TablesOnly => (0..stored.len()).collect(),
         ListsOf::Wide(_) | ListsOf::State | ListsOf::Named => Vec::new(),
         ListsOf::Parents => {
             let mut places: Vec<usize> = named.iter().map(|(_, at)| *at).collect();
@@ -357,7 +359,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     for (at, table) in stored.iter().enumerate() {
         match lists_of {
             ListsOf::Wide(size) => lists.push(wide_of(at.into(), table, &grids, families, size, only_output)),
-            ListsOf::Tables => {
+            ListsOf::Tables | ListsOf::TablesOnly => {
                 let walker = &mut walkers.iter_mut().find(|(key, _)| *key == table.key).expect("a schema's walker").1;
                 let vector = table_vector(walker, table, &grids, examples, only_output);
                 lists.push(stable_of(at.into(), &vector));
