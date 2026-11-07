@@ -322,6 +322,7 @@ fn lists_of_file(input: &Path, out: &Path, task_dir: &Path, generators: &Generat
                 if Walkers::over_budget(&run.walkers.real) || Walkers::over_budget(&run.walkers.null) {
                     run.walkers.real.clear();
                     run.walkers.null.clear();
+                    crate::gen_parts::clear_views();
                 }
             }
             other => return Err(format!("a line of no known record: {other:?}")),
