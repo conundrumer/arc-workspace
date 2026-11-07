@@ -220,6 +220,8 @@ def run_job(a, out, task, arm, seed):
     (w / 'challenges.json').write_text(json.dumps({task: dict(train=d['train'], test=[dict(input=x['input']) for x in d['test']])}))
     samp = Path(a.code) / 'model/study/sampler'
     env = job_env(a, w, arm, seed)
+    if a.gate_records:  # each form at the gate (live.GateRecords): its program form, test attempts, leave-one-out result and decision, in the job's folder
+        env.update(GATE_RECORDS=str(w), GATE_RECORD_TASK=task)
     if a.record:  # the draw records (sampler/draw_record.py), one file per job
         env.update(ARC_DRAW_RECORD=str(w / 'draws.jsonl'), ARC_DRAW_RUN='%s/%s' % (a.run, w.name), ARC_DRAW_SITE=Path(a.site).name,
                    ARC_DRAW_RELEASE=Path(a.code).name)
@@ -305,6 +307,8 @@ def main():
     ap.add_argument('--seconds', type=int, default=120)
     ap.add_argument('--jobs', type=int, default=4)
     ap.add_argument('--tasks', type=int, default=0)
+    ap.add_argument('--gate-records', action='store_true', help='each job writes the gate\'s record of every form at the gate into its folder (gate-records/<task>.jsonl.gz)')
+    ap.add_argument('--task-list', help='a file of the tasks to run, one a line, in its order, in place of the split\'s')
     ap.add_argument('--shuffle', type=int, help='takes the split\'s tasks in an order that this seed shuffles, so that --tasks gives a mixed sample')
     ap.add_argument('--split', default='dev')
     ap.add_argument('--record', action='store_true', help='each worker writes its draw records')
@@ -323,7 +327,7 @@ def main():
     done = set()
     if (out / 'results.jsonl').exists():
         done = {(r['task'], r['arm'], r['seed']) for r in map(json.loads, open(out / 'results.jsonl'))}
-    tasks = [t for t in split_tasks(a.split) if t not in a.skip.split(',')]
+    tasks = [t for t in (open(a.task_list).read().split() if a.task_list else split_tasks(a.split)) if t not in a.skip.split(',')]
     if a.shuffle is not None:
         random.Random(a.shuffle).shuffle(tasks)
     tasks = tasks[:a.tasks or None]
