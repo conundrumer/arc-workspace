@@ -122,7 +122,7 @@ struct Captured {
 /// An open capture of a result cache's events and counts
 /// ([`ResultCache::begin_capture`]).
 #[derive(Debug)]
-pub(crate) struct Capture {
+pub struct Capture {
     /// The place in the cache's events where the capture began.
     mark: usize,
     /// The count of captures open when it began, itself included.
@@ -408,7 +408,7 @@ impl ResultCache {
     /// [`TaskSession::record_counts`] is given, until the capture ends
     /// ([`ResultCache::end_capture`]). A capture may begin while another is
     /// open, and ends before it.
-    pub(crate) fn begin_capture(&self) -> Capture {
+    pub fn begin_capture(&self) -> Capture {
         let mut captured = self.recorded.lock().expect(UNPOISONED);
         captured.counts.push(Counts::default());
         self.recording.store(true, Ordering::Relaxed);
@@ -419,7 +419,7 @@ impl ResultCache {
     /// order, and the largest counts recorded since then. A capture that
     /// was open when this one began keeps them too, and the cache keeps
     /// none once no capture is open.
-    pub(crate) fn end_capture(&self, capture: Capture) -> (Vec<crate::eval::cache::Recorded>, Counts) {
+    pub fn end_capture(&self, capture: Capture) -> (Vec<crate::eval::cache::Recorded>, Counts) {
         let mut captured = self.recorded.lock().expect(UNPOISONED);
         assert_eq!(captured.counts.len(), capture.depth, "a capture ends before the one that was open when it began");
         let counts = captured.counts.pop().expect("an open capture");
