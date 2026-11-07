@@ -319,6 +319,96 @@ impl PartStep {
     }
 }
 
+/// The number of distinct rows of a table over some of its columns.
+fn distinct_over(t: &Table, places: &[usize]) -> usize {
+    // Up to four cells of a row pack into one number.
+    if places.len() <= 4 {
+        t.rows().map(|row| places.iter().fold(0u128, |packed, at| packed << 32 | u128::from(row[*at]))).collect::<std::collections::HashSet<u128>>().len()
+    } else {
+        t.rows().map(|row| places.iter().map(|at| row[*at]).collect::<Vec<Cell>>()).collect::<std::collections::HashSet<_>>().len()
+    }
+}
+
+/// The group of a column in a list of links between columns.
+fn link_root(link: &mut [usize], mut at: usize) -> usize {
+    while link[at] != at {
+        link[at] = link[link[at]];
+        at = link[at];
+    }
+    at
+}
+
+/// A table's finest split into groups of columns whose product it is: for each column the place of its group, and for each group the number of distinct rows of its columns. A table has one such split, and every split
+/// of its columns into two sides has each group wholly on one side. A column of one value is a group of its own.
+fn finest_split(t: &Table) -> crate::native::Factors {
+    let arity = t.arity;
+    let values: Vec<usize> = (0..arity).map(|at| t.sorted_column(at).len()).collect();
+    // Two columns whose pairs of values are not all the pairs of their values depend on one another, and a split has no such pair across its sides. Columns that depend on one another, directly or through others, are linked.
+    let mut link: Vec<usize> = (0..arity).collect();
+    let many: Vec<usize> = (0..arity).filter(|at| values[*at] > 1).collect();
+    for (place, a) in many.iter().enumerate() {
+        for b in &many[place + 1..] {
+            let (ra, rb) = (link_root(&mut link, *a), link_root(&mut link, *b));
+            if ra == rb {
+                continue;
+            }
+            // More pairs of values than rows: some pair is missing.
+            let full = values[*a].saturating_mul(values[*b]);
+            if full > t.len || distinct_over(t, &[*a, *b]) != full {
+                link[ra] = rb;
+            }
+        }
+    }
+    let mut linked: Vec<Vec<usize>> = Vec::new();
+    let mut roots: Vec<usize> = Vec::new();
+    for at in many.iter().copied() {
+        let root = link_root(&mut link, at);
+        match roots.iter().position(|held| *held == root) {
+            Some(place) => linked[place].push(at),
+            None => {
+                roots.push(root);
+                linked.push(vec![at]);
+            }
+        }
+    }
+    // The linked columns are a group each, unless some union of them is a split that no pair shows.
+    let mut together: Vec<Vec<usize>> = linked.clone();
+    if linked.len() >= 2 {
+        let full = linked.iter().fold(1usize, |product, columns| product.saturating_mul(distinct_over(t, columns)));
+        if full != t.len {
+            let count = linked.len();
+            let columns_of = |mask: u32, inside: bool| -> Vec<usize> { (0..count).filter(|at| (mask >> at & 1 == 1) == inside).flat_map(|at| linked[at].iter().copied()).collect() };
+            let splits: Vec<u32> = (1u32..(1 << count) - 1).filter(|mask| mask & 1 == 1).filter(|mask| distinct_over(t, &columns_of(*mask, true)).saturating_mul(distinct_over(t, &columns_of(*mask, false))) == t.len).collect();
+            // Two linked groups are one group where every split has them on one side.
+            together = Vec::new();
+            let mut signatures: Vec<Vec<bool>> = Vec::new();
+            for at in 0..count {
+                let signature: Vec<bool> = splits.iter().map(|mask| mask >> at & 1 == 1).collect();
+                match signatures.iter().position(|held| *held == signature) {
+                    Some(place) => together[place].extend(linked[at].iter().copied()),
+                    None => {
+                        signatures.push(signature);
+                        together.push(linked[at].clone());
+                    }
+                }
+            }
+        }
+    }
+    let mut group_of = vec![0u8; arity];
+    let mut rows_of: Vec<u64> = Vec::new();
+    for at in (0..arity).filter(|at| values[*at] <= 1) {
+        group_of[at] = rows_of.len() as u8;
+        rows_of.push(values[at] as u64);
+    }
+    for columns in &together {
+        for at in columns {
+            group_of[*at] = rows_of.len() as u8;
+        }
+        rows_of.push(distinct_over(t, columns) as u64);
+    }
+    (group_of, rows_of)
+}
+
 /// A value's rows in the order of its columns.
 pub fn flat(value: &Val) -> Option<Arc<Table>> {
     if value.is_lazy() {
@@ -2539,10 +2629,27 @@ impl PartStep {
                 Val::of_table(Table::distinct(1, out))
             }
             PartStep::Product { keys } => {
-                let others: Vec<u16> = (0..t.arity as u16).filter(|at| !keys.contains(at)).collect();
-                let distinct = |places: &[u16]| t.rows().map(|row| places.iter().map(|at| row[usize::from(*at)]).collect::<Vec<Cell>>()).collect::<std::collections::HashSet<_>>().len();
-                let (own, rest) = (distinct(keys), distinct(&others));
-                Val::of_table(Table::unit(own >= 2 && rest >= 2 && own * rest == t.len))
+                let factors = t.factors(|| finest_split(t));
+                let (group_of, rows_of) = (&factors.0, &factors.1);
+                // A split holds where each group of the finest split lies wholly on one side of it, and each side then has the product of its groups' row counts.
+                let mut side_of: Vec<Option<bool>> = vec![None; rows_of.len()];
+                let mut counts = [1u128, 1u128];
+                let mut whole = true;
+                for (at, group) in group_of.iter().enumerate() {
+                    let in_keys = keys.contains(&(at as u16));
+                    match side_of[usize::from(*group)] {
+                        Some(side) if side != in_keys => {
+                            whole = false;
+                            break;
+                        }
+                        Some(_) => {}
+                        None => {
+                            side_of[usize::from(*group)] = Some(in_keys);
+                            counts[usize::from(!in_keys)] *= u128::from(rows_of[usize::from(*group)]);
+                        }
+                    }
+                }
+                Val::of_table(Table::unit(whole && counts[0] >= 2 && counts[1] >= 2))
             }
             PartStep::SameRows { left, right, key } => {
                 let other = flat(children[1])?;

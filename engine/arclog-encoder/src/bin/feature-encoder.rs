@@ -1272,7 +1272,43 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
             let label = &value.row_names[*at];
             labels.iter().position(|held| held == label).map_or_else(|| label.clone(), |place| schema.columns[place].name.clone())
         }).collect();
+        if std::env::var_os("GENERATE_FAMILY_SIZES").is_some() && std::env::var("GENERATE_ONLY_TABLE").is_ok_and(|only| only != *name) {
+            continue;
+        }
         let family = if std::env::var_os("GENERATE_CHECK_ONE_GROUP").is_some() { Generated::one_group_with_names(&stored.types, &names, arguments.size.max(1), &store) } else { Generated::with_column_names(&stored.types, &names, arguments.size.max(1), &store) };
+        // With GENERATE_FAMILY_SIZES, a line of sizes for each table in place of its check. GENERATE_KEEP_TEXT gives the counts of product and project terms.
+        // GENERATE_ONLY_TABLE names the one table to size, and GENERATE_FAMILY_WALK also walks its family on the train pairs, for the seconds, the active entries and whether the walk passed its bound.
+        if std::env::var_os("GENERATE_FAMILY_SIZES").is_some() {
+            let (count, first) = family.counts();
+            let (mut products, mut projects) = (0usize, 0usize);
+            for at in first..count {
+                let text = family.term_info(at).0;
+                products += usize::from(text.starts_with("(product "));
+                projects += usize::from(text.starts_with("(project T "));
+            }
+            let words: Vec<String> = stored.types.iter().map(|ty| if matches!(ty, arclog::types::ValueType::Ident(_)) { "Ident".to_string() } else { format!("{ty:?}") }).collect();
+            println!("sizes\t{name}\tcolumns {}\ttypes {}\tterms {}\troots {}\tproduct terms {products}\tproject-of-T terms {projects}", stored.types.len(), words.join(","), count - first, family.roots);
+            if std::env::var_os("GENERATE_FAMILY_WALK").is_some() {
+                let example_of: Vec<usize> = (0..train).collect();
+                let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
+                let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
+                let mut walker = arclog_encoder::generate::Walker::new(&family);
+                let started = Instant::now();
+                let found = walker.walk(&leaves, train, false);
+                let (mut active, mut check) = (0usize, 0u64);
+                for (hash, at) in &found.index {
+                    let at = *at as usize * found.stride;
+                    let live = &found.slots[at..at + found.stride];
+                    active += usize::from(live.iter().any(|slot| slot.state != 0));
+                    // A sum over the entries, so the order of the index does not matter.
+                    for (instance, slot) in live.iter().enumerate().filter(|(_, slot)| slot.state != 0) {
+                        check = check.wrapping_add(((*hash as u64) ^ slot.digest.rotate_left(instance as u32)).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (u64::from(slot.state) << 56) ^ u64::from(slot.undefined));
+                    }
+                }
+                println!("walk\t{name}\tseconds {:.1}\tactive entries {active}\tdigest {check:016x}\tpast the bound {}", started.elapsed().as_secs_f64(), walker.over_budget);
+            }
+            continue;
+        }
         let example_of: Vec<usize> = (0..train).collect();
         let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
         let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
