@@ -31,7 +31,7 @@ use crate::resolver::columns;
 use crate::resolver::form_columns;
 use crate::resolver::registry_columns;
 use crate::resolver::{DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram, Signature};
-use crate::types::{column_label, each_site_label, flat_label_types, fresh_in_nested_form, label_type_cached, list_class, settle_label_types, sources_on, typed, TypedLabels, WalkCache, scope_lists, use_label, AssemblyId, IdentSource, KeyRow, LabelFault, SourceId, ValueType};
+use crate::types::{column_label, each_site_label, flat_label_types, fresh_in_nested_form, label_type_cached, list_class, settle_label_types, typed, TypedLabels, WalkCache, scope_lists, use_label, AssemblyId, IdentSource, KeyRow, LabelFault, SourceId, ValueType};
 
 /// The labels of a form's own scope, with the list each label's sites stand
 /// in: the conjuncts of the form's bodies, each instance input a branch of
@@ -292,13 +292,10 @@ impl<'a> FormInference<'a> {
 
     /// The source of the Ident values that the form makes at the output
     /// `port`, or at its declared columns where `port` is `None`:
-    /// [`IdentSource::Open`] while sources are off.
+    /// [`IdentSource::Open`] where the owner is no form.
     fn ident_source(&self, port: Option<&PortName>) -> IdentSource {
         use std::hash::Hash;
         let ScopeOwner::Form(form) = self.owner else { return IdentSource::Open };
-        if !sources_on() {
-            return IdentSource::Open;
-        }
         // The resolved content, so that one query has one source in every program, and two forms of one content in one program make
         // equal Idents and have one source. A form with no content takes its name and its canonical form.
         let base = self.source_base.get_or_init(|| {
@@ -1612,7 +1609,7 @@ impl<'a> Inference<'a> {
                 try_map_labels(&ty, &|label| target(&columns.iter().find(|column| column.label == label)?.name))
             }
             ClauseColumns::Declared(columns) => match declared_type(columns, path, pose_or)? {
-                ValueType::Ident(IdentSource::Open) if sources_on() => Some(ValueType::Ident(self.infer(at)?.ident_source(None))),
+                ValueType::Ident(IdentSource::Open) => Some(ValueType::Ident(self.infer(at)?.ident_source(None))),
                 ty => Some(ty),
             },
             ClauseColumns::InstanceOutput(instance, port) => self.instance_output(&instance, port, path, &|_, _| None),

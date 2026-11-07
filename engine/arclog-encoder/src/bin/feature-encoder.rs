@@ -1910,10 +1910,6 @@ fn run_serve_lists(arguments: &Arguments) -> Result<(), String> {
 }
 
 fn main() {
-    // The specification takes sources as on, and the engine's default is off.
-    if std::env::var_os("ARCLOG_IDENT_SOURCE").is_none() {
-        unsafe { std::env::set_var("ARCLOG_IDENT_SOURCE", "type") };
-    }
     let arguments = arguments();
     let command = arguments.positional.first().map(String::as_str).unwrap_or_default();
     let result = match (command, &arguments.positional[1.min(arguments.positional.len())..]) {

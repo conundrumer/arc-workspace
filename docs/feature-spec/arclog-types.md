@@ -72,20 +72,14 @@ From `arclog/src/types/label_walk.rs` and `arclog/src/check/inference.rs`:
 
 An Ident has a meaning only with respect to what made it, so the type contains its maker.
 
-- **`Open`:** a declared column with no maker yet, an Ident read from a file, and every Ident while sources are off.
+- **`Open`:** a declared column with no maker yet, and an Ident read from a file.
 - **`Form(id)`:** the one source of the column. The id is a hash of the maker form's resolved content and its output port. So one query has one source in every program, and two forms of one content in one program have one source. A form with no content takes its name and its canonical form in place of the content.
 
-`ARCLOG_IDENT_SOURCE` sets how much of this is on:
+The check gives each maker's Ident output its own source. A join, a `NOT`, an `=` or `!=`, a union or a type parameter that meets two sources is refused.
 
-| Setting | Effect |
-|---|---|
-| empty or `0` | Off: every Ident is `Open`. |
-| unset or `type` | The check gives each maker's Ident output its own source. A join, a `NOT`, an `=` or `!=`, a union or a type parameter that meets two sources is refused. |
-| `value` | As `type`, and the intern table keeps a digest of each content, the same in every session. A table export gives the digest's first 32 bits as the Ident's cell. The digest does not contain the maker, so equal contents of two makers have one cell. |
+The intern table keeps a digest of each content, the same in every session. A table export gives the digest's first 32 bits as the Ident's cell. The digest does not contain the maker, so equal contents of two makers have one cell.
 
-With sources off, two Idents of different makers can join. An Ident is the index of its content in the task session's intern table, keyed by the content with the type of its members, so such a join has a row where the two labeled contents are equal.
-
-The engine's default is `type`, and the sample build's map mode sets `value`.
+The environment variable `ARCLOG_IDENT_SOURCE` has no effect.
 
 ## Frames
 

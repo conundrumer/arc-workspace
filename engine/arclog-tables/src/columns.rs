@@ -35,13 +35,8 @@
 //! left, right), a Color its digit, a Number itself, an Example its index, a
 //! Unit 0, and an orientation constant, a `Pose` by its D4 constant, its
 //! encoding, which [`orientation_names`] names. An Ident is the first 32 bits
-//! of its member digest ([`arclog::terms::InternTable::digest`]) where
-//! `ARCLOG_IDENT_SOURCE` is `value`, so it is equal for equal sets in every
-//! run. Otherwise it is its number, which depends on the order of interning
-//! in the session of the unit of streams that interned it, so on the cut of
-//! the solver's streams into units, which the solver's unit count sets, and
-//! it is equal to another Ident of the same run and to no Ident of another.
-//! A run is an offset in `values` and a
+//! of its member digest ([`arclog::terms::InternTable::digest`]), so it is
+//! equal for equal sets in every run. A run is an offset in `values` and a
 //! count of rows, and its width in cells is the table's, or the `DET`'s, or
 //! the projection's. The rows of a run are in the order of their cells. Two
 //! runs of a case with the same cells, the same rows of the same width, share
@@ -176,10 +171,8 @@ pub struct TableColumns {
     /// identity, which is a hash of the maker form's name, its canonical form
     /// and its output port. A Record type gives the sources of its fields in
     /// their order, joined by `,`. The empty string for a type with no Ident
-    /// of a source: an Ident of no source, such as one that an input names
-    /// or one written while `ARCLOG_IDENT_SOURCE` is off, gives none. Two
-    /// columns hold Idents of one source where `column_types` and this are
-    /// equal.
+    /// of a source, such as an Ident that an input names. Two columns hold
+    /// Idents of one source where `column_types` and this are equal.
     pub column_ident_sources: Vec<Vec<String>>,
     /// The frame that the values of each column stand in, in the order of
     /// `column_names`, and the empty string for a column with no frame:
@@ -1378,13 +1371,13 @@ pub(crate) fn row_width(types: &[ValueType]) -> u32 {
     types.iter().map(|ty| if ty.is_box() { 4 } else { 1 }).sum()
 }
 
-/// The cells of the term of `id` at a column of type `ty`. Where `idents` is
-/// given, an Ident's cell is 0, and its place in `out` and the Ident are added
-/// to `idents`, for [`set_ident_cells`] to fill.
-fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType, idents: Option<&mut Vec<(usize, Ident)>>) {
+/// The cells of the term of `id` at a column of type `ty`. An Ident's cell is
+/// 0, and its place in `out` and the Ident are added to `idents`, for the
+/// caller to fill with the Ident's export cell.
+fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType, idents: &mut Vec<(usize, Ident)>) {
     match Term::decode(id, ty) {
-        Term::Ident(ident) if idents.is_some() => {
-            idents.expect("idents given").push((out.len(), ident));
+        Term::Ident(ident) => {
+            idents.push((out.len(), ident));
             out.push(0);
         }
         Term::Number(number) => out.push(number.0),
@@ -1393,7 +1386,7 @@ fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType, idents: Option<&mu
         Term::Constant(Constant::Example(example)) => out.push(i32::from(example.index())),
         Term::Constant(Constant::Unit) => out.push(0),
         Term::Constant(Constant::LibName(_)) => out.push(id.encoding() as i32),
-        term @ (Term::Constant(Constant::Orientation(_)) | Term::Ident(_)) => out.push(cell_of(term)),
+        term @ Term::Constant(Constant::Orientation(_)) => out.push(cell_of(term)),
     }
 }
 
@@ -1431,11 +1424,10 @@ pub(crate) fn sorted_rows_at(materializer:&Materializer<'_>,rows: &Relation, pla
     let count = usize::try_from(rows.len()).expect("a count of rows within a usize");
     let mut written = Vec::with_capacity(count.saturating_mul(width));
     let mut visited = 0;
-    let by_digest = arclog::types::ident_mode() == arclog::types::IdentMode::Value;
     let mut idents = Vec::new();
     materializer.walk(rows, &mut |row| {
         for (&place, ty) in places.iter().zip(types) {
-            push_cells(&mut written, row[place], ty, by_digest.then_some(&mut idents));
+            push_cells(&mut written, row[place], ty, &mut idents);
         }
         visited += 1;
     })?;
@@ -1487,9 +1479,7 @@ fn push_rows(materializer:&Materializer<'_>,allocations:&mut Vec<Arc<arclog::ses
     // at most four times during Python conversion; sorting keeps two index
     // buffers. Digest export can also collect one (offset, Ident) per Ident
     // cell, with capacity growth. No row has its own heap allocation.
-    let ident_columns=if arclog::types::ident_mode()==arclog::types::IdentMode::Value {
-        types.iter().filter(|ty|matches!(ty,ValueType::Ident(_))).count()
-    } else {0};
+    let ident_columns=types.iter().filter(|ty|matches!(ty,ValueType::Ident(_))).count();
     let bytes=(row_width(types) as usize).saturating_mul(4*4)
         .saturating_add(2*std::mem::size_of::<usize>())
         .saturating_add(ident_columns.saturating_mul(2*std::mem::size_of::<(usize,Ident)>()));

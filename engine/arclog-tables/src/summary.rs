@@ -19,7 +19,7 @@
 //! assignment:
 //!
 //! 1. Each row is encoded as export cells ([`sorted_rows`]). An Ident cell is
-//!    the first 32 bits of its member digest under `ARCLOG_IDENT_SOURCE=value`.
+//!    the first 32 bits of its member digest.
 //! 2. For each column of a type that another column has, hash the type and
 //!    the set of its cell runs on each example. A column of a type that no other
 //!    column has cannot tie, and its hash is 0.
@@ -35,8 +35,7 @@
 //! ([`type_names`]), and, for each Ident in the type that has a source, the
 //! identity of that source ([`hashed_names`]). So two tables are equal only
 //! where their Types, Ident sources included, and their TableRows are equal.
-//! A type with no Ident source, as every type is while `ARCLOG_IDENT_SOURCE`
-//! is off, has the name that the export writes. A Pose type is the exception:
+//! A type with no Ident source has the name that the export writes. A Pose type is the exception:
 //! the name that the export writes holds the slots of its `RIGID_DET` and of the
 //! `DET`s that the form reads, which differ between programs of one query, so
 //! its name in the TableHash names the assembly by the QueryHash of its
