@@ -1506,9 +1506,32 @@ impl State {
             _ => Vec::new(),
         }).collect();
         let bound = crate::safety::bound_labels(&list, &Default::default(), &Default::default(), &|atom| crate::eval::ir::atom_modes(registry, atom), &|label| types.get(&label.0).cloned());
+        // The labels in the atom's scope: those of the conjuncts of its bodies
+        // outside an `OR`, and of a keyed input's key body those that the key
+        // marks. A label of a branch of an `OR`, of another body alone, or of a
+        // key body that the key does not mark, stands in another scope, and a
+        // check can tell it from a label in scope of its type and binding, so
+        // it has its id for its shape.
+        let mut scoped: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        for (at, body) in in_scope.iter().enumerate() {
+            for conjunct in body.iter() {
+                let (Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom))) = conjunct else { continue };
+                for arg in atom.value().sites.iter().flat_map(|site| site.value.args.iter()) {
+                    match arg {
+                        SiteArg::Label(LabelUse::Key(label)) => {
+                            scoped.insert(label.0);
+                        }
+                        SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label)) if at > 0 || instance.is_none() => {
+                            scoped.insert(label.0);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
         let mut each = true;
         for (at, shape) in shapes.iter_mut().enumerate() {
-            match types.get(&(at as u32)) {
+            match types.get(&(at as u32)).filter(|_| scoped.contains(&(at as u32))) {
                 Some(ty) => {
                     let mut hasher = crate::hash::StableHasher::new();
                     ty.hash(&mut hasher);
