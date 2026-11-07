@@ -103,13 +103,73 @@ pub struct Table {
     /// For each column, a 64-bit filter of its values: two columns whose filters
     /// share no bit share no value.
     masks: std::sync::OnceLock<Box<[u64]>>,
+    /// For each column, how it groups the rows, once something has read it.
+    groupings: std::sync::OnceLock<Box<[std::sync::OnceLock<Arc<Grouping>>]>>,
+    /// For each column, its distinct values in order, once something has read it.
+    sorted: std::sync::OnceLock<Box<[std::sync::OnceLock<Arc<[Cell]>>]>>,
+}
+
+/// How keys group a table's rows: the dense id of each row's key in order of first appearance, and the place of the first row at each key.
+pub type Grouping = (Vec<u32>, Vec<u32>);
+
+thread_local! {
+    static SLOTS: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The ids of `keys` in order of first appearance, and the place of the first appearance of each id. Where the keys span a range of at most `range` values from `least`, an array stands in for a hash table.
+pub fn first_ids(keys: &[u64], least: u64, range: u64) -> Grouping {
+    let len = keys.len();
+    let mut ids: Vec<u32> = Vec::with_capacity(len);
+    let mut first: Vec<u32> = Vec::new();
+    const EMPTY: u64 = u64::MAX;
+    SLOTS.with(|slots| {
+        let mut slots = slots.borrow_mut();
+        if range <= (4 * len as u64).max(64) {
+            // Each slot holds the id of a key, or EMPTY.
+            slots.clear();
+            slots.resize(range as usize, EMPTY);
+            for (place, key) in keys.iter().enumerate() {
+                let slot = &mut slots[(*key - least) as usize];
+                if *slot == EMPTY {
+                    *slot = first.len() as u64;
+                    first.push(place as u32);
+                }
+                ids.push(*slot as u32);
+            }
+        } else {
+            // Each slot holds a key, then its id, in two words.
+            let capacity = (2 * len).next_power_of_two().max(16);
+            let shift = 64 - capacity.trailing_zeros();
+            slots.clear();
+            slots.resize(2 * capacity, EMPTY);
+            for (place, key) in keys.iter().enumerate() {
+                let mut at = (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> shift) as usize;
+                loop {
+                    let held = slots[2 * at];
+                    if held == EMPTY {
+                        slots[2 * at] = *key;
+                        slots[2 * at + 1] = first.len() as u64;
+                        ids.push(first.len() as u32);
+                        first.push(place as u32);
+                        break;
+                    }
+                    if held == *key {
+                        ids.push(slots[2 * at + 1] as u32);
+                        break;
+                    }
+                    at = (at + 1) & (capacity - 1);
+                }
+            }
+        }
+    });
+    (ids, first)
 }
 
 impl Table {
     /// The table of `cells`, whose rows are distinct.
     pub fn new(arity: usize, cells: Vec<Cell>) -> Arc<Table> {
         let len = cells.len().checked_div(arity).unwrap_or(0);
-        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new() })
+        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new() })
     }
 
     /// A hash of the set of rows, which their order does not change.
@@ -138,6 +198,38 @@ impl Table {
         })[place]
     }
 
+    /// How the values of the column at `place` group the rows. A key is never `u64::MAX`, since a cell has 32 bits.
+    pub fn column_grouping(&self, place: usize) -> Arc<Grouping> {
+        if self.len == 0 {
+            return Arc::new((Vec::new(), Vec::new()));
+        }
+        let columns = self.groupings.get_or_init(|| (0..self.arity).map(|_| std::sync::OnceLock::new()).collect());
+        columns[place].get_or_init(|| {
+            let mut least = u32::MAX;
+            let mut most = 0u32;
+            let keys: Vec<u64> = self.rows().map(|row| {
+                least = least.min(row[place]);
+                most = most.max(row[place]);
+                u64::from(row[place])
+            }).collect();
+            Arc::new(first_ids(&keys, u64::from(least), u64::from(most.saturating_sub(least)) + 1))
+        }).clone()
+    }
+
+    /// The distinct values of the column at `place`, in order, sorted once for all that read them.
+    pub fn sorted_column(&self, place: usize) -> Arc<[Cell]> {
+        if self.len == 0 {
+            return Arc::from(Vec::new());
+        }
+        let columns = self.sorted.get_or_init(|| (0..self.arity).map(|_| std::sync::OnceLock::new()).collect());
+        columns[place].get_or_init(|| {
+            let mut held: Vec<Cell> = self.rows().map(|row| row[place]).collect();
+            held.sort_unstable();
+            held.dedup();
+            held.into()
+        }).clone()
+    }
+
     /// The table of `cells`, whose rows may repeat.
     pub fn distinct(arity: usize, cells: Vec<Cell>) -> Arc<Table> {
         Table::new(arity, distinct_rows(arity, cells))
@@ -146,7 +238,7 @@ impl Table {
     /// The table of no columns, with one row where `holds`.
     pub fn unit(holds: bool) -> Arc<Table> {
         let len = usize::from(holds);
-        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new() })
+        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new() })
     }
 
     pub fn rows(&self) -> impl Iterator<Item = &[Cell]> {
@@ -171,6 +263,19 @@ fn distinct_rows(arity: usize, mut cells: Vec<Cell>) -> Vec<Cell> {
             for row in packed {
                 out.push((row >> 32) as u32);
                 out.push(row as u32);
+            }
+            out
+        }
+        3 | 4 => {
+            // A row of up to four cells packs into one number whose order is the rows' order.
+            let mut packed: Vec<u128> = cells.chunks_exact(arity).map(|row| row.iter().fold(0u128, |held, cell| (held << 32) | u128::from(*cell))).collect();
+            packed.sort_unstable();
+            packed.dedup();
+            let mut out = Vec::with_capacity(packed.len() * arity);
+            for row in packed {
+                for place in (0..arity).rev() {
+                    out.push((row >> (32 * place)) as u32);
+                }
             }
             out
         }
@@ -394,7 +499,7 @@ pub struct Evaluator<'a> {
     /// The count of distinct rows of a table at some places.
     distinct_counts: FastMap<(u128, u64), u64>,
     /// How many rows of a table hold each key, at some places.
-    histograms: FastMap<(u128, u64), Arc<FastMap<u64, u32>>>,
+    histograms: FastMap<(u128, u64), Arc<Histogram>>,
     /// The operators a count answered, and those that built their rows.
     pub counted: u64,
     pub built: u64,
@@ -478,7 +583,7 @@ impl<'a> Evaluator<'a> {
                                 0
                             } else {
                                 let histogram = self.histogram(&second.table, &[place]);
-                                part.table.rows().map(|row| histogram.get(&u64::from(row[a])).copied().map_or(0, u64::from)).sum()
+                                part.table.rows().map(|row| histogram.get(u64::from(row[a])).map_or(0, u64::from)).sum()
                             };
                             let kept = if *op == Op::Eq { matched } else { both - matched };
                             let others: Vec<&Part> = held.iter().filter(|own| !std::ptr::eq(*own, part) && !std::ptr::eq(*own, second)).collect();
@@ -513,8 +618,8 @@ impl<'a> Evaluator<'a> {
                 let histogram = self.histogram(&r.table, &r_places);
                 let mut matched = 0u64;
                 for row in l.table.rows() {
-                    if let Some(count) = histogram.get(&key_word(row, &l_places)) {
-                        matched += u64::from(*count);
+                    if let Some(count) = histogram.get(key_word(row, &l_places)) {
+                        matched += u64::from(count);
                     }
                 }
                 // The rows that `join` would build, which past the cap give no value.
@@ -543,7 +648,7 @@ impl<'a> Evaluator<'a> {
                 let histogram = self.histogram(&r.table, &r_places);
                 let mut kept = 0u64;
                 for row in l.table.rows() {
-                    if !histogram.contains_key(&key_word(row, &l_places)) {
+                    if histogram.get(key_word(row, &l_places)).is_none() {
                         kept += 1;
                     }
                 }
@@ -586,25 +691,31 @@ impl<'a> Evaluator<'a> {
         if let Some(found) = self.distinct_counts.get(&(table.hash(), word)) {
             return *found;
         }
-        let mut keys: Vec<u64> = table.rows().map(|row| key_word(row, places)).collect();
-        keys.sort_unstable();
-        keys.dedup();
-        let count = keys.len() as u64;
+        let count = if let [one] = places {
+            table.column_grouping(*one).1.len() as u64
+        } else {
+            let mut keys: Vec<u64> = table.rows().map(|row| key_word(row, places)).collect();
+            keys.sort_unstable();
+            keys.dedup();
+            keys.len() as u64
+        };
         self.distinct_counts.insert((table.hash(), word), count);
         count
     }
 
     /// How many rows of `table` hold each key at `places`.
-    fn histogram(&mut self, table: &Table, places: &[usize]) -> Arc<FastMap<u64, u32>> {
+    fn histogram(&mut self, table: &Table, places: &[usize]) -> Arc<Histogram> {
         let word = hash_words(places.iter().map(|place| *place as u64)) as u64;
         if let Some(found) = self.histograms.get(&(table.hash(), word)) {
             return found.clone();
         }
-        let mut counts: FastMap<u64, u32> = FastMap::default();
-        for row in table.rows() {
-            *counts.entry(key_word(row, places)).or_default() += 1;
+        let keys: Vec<u64> = table.rows().map(|row| key_word(row, places)).collect();
+        let (index, ids) = KeyIndex::of(&keys);
+        let mut counts = vec![0u32; ids.iter().max().map_or(0, |last| *last as usize + 1)];
+        for id in &ids {
+            counts[*id as usize] += 1;
         }
-        let counts = Arc::new(counts);
+        let counts = Arc::new(Histogram { index, counts });
         if self.histograms.len() > 1 << 16 {
             self.histograms.clear();
         }
@@ -1221,23 +1332,23 @@ fn split_parts<'p>(parts: &'p [Part], positions: &[u16]) -> (Vec<&'p Part>, Vec<
 }
 
 /// The rows of a product of parts, with the position of each column.
-struct Merged {
+struct Merged<'p> {
     columns: Vec<u16>,
-    cells: Vec<Cell>,
+    cells: std::borrow::Cow<'p, [Cell]>,
 }
 
-/// The product of `parts`, or `None` past the cap.
-fn merge(parts: &[&Part]) -> Option<Merged> {
+/// The product of `parts`, or `None` past the cap. One part is its own rows, read in place.
+fn merge<'p>(parts: &[&'p Part]) -> Option<Merged<'p>> {
     let columns: Vec<u16> = parts.iter().flat_map(|part| part.columns.iter().copied()).collect();
     let total = parts.iter().try_fold(1usize, |total, part| total.checked_mul(part.table.len))?;
     if parts.is_empty() {
-        return Some(Merged { columns, cells: Vec::new() });
+        return Some(Merged { columns, cells: std::borrow::Cow::Borrowed(&[]) });
     }
     if total.checked_mul(columns.len())? > CELL_CAP {
         return None;
     }
     if let [one] = parts {
-        return Some(Merged { columns, cells: one.table.cells.to_vec() });
+        return Some(Merged { columns, cells: std::borrow::Cow::Borrowed(&one.table.cells) });
     }
     let width = columns.len();
     let mut cells: Vec<Cell> = vec![0; total * width];
@@ -1246,14 +1357,21 @@ fn merge(parts: &[&Part]) -> Option<Merged> {
     for part in parts {
         let arity = part.table.arity;
         let rows = part.table.len;
-        for row in 0..total {
-            let own = (row / repeat) % rows;
-            cells[row * width + offset..row * width + offset + arity].copy_from_slice(&part.table.cells[own * arity..(own + 1) * arity]);
+        // Each row of the part stands for `repeat` rows in a run, and the run goes round again until the product ends.
+        let mut at = 0usize;
+        while at < total {
+            for own in 0..rows {
+                let from = &part.table.cells[own * arity..(own + 1) * arity];
+                for _ in 0..repeat {
+                    cells[at * width + offset..at * width + offset + arity].copy_from_slice(from);
+                    at += 1;
+                }
+            }
         }
         repeat *= rows;
         offset += arity;
     }
-    Some(Merged { columns, cells })
+    Some(Merged { columns, cells: std::borrow::Cow::Owned(cells) })
 }
 
 fn project(value: &Val, columns: &[u16]) -> Val {
@@ -1342,9 +1460,82 @@ fn select(value: &Val, at: u16, op: Op, other: Option<u16>, drop: Option<u16>) -
     Some(Val::of_parts(out))
 }
 
-/// The hash of the values of `row` at `places`.
-fn key_hash(row: &[Cell], places: &[usize]) -> u128 {
-    hash_words(places.iter().map(|place| u64::from(row[*place])))
+/// How many rows of a table hold each key.
+pub struct Histogram {
+    index: KeyIndex,
+    counts: Vec<u32>,
+}
+
+impl Histogram {
+    fn get(&self, key: u64) -> Option<u32> {
+        self.index.get(key).map(|id| self.counts[id as usize])
+    }
+}
+
+/// A hash table from 64-bit keys to dense ids in order of first appearance.
+pub struct KeyIndex {
+    /// Each slot holds a key and then its id plus one, where 0 is an empty slot.
+    slots: Vec<u64>,
+    shift: u32,
+}
+
+impl KeyIndex {
+    /// The index of `keys`, and the id of each key.
+    fn of(keys: &[u64]) -> (KeyIndex, Vec<u32>) {
+        let capacity = (2 * keys.len()).next_power_of_two().max(16);
+        let mut index = KeyIndex { slots: vec![0; 2 * capacity], shift: 64 - capacity.trailing_zeros() };
+        let mut ids = Vec::with_capacity(keys.len());
+        let mut next = 0u32;
+        for key in keys {
+            let mut at = index.start(*key);
+            loop {
+                let held = index.slots[2 * at + 1];
+                if held == 0 {
+                    index.slots[2 * at] = *key;
+                    index.slots[2 * at + 1] = u64::from(next) + 1;
+                    ids.push(next);
+                    next += 1;
+                    break;
+                }
+                if index.slots[2 * at] == *key {
+                    ids.push((held - 1) as u32);
+                    break;
+                }
+                at = (at + 1) & (index.slots.len() / 2 - 1);
+            }
+        }
+        (index, ids)
+    }
+
+    #[inline]
+    fn start(&self, key: u64) -> usize {
+        (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> self.shift) as usize
+    }
+
+    #[inline]
+    fn get(&self, key: u64) -> Option<u32> {
+        let mut at = self.start(key);
+        loop {
+            let held = self.slots[2 * at + 1];
+            if held == 0 {
+                return None;
+            }
+            if self.slots[2 * at] == key {
+                return Some((held - 1) as u32);
+            }
+            at = (at + 1) & (self.slots.len() / 2 - 1);
+        }
+    }
+}
+
+/// A 64-bit key of the values of `row` at `at`: the cells themselves for up to two columns, and a hash of them past that.
+#[inline]
+pub fn row_word(row: &[Cell], at: &[u16]) -> u64 {
+    match at {
+        [one] => u64::from(row[usize::from(*one)]),
+        [one, two] => (u64::from(row[usize::from(*one)]) << 32) | u64::from(row[usize::from(*two)]),
+        _ => hash_words(at.iter().map(|column| u64::from(row[usize::from(*column)]))) as u64,
+    }
 }
 
 fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16], left_arity: u16) -> Option<Val> {
@@ -1377,19 +1568,30 @@ fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16]
     let right_width = tr.columns.len();
     let width = left_width + right_kept.len();
     // The right rows by their key.
-    let mut index: Vec<(u128, u32)> = tr.cells.chunks_exact(right_width).enumerate().map(|(at, row)| (key_hash(row, &right_places), at as u32)).collect();
-    index.sort_unstable();
+    let right_keys: Vec<u64> = tr.cells.chunks_exact(right_width).map(|row| key_word(row, &right_places)).collect();
+    let (index, key_of_row) = KeyIndex::of(&right_keys);
+    // The rows of each key, in the order the right rows stand.
+    let mut starts: Vec<u32> = vec![0; key_of_row.iter().max().map_or(0, |last| *last as usize + 1) + 1];
+    for key in &key_of_row {
+        starts[*key as usize + 1] += 1;
+    }
+    for at in 1..starts.len() {
+        starts[at] += starts[at - 1];
+    }
+    let mut next = starts.clone();
+    let mut rows_of_key: Vec<u32> = vec![0; key_of_row.len()];
+    for (row, key) in key_of_row.iter().enumerate() {
+        rows_of_key[next[*key as usize] as usize] = row as u32;
+        next[*key as usize] += 1;
+    }
     let mut cells: Vec<Cell> = Vec::new();
     for row in tl.cells.chunks_exact(left_width) {
-        let key = key_hash(row, &left_places);
-        let start = index.partition_point(|(held, _)| *held < key);
-        for (held, at) in &index[start..] {
-            if *held != key {
-                break;
+        if let Some(key) = index.get(key_word(row, &left_places)) {
+            for at in &rows_of_key[starts[key as usize] as usize..starts[key as usize + 1] as usize] {
+                let other = &tr.cells[*at as usize * right_width..(*at as usize + 1) * right_width];
+                cells.extend_from_slice(row);
+                cells.extend(right_kept.iter().map(|place| other[*place]));
             }
-            let other = &tr.cells[*at as usize * right_width..(*at as usize + 1) * right_width];
-            cells.extend_from_slice(row);
-            cells.extend(right_kept.iter().map(|place| other[*place]));
         }
         if cells.len() > CELL_CAP {
             return None;
@@ -1408,9 +1610,18 @@ fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16]
     Some(Val::of_parts(out))
 }
 
-#[inline]
-fn row_key(row: &[Cell], at: &[u16]) -> u128 {
-    hash_words(at.iter().map(|column| u64::from(row[usize::from(*column)])))
+/// Whether the key of each row of `table` at `at` is among `keys`, which stand sorted. A key at one column is read once per distinct value of the column.
+fn rows_in(table: &Table, at: &[u16], keys: &[u64]) -> Vec<bool> {
+    if table.arity == 0 {
+        return Vec::new();
+    }
+    if let [one] = at {
+        let place = usize::from(*one);
+        let grouping = table.column_grouping(place);
+        let present: Vec<bool> = grouping.1.iter().map(|first| keys.binary_search(&u64::from(table.cells[*first as usize * table.arity + place])).is_ok()).collect();
+        return grouping.0.iter().map(|id| present[*id as usize]).collect();
+    }
+    table.rows().map(|row| keys.binary_search(&row_word(row, at)).is_ok()).collect()
 }
 
 fn semijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Option<Val> {
@@ -1419,17 +1630,15 @@ fn semijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Optio
     }
     let table = crate::gen_parts::flat(left)?;
     let keys = crate::gen_parts::keys_of(right, right_at)?;
-    let mut cells = Vec::with_capacity(table.cells.len());
-    let mut all_kept = true;
-    for row in table.rows() {
-        if keys.binary_search(&row_key(row, left_at)).is_ok() {
-            cells.extend_from_slice(row);
-        } else {
-            all_kept = false;
-        }
-    }
-    if all_kept {
+    let held = rows_in(&table, left_at, &keys);
+    if held.iter().all(|kept| *kept) {
         return Some(left.clone());
+    }
+    let mut cells = Vec::with_capacity(table.cells.len());
+    for (row, kept) in table.rows().zip(&held) {
+        if *kept {
+            cells.extend_from_slice(row);
+        }
     }
     Some(Val::of_table(Table::new(table.arity, cells)))
 }
@@ -1440,17 +1649,19 @@ fn all(domain: &Val, body: &Val, left_at: &[u16], right_at: &[u16], outer: &[u16
     }
     let table = crate::gen_parts::flat(domain)?;
     let keys = if matches!(body, Val::Empty) { Arc::new(Vec::new()) } else { crate::gen_parts::keys_of(body, right_at)? };
-    let fails = |row: &[Cell]| keys.binary_search(&row_key(row, left_at)).is_err();
+    let held = rows_in(&table, left_at, &keys);
     if outer.is_empty() {
-        return Some(if table.rows().any(fails) { Val::Empty } else { Val::of_table(Table::unit(true)) });
+        return Some(if held.iter().any(|kept| !*kept) { Val::Empty } else { Val::of_table(Table::unit(true)) });
     }
+    // A value of the outer column stays where every row at it has its key.
     let at = usize::from(outer[0]);
-    let mut failing: Vec<Cell> = table.rows().filter(|row| fails(row)).map(|row| row[at]).collect();
-    failing.sort_unstable();
-    failing.dedup();
-    let mut out: Vec<Cell> = table.rows().map(|row| row[at]).filter(|cell| failing.binary_search(cell).is_err()).collect();
+    let grouping = table.column_grouping(at);
+    let mut fails = vec![false; grouping.1.len()];
+    for (id, kept) in grouping.0.iter().zip(&held) {
+        fails[*id as usize] |= !*kept;
+    }
+    let mut out: Vec<Cell> = grouping.1.iter().zip(&fails).filter(|(_, fails)| !**fails).map(|(first, _)| table.cells[*first as usize * table.arity + at]).collect();
     out.sort_unstable();
-    out.dedup();
     Some(Val::of_table(Table::new(1, out)))
 }
 
@@ -1466,13 +1677,13 @@ fn antijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Optio
     let tr = merge(&right_touched)?;
     let left_places: Vec<usize> = left_at.iter().map(|at| tl.columns.iter().position(|column| column == at).expect("a paired column")).collect();
     let right_places: Vec<usize> = right_at.iter().map(|at| tr.columns.iter().position(|column| column == at).expect("a paired column")).collect();
-    let mut keys: Vec<u128> = tr.cells.chunks_exact(tr.columns.len()).map(|row| key_hash(row, &right_places)).collect();
+    let mut keys: Vec<u64> = tr.cells.chunks_exact(tr.columns.len()).map(|row| key_word(row, &right_places)).collect();
     keys.sort_unstable();
     keys.dedup();
     let width = tl.columns.len();
     let mut cells: Vec<Cell> = Vec::with_capacity(tl.cells.len());
     for row in tl.cells.chunks_exact(width) {
-        if keys.binary_search(&key_hash(row, &left_places)).is_err() {
+        if keys.binary_search(&key_word(row, &left_places)).is_err() {
             cells.extend_from_slice(row);
         }
     }
