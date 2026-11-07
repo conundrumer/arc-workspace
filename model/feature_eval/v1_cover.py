@@ -234,6 +234,8 @@ def main():
                 for owner in ('input', 'ex_output', 'constants'):
                     if owner in lists:
                         add_list(row, lists[owner], others[owner], at)
+                    if owner in named_lists:
+                        add_list(row, named_lists[owner], named_others[owner], at)
                 if 'pair' in state_lists:
                     add_list(row, state_lists['pair'], state_others['pair'], at)
                 for owner in ('input', 'output', 'changed'):

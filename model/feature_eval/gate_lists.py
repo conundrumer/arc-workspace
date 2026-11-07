@@ -156,7 +156,7 @@ def with_named(lists, others, folder, name, items):
         return {}
     queries = {}
     for owner, held in named_lists.items():
-        if not isinstance(owner, int):
+        if isinstance(owner, str) and owner.endswith('/query'):
             queries[owner] = held
             continue
         if owner not in lists:

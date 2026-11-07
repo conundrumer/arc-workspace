@@ -364,7 +364,11 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         rows_at.push(serde_json::json!(table.rows[..train].iter().map(|models| models.iter().map(|model| model.len).max().map_or(serde_json::Value::Null, Into::into)).collect::<Vec<serde_json::Value>>()));
     }
     let mut walks = stored.len() as u64;
+    if lists_of == ListsOf::Named {
+        lists.push(named_of("input".into(), &Stored::of_grids(&grids.inputs), &grids, families, examples, only_output));
+    }
     if lists_of == ListsOf::Named && !only_output {
+        lists.push(named_of("ex_output".into(), &Stored::of_grids(&grids.outputs), &grids, families, examples, only_output));
         for (at, members) in query_numbers.iter().enumerate() {
             for (member, numbers) in members.iter().enumerate() {
                 let mut written: Vec<(u64, f32)> = numbers.iter().filter(|(_, value)| *value != 0.0).map(|(name, value)| {

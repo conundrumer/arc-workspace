@@ -91,7 +91,7 @@ pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts]) ->
     let mut records = Vec::with_capacity(256);
     let mut cells: Vec<Cell> = Vec::new();
     for (pair, fact) in facts.iter().chain(tests).enumerate() {
-        let models = &table.rows[pair];
+        let models = table.rows.get(pair).map_or(&[][..], Vec::as_slice);
         let mut sums: HashMap<String, (f64, usize)> = HashMap::new();
         for model in models {
             cells.clear();
