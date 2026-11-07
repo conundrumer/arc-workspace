@@ -16,7 +16,7 @@ use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, REA
 use crate::native::{hash_words, FastMap};
 use crate::program_relations::{program_facts, table_numbers, ProgramFacts};
 use crate::stored::Stored;
-use crate::state_features::{graph_numbers, nodes_of, pool, relations, Relation};
+use crate::state_features::{graph_numbers, nodes_of, relations, Relation};
 use crate::table_vector::{base_vectors, pair_vector, table_vector, task_wide_vector, two_tables_vector, Grids, TableVector};
 
 /// A list as the file writes it: shapes, and the mean of each one's greatest value over its scope.
@@ -195,23 +195,19 @@ pub enum ListsOf {
 
 /// A shape over several tables of a state: the least, the mean and the greatest of its mean over the examples,
 /// where a table with no value of the shape counts as 0.
-fn pooled(owner: String, vectors: &[&TableVector]) -> Written {
-    Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded: pool(vectors), pairs: 0, at_pairs: Vec::new() }
+fn pooled(owner: String, pairs: &[&PairValues]) -> Written {
+    Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded: pool_values(pairs), pairs: 0, at_pairs: Vec::new() }
 }
 
 /// A shape over several tables of a state, at each example: its greatest value over the tables, where a table with no value counts as 0.
-fn pooled_each(owner: String, vectors: &[&TableVector], examples: usize) -> Written {
+fn pooled_each(owner: String, pairs: &[&PairValues], examples: usize) -> Written {
     let mut held: BTreeMap<u64, Vec<f32>> = BTreeMap::new();
-    for vector in vectors {
-        for shape in 0..vector.shapes.len() {
-            let scope = vector.scope(shape);
-            for (example, slot) in vector.at(shape).iter().enumerate().take(scope) {
-                if slot.state != SLOT_NO_VALUE && slot.state != SLOT_DEFAULT {
-                    let value = slot.greatest.float() as f32;
-                    if value != 0.0 {
-                        let entry = held.entry(vector.shapes[shape]).or_insert_with(|| vec![0.0; examples]);
-                        entry[example] = entry[example].max(value);
-                    }
+    for pair in pairs {
+        for (place, shape) in pair.shapes.iter().enumerate() {
+            for (example, value) in pair.at[place * examples..(place + 1) * examples].iter().enumerate() {
+                if *value != 0.0 {
+                    let entry = held.entry(*shape).or_insert_with(|| vec![0.0; examples]);
+                    entry[example] = entry[example].max(*value);
                 }
             }
         }
@@ -228,15 +224,217 @@ fn pooled_each(owner: String, vectors: &[&TableVector], examples: usize) -> Writ
 }
 
 /// A table's two-table values with another table of the state, each the mean over the examples.
-fn edge_of(owner: String, vector: &TableVector) -> Written {
-    let mut ids = Vec::with_capacity(vector.shapes.len());
-    let mut values = Vec::with_capacity(vector.shapes.len());
-    for shape in 0..vector.shapes.len() {
-        let (_, mean, _, _) = vector.over_examples(shape, false);
-        ids.push(vector.shapes[shape]);
-        values.push(mean as f32);
+fn edge_of(owner: String, pair: &PairValues) -> Written {
+    Written { owner: owner.into(), ids: pair.shapes.clone(), values: pair.means.clone(), graded: Vec::new(), pairs: 0, at_pairs: Vec::new() }
+}
+
+/// What the lists read of a table's two-table values with another table of the state, so that memory holds no slot of a pair past its walk.
+struct PairValues {
+    shapes: Vec<u64>,
+    /// Each shape's mean over the examples.
+    means: Vec<f32>,
+    /// Whether a shape has a value at some example.
+    counted: Vec<bool>,
+    /// With `each`, each shape's value at each example: 0 where it has none, or past its scope.
+    at: Vec<f32>,
+}
+
+impl PairValues {
+    fn of(vector: &TableVector, each: bool, examples: usize) -> PairValues {
+        let count = vector.shapes.len();
+        let mut means = Vec::with_capacity(count);
+        let mut counted = Vec::with_capacity(count);
+        let mut at = Vec::with_capacity(if each { count * examples } else { 0 });
+        for shape in 0..count {
+            let (_, mean, _, seen) = vector.over_examples(shape, false);
+            means.push(mean as f32);
+            counted.push(seen != 0);
+            if each {
+                let scope = vector.scope(shape);
+                at.extend(vector.at(shape).iter().enumerate().map(|(example, slot)| if example < scope && slot.state != SLOT_NO_VALUE && slot.state != SLOT_DEFAULT { slot.greatest.float() as f32 } else { 0.0 }));
+            }
+        }
+        PairValues { shapes: vector.shapes.clone(), means, counted, at }
     }
-    Written { owner: owner.into(), ids, values, graded: Vec::new(), pairs: 0, at_pairs: Vec::new() }
+}
+
+/// A shape over several tables of a state: the least, the mean and the greatest of its mean over the examples, where a table with no value of the shape counts as 0.
+fn pool_values(pairs: &[&PairValues]) -> Vec<(u64, f32, f32, f32)> {
+    let mut held: FastMap<u64, (f32, f32, f32, usize)> = FastMap::default();
+    for pair in pairs {
+        for ((shape, mean), counted) in pair.shapes.iter().zip(&pair.means).zip(&pair.counted) {
+            if *counted {
+                let entry = held.entry(*shape).or_insert((f32::INFINITY, 0.0, f32::NEG_INFINITY, 0));
+                entry.0 = entry.0.min(*mean);
+                entry.1 += *mean;
+                entry.2 = entry.2.max(*mean);
+                entry.3 += 1;
+            }
+        }
+    }
+    let total = pairs.len();
+    let mut out: Vec<(u64, f32, f32, f32)> = held.into_iter().map(|(shape, (least, sum, most, seen))| {
+        let least = if seen < total { least.min(0.0) } else { least };
+        let most = if seen < total { most.max(0.0) } else { most };
+        (shape, least, sum / total as f32, most)
+    }).collect();
+    out.sort_unstable_by_key(|entry| entry.0);
+    out
+}
+
+/// A task's lists as they are made. Each list leaves memory as bytes, into a file beside the task's lists where one is named, and memory holds only where it stands and the
+/// shapes it names.
+struct ListSink {
+    spool: Spool,
+    heads: Vec<ListHead>,
+    shapes: FastMap<u64, ()>,
+    next_rank: usize,
+    written: u64,
+    fault: Option<String>,
+}
+
+enum Spool {
+    Memory(Vec<u8>),
+    File(std::io::BufWriter<std::fs::File>, std::path::PathBuf),
+}
+
+struct ListHead {
+    rank: usize,
+    owner: serde_json::Value,
+    count: usize,
+    graded: usize,
+    pairs: usize,
+    at_pairs: usize,
+    offset: u64,
+}
+
+impl ListSink {
+    fn new(spill: Option<std::path::PathBuf>) -> Result<ListSink, String> {
+        let spool = match spill {
+            Some(path) => Spool::File(std::io::BufWriter::new(std::fs::File::create(&path).map_err(|error| error.to_string())?), path),
+            None => Spool::Memory(Vec::new()),
+        };
+        Ok(ListSink { spool, heads: Vec::new(), shapes: FastMap::default(), next_rank: 0, written: 0, fault: None })
+    }
+
+    fn put(&mut self, bytes: &[u8]) {
+        self.written += bytes.len() as u64;
+        match &mut self.spool {
+            Spool::Memory(held) => held.extend_from_slice(bytes),
+            Spool::File(writer, _) => {
+                if let Err(error) = std::io::Write::write_all(writer, bytes) {
+                    self.fault.get_or_insert(error.to_string());
+                }
+            }
+        }
+    }
+
+    /// A list after those before it.
+    fn push(&mut self, list: Written) {
+        let rank = self.next_rank;
+        self.push_at(rank, list);
+    }
+
+    /// A list at its rank among the task's lists, wherever it comes in the writing.
+    fn push_at(&mut self, rank: usize, list: Written) {
+        self.next_rank = self.next_rank.max(rank + 1);
+        let offset = self.written;
+        for shape in list.ids.iter().copied().chain(list.graded.iter().map(|entry| entry.0)) {
+            self.shapes.insert(shape, ());
+            self.put(&shape.to_le_bytes());
+        }
+        for value in &list.values {
+            self.put(&value.to_le_bytes());
+        }
+        for number in [|entry: &(u64, f32, f32, f32)| entry.1, |entry: &(u64, f32, f32, f32)| entry.2, |entry: &(u64, f32, f32, f32)| entry.3] {
+            for entry in &list.graded {
+                self.put(&number(entry).to_le_bytes());
+            }
+        }
+        for value in &list.at_pairs {
+            self.put(&value.to_le_bytes());
+        }
+        self.heads.push(ListHead { rank, owner: list.owner, count: list.ids.len(), graded: list.graded.len(), pairs: list.pairs, at_pairs: list.at_pairs.len(), offset });
+    }
+
+    /// Writes the file: its header's length, its header, then the shapes, then each list as places in them and its values, then its graded shapes as places, their least, mean and
+    /// greatest, and their value at each example. `header` gives the header from the count of shapes and the lists in order.
+    fn finish(self, header: impl FnOnce(usize, &[ListHead]) -> String, target: Option<&std::path::Path>) -> Result<(Vec<u8>, u64), String> {
+        let ListSink { spool, mut heads, shapes, fault, .. } = self;
+        if let Some(fault) = fault {
+            return Err(fault);
+        }
+        heads.sort_by_key(|head| head.rank);
+        let mut dictionary: Vec<u64> = shapes.into_keys().collect();
+        dictionary.sort_unstable();
+        let header = header(dictionary.len(), &heads);
+        let shape_count = dictionary.len() as u64;
+        match (spool, target) {
+            (Spool::Memory(held), None) => {
+                let mut out = Vec::with_capacity(8 + header.len() + dictionary.len() * 8 + held.len());
+                write_lists(&header, &dictionary, &heads, &mut |offset, into: &mut Vec<u8>| {
+                    let start = offset as usize;
+                    let end = start + into.len();
+                    into.copy_from_slice(&held[start..end]);
+                    Ok(())
+                }, &mut out)?;
+                Ok((out, shape_count))
+            }
+            (Spool::File(writer, path), Some(target)) => {
+                let file = writer.into_inner().map_err(|error| error.to_string())?;
+                drop(file);
+                let mut reader = std::fs::File::open(&path).map_err(|error| error.to_string())?;
+                let result = crate::zio::write_with(target, |out| {
+                    write_lists(&header, &dictionary, &heads, &mut |offset, into: &mut Vec<u8>| {
+                        std::io::Seek::seek(&mut reader, std::io::SeekFrom::Start(offset)).map_err(|error| error.to_string())?;
+                        std::io::Read::read_exact(&mut reader, into).map_err(|error| error.to_string())
+                    }, out)
+                });
+                let _ = std::fs::remove_file(&path);
+                result?;
+                Ok((Vec::new(), shape_count))
+            }
+            _ => Err("a list sink's spool and its target disagree".to_string()),
+        }
+    }
+}
+
+/// The body of a lists file. Each list is sorted, so a shape's place stands after the one before it.
+fn write_lists(header: &str, dictionary: &[u64], heads: &[ListHead], read: &mut dyn FnMut(u64, &mut Vec<u8>) -> Result<(), String>, out: &mut dyn std::io::Write) -> Result<(), String> {
+    let fail = |error: std::io::Error| error.to_string();
+    out.write_all(&(header.len() as u64).to_le_bytes()).map_err(fail)?;
+    out.write_all(header.as_bytes()).map_err(fail)?;
+    let mut block = Vec::with_capacity(1 << 16);
+    for shape in dictionary {
+        block.extend_from_slice(&shape.to_le_bytes());
+        if block.len() >= 1 << 16 {
+            out.write_all(&block).map_err(fail)?;
+            block.clear();
+        }
+    }
+    out.write_all(&block).map_err(fail)?;
+    let mut raw = Vec::new();
+    let mut places = Vec::new();
+    for head in heads {
+        let size = head.count * 12 + head.graded * 20 + head.at_pairs * 4;
+        raw.resize(size, 0);
+        read(head.offset, &mut raw)?;
+        let (ids, rest) = raw.split_at(head.count * 8);
+        let (graded_ids, rest) = rest.split_at(head.graded * 8);
+        let (values, rest) = rest.split_at(head.count * 4);
+        for (shapes, tail) in [(ids, values), (graded_ids, rest)] {
+            places.clear();
+            let mut at = 0usize;
+            for shape in shapes.chunks_exact(8) {
+                let shape = u64::from_le_bytes(shape.try_into().expect("eight bytes"));
+                at += dictionary[at..].partition_point(|held| *held < shape);
+                places.extend_from_slice(&(at as u32).to_le_bytes());
+            }
+            out.write_all(&places).map_err(fail)?;
+            out.write_all(tail).map_err(fail)?;
+        }
+    }
+    Ok(())
 }
 
 pub struct TaskLists {
@@ -252,6 +450,11 @@ pub struct TaskLists {
 /// One task's lists, from the text of a tables file. `order` gives the train output each train pair
 /// reads, and with it only the shapes that read the output have a list, since no other shape reads it.
 pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators, order: Option<&[usize]>, d: usize, lists_of: ListsOf) -> Result<TaskLists, String> {
+    lists_task_to(text, task_dir, families, order, d, lists_of, None)
+}
+
+/// As [`lists_task`]. Where `target` names a file, each list leaves memory as it is made, the file stands at `target` when the task ends, and the result holds no bytes.
+pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generators, order: Option<&[usize]>, d: usize, lists_of: ListsOf, target: Option<&std::path::Path>) -> Result<TaskLists, String> {
     let data: serde_json::Value = serde_json::from_str(text).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
@@ -366,8 +569,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
 
     let mut held: Vec<(String, Arc<Generated>)> = Vec::new();
     let walked: Vec<usize> = match lists_of {
-        ListsOf::Tables | ListsOf::TablesOnly => (0..stored.len()).collect(),
-        ListsOf::Wide(_) | ListsOf::State | ListsOf::StateEach | ListsOf::Named => Vec::new(),
+        ListsOf::Tables | ListsOf::TablesOnly | ListsOf::Wide(_) | ListsOf::State | ListsOf::StateEach | ListsOf::Named => Vec::new(),
         ListsOf::Parents => {
             let mut places: Vec<usize> = named.iter().map(|(_, at)| *at).collect();
             places.sort_unstable();
@@ -384,18 +586,35 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let started = std::time::Instant::now();
     let examples = train + test;
     let only_output = order.is_some();
-    let mut lists: Vec<Written> = Vec::new();
+    let mut lists = ListSink::new(target.map(|path| {
+        let mut spill = path.as_os_str().to_os_string();
+        spill.push(".spill");
+        std::path::PathBuf::from(spill)
+    }))?;
     let mut rows_at: Vec<serde_json::Value> = Vec::new();
+    // The tables of one schema together, so a schema's family and walker leave memory with its last table.
+    if matches!(lists_of, ListsOf::Tables | ListsOf::TablesOnly) {
+        let mut by_schema: Vec<usize> = (0..stored.len()).collect();
+        by_schema.sort_by(|a, b| stored[*a].key.cmp(&stored[*b].key).then(a.cmp(b)));
+        let mut next = 0;
+        while next < by_schema.len() {
+            let first = &stored[by_schema[next]];
+            let family = families.get(first, d);
+            let mut walker = Walker::new(&family);
+            while next < by_schema.len() && stored[by_schema[next]].key == first.key {
+                let at = by_schema[next];
+                let vector = table_vector(&mut walker, &stored[at], &grids, examples, only_output);
+                lists.push_at(at, stable_of(at.into(), &vector));
+                next += 1;
+            }
+        }
+        lists.next_rank = stored.len();
+    }
     for (at, table) in stored.iter().enumerate() {
         match lists_of {
             ListsOf::Wide(size) => lists.push(wide_of(at.into(), table, &grids, families, size, only_output)),
-            ListsOf::Tables | ListsOf::TablesOnly => {
-                let walker = &mut walkers.iter_mut().find(|(key, _)| *key == table.key).expect("a schema's walker").1;
-                let vector = table_vector(walker, table, &grids, examples, only_output);
-                lists.push(stable_of(at.into(), &vector));
-            }
             ListsOf::Named => lists.push(named_of(at.into(), table, &grids, families, examples, only_output)),
-            ListsOf::Parents | ListsOf::State | ListsOf::StateEach => {}
+            ListsOf::Tables | ListsOf::TablesOnly | ListsOf::Parents | ListsOf::State | ListsOf::StateEach => {}
         }
         rows_at.push(serde_json::json!(table.rows[..train].iter().map(|models| models.iter().map(|model| model.len).max().map_or(serde_json::Value::Null, Into::into)).collect::<Vec<serde_json::Value>>()));
     }
@@ -434,20 +653,20 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         }
         pairs.sort_unstable();
         pairs.dedup();
-        let families_of: Vec<Arc<Generated>> = pairs.iter().map(|(t, u)| families.get_two_tables(&stored[*t], &stored[*u])).collect();
-        let mut walker_of: FastMap<*const Generated, usize> = FastMap::default();
-        let mut two_families: Vec<&Arc<Generated>> = Vec::new();
-        for family in &families_of {
-            walker_of.entry(Arc::as_ptr(family)).or_insert_with(|| {
-                two_families.push(family);
-                two_families.len() - 1
-            });
+        // The pairs of one family together, so a family and its walker leave memory with its last pair, and a pair keeps only what the lists read.
+        let each = lists_of == ListsOf::StateEach;
+        let mut by_family: BTreeMap<(&str, &str), Vec<(usize, usize)>> = BTreeMap::new();
+        for (t, u) in &pairs {
+            by_family.entry((stored[*t].key.as_str(), stored[*u].key.as_str())).or_default().push((*t, *u));
         }
-        let mut two_walkers: Vec<Walker<'_>> = two_families.iter().map(|family| Walker::new(family)).collect();
-        let mut vectors: FastMap<(usize, usize), TableVector> = FastMap::default();
-        for ((t, u), family) in pairs.iter().zip(&families_of) {
-            let walker = &mut two_walkers[walker_of[&Arc::as_ptr(family)]];
-            vectors.insert((*t, *u), two_tables_vector(walker, &stored[*t], &stored[*u], &grids, examples, only_output));
+        let mut vectors: FastMap<(usize, usize), PairValues> = FastMap::default();
+        for members in by_family.values() {
+            let family = families.get_two_tables(&stored[members[0].0], &stored[members[0].1]);
+            let mut walker = Walker::new(&family);
+            for (t, u) in members {
+                let vector = two_tables_vector(&mut walker, &stored[*t], &stored[*u], &grids, examples, only_output);
+                vectors.insert((*t, *u), PairValues::of(&vector, each, examples));
+            }
         }
         walks = pairs.len() as u64;
         // A candidate's numbers, and its values pooled by each table's relation to it.
@@ -456,7 +675,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
             for (member, (table, parents)) in members.iter().enumerate() {
                 let related = relations(&nodes, *form, parents);
                 for relation in Relation::ALL {
-                    let others: Vec<&TableVector> = related.iter().filter(|(_, own)| *own == relation).filter_map(|(node, _)| prefix.get(&node.name)).filter(|other| *other != table).filter_map(|other| vectors.get(&(*table, *other))).collect();
+                    let others: Vec<&PairValues> = related.iter().filter(|(_, own)| *own == relation).filter_map(|(node, _)| prefix.get(&node.name)).filter(|other| *other != table).filter_map(|other| vectors.get(&(*table, *other))).collect();
                     if !others.is_empty() {
                         let owner = format!("{at}/{member}/{}", relation.word());
                         lists.push(if lists_of == ListsOf::StateEach { pooled_each(owner, &others, examples) } else { pooled(owner, &others) });
@@ -518,53 +737,11 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         walks += 2;
     }
     let seconds = started.elapsed().as_secs_f64();
-
-    // The file: its header's length, its header, then the shapes, then each list as places in them
-    // and its values, then its graded shapes as places, their least, mean and greatest, and their
-    // value at each example.
-    let mut dictionary: Vec<u64> = lists.iter().flat_map(|list| list.ids.iter().copied().chain(list.graded.iter().map(|entry| entry.0))).collect();
-    dictionary.sort_unstable();
-    dictionary.dedup();
-    let header = serde_json::json!({
+    let (bytes, shapes) = lists.finish(|shapes, heads| serde_json::json!({
         "task": task_name, "case": header_rest.0, "train": train, "test": test, "last_query": last_query, "budget_cut": header_rest.1,
         "left_out": left_out, "left_at_source": header_rest.2, "items": items, "train_rows": rows_at, "read_names_skipped": skipped, "places": prefix,
-        "shapes": dictionary.len(),
-        "lists": lists.iter().map(|list| serde_json::json!({"owner": list.owner, "count": list.ids.len(), "graded": list.graded.len(), "pairs": list.pairs})).collect::<Vec<_>>(),
-    }).to_string();
-    let total: usize = lists.iter().map(|list| list.ids.len()).sum();
-    let mut bytes = Vec::with_capacity(8 + header.len() + dictionary.len() * 8 + total * 8);
-    bytes.extend_from_slice(&(header.len() as u64).to_le_bytes());
-    bytes.extend_from_slice(header.as_bytes());
-    for shape in &dictionary {
-        bytes.extend_from_slice(&shape.to_le_bytes());
-    }
-    for list in &lists {
-        // Each list is sorted, so its places come by one walk over the dictionary.
-        let mut at = 0usize;
-        for shape in &list.ids {
-            while dictionary[at] != *shape {
-                at += 1;
-            }
-            bytes.extend_from_slice(&(at as u32).to_le_bytes());
-        }
-        for value in &list.values {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        let mut at = 0usize;
-        for entry in &list.graded {
-            while dictionary[at] != entry.0 {
-                at += 1;
-            }
-            bytes.extend_from_slice(&(at as u32).to_le_bytes());
-        }
-        for number in [|entry: &(u64, f32, f32, f32)| entry.1, |entry: &(u64, f32, f32, f32)| entry.2, |entry: &(u64, f32, f32, f32)| entry.3] {
-            for entry in &list.graded {
-                bytes.extend_from_slice(&number(entry).to_le_bytes());
-            }
-        }
-        for value in &list.at_pairs {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-    }
-    Ok(TaskLists { task: task_name, bytes, walks, seconds, shapes: dictionary.len() as u64, left_out })
+        "shapes": shapes,
+        "lists": heads.iter().map(|head| serde_json::json!({"owner": head.owner, "count": head.count, "graded": head.graded, "pairs": head.pairs})).collect::<Vec<_>>(),
+    }).to_string(), target)?;
+    Ok(TaskLists { task: task_name, bytes, walks, seconds, shapes, left_out })
 }

@@ -603,7 +603,7 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
 /// command that prints the tables, as for `candidate-lists`. A task's file of each kind is written as it ends, a
 /// restart skips the files that exist, and the command runs only for a task that lacks one.
 fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Result<(), String> {
-    use arclog_encoder::candidate_lists::{lists_task, ListsOf};
+    use arclog_encoder::candidate_lists::{lists_task_to, ListsOf};
     use arclog_encoder::generate::{Generators, NameStore};
     let derangements: std::collections::BTreeMap<String, Option<Vec<usize>>> = match &arguments.names {
         Some(path) => serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?,
@@ -684,13 +684,10 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
                         if !wanted(folder, kind) || (kind == "null" && own_order.is_none()) {
                             continue;
                         }
-                        match lists_task(&text, &arguments.tasks, families, own_order, d, *lists_of) {
+                        match lists_task_to(&text, &arguments.tasks, families, own_order, d, *lists_of, Some(std::path::Path::new(&target(folder, kind)))) {
                             Ok(found) => {
                                 walks += found.walks;
                                 left_out = left_out.max(found.left_out);
-                                if arclog_encoder::zio::write_bytes(&target(folder, kind), &found.bytes).is_err() {
-                                    eprintln!("{stem}: the {folder} {kind} lists do not write");
-                                }
                                 families.names.flush();
                             }
                             Err(message) => eprintln!("{stem}: {folder} {kind}: {message}"),
