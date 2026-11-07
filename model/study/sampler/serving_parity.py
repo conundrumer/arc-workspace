@@ -53,7 +53,7 @@ def note_token(pt, ids, x, core):
     """A worker's token row: the point's row for each id."""
     if _due('token', pt):
         X = x.vectors()
-        _put(dict(record='token', task=_task(), kind=pt.kind, forms=list(pt.run.current_forms), tokens=[core.names[int(t)] for t in pt.tokens], ids=[core.names[int(t)] for t in ids], columns=list(x.names), shape=list(X.shape), X=_b64(X)))
+        _put(dict(record='token', task=_task(), kind=pt.kind, forms=list(pt.run.current_forms), tokens=[core.names[int(t)] for t in pt.tokens], ids=[core.names[int(t)] for t in ids], admitted=[core.names[int(t)] for t in sys.modules['writer'].point_ids(pt)], columns=list(x.names), shape=list(X.shape), X=_b64(X)))
 
 
 def note_atom(pt, keep, point, tok, struct, defined, av, delta, bits, core):
@@ -112,6 +112,12 @@ def check(folder, tree, models, atoms_wanted=True):
             for name in r['tokens'][len(pt.tokens):]:
                 pt = writer.step_point(pt, at[name])
             if r['record'] == 'token':
+                if 'admitted' in r:  # the ids the mask and the legal rules admit, serving side against the rows' side: a token one grammar refuses must not be the other's candidate
+                    points['token admitted sets'] += 1
+                    mine = {core.names[int(t)] for t in writer.point_ids(pt)}
+                    if mine != set(r['admitted']):
+                        bad['admitted ids differ'] += 1
+                        examples.setdefault('admitted ids differ', (task, r['tokens'][-3:], sorted(mine - set(r['admitted']))[:5], sorted(set(r['admitted']) - mine)[:5]))
                 ids = np.array([at[n] for n in r['ids']], pt.ids_.dtype)
                 x = writer.Features(pt, ids)
                 if list(x.names) != r['columns']:
