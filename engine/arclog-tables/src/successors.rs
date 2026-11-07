@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use super::*;
 use arclog::decode::{LeftOut, Refusal};
 use arclog::relations::Relation;
-use arclog::eval::Limits;
+use arclog::eval::{Gauge, Gauges, Limits};
 use arclog::stream::Token;
 
 /// What a token does to the body in progress, and so which tables are its.
@@ -126,7 +126,8 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
     // For each successor body and point, the place in `each` of the successor that a later one of that body and point names. Both hold the contents of one evaluation, which `same_tables` takes as different where they hold extents.
     let mut held_at: HashMap<(Vec<u8>, Point), usize> = HashMap::new();
     for token in tokens {
-        let next = match decoder.successor(token) {
+        // The operation's decode, so that the successor's consistency test counts in the call's request.
+        let next = match operation.successor(token) {
             Ok(next) => next.with_operation_limits(limits.clone()),
             Err(refusal) => {
                 each.push(Err(refusal));
@@ -168,7 +169,7 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
         // A caller exports a relation table with the QueryHash that the successor's own decode gives, and the table of an unchanged body with no step of its own, so neither takes part.
         let named = kind != SuccessorKind::Unchanged && tables.iter().all(|table| matches!(table.point, Point::Body { .. }));
         let same_as = if named {
-            let found = body_key.as_ref().and_then(|key| held_at.get(key).copied()).or_else(|| firsts.iter().copied().find(|&first| each[first].as_ref().is_ok_and(|first| same_tables(&first.tables, &tables))));
+            let found = body_key.as_ref().and_then(|key| held_at.get(key).copied()).or_else(|| firsts.iter().copied().find(|&first| each[first].as_ref().is_ok_and(|first| same_tables(&first.tables, &tables, limits.request.gauges()))));
             if found.is_none() {
                 firsts.push(each.len());
             }
@@ -193,22 +194,22 @@ const COMPARED_ROWS: u64 = 1 << 20;
 /// an export reads: then they export the same columns after the same
 /// stream. A table with projections or with extents is taken as different
 /// from every other table.
-pub fn same_tables(a: &[Table], b: &[Table]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_table(a, b))
+pub fn same_tables(a: &[Table], b: &[Table], gauges: &Gauges) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_table(a, b, gauges))
 }
 
-fn same_table(a: &Table, b: &Table) -> bool {
+fn same_table(a: &Table, b: &Table, gauges: &Gauges) -> bool {
     let Table { form, point, contents } = a;
     *form == b.form
         && *point == b.point
         && match (contents, &b.contents) {
-            (Ok(a), Ok(b)) => same_contents(a, b),
+            (Ok(a), Ok(b)) => same_contents(a, b, gauges),
             (Err(a), Err(b)) => a == b,
             _ => false,
         }
 }
 
-fn same_contents(a: &Contents, b: &Contents) -> bool {
+fn same_contents(a: &Contents, b: &Contents, gauges: &Gauges) -> bool {
     // Each field is named, so that a field added to `Contents` is compared here too.
     let Contents { assignment_layout, relation, columns, dets, examples, projections, name, output_name, flows, rows, bound_labels, depth, keys, selected, frames, extents } = a;
     let layout = match (assignment_layout, &b.assignment_layout) {
@@ -236,7 +237,7 @@ fn same_contents(a: &Contents, b: &Contents) -> bool {
         && dets.len() == b.dets.len()
         && dets.iter().zip(b.dets.iter()).all(|(a, b)| same_det(a, b))
         && examples.len() == b.examples.len()
-        && examples.iter().zip(b.examples.iter()).all(|(a, b)| same_example(a, b))
+        && examples.iter().zip(b.examples.iter()).all(|(a, b)| same_example(a, b, gauges))
 }
 
 fn same_column(a: &TableColumn, b: &TableColumn) -> bool {
@@ -249,26 +250,26 @@ fn same_det(a: &TableDet, b: &TableDet) -> bool {
     *relation == b.relation && *types == b.types && *columns == b.columns
 }
 
-fn same_example(a: &ExampleRows, b: &ExampleRows) -> bool {
+fn same_example(a: &ExampleRows, b: &ExampleRows, gauges: &Gauges) -> bool {
     let ExampleRows { example, rows } = a;
     *example == b.example
         && match (rows, &b.rows) {
-            (Ok(a), Ok(b)) => same_assigned(a, b),
+            (Ok(a), Ok(b)) => same_assigned(a, b, gauges),
             (Err(a), Err(b)) => a == b,
             _ => false,
         }
 }
 
-fn same_assigned(a: &Assigned<Vec<RelationValue>>, b: &Assigned<Vec<RelationValue>>) -> bool {
+fn same_assigned(a: &Assigned<Vec<RelationValue>>, b: &Assigned<Vec<RelationValue>>, gauges: &Gauges) -> bool {
     let Assigned { at, stop } = a;
     *stop == b.stop
         && at.len() == b.at.len()
         && at.iter().zip(&b.at).all(|((assigned, values), (other_assigned, other_values))| {
             assigned.len() == other_assigned.len()
-                && assigned.iter().zip(other_assigned).all(|((relation, rows), (other_relation, other_rows))| relation == other_relation && same_relation(rows, other_rows))
+                && assigned.iter().zip(other_assigned).all(|((relation, rows), (other_relation, other_rows))| relation == other_relation && same_relation(rows, other_rows, gauges))
                 && values.len() == other_values.len()
                 && values.iter().zip(other_values).all(|(value, other)| match (value, other) {
-                    (RelationValue::Rows(a), RelationValue::Rows(b)) => same_relation(a, b),
+                    (RelationValue::Rows(a), RelationValue::Rows(b)) => same_relation(a, b, gauges),
                     (RelationValue::Undefined, RelationValue::Undefined) => true,
                     (RelationValue::Stopped(a), RelationValue::Stopped(b)) => a == b,
                     _ => false,
@@ -278,13 +279,18 @@ fn same_assigned(a: &Assigned<Vec<RelationValue>>, b: &Assigned<Vec<RelationValu
 
 /// Whether `a` and `b` hold the same rows in the same order of
 /// [`each_row`], which every reader of a table's rows follows.
-fn same_relation(a: &Arc<Relation>, b: &Arc<Relation>) -> bool {
+fn same_relation(a: &Arc<Relation>, b: &Arc<Relation>, gauges: &Gauges) -> bool {
     if Arc::ptr_eq(a, b) {
         return true;
     }
-    if a.arity() != b.arity() || a.len() != b.len() || a.len() > COMPARED_ROWS {
+    if a.arity() != b.arity() || a.len() != b.len() {
         return false;
     }
+    if a.len() > COMPARED_ROWS {
+        gauges.hit(Gauge::ComparedRows, a.len(), COMPARED_ROWS);
+        return false;
+    }
+    gauges.note(Gauge::ComparedRows, a.len(), COMPARED_ROWS);
     let width = usize::from(a.arity());
     let mut cells: Vec<arclog::terms::TermId> = Vec::with_capacity(width.saturating_mul(a.len() as usize));
     each_row(a, &mut |row| cells.extend_from_slice(row));

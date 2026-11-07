@@ -56,7 +56,7 @@ pub fn evaluate_cached(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,session
         "mutant_assignment_map":assignment_map(&m.tables,2,task.train.len()),
         "scope":"native materialized relations including computed INIT outputs under exact cached gold DET interventions; no new FITS or OUT search",
         "assignment_contract":"table_entry is the zero-based position among native entries for its table; kept_assignment indexes the full kept_assignments list even when DET subsets repeat",
-        "bound_scope":"one operation deadline; per-evaluation binding and row caps"});
+        "bound_scope":"one operation request work cap; per-evaluation binding and row caps"});
     Ok(ComponentTables {limits:limits.clone(),report,gold:g.tables,mutant:m.tables,_allocations:choice_allocations})
 }
 

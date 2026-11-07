@@ -25,3 +25,34 @@ pub(crate) fn engine_stats<'py>(py: Python<'py>, reset: bool) -> PyResult<Bound<
     }
     Ok(phases)
 }
+
+/// The work and the gauges of the request that most recently began on the
+/// calling thread, or `None` where none has. A request is a call into a
+/// decoder or a study evaluator: a `Decoder` method, `step_tables`,
+/// `successor_tables`, `gold_tables` and the like, and the read gives the
+/// request of the call that returned last.
+///
+/// The dict holds `work` and `cap`, the units of work that the request counted
+/// and its cap (`docs/engine/synthesis.md#decode-settings`), and `gauges`, a
+/// dict from the name of each capped quantity to a dict of `max`, the largest
+/// value the request reached, `cap`, the cap it ran under (0 where it never
+/// gave one), and `hits`, how often it passed the cap. The count is the work
+/// the request did: an entry that the result cache held charged nothing.
+/// The read costs a few loads and changes nothing.
+#[pyfunction]
+pub(crate) fn request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+    let Some(request) = arclog::eval::RequestWork::latest() else { return Ok(None) };
+    let stats = PyDict::new(py);
+    stats.set_item("work", request.count())?;
+    stats.set_item("cap", request.cap())?;
+    let gauges = PyDict::new(py);
+    for (gauge, max, cap, hits) in request.gauges().each() {
+        let slot = PyDict::new(py);
+        slot.set_item("max", max)?;
+        slot.set_item("cap", cap)?;
+        slot.set_item("hits", hits)?;
+        gauges.set_item(gauge.name(), slot)?;
+    }
+    stats.set_item("gauges", gauges)?;
+    Ok(Some(stats))
+}

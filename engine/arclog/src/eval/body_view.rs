@@ -293,8 +293,7 @@ impl BodyView {
             for i in 0..clause.nodes.len() {
                 if let (IrNode::Or(union),NodePaths::Branches(branch_paths))=(&clause.nodes[i],&paths.nodes[i]) {
                     for (branch,branch_paths) in union.branches.iter().zip(branch_paths.iter()) {
-                        let mut next=clause.clone();let mut at=paths.clone();
-                        next.nodes=clause.nodes[..i].iter().chain(branch.nodes.iter()).chain(clause.nodes[i+1..].iter()).cloned().collect();
+                        let next=clause.splice(i,branch);let mut at=paths.clone();
                         at.nodes=paths.nodes[..i].iter().chain(branch_paths.nodes.iter()).chain(paths.nodes[i+1..].iter()).cloned().collect();
                         if !expand(next,at,out,true) {return false;}
                     }

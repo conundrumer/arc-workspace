@@ -24,6 +24,11 @@ impl<F> Product<F> {
         Product { factors, state: State::Before }
     }
 
+    /// The factors.
+    pub(crate) fn factors(&self) -> &[F] {
+        &self.factors
+    }
+
     /// The next element, each factor with the position of its element in
     /// it, or `None` past the last. `has` reports whether a factor has an
     /// element at an index, finding it where needed.

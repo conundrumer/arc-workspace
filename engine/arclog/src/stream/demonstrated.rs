@@ -1,7 +1,8 @@
-//! What the writer and the decoder share of the stream of a `DEMONSTRATED`
-//! form, as `docs/engine/arclog-stream.md#token-stream` gives it: the inputs
-//! the engine names, with the columns of each, and the columns that the
-//! language model fills after a `PREDICT` clause's body.
+//! What the readers of a program that holds a `DEMONSTRATED` form share: the
+//! inputs the form names, with the columns of each, the columns that a
+//! `&prediction` clause fills, and the form as the content of a query holds
+//! it. The grammar of the stream has no `DEMONSTRATED` form, so neither the
+//! writer nor the decoder reads this.
 
 use std::sync::OnceLock;
 
@@ -13,7 +14,7 @@ use crate::resolver::columns::projection;
 use crate::resolver::form_columns::demonstrated_value;
 use crate::types::{each_site_label, use_label};
 
-/// The inputs of a `DEMONSTRATED` form, as the stream names them: `value`,
+/// The inputs of a `DEMONSTRATED` form: `value`,
 /// with the columns `o`, `i` and `v`, then `demonstration`, with the columns
 /// `o` and `o2`, each a type parameter. The form has no output.
 pub(crate) fn ports() -> &'static Component {
@@ -37,7 +38,7 @@ pub(crate) fn ports() -> &'static Component {
 }
 
 /// The names of the columns that a `&prediction` clause of a rule of
-/// `demonstrated` fills, in the order the stream fills them: each column of
+/// `demonstrated` fills, in this order: each column of
 /// the key, then each column of the head of the `value` input, as the
 /// evaluation names them (`crate::eval`'s `DEMONSTRATED` form): a site of
 /// one label by the label's name, and a site of a record by each field.
@@ -65,25 +66,23 @@ fn head_names(input: &InstanceInput) -> Vec<Option<ColumnName>> {
     names
 }
 
-/// The name of the decoded `DEMO_RULE` form at `index` among the rules of
-/// its form: `$R<index>`.
+/// The name that the content of a query gives the `DEMO_RULE` form at `index`
+/// among the rules of its form: `$R<index>`.
 pub(crate) fn rule_name(index: usize) -> DemoRuleName {
     DemoRuleName(format!("$R{index}").into())
 }
 
-/// The name of the field at `at` of a decoded `DEMO_RULE` form, which no
-/// column of the key or of the `value` head has.
+/// The name that the content of a query gives the field at `at` of a
+/// `DEMO_RULE` form, which no column of the key or of the `value` head has.
 pub(crate) fn field_name(at: usize) -> ColumnName {
     ColumnName::Slot(u32::MAX - at as u32)
 }
 
-/// `demonstrated` as a decode of its stream gives it, up to the names that
-/// the stream gives by position, which the resolved content holds by
-/// position too: each rule named by [`rule_name`] with no text, its fields
-/// named by [`field_name`], its forms in the order the writer writes them,
-/// no clause of it with a gloss, and each `&prediction` clause with the
-/// columns that the stream fills alone, each named by the column it fills,
-/// in the order of [`prediction_targets`].
+/// `demonstrated` as the content of a query holds it: each rule named by
+/// [`rule_name`] with no text, its fields named by [`field_name`], its forms
+/// in the order [`super::write::write_order`] gives, no clause of it with a
+/// gloss, and each `&prediction` clause with the columns that it fills, each
+/// named by the column it fills, in the order of [`prediction_targets`].
 pub(crate) fn as_streamed(demonstrated: &Demonstrated, registry: &Registry) -> Demonstrated {
     let targets = prediction_targets(demonstrated);
     let rules = demonstrated.rules.iter().enumerate().map(|(index, rule)| Node::new(streamed_rule(index, rule.value(), &targets, registry))).collect();
@@ -112,7 +111,7 @@ fn streamed_rule(index: usize, rule: &DemoRule, targets: &[Option<ColumnName>], 
 }
 
 /// The columns of `targets` that the `&prediction` clause `clause` of
-/// `rule` fills, as the stream fills them: each with the label of the
+/// `rule` fills: each with the label of the
 /// clause's column of its name, or of the rule's field of its name.
 pub(crate) fn filled_columns(clause: &Clause, rule: &DemoRule, targets: &[Option<ColumnName>]) -> Vec<RelationColumn> {
     let filled = |name: &ColumnName| clause.columns.iter().chain(rule.fields.iter()).find(|column| column.name == *name);

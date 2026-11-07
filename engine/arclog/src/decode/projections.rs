@@ -36,7 +36,6 @@
 //! built once, as a read of it for each relation would build equal rows.
 
 use std::sync::Arc;
-use std::time::Instant;
 
 use super::interface::Assigned;
 use super::Decoder;
@@ -98,7 +97,7 @@ pub fn projections(values: &[Assigned<BodyValue>], cap: u64, limits: &Limits, se
     let budgets = relations.iter().map(|_| Budget::new(limits, session)).collect();
     let (classes, class_part) = classify(&relations);
     let mut search = Search {
-        relations, cap, budgets, classes, reads: class_part.iter().map(|_| StableHashMap::default()).collect(), class_part, entries: Vec::new(),
+        relations, cap, request: limits.request.clone(), budgets, classes, reads: class_part.iter().map(|_| StableHashMap::default()).collect(), class_part, entries: Vec::new(),
         under: StableHashMap::default(),
         read_under: Vec::new(), read_over: Vec::new(),
         exact: StableHashMap::from_iter([(Box::default(), exact)]), determined: Vec::new(),
@@ -238,6 +237,8 @@ struct Projected {
 struct Search<'a> {
     relations: Vec<&'a Relation>,
     cap: u64,
+    /// The work of the request, whose gauge of the projection cap the search notes.
+    request: crate::eval::RequestWork,
     /// The count of the rows read of each relation.
     budgets: Vec<Budget<'a>>,
     /// The class of each part of each relation ([`classify`]).
@@ -492,6 +493,12 @@ impl<'a> Search<'a> {
             self.budgets[relation].charge_work(0)?;
             if self.entries[entry].counted.is_none() {
                 let (count, read, found) = Self::count(this, positions, self.cap);
+                // A projection over the cap is how the search finds a set too large, which it expects; the gauge counts each.
+                if count as u64 > self.cap {
+                    self.request.gauges().hit(crate::eval::Gauge::ProjectionRows, count as u64, self.cap);
+                } else {
+                    self.request.gauges().note(crate::eval::Gauge::ProjectionRows, count as u64, self.cap);
+                }
                 let functions = found.into_iter().map(|position| this.columns[usize::from(position)].0).collect();
                 self.entries[entry].counted = Some(Counted { count, read, functions });
             }
@@ -693,9 +700,10 @@ impl Decoder<'_> {
     /// decode's projection cap, as `docs/engine/synthesis.md#decode-interface`
     /// gives them. `None` where no clause is in progress, and the sub-body's
     /// fault where it gives one. The search reads under the binding cap, as
-    /// [`projections`] gives, the deadline and the cancellation. It writes no
+    /// [`projections`] gives, and the cancellation. It writes no
     /// record of the trace.
     pub fn projections(&self) -> Option<Outcome<Projections>> {
+        let _request = self.begin_request();
         let values = self.sub_body_values()?;
         let (program, _) = self.state.partial()?;
         let form = NodePath::top(program.value().forms.len() as u32 - 1);
@@ -706,7 +714,7 @@ impl Decoder<'_> {
                 Err(fault) => return Some(Err(fault)),
             }
         }
-        let limits = Limits::new(self.context.settings.deadline.map(|deadline| Instant::now() + deadline), self.cancellation.clone());
+        let limits = Limits::new(None, self.cancellation.clone()).in_request(self.request_work());
         Some(Ok(projections(&assigned, self.context.settings.projection_cap, &limits, self.session, &form)))
     }
 }

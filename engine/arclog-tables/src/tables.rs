@@ -510,9 +510,6 @@ pub(crate) fn relation_metadata(registry: &Registry, program: &CheckedProgram, f
         .into_iter().map(|column| column.bindings.iter().map(|binding| binding.label).collect()).collect();
     contents.depth = program.program.depth(relation.node);
     contents.rows = program.program.row_paths(relation.node).filter(|rows| relation.output.is_none() && rows.len() == types.len());
-    if let Some(rows) = program.program.demonstrated_row_paths(relation.node).filter(|rows| rows.len() == types.len()) {
-        contents.rows = Some(rows);
-    }
     Ok(contents)
 }
 

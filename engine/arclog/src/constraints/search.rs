@@ -76,6 +76,11 @@ impl<'a> Search<'a> {
         Search { cluster, pending, nodes: 0, node_cap }
     }
 
+    /// The nodes that the search has counted.
+    pub(super) fn nodes(&self) -> u64 {
+        self.nodes
+    }
+
     /// The cluster's next model, as the local indexes of the options it
     /// keeps, or `None` once the search has visited every state.
     pub(super) fn next_model(&mut self) -> Result<Option<Box<[usize]>>, NodeCapReached> {

@@ -674,18 +674,33 @@ impl Walk<'_, '_> {
         }
     }
 
+    /// Counts the work of one step of the walk in the request: one unit, and
+    /// one for each assignment that the step copies. The step's own work is
+    /// the copy of `assigned` and the loop over a domain, which no join counts.
+    fn charge(&self, at: usize, units: u64) -> Result<(), End> {
+        self.inputs.limits.request.charge(units).map_err(|bound| {
+            let program = &self.inputs.program.program;
+            let form = self.dets.get(at).map_or_else(|| self.dets.last().map_or_else(|| program.form_of(self.root), |det| program.form_of(det.node)), |det| program.form_of(det.node));
+            End::Stop(Stop { bound, form: form.clone() })
+        })
+    }
+
     fn path(&mut self, at: usize, assigned: &mut Vec<Assignment>) -> Result<(), End> {
+        self.charge(at, 1 + assigned.len() as u64)?;
         let parameters = ParameterValues::determined(assigned.clone());
         let Some(det) = self.dets.get(at) else {
             let evaluation = self.inputs.at(&parameters);
             self.count += 1;
             stats::units(Phase::TableWalk, 1);
             let cap = self.cap;
+            let gauges = self.inputs.limits.request.gauges();
             if self.count > cap {
+                gauges.hit(crate::eval::Gauge::Assignments, self.count, cap);
                 let program = &self.inputs.program.program;
                 let form = self.dets.last().map_or_else(|| program.form_of(self.root), |det| program.form_of(det.node));
                 return Err(End::Stop(Stop { bound: ReachedBound::Assignments { cap }, form: form.clone() }));
             }
+            gauges.note(crate::eval::Gauge::Assignments, self.count, cap);
             return (self.leaf)(&evaluation, assigned, self.skipped);
         };
         if det.open {
@@ -725,7 +740,12 @@ impl Walk<'_, '_> {
                 None => evaluation.domain(det.node),
             };
             match domain.map_err(End::Fault)? {
-                Domain::Rows(rows) if det.open => one_row_each(&rows),
+                Domain::Rows(rows) if det.open => {
+                    // `one_row_each` walks each row and compares each with those kept so far.
+                    let held = rows.iter().map(|value| value.len()).fold(0u64, u64::saturating_add);
+                    self.charge(at, held.saturating_mul(held))?;
+                    one_row_each(&rows)
+                }
                 Domain::Rows(rows) => rows,
                 Domain::Undefined => return self.descend(at + 1, assigned),
                 Domain::Stopped(stop) => return Err(End::Stop(stop)),

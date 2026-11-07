@@ -127,6 +127,21 @@ def term_vars(x, out: set[str]) -> set[str]:
     return out
 
 
+def first_vars(x) -> list[str]:
+    """The distinct variables of a term, a literal or a tuple of them, in the order of their first occurrence."""
+    return list(dict.fromkeys(_vars_in_order(x)))
+
+
+def _vars_in_order(x) -> list[str]:
+    if isinstance(x, Variable):
+        return [x.name]
+    if isinstance(x, tuple):
+        return [v for y in x for v in _vars_in_order(y)]
+    if is_dataclass(x) and not isinstance(x, type):
+        return [v for f in dc_fields(x) for v in _vars_in_order(getattr(x, f.name))]
+    return []
+
+
 def map_lits(lits, fn):
     """Each literal through `fn`, which sees one conjunction at a time and
     returns its replacement list."""
@@ -910,8 +925,9 @@ class Rewriter:
                         continue
                     u = qs[0]
                     m = dict(zip((a.name for a in u.head.args), l.atom.args))
-                    for v in term_vars(u.body, set()) - set(m):
-                        m[v] = self.fresh(v)
+                    for v in first_vars(u.body):
+                        if v not in m:
+                            m[v] = self.fresh(v)
                     out.extend(tsubst(tuple(u.body), m))
                     changed = True
                 lits = out

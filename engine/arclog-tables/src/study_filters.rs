@@ -7,40 +7,35 @@ pub mod recovery_ext;
 
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::{Duration, Instant};
 
 pub type Cell = Vec<i32>;
 pub type Row = Vec<Cell>;
 pub type Rows = BTreeSet<Row>;
 pub type Result<T> = std::result::Result<T, String>;
 
+/// The work of one study filter, counted against `max_work`. A stop at the
+/// cap depends on the filter's inputs alone, with no clock.
 pub struct Work {
     left: u64,
     initial: u64,
-    start: Instant,
-    deadline: Duration,
 }
 impl Work {
-    pub fn new(limit: u64, seconds: f64) -> Self {
-        Self {
-            left: limit,
-            initial: limit,
-            start: Instant::now(),
-            deadline: Duration::from_secs_f64(seconds),
-        }
+    pub fn new(limit: u64) -> Self {
+        Self { left: limit, initial: limit }
     }
     pub fn charge(&mut self, n: usize) -> Result<()> {
         if n as u64 > self.left {
             return Err("stopped:Work".into());
         }
         self.left -= n as u64;
-        if self.start.elapsed() >= self.deadline {
-            return Err("stopped:Deadline".into());
-        }
         Ok(())
     }
     pub fn used(&self) -> u64 {
         self.initial - self.left
+    }
+    /// The cap, `max_work`.
+    pub fn cap(&self) -> u64 {
+        self.initial
     }
 }
 
@@ -237,7 +232,7 @@ pub fn all_values(t: &Table, c: usize) -> BTreeSet<Cell> {
         .collect()
 }
 pub fn unknown(error: String, work: &Work) -> Value {
-    json!({"status":"unknown","reason":error,"work":work.used()})
+    json!({"status":"unknown","reason":error,"work":work.used(),"work_cap":work.cap()})
 }
 pub fn compatible(a: &Value, b: &Value, exclude: &BTreeSet<String>) -> Result<bool> {
     let Some(aa) = a.get("assignment").and_then(Value::as_object) else {

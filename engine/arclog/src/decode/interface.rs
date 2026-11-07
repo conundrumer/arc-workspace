@@ -13,7 +13,7 @@ use super::Decoder;
 use crate::check::{check_shared_program, check_shared_program_over, CheckCache, CheckedProgram, SolverClauses};
 use crate::eval::examples::{scope_of, ExampleScope};
 use crate::eval::ir::atom_modes;
-use crate::eval::{BodyValue, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop, TableWork};
+use crate::eval::{BodyValue, Cancellation, Limits, Outcome, ParameterValues, RelationValue, RunFault, Stop, TableWork};
 use crate::registry::Registry;
 use crate::judge::candidates::PairCandidates;
 use crate::judge::run::{AtCap, Found, Tested};
@@ -225,6 +225,7 @@ impl<'a> Decoder<'a> {
     /// [`Decoder::attempts`], with the count of the output sets on the test
     /// inputs that ended at the model cap with the grids found so far.
     pub fn attempts_counted(&self) -> Option<Outcome<(Box<[crate::judge::attempts::Attempts]>, u64)>> {
+        let _request = self.begin_request();
         let form = self.output.as_ref()?;
         let capped = Cell::new(0);
         Some((|| {
@@ -257,6 +258,7 @@ impl<'a> Decoder<'a> {
     /// Asking a per-example clause with `None`, or a task-wide clause on an
     /// example, is a fault of the caller, so this panics on one.
     pub fn rows(&self, example: Option<Example>) -> Option<Outcome<Assigned<BodyValue>>> {
+        let _request = self.begin_request();
         Some(self.sub_body()?.and_then(|sub| self.assigned_rows(&sub, example, None)))
     }
 
@@ -272,6 +274,7 @@ impl<'a> Decoder<'a> {
     /// assignment, `None` in a count where the body is undefined or
     /// stopped. `None` where no clause is in progress.
     pub fn counts(&self) -> Option<Box<[Outcome<Assigned<Option<u64>>>]>> {
+        let _request = self.begin_request();
         Some(self.sub_body_values()?.into_vec().into_iter().map(|value| value.map(|rows| rows.map(|value| value.count()))).collect())
     }
 
@@ -279,6 +282,7 @@ impl<'a> Decoder<'a> {
     /// stop, if any, recorded on the last record of the trace. This
     /// decode's trace alone changes.
     pub fn observe_rows(&mut self, example: Option<Example>) -> Option<Outcome<Assigned<BodyValue>>> {
+        let _request = self.begin_request();
         let rows = self.rows(example)?;
         let (count, stop) = rows.as_ref().map_or((None, None), seen);
         self.annotate(|record| record.rows.push(RowsSeen { example, count }), stop);
@@ -289,6 +293,7 @@ impl<'a> Decoder<'a> {
     /// first stop, if any, recorded on the last record of the trace. This
     /// decode's trace alone changes.
     pub fn observe_counts(&mut self) -> Option<Box<[Outcome<Assigned<Option<u64>>>]>> {
+        let _request = self.begin_request();
         let values = self.sub_body_values()?;
         let seen: Vec<_> = values.iter().map(|value| value.as_ref().map_or((None, None), seen)).collect();
         let counts: Box<[Option<u64>]> = seen.iter().map(|(count, _)| *count).collect();
@@ -369,10 +374,11 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    /// The bounds of one request: the deadline of the decode settings from
-    /// now, the decode's cancellation, and the stops that the decode holds.
+    /// The bounds of the request this decode is in ([`Decoder::request_work`]):
+    /// its work count, the decode's cancellation, and the stops that the
+    /// decode holds.
     pub fn limits(&self) -> Limits {
-        let mut limits=self.operation_limits.clone().unwrap_or_else(||self.context.settings.operation_limits());
+        let mut limits=self.operation_limits.clone().unwrap_or_else(||Limits::new(Some(self.context.settings.request_work_cap),Cancellation::default()).in_request(self.request_work()));
         limits.cancellation=self.cancellation.clone();
         let limits=limits.holding_in(Arc::clone(&self.held_stops));
         match &self.copies {
@@ -652,10 +658,11 @@ impl<'a> Decoder<'a> {
         Some((consistency, capped.get()))
     }
 
-    /// What the output sets of a case that reaches the model cap are, under
-    /// the decode settings, counting in `capped` each set that ends there.
+    /// What the output sets of a case that reaches the model cap are: the
+    /// grids of the models up to the cap, counting in `capped` each set that
+    /// ends there.
     fn at_cap<'c>(&self, capped: &'c Cell<u64>) -> AtCap<'c> {
-        if self.context.settings.grids_at_model_cap { AtCap::Grids { capped } } else { AtCap::Stop }
+        AtCap::Grids { capped }
     }
 
     /// The consistency test of `output` in `program`, at each joint

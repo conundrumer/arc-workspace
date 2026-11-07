@@ -529,9 +529,10 @@ impl FormMemo {
 }
 
 /// Whether a bound depends on the machine or on the session's history, which
-/// no kept walk may hold.
+/// no kept walk may hold: a request cap stop depends on the work the request
+/// did before the walk.
 fn machine_bound(bound:ReachedBound)->bool {
-    matches!(bound,ReachedBound::Deadline|ReachedBound::Cancelled|ReachedBound::SessionBytes(_))
+    matches!(bound,ReachedBound::RequestWork{..}|ReachedBound::Cancelled|ReachedBound::SessionBytes(_))
 }
 
 /// The top-level forms that the stops of `examples` and `delta` stand at, or

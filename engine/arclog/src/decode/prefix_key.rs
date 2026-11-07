@@ -89,23 +89,7 @@ impl Source {
                 for atom in r.parts.iter() { self.atom(atom.value()); }
             }
             Form::Out(out) => self.key(&out.value().key),
-            Form::Demonstrated(demonstrated) => {
-                let d = demonstrated.value();
-                self.scalar(&d.name); self.scalar(&d.key.is_some());
-                if let Some(key) = &d.key { self.key(&key.value().key); self.inputs(&key.value().inputs); }
-                self.inputs(&d.inputs);
-                self.scalar(&d.rules.len());
-                for rule in d.rules.iter() {
-                    let r = rule.value();
-                    self.scalar(&r.name); self.scalar(&r.fields); self.scalar(&r.text);
-                    self.scalar(&r.forms.len());
-                    for (index, form) in r.forms.iter().enumerate() {
-                        self.scalar(&r.forms.from_alt(index));
-                        self.form(form)?;
-                    }
-                }
-            }
-            Form::Claim(_) | Form::Alts(_) => return None,
+            Form::Demonstrated(_) | Form::Claim(_) | Form::Alts(_) => return None,
         }
         Some(())
     }

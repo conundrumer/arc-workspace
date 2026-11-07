@@ -21,8 +21,9 @@ normal = json.loads(arclog.study_normalize(
 ))
 ```
 
-All three operations accept `max_work=10_000_000` and
-`deadline_seconds=5.0`. Exhaustion, missing complete rows, incompatible input
+All operations accept `max_work=10_000_000` and no clock: a stop at it
+depends on the inputs alone. Each result holds `work`, the units counted, and
+`work_cap`, `max_work`. Exhaustion, missing complete rows, incompatible input
 universes, or missing required normalization metadata return `status:
 "unknown"` with a reason. An exhaustive negative is `determined`; a
 different shared prior DET value is `not_applicable`. Never interpret

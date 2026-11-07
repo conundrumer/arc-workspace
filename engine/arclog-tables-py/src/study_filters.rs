@@ -10,13 +10,8 @@ fn read(s: &str) -> PyResult<Value> {
     serde_json::from_str(s)
         .map_err(|e| PyValueError::new_err(format!("invalid filter input JSON: {e}")))
 }
-fn budget(max_work: u64, deadline_seconds: f64) -> PyResult<Work> {
-    if !deadline_seconds.is_finite() || deadline_seconds <= 0.0 || deadline_seconds > 86400.0 {
-        return Err(PyValueError::new_err(
-            "deadline_seconds must be finite and in (0,86400]",
-        ));
-    }
-    Ok(Work::new(max_work, deadline_seconds))
+fn budget(max_work: u64) -> Work {
+    Work::new(max_work)
 }
 
 /// One fixed equality selection/projection, comparison restriction, or
@@ -24,7 +19,7 @@ fn budget(max_work: u64, deadline_seconds: f64) -> PyResult<Work> {
 /// Proven pairs are code-labeled and never sent to a judge. final_output
 /// is required; study_final_output derives it from the checked gold AST.
 #[pyfunction]
-#[pyo3(signature=(gold,mutant,*,n_train,final_output,available="[]",type_domains="{}",restrictions=true,max_work=10_000_000,deadline_seconds=5.0))]
+#[pyo3(signature=(gold,mutant,*,n_train,final_output,available="[]",type_domains="{}",restrictions=true,max_work=10_000_000))]
 fn study_recovery(
     py: Python<'_>,
     gold: &str,
@@ -35,7 +30,6 @@ fn study_recovery(
     type_domains: &str,
     restrictions: bool,
     max_work: u64,
-    deadline_seconds: f64,
 ) -> PyResult<String> {
     let (gold, mutant, available, mut domains) = (
         read(gold)?,
@@ -50,7 +44,7 @@ fn study_recovery(
     {
         object.entry(ty).or_insert(serde_json::json!(values));
     }
-    let mut work = budget(max_work, deadline_seconds)?;
+    let mut work = budget(max_work);
     Ok(py
         .detach(|| {
             if restrictions {
@@ -73,16 +67,15 @@ fn study_recovery(
 }
 
 #[pyfunction]
-#[pyo3(signature=(table,*,earlier="[]",max_work=10_000_000,deadline_seconds=5.0))]
+#[pyo3(signature=(table,*,earlier="[]",max_work=10_000_000))]
 fn study_normalize(
     py: Python<'_>,
     table: &str,
     earlier: &str,
     max_work: u64,
-    deadline_seconds: f64,
 ) -> PyResult<String> {
     let (table, earlier) = (read(table)?, read(earlier)?);
-    let mut work = budget(max_work, deadline_seconds)?;
+    let mut work = budget(max_work);
     Ok(py
         .detach(|| filters::normal::evaluate(&table, &earlier, &mut work))
         .to_string())
@@ -91,25 +84,24 @@ fn study_normalize(
 /// nf4f at a search point: the caller supplies only X and preceding tables.
 /// Whole-program used/siblings metadata is never consulted by this route.
 #[pyfunction]
-#[pyo3(signature=(table,*,earlier="[]",max_work=10_000_000,deadline_seconds=5.0))]
-fn study_feature_normalize(py:Python<'_>,table:&str,earlier:&str,max_work:u64,deadline_seconds:f64)->PyResult<String> {
+#[pyo3(signature=(table,*,earlier="[]",max_work=10_000_000))]
+fn study_feature_normalize(py:Python<'_>,table:&str,earlier:&str,max_work:u64)->PyResult<String> {
     let (table,earlier)=(read(table)?,read(earlier)?);
-    let mut work=budget(max_work,deadline_seconds)?;
+    let mut work=budget(max_work);
     Ok(py.detach(||filters::normal::evaluate_prefix(&table,&earlier,&mut work)).to_string())
 }
 
 #[pyfunction]
-#[pyo3(signature=(mutant,candidates,*,earlier="[]",max_work=10_000_000,deadline_seconds=5.0))]
+#[pyo3(signature=(mutant,candidates,*,earlier="[]",max_work=10_000_000))]
 fn study_table_equal(
     py: Python<'_>,
     mutant: &str,
     candidates: &str,
     earlier: &str,
     max_work: u64,
-    deadline_seconds: f64,
 ) -> PyResult<String> {
     let (mutant, candidates, earlier) = (read(mutant)?, read(candidates)?, read(earlier)?);
-    let mut work = budget(max_work, deadline_seconds)?;
+    let mut work = budget(max_work);
     Ok(py
         .detach(|| filters::equality::evaluate(&mutant, &candidates, &earlier, &mut work))
         .to_string())

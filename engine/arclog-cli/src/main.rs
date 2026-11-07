@@ -8,6 +8,7 @@ mod arguments;
 mod check_diff;
 mod compare;
 mod concept_case;
+mod count_determinism;
 mod decode;
 mod determine;
 mod determinism;
@@ -27,9 +28,10 @@ use arclog::algebra::tables::OrientationTables;
 use std::process::ExitCode;
 
 /// Each subcommand, by the name the first argument gives it.
-const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 13] = [
+const SUBCOMMANDS: [(&str, fn(&[String]) -> ExitCode); 14] = [
     ("check-diff", check_diff::run),
     ("compare", compare::run),
+    ("count-determinism", count_determinism::run),
     ("decode", decode::run),
     ("determine", determine::run),
     ("empty-gold", empty_gold::run),

@@ -744,6 +744,7 @@ fn evaluate_in(table: &Value, earlier: &Value, work: &mut Work, whole_program: b
         Ok(mut v) => {
             v["status"] = json!("determined");
             v["work"] = json!(work.used());
+            v["work_cap"] = json!(work.cap());
             v
         }
         Err(e) => unknown(e, work),

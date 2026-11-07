@@ -25,7 +25,7 @@ use super::driver::{record_whole, Driver};
 use super::join::{self, Budget};
 use super::picks::{self, pick_options};
 use super::unfold::{self, JointWalks, StateGraph, UnfoldOutput};
-use super::{Evaluation, Outcome, ReachedBound, RelationValue, RunFault, Stop};
+use super::{Evaluation, Gauge, Gauges, Outcome, ReachedBound, RelationValue, RunFault, Stop};
 use crate::constraints;
 use crate::program::path::NodePath;
 use crate::program::OutputStep;
@@ -81,7 +81,7 @@ impl Options {
         let evaluation = driver.evaluation;
         match self {
             Options::Pick { rows, pick, arity } => {
-                Draw::Pick { rows, arity: *arity, models: pick.models(evaluation.session.caps.nodes, false) }
+                Draw::Pick { rows, arity: *arity, models: pick.models(evaluation.session.caps.nodes, false), gauges: evaluation.limits.request.gauges(), cap: evaluation.session.caps.nodes }
             }
             Options::Walks { graphs, arity, layout } => {
                 Draw::Walks { walks: JointWalks::of_layout(graphs, *arity,*layout), budget: Budget::new(evaluation.limits, evaluation.session) }
@@ -93,7 +93,7 @@ impl Options {
 
 /// The models of one factor, drawn one at a time.
 enum Draw<'f> {
-    Pick { rows: &'f [Row], arity: u16, models: constraints::Models<'f> },
+    Pick { rows: &'f [Row], arity: u16, models: constraints::Models<'f>, gauges: &'f Gauges, cap: u64 },
     Walks { walks: JointWalks<'f>, budget: Budget<'f> },
     /// The product of the options of the keys, one choice per key, the last
     /// key's choice changing first; `at` holds the choice of the next model.
@@ -106,10 +106,14 @@ impl Draw<'_> {
     fn next(&mut self) -> Result<Option<Choice>, ReachedBound> {
         let rows = |parts: Vec<RowSet>| Choice(parts.into_iter().map(|part| RelationValue::Rows(Arc::new(join::one_part(part)))).collect(),None);
         match self {
-            Draw::Pick { rows: options, arity, models } => match models.next() {
+            Draw::Pick { rows: options, arity, models, gauges, cap: node_cap } => match models.next() {
                 None => Ok(None),
-                Some(Err(constraints::NodeCapReached { cap })) => Err(ReachedBound::Nodes { cap }),
+                Some(Err(constraints::NodeCapReached { cap })) => {
+                    gauges.hit(Gauge::Nodes, models.most_nodes().max(cap.saturating_add(1)), cap);
+                    Err(ReachedBound::Nodes { cap })
+                }
                 Some(Ok(model)) => {
+                    gauges.note(Gauge::Nodes, models.most_nodes(), *node_cap);
                     let mut kept = RowSet::empty(*arity);
                     for &option in model.iter() {
                         kept.insert(options[option].clone());
@@ -453,11 +457,14 @@ impl Enumeration<'_, '_, '_> {
     /// visitor has seen as many models as the cap.
     fn visit_model(&mut self, value: &RelationValue) -> Option<ModelsEnd> {
         let cap = self.driver.evaluation.session.caps.models;
+        let gauges = self.driver.evaluation.limits.request.gauges();
         if self.seen == cap {
+            gauges.hit(Gauge::Models, cap.saturating_add(1), cap);
             let form = self.target.form(self.driver);
             return Some(ModelsEnd::Stopped(Stop { bound: ReachedBound::Models { cap }, form }));
         }
         self.seen += 1;
+        gauges.note(Gauge::Models, self.seen, cap);
         let model = self.driver.model.borrow();
         let picks: Vec<Option<RelationValue>> = self
             .picks

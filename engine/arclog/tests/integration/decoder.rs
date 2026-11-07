@@ -542,8 +542,7 @@ fn forced_is_the_forced_of_the_step_and_leaves_the_decode_as_it_was() {
 /// Source-only regression fixtures for the static-pruning grammar boundary.
 /// These use the native stream and checker; they perform no task evaluation.
 fn static_refusal(arclog: &str) -> Option<Token> {
-    let mut settings = DecodeSettings::default();
-    settings.static_pruning = true;
+    let settings = DecodeSettings::default();
     let vocabulary = Vocabulary::new(Registry::get(), &settings);
     let stream = token_stream(&checked(arclog), &vocabulary).expect("checked fixture stream");
     let inputs = inputs();

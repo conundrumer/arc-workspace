@@ -179,6 +179,8 @@ struct ProjectionSearch<'a, 'c, 'd> {
     capped: bool,
     /// Whether the limit of a site shortened the tokens at some node.
     limit_shortened: bool,
+    /// The work of the request that the search runs in.
+    work: crate::eval::RequestWork,
 }
 
 impl<'a, 'c, 'd> ProjectionSearch<'a, 'c, 'd> {
@@ -187,9 +189,6 @@ impl<'a, 'c, 'd> ProjectionSearch<'a, 'c, 'd> {
     fn cuts_for(&self, state: &State) -> Option<Cuts> {
         let registry = self.decoder.context.registry;
         let open = state.open_projection()?;
-        if open.demonstrated {
-            return None;
-        }
         let (program, _) = state.partial()?;
         let form = program.value().forms.last()?;
         let needs = head_needs(registry, form)?;
@@ -278,6 +277,12 @@ impl<'a, 'c, 'd> ProjectionSearch<'a, 'c, 'd> {
                 return Err(Refusal::Grammar(SPENT));
             }
             self.steps += 1;
+            // A step counts as one unit of the request's work. A request past
+            // its cap establishes nothing of the head: the search ends with a
+            // completion, as a stop at the table work cap admits.
+            if self.work.charge(1).is_err() {
+                return Ok(());
+            }
             stats::units(Phase::DecodeCompletes, 1);
             let next = match state.step(&self.decoder.context, &token, self.reads_example) {
                 Ok((next, _, _)) => next,
@@ -361,7 +366,8 @@ impl<'d> Decoder<'d> {
     /// checks must pass. Where the search has spent [`projection_step_cap`]
     /// steps it refuses, with a refusal that says it spent its steps.
     pub(super) fn completes_projection(&self, state: &State, checks: &PrefixChecks<'_>, reads_example: ReadsExample<'_>) -> Result<(), Refusal> {
-        let search = |cap: usize| ProjectionSearch { decoder: self, checks, reads_example, cuts: None, steps: 0, cap, capped: false, limit_shortened: false };
+        let work = self.request_work();
+        let search = |cap: usize| ProjectionSearch { decoder: self, checks, reads_example, cuts: None, steps: 0, cap, capped: false, limit_shortened: false, work: work.clone() };
         let cap = projection_step_cap();
         let quick = search(QUICK_STEPS.min(cap)).decide(state, false);
         let outcome = if quick.verdict.is_ok() || !quick.capped {
@@ -372,6 +378,13 @@ impl<'d> Decoder<'d> {
         };
         if measures() {
             self.print_measure(state, checks, reads_example, &outcome);
+        }
+        // The steps of the search that the bound counted, and a hit where it spent them.
+        let (steps, bound) = (outcome.steps as u64, cap as u64);
+        if outcome.capped {
+            work.gauges().hit(crate::eval::Gauge::ProjectionSteps, steps, bound);
+        } else {
+            work.gauges().note(crate::eval::Gauge::ProjectionSteps, steps, bound);
         }
         outcome.verdict
     }

@@ -12,8 +12,9 @@
 //! A computation is kept with what it did to the walk's result cache and
 //! counts, taken as a capture ([`crate::session::ResultCache::begin_capture`]):
 //! each lookup it made, with the value it found; each relation it gave an id;
-//! each store; the table work it counted; and the largest counts that it
-//! recorded in the session ([`crate::session::TaskSession::record_counts`]).
+//! each store; its [`Cost`]: the work it charged to the request and to the
+//! walk's table work, and the largest counts that it noted and recorded in the
+//! session ([`crate::session::TaskSession::record_counts`]).
 //! A computation that faults is not kept. A computation that stops is kept
 //! where its stop is at the form of its entry and either the result cache
 //! stores the stop ([`crate::eval::ReachedBound::is_stored`]) or the stop is at
@@ -21,8 +22,8 @@
 //! second on where its charges stand against the cap, as the next paragraph
 //! gives.
 //!
-//! The replay takes the kept computation where the walk's table work stays
-//! within its cap after the work the computation counted, and where each kept
+//! The replay takes the kept computation where the walk's request work and
+//! table work stay within their caps after the cost of the computation, and where each kept
 //! lookup finds in the walk's cache what it found: a value of the same rows,
 //! held in parts of the same columns, or nothing where it found nothing
 //! ([`crate::session::ResultCache::replay`]). It takes a kept stop at the table
@@ -30,8 +31,10 @@
 //! that took the computation's count past it, and past the cap after that
 //! charge ([`TableWork::crossing`]), so that the computation makes the same
 //! charges in the walk up to that one, and that one stops it. The replay then
-//! makes the lookups, ids and stores, counts the work, records the counts, and
-//! gives the value, a stop at the walk's own form. It records the events it
+//! makes the lookups, ids and stores, charges the cost, and
+//! gives the value, a stop at the walk's own form. Where the cost would take
+//! the request past its cap, no kept computation replays, and the walk computes
+//! the entry and stops at the charge where it stops with no kept computation. It records the events it
 //! makes in each open capture ([`super::cache::replay_recorded`]), so a
 //! computation that contains a replay is kept as one that made those events.
 //!
@@ -43,9 +46,9 @@
 //! ([`crate::decode::det_memo::Scope`]), the caps and byte bound of the
 //! session, which the walks' sessions take from one task session, and the
 //! intern table, which a memo replaces, with the kept computations, where it
-//! passes its byte share. The limits of a walk have no deadline, no stops
-//! held by a decode and no check of copies, and the walk is cancelled by
-//! none, so no computation that [`Carry`] serves depends on the time. What
+//! passes its byte share. The limits of a walk hold no stops held by a
+//! decode and no check of copies, and the walk is cancelled by none, so no
+//! computation that [`Carry`] serves depends on the time. What
 //! the computation reads is:
 //!
 //! - **Its request** ([`RecordedKey`]): the content of the clause or part,
@@ -95,11 +98,11 @@ use super::cache::{self, relation_estimate, EntryRequest, Recorded, RecordedKey}
 use super::ir::{ClauseIr, CompiledBody};
 use super::join::Part;
 use super::plan::VariableOrder;
-use super::{Outcome, ReachedBound, RelationValue, Stop, TableWork};
+use super::{Cost, Limits, Outcome, ReachedBound, RelationValue, Stop, TableWork};
 use crate::program::path::NodePath;
 use crate::hash::{StableHash, StableHashMap, StableHashSet, StableHasher};
 use crate::relations::{ColumnIndex, Relation};
-use crate::session::{same_rows, CachedValue, Counts, TaskSession};
+use crate::session::{same_rows, CachedValue, TaskSession};
 
 /// The most computations kept for one key, each with its own lookups.
 const PER_KEY: usize = 4;
@@ -126,24 +129,38 @@ impl Carry {
     }
 
     /// The value of the entry of `key`, made at `form`, where a kept
-    /// computation of it replays in `session`, counting its work in `work`.
-    /// The cache of `session` found no entry of the key's request just before.
-    pub(crate) fn replay(&self, session: &TaskSession, work: &TableWork, key: &CarryKey, form: &NodePath) -> Option<RelationValue> {
+    /// computation of it replays in `session`, with the cost that the replay
+    /// charged to `limits`, the cost that the computation charged when it was
+    /// kept. The cache of `session` found no entry of the key's request just
+    /// before. `None` where no kept computation replays, which includes the
+    /// case that the kept cost would take the request or the observation past
+    /// its cap: the caller computes the entry, and its charges stop where they
+    /// stop with empty caches.
+    pub(crate) fn replay(&self, limits: &Limits, session: &TaskSession, key: &CarryKey, form: &NodePath) -> Option<(RelationValue, Cost)> {
+        let work = limits.table_work.as_ref()?;
+        let request = &limits.request;
         for (carried, older) in self.store.carried(key) {
-            let within = match carried.crossing {
-                None => work.fits(carried.charged),
-                Some(crossing) => crossing.at(work),
-            };
+            let within = carried.cost.fits(request, None)
+                && match carried.crossing {
+                    None => work.fits(carried.cost.table),
+                    Some(crossing) => crossing.at(work),
+                };
             if within && cache::replay_recorded(session, &carried.events) {
-                match carried.crossing {
-                    None => work.charge(carried.charged).expect("a count that stays within the cap"),
-                    Some(Crossing { before, after }) => work.charge_crossing(carried.charged, before, after),
-                }
-                session.record_counts(carried.counts);
+                let charged = match carried.crossing {
+                    None => carried.cost.charge(request, Some(work), session),
+                    Some(Crossing { before, after }) => {
+                        work.charge_crossing(carried.cost.table, before, after);
+                        carried.cost.charge(request, None, session)
+                    }
+                };
                 if older {
                     self.store.promote(key, &carried);
                 }
-                return Some(given(carried.value.clone(), form));
+                let value = match charged {
+                    Ok(()) => given(carried.value.clone(), form),
+                    Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+                };
+                return Some((value, carried.cost));
             }
         }
         None
@@ -154,12 +171,12 @@ impl Carry {
     /// where it ends with a value of rows or `undefined`, or with a stop at
     /// `form` that is stored in the result cache, or with a stop at the table
     /// work cap at `form` that a charge of the computation caused.
-    pub(crate) fn capture(&self, session: &TaskSession, work: &TableWork, key: CarryKey, form: &NodePath, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
+    pub(crate) fn capture(&self, limits: &Limits, session: &TaskSession, key: CarryKey, form: &NodePath, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
+        let Some(work) = limits.table_work.as_ref() else { return compute() };
         let capture = session.results.begin_capture();
         let before = work.count();
-        let found = compute();
-        let (events, counts) = session.results.end_capture(capture);
-        let charged = work.count().saturating_sub(before);
+        let (found, cost) = limits.request.measure(compute);
+        let (events, _) = session.results.end_capture(capture);
         let Ok(value) = &found else { return found };
         let kept = match value {
             RelationValue::Stopped(stop) if stop.form != *form => None,
@@ -173,7 +190,7 @@ impl Carry {
         };
         let Some((value, crossing)) = kept else { return found };
         let stopped = matches!(value, RelationValue::Stopped(_));
-        match self.store.keep(key, Carried { events: events.into(), charged, counts, crossing, value }) {
+        match self.store.keep(key, Carried { events: events.into(), cost, crossing, value }) {
             Some(_) if stopped => found,
             Some(kept) => Ok(given(kept, form)),
             None => found,
@@ -207,10 +224,8 @@ impl Crossing {
 /// A computation that a walk made, and what it did there.
 struct Carried {
     events: Box<[Recorded]>,
-    /// The table work it counted.
-    charged: u64,
-    /// The largest counts it recorded in the session.
-    counts: Counts,
+    /// What it charged, and the largest counts it recorded in the session.
+    cost: Cost,
     /// Where it took the count past the cap, where its value is a stop at the
     /// table work cap. Its charges are then those that it made until that
     /// stop, and a walk takes the computation where its own count would be
@@ -227,7 +242,7 @@ impl Carried {
             RelationValue::Rows(rows) => RelationValue::Rows(one(rows)),
             other => other.clone(),
         };
-        Carried { events: self.events.iter().map(|event| event.with_relations(&mut *one)).collect(), charged: self.charged, counts: self.counts, crossing: self.crossing, value }
+        Carried { events: self.events.iter().map(|event| event.with_relations(&mut *one)).collect(), cost: self.cost, crossing: self.crossing, value }
     }
 }
 
@@ -374,7 +389,7 @@ impl CarryStore {
 /// Whether `a` and `b` are the one computation, kept in two tiers: they
 /// give one value and one count of work, with one count of events.
 fn same_computation(a: &Carried, b: &Carried) -> bool {
-    a.charged == b.charged && a.events.len() == b.events.len() && a.counts == b.counts && a.crossing == b.crossing && match (&a.value, &b.value) {
+    a.cost == b.cost && a.events.len() == b.events.len() && a.crossing == b.crossing && match (&a.value, &b.value) {
         (RelationValue::Stopped(a), RelationValue::Stopped(b)) => a == b,
         (RelationValue::Rows(a), RelationValue::Rows(b)) => a.rows_hash() == b.rows_hash(),
         (RelationValue::Undefined, RelationValue::Undefined) => true,

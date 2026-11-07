@@ -309,7 +309,7 @@ impl PyStudyTaskEvaluator {
         if gold.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
         let (report,columns)=py.detach(|| self.with_cache("gold_tables",|cache| {
-            let limits=study_pair::table_limits();
+            let limits=study_pair::table_limits(&self.settings);
             let (mut report,tables,evidence)=match form {
                 None=>{
                     if cache.activate(&gold.program) {self.session.results.clear();}

@@ -114,6 +114,6 @@ pub fn evaluate(gold:&StudyProgram,mutant:&ValidMutant,task:&Task,judged:&Judged
         "assignment_scope":"exact cached gold FITS interventions; no alternate assignment search",
         "out_scope":"conditional OUT under held gold DET values; held values override DET proposal bodies even when inadmissible",
         "tables_scope":"all materialized native relations in written order, including INIT computed output ports; each table assignment index follows kept_assignments",
-        "bound_scope":"one operation deadline; per-evaluation binding and row caps for this operation"});
+        "bound_scope":"one operation request work cap; per-evaluation binding and row caps for this operation"});
     Ok(Continuation {limits:limits.clone(),report,gold:g.tables,mutant:m.tables})
 }

@@ -140,8 +140,7 @@ fn summary_by_program(decoder: &Decoder<'_>, tokens: &[u32], base: &[LabelId], m
 
 /// The summary of the table of each atom of `atoms`, ids of the tokens of each,
 /// as [`Decoder::candidate_atoms`] gives them, at the state of `decoder`, whose
-/// limits hold no deadline where the caller wants the tables to depend on no
-/// clock. `fulls` holds the tables of the stream, which the summaries read for
+/// limits count the work of one request, so the tables depend on no clock. `fulls` holds the tables of the stream, which the summaries read for
 /// the `DET`s of an assignment. With `by_program` each atom's rows come from a
 /// program made for the atom, which reads every kind of atom.
 pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &Materializer<'_>, train: &[arclog_features::Pair], fulls: &DetFulls<'_>, by_program: bool) -> AtomTables {

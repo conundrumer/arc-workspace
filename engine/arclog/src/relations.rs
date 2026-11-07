@@ -419,18 +419,33 @@ impl Relation {
     /// The index of the relation in `order`, built on first use and kept
     /// with the relation.
     pub fn index(&self, order: &ColumnOrder) -> std::sync::Arc<Index> {
+        self.index_built(order).0
+    }
+
+    /// [`Relation::index`], and the rows that this call walked to build the
+    /// index: none where the relation held the index already. A build walks
+    /// the rows of each part that holds a column of `order`, or, where it reads
+    /// several parts, as many as [`Relation::index_work`] gives.
+    pub fn index_built(&self, order: &ColumnOrder) -> (std::sync::Arc<Index>, u64) {
         if let Some(index) = self.indexes.read().expect(UNPOISONED).get(order) {
-            return index.clone();
+            return (index.clone(), 0);
         }
         let mut indexes = self.indexes.write().expect(UNPOISONED);
-        indexes
+        let mut walked = 0;
+        let index = indexes
             .entry(order.clone())
             .or_insert_with(|| {
-                let index = self.build_index(order);
+                let mut index = self.build_index(order);
                 self.index_bytes.fetch_add(index.bytes(), std::sync::atomic::Ordering::Relaxed);
+                walked = match self.index_work(order) {
+                    0 => self.parts.iter().filter(|part| part.columns.iter().any(|column| order.0.contains(column))).map(|part| part.rows.len() as u64).sum(),
+                    work => work,
+                };
+                index.walked = walked;
                 std::sync::Arc::new(index)
             })
-            .clone()
+            .clone();
+        (index, walked)
     }
 
     /// The Cartesian bindings traversed to build an index. Unread factors
@@ -550,6 +565,9 @@ pub struct ColumnOrder(pub Box<[ColumnIndex]>);
 #[derive(Debug, Default)]
 pub struct Index {
     levels: Box<[Level]>,
+    /// The rows that the build of the index walked, as [`Relation::index_built`]
+    /// counts them.
+    walked: u64,
 }
 
 #[derive(Debug, Default)]
@@ -562,6 +580,13 @@ struct Level {
 }
 
 impl Index {
+    /// The rows that the build of this index walked. A use of the index counts
+    /// them whether or not an earlier use built it, so the count of a use does
+    /// not depend on what an earlier use built.
+    pub fn walked(&self) -> u64 {
+        self.walked
+    }
+
     /// The trie of the rows of `flat`, each `width` values long and in the
     /// index's column order.
     fn from_rows(flat: &[TermId], width: usize) -> Index {
@@ -588,7 +613,7 @@ impl Index {
             }
         }
         ends.push(Vec::new());
-        Index { levels: keys.into_iter().zip(ends).map(|(keys, ends)| Level { keys: keys.into(), ends: ends.into() }).collect() }
+        Index { levels: keys.into_iter().zip(ends).map(|(keys, ends)| Level { keys: keys.into(), ends: ends.into() }).collect(), walked: 0 }
     }
 
     /// The heap bytes of the trie.

@@ -125,11 +125,18 @@ pub(super) fn rows(
     let mut read = Vec::new();
     reads(inputs, &mut read);
     let hash = key_hash(branch, columns, &read);
-    if let Some((rows, counted)) = memo.find(hash, branch, columns, &read) {
-        budget.replay_nested(counted)?;
-        return Ok(rows);
+    let held = memo.find(hash, branch, columns, &read);
+    if let Some((rows, counted)) = &held {
+        // A hit whose charges would pass a cap is no hit: the search runs again, and stops where it stops with no memo.
+        if budget.can_replay(counted.bindings) {
+            budget.replay_nested(*counted)?;
+            return Ok(rows.clone());
+        }
     }
     let (rows, counted) = budget.counted(search)?;
+    if held.is_some() {
+        return Ok(rows);
+    }
     let bytes = std::mem::size_of::<Stored>()
         + rows.bytes()
         + read.iter().map(|relation| crate::eval::cache::relation_estimate(relation)).sum::<usize>();

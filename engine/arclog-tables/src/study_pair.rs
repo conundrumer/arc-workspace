@@ -48,10 +48,14 @@ pub const TABLE_ROW_WORK:u64=1<<28;
 /// heap count it reads depends on the session's history.
 pub const TABLE_BYTES:usize=4<<30;
 
-/// The limits of [`gold_tables_cached_in`]: no clock, whatever deadline the
+/// The limits of [`gold_tables_cached_in`]: a request that begins now, under the
+/// request work cap of `settings`, with no clock, whatever deadline the
 /// settings hold, so that the rows of a table do not depend on machine load.
-pub fn table_limits()->arclog::eval::Limits {
-    arclog::eval::Limits::new(None,arclog::eval::Cancellation::default()).bound_by(arclog::session::SessionBound {bytes:TABLE_BYTES})
+/// The request's work sums the queries, the walks and the packing of the
+/// call, so the call stops at the cap where the work of its tables passes it,
+/// on whatever table that is.
+pub fn table_limits(settings:&DecodeSettings)->arclog::eval::Limits {
+    settings.operation_limits().bound_by(arclog::session::SessionBound {bytes:TABLE_BYTES})
 }
 
 /// A stop in `tables`, in rows, projections or extents, at a bound that `at` takes.
@@ -322,7 +326,7 @@ fn form_relations(program:&StudyProgram,written:&arclog::stream::WrittenStream,f
         let declared=&written.relations[slot];
         let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;
         let dets=relation_dets(checked,relation.node);
-        let work=if skipping.is_some() {TableWork::new(TABLE_ROW_WORK)} else {decoder.query_work()};
+        let work=if skipping.is_some() {TableWork::counted_as(TABLE_ROW_WORK,arclog::eval::Gauge::StudyRowWork,&decoder.request_work())} else {decoder.query_work()};
         let output=output_name(program.program().value(),&form.path,declared);
         let ordinal=outputs.iter().filter(|seen|**seen==output).count();
         outputs.push(output.clone());
@@ -903,14 +907,13 @@ fn gold_observation_report(gold:&StudyProgram,session:&TaskSession,settings:&Dec
         "fits_contract":"native closed-world TRAIN candidate-set comparison; no TEST Fit verdict",
         "settings":{"deadline_seconds":settings.deadline.map(|d|d.as_secs_f64()),
             "table_work_cap":settings.table_work_cap,"projection_cap":settings.projection_cap,
-            "rule_tests":settings.rule_tests,"grids_at_model_cap":settings.grids_at_model_cap,"check_copies":settings.check_copies,
-            "proposer_tokens":settings.proposer_tokens,"type_domain_proposers":settings.type_domain_proposers,
+            "rule_tests":settings.rule_tests,"check_copies":settings.check_copies,
             "vocabulary":{"relations":settings.vocabulary.relations,"columns":settings.vocabulary.columns,"labels":settings.vocabulary.labels},
             "caps":{"bindings":session.caps.bindings,"rows":session.caps.rows,"models":session.caps.models,
                 "nodes":session.caps.nodes,"assignments":session.caps.assignments},"session_bytes":session.bound.bytes},
         "program_provenance":{"program_sexp":gold.sexp(Registry::get()),"stream":null},
         "assignment_contract":"kept_assignments are ordered native full-program DET choices; raw rows and relation names use the existing pair encoding; Undefined DETs may have no assigned value and are listed separately",
-        "bound_scope":"one operation deadline; per-evaluation binding and row caps for the native gold walk; cached observations retain their original completion/stop"});
+        "bound_scope":"one operation request work cap; per-evaluation binding and row caps for the native gold walk; cached observations retain their original completion/stop"});
     let stream=match gold.decode_stream(Registry::get(),settings) {
         Ok(stream)=>stream,
         Err(reason)=>{report["reason"]=json!(reason);return report;}
@@ -1113,7 +1116,7 @@ fn evaluate_pair_inner(
     result.report["table_indices"] = json!({"gold_all":g,"gold_kept":g+1,"mutant_all":m,"mutant_kept":m+1,"note":"indices include the two evidence tables; each kept assignment can have multiple native models per example; use the kept assignment maps"});
     result.report["gold_kept_assignment_map"] = component_tables::assignment_map(&result.gold[g-1..],g+1,task.train.len());
     result.report["mutant_kept_assignment_map"] = component_tables::assignment_map(&result.mutant[m-1..],m+1,task.train.len());
-    let comparison_work = TableWork::new(settings.table_work_cap);
+    let comparison_work = TableWork::counted_as(settings.table_work_cap, arclog::eval::Gauge::PairComparisons, &limits.request);
     result.report["comparisons"] = comparisons(
         &result.gold[g - 2].1,
         &result.mutant[m - 2].1,
@@ -1195,7 +1198,7 @@ pub fn evaluate_pair_cached(gold:&StudyProgram,point:&MutationPoint,mutant:&Vali
 /// Full native relation tables, evaluated once per gold handle in this task
 /// session. Faults and work-cap stops are cached as observations too.
 pub fn gold_tables_cached(gold:&StudyProgram,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->(Value,Vec<(usize,Table)>) {
-    let limits=table_limits();
+    let limits=table_limits(settings);
     gold_tables_cached_in(gold,task,session,constructions,settings,cache,&limits)
 }
 

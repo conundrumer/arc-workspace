@@ -300,7 +300,7 @@ fn output_sets(
         let no_row = matches!(value, RelationValue::Rows(rows) if rows.is_empty());
         for (&columns, (enumeration, next)) in columns.iter().zip(&mut enumerations) {
             if *next == Next::GoOn && !no_row {
-                *next = enumeration.push(grid(value, columns));
+                *next = enumeration.push(grid(evaluation, relation, value, columns));
             }
         }
         if enumerations.iter().any(|(_, next)| *next == Next::GoOn) { ControlFlow::Continue(()) } else { ControlFlow::Break(()) }
@@ -321,9 +321,13 @@ fn output_sets(
 
 /// The grid that `value`, the relation's value at one model, gives by
 /// `columns`.
-fn grid(value: &RelationValue, columns: GridColumns) -> GridValue {
+/// The read walks the relation's rows, one unit of the request's work each.
+fn grid(evaluation: &Evaluation<'_>, target: &GraphRelation, value: &RelationValue, columns: GridColumns) -> GridValue {
     match value {
-        RelationValue::Rows(relation) => read_grid(relation, columns).map_or(GridValue::Undefined, GridValue::Grid),
+        RelationValue::Rows(relation) => match evaluation.limits.request.charge(relation.len()) {
+            Ok(()) => read_grid(relation, columns).map_or(GridValue::Undefined, GridValue::Grid),
+            Err(bound) => GridValue::Stopped(Stop { bound, form: evaluation.program.program.form_of(target.node).clone() }),
+        },
         RelationValue::Undefined => GridValue::Undefined,
         RelationValue::Stopped(stop) => GridValue::Stopped(stop.clone()),
     }
