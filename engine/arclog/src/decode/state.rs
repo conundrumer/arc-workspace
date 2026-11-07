@@ -1297,6 +1297,9 @@ impl State {
         let in_out = matches!(self.stack.iter().rev().nth(1), Some(Frame::Out));
         // A `DET` whose body opens names no proposer, so a body of no conjunct gives it no value.
         let empty_det = matches!(&self.stack[..], [.., Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det, .. }), Frame::Body(BodyFrame { close: Close::Clause, conjuncts, .. })] if conjuncts.is_empty());
+        // An `ALL` whose second list holds no conjunct holds wherever its domain has a member
+        // (`docs/arclog/arclog.md#universal`), a second spelling.
+        let empty_all = matches!(&self.stack[..], [.., Frame::Lists(ListsFrame { all: true, lists }), Frame::Body(BodyFrame { conjuncts, .. })] if lists.len() == 1 && conjuncts.is_empty());
         let body = top!(self, Frame::Body);
         if let Token::Control(control @ (Control::Not | Control::Op(_) | Control::Or | Control::If | Control::All)) = token {
             if in_out {
@@ -1336,6 +1339,7 @@ impl State {
         };
         match closes && !body.negate {
             true if empty_det => Err("a `DET` holds a body or names a proposer"),
+            true if empty_all => Err("an `ALL` form's second list holds a conjunct, since an `ALL` with an empty second list holds wherever its domain has a member"),
             true => Ok(Offer::Close { consumed: true }),
             false => Err("a body holds its conjuncts, then its closing token"),
         }
