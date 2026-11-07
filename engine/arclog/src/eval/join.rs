@@ -83,7 +83,7 @@ impl<'a> Budget<'a> {
         if self.rows > caps.rows {
             return Err(ReachedBound::Rows { cap: caps.rows });
         }
-        self.session.within_bound(&self.limits.heap_starts).map_err(ReachedBound::SessionBytes)?;
+        self.session.within_bound(&self.limits.heap_starts, self.limits.byte_bound).map_err(ReachedBound::SessionBytes)?;
         if self.limits.deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
             return Err(ReachedBound::Deadline);
         }
@@ -117,7 +117,7 @@ impl<'a> Budget<'a> {
         self.charge_product(relation)?;
         self.charge_rows(relation.len())?;
         let bytes = usize::try_from(relation.len()).unwrap_or(usize::MAX).saturating_mul(bytes_per_row);
-        self.session.reserve(bytes.saturating_add(128)).map_err(ReachedBound::SessionBytes)
+        self.session.reserve(bytes.saturating_add(128), self.limits.byte_bound).map_err(ReachedBound::SessionBytes)
     }
 
     /// Walks admitted rows, checking the same operation deadline, cancellation
@@ -226,13 +226,13 @@ impl<'a> Materializer<'a> {
         let mut budget=Budget::new(self.limits,self.session);
         budget.charge_work(0)?;
         budget.charge_rows(rows)?;
-        self.session.reserve(bytes.saturating_add(128)).map(Arc::new).map_err(ReachedBound::SessionBytes)
+        self.session.reserve(bytes.saturating_add(128), self.limits.byte_bound).map(Arc::new).map_err(ReachedBound::SessionBytes)
     }
 
     /// Admits a genuine copy of an existing buffer before cloning it.
     pub fn copy(&self,bytes:usize)->Result<Arc<crate::session::SessionAllocation>,ReachedBound> {
         self.check()?;
-        self.session.reserve(bytes).map(Arc::new).map_err(ReachedBound::SessionBytes)
+        self.session.reserve(bytes, self.limits.byte_bound).map(Arc::new).map_err(ReachedBound::SessionBytes)
     }
 
     /// A zero-work check under this operation's existing deadline and caps.

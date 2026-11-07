@@ -188,6 +188,7 @@ over the projection cap gives its entries' row counts and its projections in
 place of its rows. With `held_rows=True`, each entry gives its rows as its
 evaluation holds them: a product of parts over the projection cap gives its row
 count and its parts, as the table's projections, and every other entry its rows.
+It runs under no deadline, whatever the settings give, so its rows do not depend on machine load. The rows of a table stop only at the caps of a query and at `TABLE_ROW_WORK` bindings counted over the table. It raises `ValueError` where the evaluation or the packing reaches `TABLE_BYTES`, in place of tables that leave out rows.
 
 The task evaluator defaults to `compact=True`: the first pair for a gold
 handle contains the gold assignment records and train observations;

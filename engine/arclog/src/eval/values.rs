@@ -447,12 +447,15 @@ pub struct Limits {
     /// under these limits, as [`crate::session::TaskSession::within_bound`]
     /// reads them. The clones of these limits share them.
     pub heap_starts: crate::session::HeapStarts,
+    /// The bound on the session's bytes under these limits, where it is not
+    /// the session's own.
+    pub byte_bound: Option<crate::session::SessionBound>,
 }
 
 impl Limits {
     /// The limits of an evaluation outside a table and outside a decode.
     pub fn new(deadline: Option<std::time::Instant>, cancellation: Cancellation) -> Self {
-        Limits { deadline, cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default() }
+        Limits { deadline, cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default(), byte_bound: None }
     }
 
     /// These limits with the evaluation checking the declared rows of the
@@ -464,6 +467,12 @@ impl Limits {
     /// These limits with the evaluation counted in `work`.
     pub fn counted_in(self, work: TableWork) -> Self {
         Limits { table_work: Some(work), ..self }
+    }
+
+    /// These limits with the session's bytes bound by `bound` in place of the
+    /// session's own bound.
+    pub fn bound_by(self, bound: crate::session::SessionBound) -> Self {
+        Limits { byte_bound: Some(bound), ..self }
     }
 
     /// These limits with the evaluation taking and holding stops in `stops`.

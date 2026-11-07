@@ -34,6 +34,49 @@ mod judgement;
 /// alert allowance. Callers can explicitly choose another session bound.
 pub const STUDY_SESSION_BYTES:usize=512*1024*1024;
 
+/// The bindings that the rows of one table of [`gold_tables_cached_in`] may
+/// count. The count depends on the program alone, so this cap stops a table at
+/// one place at any machine load.
+pub const TABLE_ROW_WORK:u64=1<<28;
+
+/// The bytes at which [`table_limits`] stops an evaluation. No table of a
+/// program is meant to reach it: it guards the machine, and a caller takes a
+/// stop at it as a failure of the program ([`stopped_at_bytes`]), since the
+/// heap count it reads depends on the session's history.
+pub const TABLE_BYTES:usize=8<<30;
+
+/// The limits of [`gold_tables_cached_in`]: no clock, whatever deadline the
+/// settings hold, so that the rows of a table do not depend on machine load.
+pub fn table_limits()->arclog::eval::Limits {
+    arclog::eval::Limits::new(None,arclog::eval::Cancellation::default()).bound_by(arclog::session::SessionBound {bytes:TABLE_BYTES})
+}
+
+/// A stop at the byte bound in `tables`, in rows, projections or extents.
+pub fn stopped_at_bytes(tables:&[(usize,Table)])->Option<arclog::eval::Stop> {
+    let at_bytes=|stop:&arclog::eval::Stop|matches!(stop.bound,arclog::eval::ReachedBound::SessionBytes(_));
+    for (_,table) in tables {
+        let Ok(contents)=&table.contents else {continue};
+        if let Some(Projections::Stopped(stop))=&contents.projections {
+            if at_bytes(stop) {return Some(stop.clone());}
+        }
+        for (e,example) in contents.examples.iter().enumerate() {
+            let Ok(rows)=&example.rows else {continue};
+            if let Some(stop)=rows.stop.as_ref().filter(|stop|at_bytes(stop)) {return Some(stop.clone());}
+            for (a,(_,models)) in rows.at.iter().enumerate() {
+                for (m,model) in models.iter().enumerate() {
+                    if let RelationValue::Stopped(stop)=model {
+                        if at_bytes(stop) {return Some(stop.clone());}
+                    }
+                    if let Some(crate::extents::EntryExtents::Stopped(stop))=contents.extents.as_ref().and_then(|extents|extents.entry(e,a,m)) {
+                        if at_bytes(stop) {return Some(stop.clone());}
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 pub struct PairEvaluation {
     /// Ephemeral current operation policy, never stored in PairCache.
     pub limits:arclog::eval::Limits,
@@ -234,7 +277,8 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
         for slot in materialized_slots(program.program().value(),written,form) {
             let declared=&written.relations[slot];
             let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;
-            let dets=relation_dets(checked,relation.node);let work=decoder.query_work();
+            let dets=relation_dets(checked,relation.node);
+            let work=if until.is_none() {TableWork::new(TABLE_ROW_WORK)} else {decoder.query_work()};
             let examples=if until.is_none() {relation_examples_skipping(decoder,checked,&relation,&dets,&work,&too_large)} else {relation_examples(decoder,checked,&relation,&dets,&work)};
             let contents=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples).map(|c| {
                 let c=Contents {name:relation_spelled(declared),output_name:output_name(program.program().value(),&form.path,declared),keys:checked.program.column_keys(relation.node),..c};
@@ -1042,11 +1086,11 @@ pub fn evaluate_pair_cached(gold:&StudyProgram,point:&MutationPoint,mutant:&Vali
 /// Full native relation tables, evaluated once per gold handle in this task
 /// session. Faults and work-cap stops are cached as observations too.
 pub fn gold_tables_cached(gold:&StudyProgram,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->(Value,Vec<(usize,Table)>) {
-    let limits=settings.operation_limits();
+    let limits=table_limits();
     gold_tables_cached_in(gold,task,session,constructions,settings,cache,&limits)
 }
 
-/// Full-table evaluation and packing share the caller's one current clock.
+/// Full-table evaluation and packing share the caller's limits ([`table_limits`]).
 pub fn gold_tables_cached_in(gold:&StudyProgram,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache,limits:&arclog::eval::Limits)->(Value,Vec<(usize,Table)>) {
     cache.activate(gold);
     let key=Arc::as_ptr(gold.checked()) as usize;

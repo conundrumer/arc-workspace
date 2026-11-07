@@ -283,15 +283,22 @@ impl PyStudyTaskEvaluator {
     /// product of parts over the projection cap gives its count and its parts,
     /// and every other entry its rows. Native evaluation is cached once per gold
     /// handle. Returns (status_json, CaseTables); stops and faults retain their
-    /// native reason.
+    /// native reason. The rows do not depend on machine load: no deadline of the
+    /// settings applies, and a table stops at caps that its program alone
+    /// decides. A `ValueError` is raised where the evaluation or the packing
+    /// reached the byte bound (`study_pair::TABLE_BYTES`), in place of tables
+    /// that leave out rows for that reason.
     #[pyo3(signature=(gold,*,held_rows=false))]
     fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,held_rows:bool)->PyResult<(String,PyCaseTables)> {
         if gold.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
         let (report,columns)=py.detach(|| self.with_cache("gold_tables",|cache| {
-            let limits=self.settings.operation_limits();
+            let limits=study_pair::table_limits();
             if cache.activate(&gold.program) {self.session.results.clear();}
             let (mut report,tables)=study_pair::gold_tables_cached_in(&gold.program,&self.task,&self.session,constructions,&self.settings,cache,&limits);
+            if let Some(stop)=study_pair::stopped_at_bytes(&tables) {
+                return Err(format!("the tables of the program stopped at {:?}",stop.bound));
+            }
             let started=std::time::Instant::now();
             let materializer=Materializer::new(&self.session,&limits);
             let columns=if held_rows {
@@ -309,6 +316,9 @@ impl PyStudyTaskEvaluator {
             report["packed_correspondence"]["program_sexp"]=gold.program.sexp(Registry::get()).into();
             report["program_sexp"]=gold.program.sexp(Registry::get()).into();
             report["native_columns_seconds"]=started.elapsed().as_secs_f64().into();
+            if let Some(stop)=columns.packing_stop().filter(|stop|matches!(stop.bound,arclog::eval::ReachedBound::SessionBytes(_))) {
+                return Err(format!("the packing of the tables stopped at {:?}",stop.bound));
+            }
             Ok((report,columns))
         })).map_err(PyValueError::new_err)?;
         Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?))

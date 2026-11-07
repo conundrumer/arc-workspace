@@ -892,8 +892,8 @@ impl TaskSession {
         Some(Arc::clone(self.native_rows.lock().expect(UNPOISONED).entry(key).or_insert(made)))
     }
 
-    /// Whether the session's bytes lie within its bound. The bytes are the
-    /// larger of two counts:
+    /// Whether the session's bytes lie within `bound`, or its own bound where
+    /// that is none. The bytes are the larger of two counts:
     ///
     /// - the ledger ([`TaskSession::ledger`]): the intern table's, the result
     ///   cache's and the live reservations';
@@ -905,24 +905,27 @@ impl TaskSession {
     /// and indexes of relations that a driver, a memo or a table holds, also
     /// after the result cache evicts them, and the scratch of a walk. It
     /// counts the growth of every thread of the process.
-    pub fn within_bound(&self, starts: &HeapStarts) -> Result<(), ReachedSessionBound> {
+    pub fn within_bound(&self, starts: &HeapStarts, bound: Option<SessionBound>) -> Result<(), ReachedSessionBound> {
+        let bound = bound.unwrap_or(self.bound);
         let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
         let ledger = intern.saturating_add(self.results.bytes()).saturating_add(self.allocated.load(Ordering::Relaxed));
         let bytes = match crate::heap::live() {
             None => ledger,
             Some(heap) => ledger.max(starts.grown(Arc::as_ptr(&self.allocated) as usize, heap, ledger)),
         };
-        if bytes > self.bound.bytes { Err(ReachedSessionBound { bytes, bound: self.bound }) } else { Ok(()) }
+        if bytes > bound.bytes { Err(ReachedSessionBound { bytes, bound }) } else { Ok(()) }
     }
 
     /// Reserves a buffer before allocation, together with all live buffer
-    /// reservations and the current intern/result stores. Dropping the returned
-    /// owner releases its bytes; sharing an owner does not reserve again.
-    pub fn reserve(&self, bytes: usize) -> Result<SessionAllocation, ReachedSessionBound> {
+    /// reservations and the current intern/result stores, within `bound`, or
+    /// the session's own bound where that is none. Dropping the returned owner
+    /// releases its bytes; sharing an owner does not reserve again.
+    pub fn reserve(&self, bytes: usize, bound: Option<SessionBound>) -> Result<SessionAllocation, ReachedSessionBound> {
+        let bound = bound.unwrap_or(self.bound);
         let mut held = self.allocated.load(Ordering::Relaxed);
         loop {
-            let next = held.checked_add(bytes).ok_or(ReachedSessionBound {bytes:usize::MAX,bound:self.bound})?;
-            self.check_bytes(self.intern.read().expect("an intern table that no panic poisoned").bytes(), next)?;
+            let next = held.checked_add(bytes).ok_or(ReachedSessionBound {bytes:usize::MAX,bound})?;
+            self.check_bytes(self.intern.read().expect("an intern table that no panic poisoned").bytes(), next, bound)?;
             match self.allocated.compare_exchange_weak(held, next, Ordering::Relaxed, Ordering::Relaxed) {
                 Ok(_) => return Ok(SessionAllocation { bytes, allocated: Arc::clone(&self.allocated) }),
                 Err(actual) => held = actual,
@@ -938,9 +941,9 @@ impl TaskSession {
         (intern, self.results.bytes(), self.allocated.load(Ordering::Relaxed))
     }
 
-    fn check_bytes(&self, intern: usize, allocated: usize) -> Result<(), ReachedSessionBound> {
+    fn check_bytes(&self, intern: usize, allocated: usize, bound: SessionBound) -> Result<(), ReachedSessionBound> {
         let bytes = intern.saturating_add(self.results.bytes()).saturating_add(allocated);
-        if bytes > self.bound.bytes { Err(ReachedSessionBound { bytes, bound: self.bound }) } else { Ok(()) }
+        if bytes > bound.bytes { Err(ReachedSessionBound { bytes, bound }) } else { Ok(()) }
     }
 
     /// Records the `counts` of one evaluation that ended with no stop, each
