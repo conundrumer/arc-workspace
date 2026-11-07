@@ -19,6 +19,7 @@ os.environ['ARCLOG_IDENT_SOURCE'] = 'value'
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from common import read_json  # noqa: E402
+from query_lineage import flow_tables, query_numbers  # noqa: E402
 from query_structure import DEFINING, parse_forms  # noqa: E402
 from state_tables import parents_of  # noqa: E402
 from tables_worker import REPO, TASKS, keep, read_table, split_of  # noqa: E402
@@ -44,9 +45,10 @@ def worker(old_root, new_root, task):
 
     def tables_of(program):
         _, tables = evaluator.gold_tables(program, held_rows=True)
-        return script.Tables(arclog, np, program, tables, task_json)
+        return flow_tables(arclog, np, program, tables, task_json)
 
     gold_tables = tables_of(gold)
+    gold_numbers = query_numbers(gold_tables, mutants['gold'])
     gold_forms = parse_forms(mutants['gold'])
     defined = {}
     for at, form in enumerate(gold_forms):
@@ -70,12 +72,14 @@ def worker(old_root, new_root, task):
         if gold_table is None:
             left_out.append(dict(query=item['query'], table=name, why=why))
             continue
+        gold_table['query'] = gold_numbers.get(name, {})
         kept = []
         for mutant in item['mutants']:
             record = by_form[form]['mutants'][mutant['mutant']]
             try:
                 program = arclog.StudyProgram.from_sexp(record['text'], settings)
-                table, why = read_table(tables_of(program), name, gold_table['assignment'], sources=True)
+                mutant_tables = tables_of(program)
+                table, why = read_table(mutant_tables, name, gold_table['assignment'], sources=True)
                 programs += 1
             except Exception as error:
                 left_out.append(dict(query=item['query'], table=name, mutant=mutant['mutant'], why='mutant: ' + type(error).__name__))
@@ -83,6 +87,7 @@ def worker(old_root, new_root, task):
             if table is None:
                 left_out.append(dict(query=item['query'], table=name, mutant=mutant['mutant'], why='mutant: ' + why))
                 continue
+            table['query'] = query_numbers(mutant_tables, record['text']).get(name, {})
             parents = with_parents(parents_of(parse_forms(record['text']), form, defined))
             kept.append(dict(mutant=mutant['mutant'], edit=mutant.get('edit'), extra=mutant.get('extra'), table=table, parents=parents))
         if kept:

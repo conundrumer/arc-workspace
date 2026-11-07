@@ -1,5 +1,5 @@
-//! The catalog's kinds as a table's entries: each kind's shape, with its greatest value at each train
-//! pair. Every kind reads the output, so a shape's scope is the train pairs.
+//! The catalog's kinds as a table's entries: each kind's shape, with its greatest value at each example
+//! of its scope, which is the train pairs for a kind that reads the output, and every example otherwise.
 
 use std::collections::HashMap;
 
@@ -71,20 +71,26 @@ fn greatest_of(records: &[Record], kinds: &[Kind], per: &mut HashMap<String, f64
     }
 }
 
-/// A named shape of a table: its name, whether its name reads the input, and its value at each train pair, or None where it has no value.
+/// Whether a kind's shape reads the output: a test input has none, so it has no value there.
+pub fn reads_output(name: &str) -> bool {
+    name.contains("output") || name.contains("change")
+}
+
+/// A named shape of a table: its name, and its value at each example, or None where it has no value.
 pub struct NamedShape {
     pub name: String,
     pub at: Vec<Option<f64>>,
 }
 
-/// The shapes of a table over the train pairs. Over a pair's TableRows, a shape takes the mean of its value where it has one.
-pub fn named_shapes(table: &Stored, facts: &[PairFacts]) -> Vec<NamedShape> {
+/// The shapes of a table over its examples: `facts` for each train pair, then `tests` for each test input. Over an example's TableRows, a shape
+/// takes the mean of its value where it has one. A shape that reads the output has values at the train pairs alone.
+pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts]) -> Vec<NamedShape> {
     let kinds: Vec<Kind> = table.types.iter().map(kind_of).collect();
-    let pairs = facts.len();
+    let pairs = facts.len() + tests.len();
     let mut shapes: HashMap<String, Vec<Option<f64>>> = HashMap::new();
     let mut records = Vec::with_capacity(256);
     let mut cells: Vec<Cell> = Vec::new();
-    for (pair, fact) in facts.iter().enumerate() {
+    for (pair, fact) in facts.iter().chain(tests).enumerate() {
         let models = &table.rows[pair];
         let mut sums: HashMap<String, (f64, usize)> = HashMap::new();
         for model in models {
@@ -103,7 +109,9 @@ pub fn named_shapes(table: &Stored, facts: &[PairFacts]) -> Vec<NamedShape> {
             }
         }
         for (name, (sum, count)) in sums {
-            shapes.entry(name).or_insert_with(|| vec![None; pairs])[pair] = Some(sum / count as f64);
+            if pair < facts.len() || !reads_output(&name) {
+                shapes.entry(name).or_insert_with(|| vec![None; pairs])[pair] = Some(sum / count as f64);
+            }
         }
     }
     let mut out: Vec<NamedShape> = shapes.into_iter().map(|(name, at)| NamedShape { name, at }).collect();

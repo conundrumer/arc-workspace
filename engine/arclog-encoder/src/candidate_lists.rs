@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::catalog_lists::named_shapes;
+use crate::catalog_lists::{named_shapes, reads_output};
 use crate::gen_constants::number_of;
 use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, READS_TABLE, SLOT_DEFAULT, SLOT_NO_VALUE};
 use crate::native::{hash_words, FastMap};
@@ -56,27 +56,32 @@ fn stable_of(owner: serde_json::Value, vector: &TableVector) -> Written {
     Written { owner, ids, values, graded, pairs: vector.examples, at_pairs }
 }
 
-/// A table's list of named shapes. A shape's scope is the train pairs, and past them it is 0.
-fn named_of(owner: serde_json::Value, table: &Stored, grids: &Grids, families: &Generators, examples: usize) -> Written {
+/// A table's list of named shapes. A shape that reads the output has the train pairs as its scope, and past them it is 0. Under `only_output`, the
+/// list holds only those.
+fn named_of(owner: serde_json::Value, table: &Stored, grids: &Grids, families: &Generators, examples: usize, only_output: bool) -> Written {
     let mut stable: Vec<(u64, f32)> = Vec::new();
     let mut others: Vec<((u64, f32, f32, f32), Vec<f32>)> = Vec::new();
-    for shape in named_shapes(table, &grids.facts) {
-        let values: Vec<f64> = shape.at.iter().flatten().copied().collect();
+    for shape in named_shapes(table, &grids.facts, &grids.test_facts) {
+        let output = reads_output(&shape.name);
+        if only_output && !output {
+            continue;
+        }
+        let scope = if output { grids.train } else { examples };
+        let values: Vec<f64> = shape.at[..scope].iter().flatten().copied().collect();
         if values.iter().all(|value| *value == 0.0) {
             continue;
         }
         let text = format!("(named {})", shape.name);
         let hash = hash_words(text.bytes().map(u64::from));
         let input = if shape.name.contains("input") || shape.name.contains("change") { READS_INPUT } else { 0 };
-        families.names.add_root(hash, text, READS_TABLE | READS_OUTPUT | input);
-        if values.len() == shape.at.len() && values.iter().all(|value| *value == values[0]) {
+        families.names.add_root(hash, text, READS_TABLE | (if output { READS_OUTPUT } else { 0 }) | input);
+        if values.len() == scope && values.iter().all(|value| *value == values[0]) {
             stable.push((hash as u64, values[0] as f32));
         } else {
             let least = values.iter().copied().fold(f64::INFINITY, f64::min) as f32;
             let most = values.iter().copied().fold(f64::NEG_INFINITY, f64::max) as f32;
             let mean = (values.iter().sum::<f64>() / values.len() as f64) as f32;
-            let mut at: Vec<f32> = shape.at.iter().map(|value| value.map_or(f32::NAN, |value| value as f32)).collect();
-            at.resize(examples, 0.0);
+            let at: Vec<f32> = shape.at.iter().enumerate().map(|(example, value)| if example >= scope { 0.0 } else { value.map_or(f32::NAN, |value| value as f32) }).collect();
             others.push(((hash as u64, least, mean, most), at));
         }
     }
@@ -260,6 +265,11 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let strings = |names: &serde_json::Value| -> Vec<String> { names.as_array().into_iter().flatten().filter_map(|name| name.as_str().map(str::to_string)).collect() };
     // Per item: its form, and for its gold table and each mutant, the table's place and the names its form reads.
     let mut candidates: Vec<(u64, Vec<(usize, Vec<String>)>)> = Vec::new();
+    // Per item and member: what the first version's reading of the program gives of its table.
+    let mut query_numbers: Vec<Vec<Vec<(String, f64)>>> = Vec::new();
+    let numbers_of = |table: &serde_json::Value| -> Vec<(String, f64)> {
+        table["query"].as_object().into_iter().flatten().filter_map(|(name, value)| Some((name.clone(), value.as_f64()?))).collect()
+    };
     for item in data["items"].as_array().ok_or("a file's items")? {
         note_names(&item["parents"]);
         for mutant in item["mutants"].as_array().into_iter().flatten() {
@@ -272,12 +282,14 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         let mut mutants = Vec::new();
         let mut whole = true;
         let mut own_candidates = vec![(gold, strings(&item["parents"]))];
+        let mut own_numbers = vec![numbers_of(&item["gold"])];
         for mutant in item["mutants"].as_array().ok_or("an item's mutants")? {
             let Some(table) = add_table(&mutant["table"], &mut stored) else {
                 whole = false;
                 break;
             };
             own_candidates.push((table, strings(&mutant["parents"])));
+            own_numbers.push(numbers_of(&mutant["table"]));
             mutants.push(serde_json::json!({"mutant": mutant["mutant"], "edit": mutant["edit"], "extra": mutant["extra"], "table": table, "parents": reads(&mutant["parents"]), "types": mutant["table"]["types"], "task_level": mutant["table"]["task_level"], "assignments": mutant["table"]["assignments"]}));
         }
         if !whole {
@@ -285,6 +297,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
             continue;
         }
         candidates.push((item["form"].as_u64().unwrap_or(0), own_candidates));
+        query_numbers.push(own_numbers);
         items.push(serde_json::json!({"query": item["query"], "form": item["form"], "table": item["table"], "last": item["query"].as_str() == Some(last_query.as_str()), "gold": gold, "parents": reads(&item["parents"]), "types": item["gold"]["types"], "task_level": item["gold"]["task_level"], "assignments": item["gold"]["assignments"], "mutants": mutants}));
     }
     let header_rest = (data["case"].clone(), data["budget_cut"].clone(), data["left_out"].clone());
@@ -325,12 +338,26 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
                 let vector = table_vector(walker, table, &grids, examples, only_output);
                 lists.push(stable_of(at.into(), &vector));
             }
-            ListsOf::Named => lists.push(named_of(at.into(), table, &grids, families, examples)),
+            ListsOf::Named => lists.push(named_of(at.into(), table, &grids, families, examples, only_output)),
             ListsOf::Parents | ListsOf::State => {}
         }
         rows_at.push(serde_json::json!(table.rows[..train].iter().map(|models| models.iter().map(|model| model.len).max().map_or(serde_json::Value::Null, Into::into)).collect::<Vec<serde_json::Value>>()));
     }
     let mut walks = stored.len() as u64;
+    if lists_of == ListsOf::Named && !only_output {
+        for (at, members) in query_numbers.iter().enumerate() {
+            for (member, numbers) in members.iter().enumerate() {
+                let mut written: Vec<(u64, f32)> = numbers.iter().filter(|(_, value)| *value != 0.0).map(|(name, value)| {
+                    let text = format!("(query {name})");
+                    let hash = hash_words(text.bytes().map(u64::from));
+                    families.names.add_root(hash, text, 0);
+                    (hash as u64, *value as f32)
+                }).collect();
+                written.sort_unstable_by_key(|entry| entry.0);
+                lists.push(Written { owner: format!("{at}/{member}/query").into(), ids: written.iter().map(|entry| entry.0).collect(), values: written.iter().map(|entry| entry.1).collect(), graded: Vec::new(), pairs: 0, at_pairs: Vec::new() });
+            }
+        }
+    }
     if lists_of == ListsOf::State {
         // Each pair of a candidate's table and a table of its state, once.
         let mut pairs: Vec<(usize, usize)> = Vec::new();

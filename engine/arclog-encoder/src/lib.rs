@@ -31,6 +31,7 @@ pub mod catalog_lists;
 mod catalog_orient;
 mod catalog_pairs;
 pub mod catalog_run;
+mod catalog_table;
 pub mod catalog_vector;
 pub mod closed;
 pub mod encoder;

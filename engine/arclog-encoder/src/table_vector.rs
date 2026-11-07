@@ -23,8 +23,9 @@ pub struct Grids {
     pub inputs: Vec<Arc<Table>>,
     pub outputs: Vec<Arc<Table>>,
     pub constants: Vec<Vec<Option<Arc<Table>>>>,
-    /// What the catalog reads of each train pair.
+    /// What the catalog reads of each train pair, and of each test input, which stands in for its own output.
     pub facts: Vec<crate::catalog_facts::PairFacts>,
+    pub test_facts: Vec<crate::catalog_facts::PairFacts>,
 }
 
 impl Grids {
@@ -44,7 +45,8 @@ impl Grids {
         let empty = Vec::new();
         let tests: Vec<GridFacts> = task_json["test"].as_array().unwrap_or(&empty).iter().map(|pair| crate::catalog_run::grid_of(&pair["input"])).collect();
         let constants = constants_of(&facts, &tests);
-        Grids { train, inputs, outputs, constants, facts }
+        let test_facts = tests.iter().map(|test| crate::catalog_facts::PairFacts::new(test.clone(), test.clone())).collect();
+        Grids { train, inputs, outputs, constants, facts, test_facts }
     }
 
     /// The grids of the task stored at `task_dir` under `name`.

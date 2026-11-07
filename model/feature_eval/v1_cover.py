@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Whether a model's row gives each first-version feature, on the tables that v1_dump.py wrote.
 
-  v1_cover.py OUT.tsv --v1 DIR --blocks DIR --lists DIR [DIR ...] [--named DIR] [--state DIR] [--skip FILE] [--form shape|place] [--base] [--no-mutants] [--tasks N] [--procs N]
+  v1_cover.py OUT.tsv --v1 DIR --blocks DIR --lists DIR [DIR ...] [--named DIR] [--state DIR] [--skip FILE] [--form shape|place] [--base] [--no-mutants] [--nearest] [--counts FILE] [--tasks N] [--procs N]
 
 A row is one table, of the ground-truth program or of a dumped mutant, at one train pair. Its columns are the table's shapes at that pair, from its list and its list in
 `--named`, and the columns of a store's `base`, `qv`, `graph`, `relations` and `wide` at its candidate. `--skip` names tasks to leave out.
@@ -15,8 +15,13 @@ greatest value, and for a word, whether some binding gives that word. Under `--f
 
 A feature is covered where its value at each row is a function of one column's value there, on the rows where the feature has a value, and that
 function is monotone or changes few times along the column, so a few splits can read it. A feature with under 5 rows off its commonest value has low
-support, and is not judged. Text that describes a column or a table has no number, so it is not judged. For a missing feature, a line also gives the column that
-gives its value on the most rows, with that share, where a value met once counts for nothing.
+support, and is not judged. Text that describes a column or a table has no number, so it is not judged. A table at another assignment than its list's is left out. With
+`--nearest`, a missing feature that reads the table alone also has the column that gives its value on the most rows, with that share, where a value
+met once counts for nothing.
+
+Each feature is judged again with its values shuffled across the rows where it has a value, so a reader can see how often the criterion passes by
+chance: more columns and fewer rows raise that rate. `--counts` names a file of v1_column_counts.py, and then a column stands only where a store's train
+rows hold an entry of it on at least a leaf's least count of rows, since no fit can read another.
 
 Streams one line per distinct feature, with the first version's metadata of the feature (what it reads, its aggregation level and what else it
 reads) and the names that share its values.
@@ -26,6 +31,7 @@ import collections
 import json
 import multiprocessing as mp
 import pickle
+import random
 import re
 import struct
 import sys
@@ -46,6 +52,7 @@ OTHER_COLUMN = re.compile(r'(⟨t:[^⟩]*⟩)\.((?:\w+\.)?⟨c:[^⟩]*⟩)')
 BASE_TYPES = {'⟨c:P⟩': 'Position', '⟨c:Col⟩': 'Color'}
 DEFAULT = np.iinfo(np.int64).max
 OTHER = 1 << 63
+MIN_DATA = 20
 JUDGE = None
 
 
@@ -145,6 +152,8 @@ def main():
     parser.add_argument('--form', choices=['shape', 'place'], default='shape')
     parser.add_argument('--base', action='store_true')
     parser.add_argument('--no-mutants', action='store_true')
+    parser.add_argument('--nearest', action='store_true')
+    parser.add_argument('--counts')
     parser.add_argument('--tasks', type=int)
     parser.add_argument('--procs', type=int, default=3)
     args = parser.parse_args()
@@ -171,6 +180,7 @@ def main():
     coordinate_of = {}
     started = time.time()
     used = 0
+    other_assignment = [0]
 
     def add_list(row, held, other, at):
         """A row's entries from a table's list at a pair."""
@@ -222,17 +232,23 @@ def main():
                 if 'pairs' in mutant:
                     mutants[(mutant['form'], mutant['mutant'])].append(mutant)
 
-        def add_rows(pairs, name, place, candidate, own_types):
+        def add_rows(pairs, name, place, candidate, own_types, query_list=None):
             nonlocal rows
             own_named = (named_lists[place], named_others[place]) if place in named_lists else None
             for at, pair in enumerate(pairs):
                 if not any(key.startswith(name + '|') for key in pair):
+                    continue
+                # A table at another assignment than its list's reads other rows, so it says nothing of its list's columns.
+                if pair.get(f'{name}|rows') not in (None, head['train_rows'][place][at]):
+                    other_assignment[0] += 1
                     continue
                 row = rows
                 rows += 1
                 add_list(row, lists[place], others[place], at)
                 if own_named:
                     add_list(row, own_named[0], own_named[1], at)
+                if query_list in named_lists:
+                    add_list(row, named_lists[query_list], named_others[query_list], at)
                 for source, by in extras.items():
                     if candidate in by:
                         columns, values = by[candidate]
@@ -245,13 +261,13 @@ def main():
             name, place = item['table'], item['gold']
             if place not in lists or (task, item_at, 0) not in candidate_of:
                 continue
-            add_rows(data['pairs'], name, place, candidate_of[(task, item_at, 0)], types_of)
+            add_rows(data['pairs'], name, place, candidate_of[(task, item_at, 0)], types_of, f'{item_at}/0/query')
             for j, mutant in enumerate(item['mutants'], 1):
                 for held in mutants.get((item['form'], mutant['mutant']), []):
                     if mutant['table'] in lists and (task, item_at, j) in candidate_of:
                         own_types = dict(types_of)
                         own_types.update({key: {token: ty for token, ty in columns} for key, columns in held['columns'].items()})
-                        add_rows(held['pairs'], name, mutant['table'], candidate_of[(task, item_at, j)], own_types)
+                        add_rows(held['pairs'], name, mutant['table'], candidate_of[(task, item_at, j)], own_types, f'{item_at}/{j}/query')
     row = np.concatenate(row_of)
     ids = np.concatenate(shape_of)
     val = np.concatenate(value_of).astype(np.float64)
@@ -277,9 +293,14 @@ def main():
     ends = np.concatenate((starts[1:], [len(shape)]))
     signature = {}
     keep_shape = np.zeros(len(unique_ids), dtype=bool)
+    readable = np.ones(len(unique_ids), dtype=bool)
+    if args.counts:
+        held = np.load(args.counts)
+        readable = np.isin(unique_ids, held['ids'][held['counts'] >= MIN_DATA])
+        print(f'columns a fit can read {int(readable.sum())} of {len(unique_ids)}', flush=True)
     for start, end in zip(starts.tolist(), ends.tolist()):
         key = (row[start:end].tobytes(), (rank[start:end] - rank[start]).tobytes())
-        if key not in signature:
+        if readable[shape[start]] and key not in signature:
             signature[key] = shape[start]
             keep_shape[shape[start]] = True
     print(f'columns {len(unique_ids)} kept {int(keep_shape.sum())}', flush=True)
@@ -299,7 +320,7 @@ def main():
     entry_shape_start = np.flatnonzero(np.concatenate(([True], shape[1:] != shape[:-1])))
     columns_here = group_shape[shape_start]
     total = len(unique_ids)
-    print(f'tasks {used} rows {rows} columns {int(keep_shape.sum())} entries {len(row)} features {len(features)} read {time.time() - started:.0f}s', flush=True)
+    print(f'tasks {used} rows {rows} left out at another assignment {other_assignment[0]} columns {int(keep_shape.sum())} entries {len(row)} features {len(features)} read {time.time() - started:.0f}s', flush=True)
 
     def key_of(value):
         return (0, float(value)) if isinstance(value, (bool, int, float)) else (1, str(value))
@@ -323,8 +344,7 @@ def main():
         at = int(np.argmax(best))
         return name_of.get(int(unique_ids[columns_here[at]]), '?'), round(float(best[at]) / n, 3)
 
-    def one(item):
-        feature, at = item
+    def judged(feature, at, with_nearest):
         counts = collections.Counter(key_of(value) for value in at.values())
         keys = {key: place for place, key in enumerate(sorted(counts))}
         k = len(keys)
@@ -356,6 +376,8 @@ def main():
         candidate_shapes = ~shape_bad & ~rest_bad & (cn > 0)
 
         def missing():
+            if not with_nearest or (coordinate_of.get(feature) or ['', '', ''])[2] != 'owner':
+                return feature, len(at), off, k, 'missing', 0, '', '', ''
             if k > 12:
                 bins = np.digitize(c, np.quantile(c[defined], np.linspace(0, 1, 13)[1:-1]))
                 name, share = nearest(np.where(defined, bins, DEFAULT), defined, 13)
@@ -388,6 +410,12 @@ def main():
         best_name = min((name_of.get(int(unique_ids[columns_here[place]]), '?') for place in best), key=len)
         return feature, len(at), off, k, 'covered', len(found), best_name, '', ''
 
+    def one(item):
+        feature, at = item
+        values = list(at.values())
+        random.Random(feature).shuffle(values)
+        return judged(feature, at, args.nearest) + (judged(feature, dict(zip(at, values)), False)[4],)
+
     JUDGE = one
     same_values = collections.defaultdict(list)
     for feature, at in features.items():
@@ -399,7 +427,7 @@ def main():
     begun = time.time()
     tally = collections.Counter()
     with open(args.out, 'w') as sink, mp.get_context('fork').Pool(args.procs) as pool:
-        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tnearest\tnearest share\treads\tlevel\tarity\tsame values\n')
+        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tnearest\tnearest share\tshuffled\treads\tlevel\tarity\tsame values\n')
         for done, result in enumerate(pool.imap_unordered(judge, items, chunksize=4), 1):
             coordinate = coordinate_of.get(result[0]) or ['', '', '']
             sink.write('\t'.join(map(str, result)) + '\t' + '\t'.join(coordinate) + '\t' + ' ;; '.join(others_of[result[0]][:6]) + '\n')

@@ -94,6 +94,8 @@ pub fn shape_name(record: &Record, kinds: &[Kind]) -> String {
     let words: Vec<String> = record.kind.split(' ').map(|word| {
         if word.split(',').all(|part| part == "C") {
             word.split(',').map(|_| holes.next().unwrap_or_default()).collect::<Vec<_>>().join(",")
+        } else if word.split('-').count() > 1 && word.split('-').all(|part| part == "C") {
+            word.split('-').map(|_| holes.next().unwrap_or_default()).collect::<Vec<_>>().join("-")
         } else {
             word.to_string()
         }

@@ -74,11 +74,11 @@ impl Kind {
         }
     }
 
-    fn is_number(self) -> bool {
+    pub(crate) fn is_number(self) -> bool {
         matches!(self, Kind::Nat | Kind::Int)
     }
 
-    fn is_direction(self) -> bool {
+    pub(crate) fn is_direction(self) -> bool {
         matches!(self, Kind::Dir | Kind::DiagDir | Kind::Dir8)
     }
 
@@ -288,10 +288,14 @@ pub fn pass(t: &TableAt<'_>, f: &PairFacts, out: &mut Vec<Record>) {
             view.put(name, &[], Value::Word(compare(rows as i64, value)));
         }
     }
+    view.put("rows", &[], Value::Num(rows as i64));
+    view.put("empty", &[], Value::Bool(rows == 0));
+    view.put("one row", &[], Value::Bool(rows == 1));
     if rows == 0 {
         return;
     }
     view.dense = (0..columns).map(|column| dense_column(t, column)).collect();
+    crate::catalog_table::table_kinds(&mut view);
     for column in 0..columns {
         let kind = t.kinds[column];
         if kind.is_number() {
