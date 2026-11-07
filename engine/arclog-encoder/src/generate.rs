@@ -3074,7 +3074,7 @@ impl Generators {
         }
         // Its roots' names reach their file before the family that no later run would name them for.
         self.names.flush();
-        let held = SavedFamily {
+        let mut held = SavedFamily {
             terms: family.terms.iter().map(|term| SavedTerm(term.step.clone(), term.a, term.b, term.flags, term.size, term.root, term.roots.iter().map(|(hash, of)| (*hash as u64, (*hash >> 64) as u64, *of)).collect(), term.used)).collect(),
             first_term: family.first_term,
             by_size: family.by_size.clone(),
@@ -3085,7 +3085,6 @@ impl Generators {
             head_names: Vec::new(),
             term_heads: Vec::new(),
         };
-        let mut held = held;
         let names_of: Vec<String> = family.bound_heads.iter().map(|head| crate::bounds::name_of(*head)).collect();
         held.head_names = names_of.iter().cloned().collect::<std::collections::BTreeSet<_>>().into_iter().collect();
         held.term_heads = names_of.iter().map(|name| held.head_names.binary_search(name).expect("a head's name") as u32).collect();
