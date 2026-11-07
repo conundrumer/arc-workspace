@@ -151,6 +151,11 @@ fn example_labels(node: NodeRef<'_>, at: NodePath, resolved: &ResolvedProgram, o
     }
 }
 
+/// Whether a column of this name and type is a table's own column named `E`: one that is not an Example.
+pub fn is_own_e(name: &str, ty: Option<&ValueType>) -> bool {
+    name == "E" && !matches!(ty, Some(ValueType::Example))
+}
+
 /// The schema of the table `name` of `program`, or `None` where it has no such
 /// table.
 pub fn table_schema(program: &CheckedProgram, name: &str) -> Option<TableSchema> {
@@ -177,11 +182,18 @@ pub fn table_schema(program: &CheckedProgram, name: &str) -> Option<TableSchema>
     for (name, ty) in names.iter().zip(typed) {
         let path: Vec<String> = name.split('.').map(str::to_string).collect();
         let mut short = path.last().expect("a split gives a part").clone();
-        let base = short.clone();
-        let mut suffix = 2;
-        while columns.iter().any(|column| column.name == short) {
-            short = format!("{base}_{suffix}");
-            suffix += 1;
+        // A read labels a column by its name with the first letter in upper case, so a name whose label an earlier column has
+        // takes the suffix `_2`, then `_3`, on its label, which is the name that the engine gives the column. The name `E` is
+        // the Example column's, so a column of another type that a table names `E` is addressed as `E_2`.
+        let clashes = |name: &str| is_own_e(name, ty.as_ref()) || columns.iter().any(|column| label_name(&column.name) == label_name(name));
+        if clashes(&short) {
+            let base = label_name(&short);
+            let mut suffix = 2;
+            short = base.clone();
+            while clashes(&short) {
+                short = format!("{base}_{suffix}");
+                suffix += 1;
+            }
         }
         columns.push(TableColumn { name: short, path, ty });
     }
@@ -191,6 +203,13 @@ pub fn table_schema(program: &CheckedProgram, name: &str) -> Option<TableSchema>
         per_input: resolved.side(relation.node) == Side::PerInput,
         has_example: program.types.has_example_column(&relation),
     })
+}
+
+/// The labels that a read of a table gives its columns, in the order of `columns`: each name with its first letter in upper
+/// case, and the suffix `_2`, then `_3`, where a label is taken.
+pub fn read_labels(columns: &[TableColumn]) -> Vec<String> {
+    let mut taken = Vec::new();
+    columns.iter().map(|column| crate::expand::unique(&label_name(&column.name), &mut taken)).collect()
 }
 
 /// The label that a site on a column writes: its name, with its first letter in upper case.

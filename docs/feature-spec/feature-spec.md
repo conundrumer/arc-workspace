@@ -183,7 +183,7 @@ An expression is **task-wide** where a leaf has an Example column (`ex_input`, `
 In a task-wide expression:
 
 - A per-input table is read in its lifted form, with a column `E`. `input` is read as `ex_input`, and `output` as `ex_output`.
-- A lifted read gives the label `E` to the Example column, so it cannot read a table's own column named `E`. The expansion first copies that table by a `RULE`, with that column under `E_2`.
+- A lifted read gives the label `E` to the Example column, so it cannot read a table's own column named `E`. The expansion first copies that table by a `RULE`, with that column under `E_2`. It does so for every read of the table, so no form names a table's own column `E`, and an expression addresses that column as `E_2`.
 - `E` is a column like any other. A binary operator pairs it only where its pairs list it, so a `join` without that pair compares one ARC example with another, and has `E` and `E_2`.
 - A macro states no pairs. So its atom on a grid hole has a site on `E` that joins the `E` of the macro's relation, and it reads that ARC example's grid.
 - A `component` pools over the ARC examples unless `E` is among its key columns, and a `project` that leaves out `E` pools too. An input's body keeps a site on `E` where its binding leaves `E` out, since a body that reads a per-input table with no such site makes the instance per input.

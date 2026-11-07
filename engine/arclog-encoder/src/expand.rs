@@ -61,10 +61,6 @@ pub struct Col {
 }
 
 impl Col {
-    pub(crate) fn plain(name: impl Into<String>) -> Col {
-        Col::typed(name, None)
-    }
-
     pub(crate) fn typed(name: impl Into<String>, ty: Option<ValueType>) -> Col {
         let name = name.into();
         Col { path: vec![name.clone()], name, ty }
@@ -393,9 +389,9 @@ impl Expander<'_> {
     }
 
     /// A table as this expression reads it: in its lifted form, with a column
-    /// `E`, where it is per input and the expression task-wide. A lifted read
-    /// cannot read a table's own column named `E`, so a copy holds that column
-    /// under `E_2`.
+    /// `E`, where it is per input and the expression task-wide. No form names
+    /// a table's own column `E`, which is not an Example, so a copy of the
+    /// table holds that column under `E_2`.
     fn table(&mut self, name: &str) -> Result<Rows, String> {
         let schema = self.tables.table(name).ok_or_else(|| format!("the state has no table `{name}`"))?;
         let mut rows = Rows { relation: name.to_string(), columns: schema.columns.iter().map(|column| Col { name: column.name.clone(), path: column.path.clone(), ty: column.ty.clone() }).collect() };
@@ -413,10 +409,11 @@ impl Expander<'_> {
             }
             return Ok(Rows { relation, columns });
         }
-        if !(self.task_wide && schema.per_input) {
+        let lifted = self.task_wide && schema.per_input;
+        if !lifted && !has_own_e(&rows) {
             return Ok(rows);
         }
-        if rows.columns.iter().any(|column| column.name == "E") {
+        if has_own_e(&rows) {
             let mut taken = vec!["E".to_string()];
             let labels: Vec<String> = rows.columns.iter().map(|column| unique(&label_of(&column.name), &mut taken)).collect();
             let marks: Vec<(usize, Mark)> = labels.iter().cloned().enumerate().map(|(index, label)| (index, Mark::Fresh(label))).collect();
@@ -425,7 +422,9 @@ impl Expander<'_> {
             let columns = typed_labels(&labels, &rows);
             rows = Rows { relation: copy, columns };
         }
-        rows.columns.insert(0, Col::typed("E", Some(ValueType::Example)));
+        if lifted {
+            rows.columns.insert(0, Col::typed("E", Some(ValueType::Example)));
+        }
         Ok(rows)
     }
 
@@ -867,10 +866,21 @@ fn component_form(name: &str, declared: &Component, instance: &str, bound: &[Bou
     Ok((form, parameters, key_labels, key_types))
 }
 
+/// Whether a column of `rows` is written `E` at some step of its path and is
+/// not an Example.
+fn has_own_e(rows: &Rows) -> bool {
+    rows.columns.iter().any(|column| column.ty != Some(ValueType::Example) && column.path.iter().any(|step| step == "E"))
+}
+
+/// The position of the Example column that `rows` names `E`, where it has one.
+pub(crate) fn example_index(rows: &Rows) -> Option<usize> {
+    rows.columns.iter().position(|column| column.name == "E" && column.ty == Some(ValueType::Example))
+}
+
 /// Adds a site on `E` that makes a label local to the body, where `rows` has
 /// an Example column and `marks` holds none.
 fn keep_example(rows: &Rows, marks: &mut Vec<(usize, Mark)>, taken: &mut Vec<String>, position: usize) {
-    let Ok(index) = rows.index("E") else { return };
+    let Some(index) = example_index(rows) else { return };
     if marks.iter().any(|(held, _)| *held == index) {
         return;
     }

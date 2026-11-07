@@ -1082,10 +1082,12 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
         }
         let stored = Stored::of_rows(&value.types, rows);
         // An expression addresses a column by the schema's name, and a relation's rows name its labels.
+        // A read gives each column of the schema a label, so the label of a row's column finds the column's name.
         let schema = arclog_encoder::schema::Tables::table(&host, name).ok_or("a table of the state has a schema")?;
+        let labels = arclog_encoder::schema::read_labels(&schema.columns);
         let names: Vec<String> = column_order(&value.types).iter().map(|at| {
             let label = &value.row_names[*at];
-            schema.columns.iter().find(|column| column.name == *label || arclog_encoder::schema::label_name(&column.name) == *label).map_or_else(|| label.clone(), |column| column.name.clone())
+            labels.iter().position(|held| held == label).map_or_else(|| label.clone(), |place| schema.columns[place].name.clone())
         }).collect();
         let family = if std::env::var_os("GENERATE_CHECK_ONE_GROUP").is_some() { Generated::one_group_with_names(&stored.types, &names, arguments.size.max(1), &store) } else { Generated::with_column_names(&stored.types, &names, arguments.size.max(1), &store) };
         let example_of: Vec<usize> = (0..train).collect();
