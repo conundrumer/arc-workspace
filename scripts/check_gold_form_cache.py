@@ -1,6 +1,6 @@
 """Check that `StudyTaskEvaluator.gold_tables` gives the same tables with and without the form cache, and time both.
 
-    python -I scripts/check_gold_form_cache.py TASK PROGRAM_FILE [PROGRAM_FILE ...] [--tasks DIR] [--work-cap N] [--order forward|reverse] [--form-cache-bytes N]
+    python scripts/check_gold_form_cache.py TASK PROGRAM_FILE [PROGRAM_FILE ...] [--tasks DIR] [--work-cap N] [--order forward|reverse] [--form-cache-bytes N]
 
 Each PROGRAM_FILE holds one program as an S-expression. For each program, in the order given, the check calls
 `gold_tables` in two evaluators of the task, one made with `form_cache=False` and one with `form_cache=True`, each
