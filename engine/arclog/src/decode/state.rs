@@ -40,7 +40,7 @@ use crate::read::is_type_parameter_column;
 use crate::registry::{Component, LibEntry, LibName, Need};
 use crate::registry::Registry;
 use crate::resolver::columns::example;
-use crate::resolver::{resolve, resolve_in_progress, resolve_last, ResolvedProgram, SolverScope};
+use crate::resolver::{resolve, resolve_in_progress, resolve_last, ResolvedProgram, SolverScope, MAX_LAYERS};
 use crate::safety::body_labels;
 use crate::resolver::form_columns::{demonstrated_columns, part_steps, rigid_outputs};
 use crate::resolver::registry_columns::{component, proposer_columns, typed_columns};
@@ -143,6 +143,13 @@ pub(super) enum AtomPlace {
 /// by [`resolve_last`] holds what [`resolve`] gives for the same forms, and
 /// is [`resolve`]'s itself where [`resolve_last`] does not layer, so what
 /// the finished forms are is all that fixes it.
+///
+/// The chain stands on fewer than [`MAX_LAYERS`] layers: the resolution of a
+/// prefix is a layer over this one, and [`resolve_prefix`] and its kin
+/// resolve the whole prefix program, with no layer, over a resolution that
+/// already stands on [`MAX_LAYERS`], which costs as much as the program for
+/// each prefix. So the link after the last layer that fits is a full
+/// [`resolve`].
 #[derive(Debug)]
 struct FinishedResolution {
     resolved: std::sync::OnceLock<Arc<ResolvedProgram>>,
@@ -170,7 +177,12 @@ impl FinishedResolution {
             let resolution = match (before, program.value().forms.split_last()) {
                 (Some(before), Some((_, complete))) => {
                     let complete = Node::new(Program { forms: complete.into() });
-                    resolve_last(&before.get(&complete, registry), program, registry)
+                    let before = before.get(&complete, registry);
+                    if before.layers() + 1 < MAX_LAYERS {
+                        resolve_last(&before, program, registry)
+                    } else {
+                        resolve(program, None, &SolverScope::default(), registry).value
+                    }
                 }
                 _ => resolve(program, None, &SolverScope::default(), registry).value,
             };
