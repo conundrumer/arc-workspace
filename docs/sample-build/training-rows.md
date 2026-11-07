@@ -13,7 +13,7 @@ The training rows that the gradient-boosted trees fit on. The trees score the ad
 - **Loss.** Per writing point, −log of the summed chance of the positive ids, with a softmax over the admitted ids.
 - **Split.** The split comes from the [split design](split.md). Training rows of train tasks and dev tasks go to `samples/SET/points/<plan>/<task>.jsonl.gz`, and the header of each file carries its split. Training rows of held-out tasks go to `samples/SET/points_held-out/<plan>/<task>.jsonl.gz`. The fit uses train training rows, evaluation uses dev training rows, and no fit reads `points_held-out/`.
 - **Header.** Each file's header carries the split, the writer plan's version, the feature names in order and the engine wheel.
-- **Writing-point vector.** The blocks and what the engine gives are in [The writing-point vector](../../work/lm/data-study/sampler/sampler-worker/proposer-inventory/writer-spec.md#the-writing-point-vector). The table columns of the candidate and state blocks are below.
+- **Writing-point vector.** The blocks and what the engine gives are in [The writing-point vector](../../work/lm/data-study/sampler/sampler-worker/proposer-inventory/writer-spec.md#the-writing-point-vector). The table columns of the candidate block are below.
 - **Comparison of the plans.** The dev loss per writing point depends on the label scheme, so it does not compare the two plans. On dev samples, each plan's tree is measured by two values:
     - The chance of writing some target query, summed over every path that writes it under the plan.
     - The share of samples whose most probable completed query is a target query.
@@ -85,13 +85,3 @@ The `<name>`s of a pair, with C the current body table and S the successor at AR
 | `lost_cells` | the share of O(e) that `cells(C, e)` holds and `cells(S, e)` does not |
 
 The output features are NaN where `cells(S, e)` is undefined. At `END` the successor is each output table of the query. Its pairs are taken with no current table, so C has no table row and no column, and the pairs of all output tables are aggregated together.
-
-### State block
-
-Over the state's parameterized tables:
-
-- `state:tables`, `state:dets`: the count of parameterized tables, and of those computed by a DET.
-- `state:capped`: the count whose walk stopped at the cap.
-- `state:differ`: the share whose `differ` is 1.
-- `state:<f>:mean:mean` and `state:<f>:mean:max`, for each TableVector feature `<f>`: the mean and the max of the AssignmentVector's `<f>:mean` over the tables.
-- `state:out_recall:max`, `state:out_precision:max`, `state:changed_recall:max`. Each parameterized table is valued at its best assignment, by the mean over train ARC examples. These are the max over the parameterized tables, and `out_precision` is the precision of the table with the highest recall.

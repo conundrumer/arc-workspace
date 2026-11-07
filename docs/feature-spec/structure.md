@@ -17,9 +17,16 @@ The objects of the search over programs and the maps between them. The [Type con
 * comment: The user's words, session 12a37de8, 2026-11-06: "Always qualify or conventional terms . No more single loose words. Row is confusing".
 - **Model input row**: r(q, S, E, e, a) is what a learned model reads of a candidate query q at a state S, an ARC example e of E and an assignment a of q's parameterized table. Offline ranking keeps one model input row for each candidate query and ARC example. It holds q's features at e and a, the numbers across ARC examples (`stable`, `least`, `mean` and `most`) of q's features, and the features of S and E, each in a column that means one thing on every model input row of every task. So a model input row keeps which feature's value goes with which at an ARC example. At a test input, a feature that reads the output has no value. A learned model reads the numbers across ARC examples as columns of its model input row, and finds out for itself whether the least value matters. [Feature export](export-design.md#what-a-learned-model-reads) gives the columns.
     - How a query with several assignments gives model input rows is not defined.
-- **Policy**: π(q | S, E) is a distribution over the queries that can be added at S. The writer realises it by writing one query.
-    - In the design, the writer's learned model scores a whole atom as one action: a parameterized table together with its join labels, reading what the query computes with that atom added.
+- **Policy**: π(q | S, E) is a distribution over the queries that can be added at S. The writer realises it by writing one query, token by token.
+    - Each table token names one parameterized table of S, and every parameterized table of S is a choice. The writer's learned model scores that choice from the features of that parameterized table. Which tables a query reads is what the learned model learns, so no step before the writer narrows the choice, and no column pools features over the tables of S.
     - While a query is being written, the writer's learned model sees what the query so far computes.
+
+## The two searches
+
+- **Program search** grows one DAG of queries, S, as a theorem prover grows its set of derived clauses. Most queries in S are never part of a program. A program is a set of queries of S closed under inputs, with one `OUT`.
+- **Query search** is the writer: it writes one query at S, and that query's atoms are its result.
+- A query is an experiment, and its parameterized tables are the experiment's result. A feature is a hypothesis about that result. The features of the tables of S, such as [the judgments](#the-judgments) and progress toward the train output, guide the next query.
+- The learned model learns from negatives: tables that the search's own runs on train tasks computed and that no case of the task's solver holds, beside the tables of the solver's cases.
 
 ## Conditions
 

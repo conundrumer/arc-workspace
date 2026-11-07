@@ -17,7 +17,10 @@ Where each thing about features over tables is defined. One document defines eac
 - Column types, frames and lineage: [Arclog column types](feature-spec/arclog-types.md). The engine's code is the source of truth for it.
 - How features leave the engine, and what a learned model reads of them: [Feature export](feature-spec/export-design.md).
 - How features are measured: [Evaluation protocol](feature-spec/evaluation-protocol.md), and each measure's meaning in [Measures](../work/measures.md).
-- The state search: [State search spec](state-search/state-search-spec.md).
+- The live search is the pool search, `model/study/sampler/superdag_search.py`, which `model/study/search/dev161/dev_run.py` runs. [Search handoff](../work/search-handoff.md) lists its decision steps and the state of the work.
+- The writer, its writing points and the blocks of its vector: [Writer spec](../work/lm/data-study/sampler/sampler-worker/proposer-inventory/writer-spec.md).
+- The state search, a search over states that no run has used: [State search spec](state-search/state-search-spec.md).
+- The rules by which the feature encoder refuses a term, and their arclog reading: [Feature grammar refusal rules](feature-spec/grammar-rules.md).
 - The columns of the writer's training rows, and the search's draws as negative examples: [Training rows](sample-build/training-rows.md).
 - The split of tasks: [Split design](sample-build/split.md).
 - The arclog language and lib, which features are written in: [arclog](arclog/arclog.md) and [The arclog lib](arclog/lib.md).
