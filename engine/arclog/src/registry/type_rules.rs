@@ -27,7 +27,7 @@ impl TypeRule {
     /// Whether the rule holds where `column_type` gives the type of the label
     /// at each column, and `share_grid` tells whether the labels at two
     /// columns stand in one grid.
-    fn holds(&self, column_type: &dyn Fn(&ColumnName) -> Option<ValueType>, share_grid: &dyn Fn(&ColumnName, &ColumnName) -> bool) -> bool {
+    pub(crate) fn holds(&self, column_type: &dyn Fn(&ColumnName) -> Option<ValueType>, share_grid: &dyn Fn(&ColumnName, &ColumnName) -> bool) -> bool {
         self.when.iter().all(|(column, ty)| column_type(column).is_some_and(|found| at_or_under(&found, ty))) && self.same_frame.iter().all(|(a, b)| share_grid(a, b))
     }
 }

@@ -9,7 +9,7 @@ use arclog::stream::Emitter;
 use arclog_bindings::PyDecoder;
 use arclog_tables::columns::{step_case_columns_by_assignment_in, step_case_columns_by_assignment_with, step_case_columns_in};
 use arclog_tables::split::{self, Part};
-use arclog_tables::summary::{train_pairs, Assemblies, SummaryCache};
+use arclog_tables::summary::{train_pairs, Assemblies, DetFulls, SummaryCache};
 use arclog::eval::join::Materializer;
 use arclog_tables::columns::{CaseColumns, StreamTables};
 use arclog_tables::tables::successors::{successor_tables as successors_of, SuccessorKind};
@@ -19,6 +19,7 @@ use arclog::program::Form;
 use arclog::eval::copies::CopyViolation;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 
 use crate::case_tables::{Base, PyCaseTables, Step};
 
@@ -396,6 +397,40 @@ fn check_before<'b>(before: Option<&'b PyCaseTables>, task: &str, case: &str, bo
         (Some(token), None) => Err(PyValueError::new_err(format!("`before` is the step at token {token}, and the decode has no model step"))),
         _ => Ok(Some(step)),
     }
+}
+
+/// The table of each candidate atom at the state of `decoder`: for each atom of
+/// `atoms`, each a list of ids of tokens, the place of its table's summary among
+/// the summaries, `None` where it has no table; each summary as whether it is
+/// capped, the TableHash at each assignment, 16 bytes each and zero for none,
+/// and the features at each assignment; the count of atoms that took a program
+/// of their own, and the place in `atoms` of each atom whose work passed the
+/// cap, which has no table. With `by_program` each atom takes a program. No
+/// deadline applies.
+#[pyfunction]
+#[pyo3(signature = (decoder, atoms, task, case, before=None, by_program=false))]
+#[allow(clippy::type_complexity)]
+pub(crate) fn atom_tables<'py>(py: Python<'py>, decoder: PyRef<'py, PyDecoder>, atoms: Vec<Vec<u32>>, task: String, case: String, before: Option<PyRef<'py, PyCaseTables>>, by_program: bool) -> PyResult<(Vec<Option<u32>>, Vec<(bool, Bound<'py, PyBytes>, Bound<'py, PyBytes>)>, usize, Vec<u32>)> {
+    let (engine, evidence) = (decoder.decoder(), decoder.task());
+    let train = decoder.derived(|| train_pairs(evidence));
+    let _ = (&task, &case);
+    let stream = before.as_deref().and_then(|before| before.step()).map(|step| &*step.stream);
+    let atoms: Vec<Box<[u32]>> = atoms.into_iter().map(Vec::into_boxed_slice).collect();
+    let found = py.detach(|| {
+        let mut limits = engine.limits();
+        limits.deadline = None;
+        let operation = engine.clone().with_operation_limits(limits.clone());
+        let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
+        let tables = stream.map_or_else(Vec::new, StreamTables::tables);
+        let fulls = DetFulls::new(tables).with_assemblies(assemblies(engine));
+        arclog_tables::tables::atom_tables::atom_tables(&operation, &atoms, &materializer, &train, &fulls, by_program)
+    });
+    let summaries = found.summaries.iter().map(|summary| {
+        let hashes: Vec<u8> = summary.assignments.iter().flat_map(|at| at.hash.map_or(0u128, |hash| hash.0).to_le_bytes()).collect();
+        let features: Vec<u8> = summary.assignments.iter().flat_map(|at| at.features.iter().flat_map(|value| value.to_le_bytes())).collect();
+        (summary.capped, PyBytes::new(py, &hashes), PyBytes::new(py, &features))
+    }).collect();
+    Ok((found.index, summaries, found.by_program, found.over_cap))
 }
 
 /// The columns that the `OUT` form at which `decoder` ended selects: one

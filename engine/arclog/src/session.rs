@@ -863,6 +863,9 @@ pub struct TaskSession {
     /// and example, each built on its first use, as `facts` keeps a fact's:
     /// they read the grids of the session's task alone.
     native_rows: Arc<Mutex<StableHashMap<(LibName, Option<Example>), Arc<Relation>>>>,
+    /// The verdicts of the atoms of the lib's relations and of the fact relations
+    /// ([`crate::decode::Decoder::candidate_atoms`]), which read no program.
+    atom_verdicts: Arc<Mutex<StableHashMap<u128, crate::decode::HeldVerdict>>>,
     /// The domains that the liveness walks of the decodes of this session
     /// keep, made on the first walk.
     det_probes: Arc<OnceLock<crate::decode::det_memo::ProbeMemo>>,
@@ -895,11 +898,14 @@ pub struct ReachedSessionBound {
     pub bound: SessionBound,
 }
 
+/// The most verdicts of atoms that a session holds.
+const ATOM_VERDICTS: usize = 1 << 20;
+
 impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), native_rows: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default() }
+        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), native_rows: Arc::new(Mutex::default()), atom_verdicts: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default() }
     }
 
     /// A session with this session's intern table and fact relations, and
@@ -968,6 +974,20 @@ impl TaskSession {
         }
         let made = Arc::new(make()?);
         Some(Arc::clone(self.native_rows.lock().expect(UNPOISONED).entry(key).or_insert(made)))
+    }
+
+    /// The verdict at the key `key` of an atom of a relation of the lib or of a fact relation.
+    pub(crate) fn atom_verdict(&self, key: u128) -> Option<crate::decode::HeldVerdict> {
+        self.atom_verdicts.lock().expect(UNPOISONED).get(&key).cloned()
+    }
+
+    /// Keeps the verdict at the key `key`.
+    pub(crate) fn keep_atom_verdict(&self, key: u128, verdict: crate::decode::HeldVerdict) {
+        let mut held = self.atom_verdicts.lock().expect(UNPOISONED);
+        if held.len() >= ATOM_VERDICTS {
+            held.clear();
+        }
+        held.insert(key, verdict);
     }
 
     /// Whether the session's bytes lie within `bound`, or its own bound where

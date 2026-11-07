@@ -37,12 +37,17 @@
 //! that no code of this crate calls them. The decode keeps a
 //! [`crate::trace::DecodeTrace`] of one record per accepted token.
 
+mod atom_values;
+mod atoms;
 mod batch;
 mod det_admission;
 pub(crate) mod det_memo;
 pub mod corpus;
 mod interface;
 pub mod replay;
+pub use atom_values::{AtomRows, BaseRows};
+pub use atoms::CandidateAtoms;
+pub(crate) use atoms::HeldVerdict;
 pub mod program_read;
 mod state;
 mod prefix_key;
@@ -314,6 +319,17 @@ impl<'a> Decoder<'a> {
     /// gives: a token outside them is not in the mask. Each other token's
     /// verdict is the one the mask over every token gives.
     fn mask_over(&self, ids: impl Iterator<Item = u32>) -> Mask {
+        self.mask_until(ids, false)
+    }
+
+    /// Whether the mask over the tokens whose ids `ids` gives admits one.
+    fn mask_first(&self, ids: impl Iterator<Item = u32>) -> bool {
+        !self.mask_until(ids, true).steps.is_empty()
+    }
+
+    /// [`Decoder::mask_over`], which stops at the first token it admits where
+    /// `first` holds.
+    fn mask_until(&self, ids: impl Iterator<Item = u32>, first: bool) -> Mask {
         let vocabulary = &self.context.vocabulary;
         let mut mask = TokenMask::new(vocabulary.len());
         let mut steps = HashMap::new();
@@ -360,6 +376,9 @@ impl<'a> Decoder<'a> {
                             let step = self.grammar_next(token).expect("a class member passes the same grammar");
                             mask.insert(id);
                             steps.insert(id, step);
+                            if first {
+                                break;
+                            }
                         }
                         continue;
                     }
@@ -370,6 +389,9 @@ impl<'a> Decoder<'a> {
                     if let Ok(step) = next {
                         mask.insert(id);
                         steps.insert(id, step);
+                        if first {
+                            break;
+                        }
                     }
                 }
             }

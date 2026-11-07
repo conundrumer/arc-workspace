@@ -71,6 +71,22 @@ The checks of solver structure, of the arcdata file, of `DEMONSTRATED` and of sc
 - `fork()` is cheap. The state is a persistent data structure and the cache is shared, so a beam of decodes costs the states alone.
 - A batch form steps many decodes at once on the thread pool.
 
+## Candidate atoms
+
+A model that scores a whole atom as one action reads two calls.
+
+- `Decoder::candidate_atoms` gives the atoms that may come next at a state. An atom is a relation, with `NOT` first where one stands before it, with one value at each site, its sites in ascending order of their columns, and the fields of a record in ascending order, where the mask after its last site admits a token that closes it.
+    - The atoms come in one order: at each place the tokens in ascending order of their ids, and an atom before the atoms that add sites to it.
+    - The walk asks the checks once for each shape of an atom, and the atoms of one shape share the verdict. A shape holds the atom's relation, its columns and values, what stands on the stack, and whether the atom repeats a conjunct of the body. A label stands in a shape as its type, whether it is bound and whether an earlier site of the atom holds it. It stands as its id, with the verdicts held for that form alone, where a conjunct of the body gives it no type or where a type rule of the relation reads whether two labels stand in one grid.
+    - The verdicts of lib and fact relations stand in the task session, and those of a program's relations with the state's finished forms.
+    - `candidate_atoms_reference` gives the same list from a whole mask at each token, for a check of the walk.
+- `atom_tables` in `arclog_tables` gives the summary of the table of each atom: the body in progress with that atom as a closed conjunct, at each assignment.
+    - The body in progress of an `INIT` form is its key body, or an input's body after the key body's conjuncts where the input is keyed, with each label that the key marks as a label of the body. Its side is the side of the form with what it reads so far.
+    - Atoms with equal tables share one summary, and an atom holds the place of its summary.
+    - An atom has no summary where no clause, `CHOOSE` or `INIT` body is in progress, where the check refuses the closed body, or where the atom's work passes its cap. The result lists the atoms whose work passed the cap.
+    - The rows of an atom come from a join of its relation to the rows of the parts of the body that it reads, with no program made for the atom. An atom that this join does not read takes a program of its own: a site of a record, a column with no fixed scalar type, a type rule that reads whether two labels stand in one grid, a read of a `DET` that the body does not read, a read that changes the side of an `INIT` form, and a relation per example read from a body of the task.
+    - No deadline applies, and the summary holds no `DET`s of an assignment.
+
 ## Open parameters
 
 - A `DET` with `(ONE)` in a synthesized program is an open parameter, under the readings of [Open values](cases.md#open-values) that a program with one case and no alt can hold: a `DET` whose body ends in `(ONE)`, whose models are its open values, and a `DET` by a proposer with `(ONE)`, whose open values the consistent assignments give.

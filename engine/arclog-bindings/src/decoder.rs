@@ -177,6 +177,17 @@ impl PyDecoder {
         PyBytes::new(py, &mask_bytes(&decoder.admissible(), decoder.vocabulary().len()))
     }
 
+    /// The atoms that may come next at this state, each as the ids of its
+    /// tokens, in a fixed order, with the count of the states that the walk
+    /// read and whether it stopped at `limit` states
+    /// (`arclog::decode::Decoder::candidate_atoms`).
+    #[pyo3(signature = (limit=1<<20, reference=false))]
+    fn atoms(&self, py: Python<'_>, limit: usize, reference: bool) -> (Vec<Vec<u32>>, usize, bool) {
+        let decoder = self.decoder();
+        let found = py.detach(|| if reference { decoder.candidate_atoms_reference(limit) } else { decoder.candidate_atoms(limit) });
+        (found.atoms.iter().map(|atom| atom.to_vec()).collect(), found.states, found.truncated)
+    }
+
     /// Advances the decode by the token with id `id`, and gives the ids of
     /// the tokens the engine emits after it, with the consistency of the
     /// `OUT` form that the token ends, or `None`, and the consistency of the

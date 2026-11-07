@@ -20,7 +20,7 @@ use crate::judge::run::{AtCap, Found, Tested};
 use crate::judge::determination::{dets_read, descend_with, distinct_values, walk, Assignment, Det, Domains, End, EvaluationInputs, Walked};
 use super::det_memo::SessionMemo;
 use crate::program::path::{NodePath, PathStep};
-use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, ConstraintLabel, Constraint, DeclaredName, Form, Instance, LabelId, LabelUse, Negated, Node, Operand, PortName, Program, ProgramRelation, RelationName, RelationRef, Site, SiteArg, SiteValue};
+use crate::program::{InstanceInput, InstanceInputPart, InstancePart, KeyClausePart, Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, ConstraintLabel, Constraint, DeclaredName, Form, Instance, LabelId, LabelUse, Negated, Node, Operand, PortName, Program, ProgramRelation, RelationName, RelationRef, Site, SiteArg, SiteValue};
 use crate::relations::Relation;
 use crate::stream::Token;
 use crate::terms::Example;
@@ -416,6 +416,73 @@ impl<'a> Decoder<'a> {
         Some(SubBodyKey { source: super::prefix_key::sub_body_key(&clause, &kept), left_out })
     }
 
+    /// The sub-body of the clause in progress with its conjunct in progress
+    /// as a complete conjunct: its value is the table of the body once a token
+    /// closes that conjunct. The inner `None` stands for a body of no conjunct,
+    /// and the outer one where no clause is in progress.
+    pub fn closed_sub_body(&self) -> Option<Option<Outcome<SubBody>>> {
+        let (program, open) = self.state.partial()?;
+        let open = open?;
+        let (last, finished) = program.value().forms.split_last()?;
+        let registry = self.context.registry;
+        let view = match last {
+            Form::Instance(instance) => Some((instance, self.form_keyword(&program)?)),
+            _ => None,
+        };
+        let OpenClause { clause, mut kept, open_at } = match view {
+            Some((instance, keyword)) => open_instance_clause(instance.value(), &open, keyword, self.fresh_relation(), registry)?,
+            None => open_clause(last, &open, registry)?,
+        };
+        if let Some(at) = open_at {
+            let conjuncts = clause.body.value().conjuncts.get(at);
+            // A body keeps its open conjunct only where the conjunct binds what its mode asks.
+            if let Some(open) = conjuncts.filter(|_| complete_or_atoms(&clause.body, Some(at), registry).len() < clause.body.value().conjuncts.len()) {
+                kept.push(open.clone());
+            }
+        }
+        if view.is_some() {
+            kept = kept.iter().map(crate::study_clause::unkeyed).collect();
+        }
+        if kept.is_empty() {
+            return Some(None);
+        }
+        let labels = atom_labels(&kept);
+        Some(Some(self.body_of(finished, clause, kept, labels)))
+    }
+
+    /// The keyword of a clause of the side of the form in progress of
+    /// `program`, whose side what it reads so far gives.
+    fn form_keyword(&self, program: &Node<Program>) -> Option<ClauseKeyword> {
+        let registry = self.context.registry;
+        let resolved = crate::resolver::resolve_prefix(&self.state.resolved(registry), program, registry);
+        let at = NodePath::top(u32::try_from(program.value().forms.len().checked_sub(1)?).ok()?);
+        Some(match resolved.form_side(&at)? {
+            crate::resolver::Side::TaskWide => ClauseKeyword::Det,
+            crate::resolver::Side::PerInput => ClauseKeyword::Rule,
+        })
+    }
+
+    /// Whether a body in progress at this state is evaluated once for the task.
+    pub(super) fn body_is_task_wide(&self) -> bool {
+        match self.state.partial() {
+            Some((program, _)) if matches!(program.value().forms.last(), Some(Form::Instance(_))) => self.form_keyword(&program) == Some(ClauseKeyword::Det),
+            _ => self.state.clause_is_task_wide(),
+        }
+    }
+
+    /// Whether a read of the atom just opened at `opened`, the state after a
+    /// step from this one, leaves the side of an `INIT` form as `task_wide`.
+    pub(super) fn keeps_side(&self, opened: &super::state::State, task_wide: bool) -> bool {
+        let registry = self.context.registry;
+        let Some((program, _)) = opened.partial() else { return true };
+        if !matches!(program.value().forms.last(), Some(Form::Instance(_))) {
+            return true;
+        }
+        let resolved = crate::resolver::resolve_prefix(&opened.resolved(registry), &program, registry);
+        let at = NodePath::top(program.value().forms.len() as u32 - 1);
+        (resolved.form_side(&at) == Some(crate::resolver::Side::TaskWide)) == task_wide
+    }
+
     /// The sub-body of the clause in progress less its open conjunct, where
     /// [`Decoder::sub_body`] holds that conjunct: the sub-body of its complete
     /// conjuncts, as `sub_body` builds one. `None` where no clause is in
@@ -797,6 +864,37 @@ pub fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> Option<
         }
         _ => None,
     }
+}
+
+/// The clause in progress of the `INIT` form `instance`, whose innermost open
+/// node is at `open`: a clause of `keyword` that derives `derives`, whose
+/// conjuncts are those of the open key body, or those of the open input's body,
+/// after the key body's where the input is keyed. `None` where no body of the
+/// form is open.
+fn open_instance_clause(instance: &Instance, open: &NodePath, keyword: ClauseKeyword, derives: ProgramRelation, registry: &Registry) -> Option<OpenClause> {
+    fn input_body<'i>(input: &'i Node<InstanceInput>, steps: &'i [PathStep]) -> Option<(&'i Node<Body>, &'i [PathStep])> {
+        let (step, within) = steps.split_first()?;
+        match input.value().parts().nth(step.0 as usize)? {
+            InstanceInputPart::Body => Some((&input.value().body, within)),
+            InstanceInputPart::Head(_) => None,
+        }
+    }
+    let (step, within) = open.0.split_first()?;
+    let (before, (body, within)) = match instance.parts().nth(step.0 as usize)? {
+        InstancePart::Key => {
+            let key = instance.key.as_ref()?.value();
+            let (step, within) = within.split_first()?;
+            match key.parts().nth(step.0 as usize)? {
+                KeyClausePart::Body => (None, (&key.key.body, within)),
+                KeyClausePart::Input(index) => (Some(key.key.body.value()), input_body(key.inputs.get(index)?, within)?),
+            }
+        }
+        InstancePart::Input(index) => (None, input_body(instance.inputs.get(index)?, within)?),
+    };
+    let open_at = within.first().map(|step| step.0 as usize);
+    let kept = before.iter().flat_map(|body| body.conjuncts.iter().cloned()).chain(complete_or_atoms(body, open_at, registry)).collect();
+    let clause = Clause { keyword, derives, gloss: None, proposers: Arc::from([]), body: body.clone(), ones: Arc::from([]), set: false, columns: Arc::from([]) };
+    Some(OpenClause { clause, kept, open_at })
 }
 
 /// The body of `part` of `choose`, and the `for` body that precedes it

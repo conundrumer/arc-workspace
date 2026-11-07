@@ -100,6 +100,9 @@ pub struct State {
     /// The verdicts of [`State::cached_prefix`], shared by the states and
     /// forks with the same finished forms.
     prefixes: Arc<std::sync::Mutex<PrefixMemo>>,
+    /// The verdicts of the atoms of the relations that the finished forms
+    /// declare, shared by the states and forks with the same finished forms.
+    atom_verdicts: Arc<std::sync::Mutex<crate::hash::StableHashMap<u128, super::atoms::HeldVerdict>>>,
     /// The checked program of the finished forms, resolved from the
     /// resolution of the state before the last form finished, made on its
     /// first read and shared by every clone of the state until a form
@@ -112,6 +115,15 @@ pub struct State {
     /// The atom that the step in progress opened, as [`State::step`] takes
     /// it: none in every state a step gives.
     opened: Option<Opened>,
+}
+
+/// Where a state stands within an open atom.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum AtomPlace {
+    /// A column of a further site or a token that closes the atom may come.
+    Sites,
+    /// A site is open, and a value of it or of a field of its record is due.
+    Value,
 }
 
 /// The most bytes of a prefix key that [`State::cached_prefix`] keeps.
@@ -506,7 +518,7 @@ const FIELDS_TRIED: u32 = 1;
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), checked_last: Arc::default(), checks: Arc::default(), opened: None }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), atom_verdicts: Arc::default(), checked_last: Arc::default(), checks: Arc::default(), opened: None }
     }
 
     /// The fixed scalar type of `column` of `relation` ([`ValueType::is_scalar`]),
@@ -986,7 +998,7 @@ impl State {
     }
 
     /// The count of the labels made so far.
-    pub(super) fn label_count(&self) -> u32 {
+    pub fn label_count(&self) -> u32 {
         self.labels
     }
 
@@ -1029,6 +1041,7 @@ impl State {
         self.clauses = Arc::default();
         self.fixed_columns = Arc::default();
         self.prefixes = Arc::default();
+        self.atom_verdicts = Arc::default();
         self.checked_last = Arc::default();
         self.checks = Arc::new(SharedChecks::after(&self.checks));
         self.labels = 0;
@@ -1315,6 +1328,147 @@ impl State {
     }
 
     /// The relation of the atom on top, where one is open.
+    /// The verdict at the key `key` of an atom of a relation that the finished forms declare.
+    pub(super) fn atom_verdict(&self, key: u128) -> Option<super::atoms::HeldVerdict> {
+        self.atom_verdicts.lock().expect("the atom verdicts are not poisoned").get(&key).cloned()
+    }
+
+    /// Keeps the verdict at the key `key`.
+    pub(super) fn keep_atom_verdict(&self, key: u128, verdict: super::atoms::HeldVerdict) {
+        self.atom_verdicts.lock().expect("the atom verdicts are not poisoned").insert(key, verdict);
+    }
+
+    /// Adds to `hasher` what the verdicts of the atom just opened read of the
+    /// stack: its frames, and of its body whether a key stands, whether a `NOT`
+    /// stands, how the body closes and whether it holds a conjunct.
+    pub(super) fn atom_context(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        for frame in &self.stack {
+            std::mem::discriminant(frame).hash(hasher);
+            match frame {
+                Frame::Body(body) => {
+                    body.key.hash(hasher);
+                    body.negate.hash(hasher);
+                    std::mem::discriminant(&body.close).hash(hasher);
+                    body.conjuncts.is_empty().hash(hasher);
+                }
+                Frame::Atom(atom) => atom.negated.hash(hasher),
+                _ => {}
+            }
+        }
+        if self.labels >= 48 {
+            self.labels.hash(hasher);
+        }
+    }
+
+    /// The shape of each label at this state, where an atom just opened: its
+    /// type and whether the body binds it, and whether each label has that
+    /// shape. A label that stands in anything but an atom or a `NOT` of an atom
+    /// of fixed scalar columns, in a top-level clause body, has its id for its
+    /// shape in place of them.
+    pub(super) fn label_shapes(&self, registry: &Registry, column_type: &impl Fn(&RelationRef, &ColumnName) -> Option<ValueType>) -> (Vec<u64>, bool) {
+        use std::hash::{Hash, Hasher};
+        let by_id = |label: u32| (1u64 << 60) | u64::from(label);
+        let mut shapes: Vec<u64> = (0..self.labels).map(by_id).collect();
+        let [Frame::Clause(_), Frame::Body(body), Frame::Atom(_)] = &self.stack[..] else { return (shapes, false) };
+        let mut types: std::collections::BTreeMap<u32, ValueType> = std::collections::BTreeMap::new();
+        for conjunct in &body.conjuncts {
+            let prior = match conjunct {
+                Conjunct::Atom(prior) | Conjunct::Not(Negated::Atom(prior)) => prior,
+                _ => return (shapes, false),
+            };
+            for site in prior.value().sites.iter() {
+                let Some(ty) = column_type(&prior.value().relation, &site.column) else { return (shapes, false) };
+                for arg in site.value.args.iter() {
+                    let SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label)) = arg else { return (shapes, false) };
+                    match types.get(&label.0) {
+                        Some(old) => match old.meet(&ty) {
+                            Meet::Type(ty) => { types.insert(label.0, ty); }
+                            Meet::Empty => return (shapes, false),
+                        },
+                        None => { types.insert(label.0, ty.clone()); }
+                    }
+                }
+            }
+        }
+        let list: Vec<&Conjunct> = body.conjuncts.iter().collect();
+        let bound = crate::safety::bound_labels(&list, &Default::default(), &Default::default(), &|atom| crate::eval::ir::atom_modes(registry, atom), &|label| types.get(&label.0).cloned());
+        let mut each = true;
+        for (at, shape) in shapes.iter_mut().enumerate() {
+            match types.get(&(at as u32)) {
+                Some(ty) => {
+                    let mut hasher = crate::hash::StableHasher::new();
+                    ty.hash(&mut hasher);
+                    bound.contains(&LabelId(at as u32)).hash(&mut hasher);
+                    *shape = (1u64 << 59) | (hasher.finish() >> 8);
+                }
+                None => each = false,
+            }
+        }
+        (shapes, each)
+    }
+
+    /// The conjuncts of the body that are atoms of the relation of the atom just
+    /// opened, a `NOT` of one included: for each, whether it is negated, and the
+    /// column position and the label of each of its sites, in order, with
+    /// `u32::MAX` for a value that is no label.
+    pub(super) fn prior_atoms(&self) -> Vec<(bool, Vec<(u32, u32)>)> {
+        let Some(Frame::Atom(open)) = self.stack.last() else { return Vec::new() };
+        let Some(Frame::Body(body)) = self.stack.iter().rev().nth(1) else { return Vec::new() };
+        let mut found = Vec::new();
+        for conjunct in &body.conjuncts {
+            let (negated, atom) = match conjunct {
+                Conjunct::Atom(atom) => (false, atom),
+                Conjunct::Not(Negated::Atom(atom)) => (true, atom),
+                _ => continue,
+            };
+            if atom.value().relation != open.relation {
+                continue;
+            }
+            let sites = atom.value().sites.iter().map(|site| {
+                let column = open.columns.iter().position(|name| *name == site.column).map_or(u32::MAX, |at| at as u32);
+                let label = match site.value.args.first() {
+                    Some(SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label))) => label.0,
+                    _ => u32::MAX,
+                };
+                (column, label)
+            }).collect();
+            found.push((negated, sites));
+        }
+        found
+    }
+
+    /// Whether a `NOT` stands before the next conjunct of the body on top.
+    pub(super) fn negation_pending(&self) -> bool {
+        self.stack.iter().rev().find_map(|frame| match frame {
+            Frame::Body(body) => Some(body.negate),
+            _ => None,
+        }).unwrap_or(false)
+    }
+
+    /// Whether the form in progress is a clause that stands once for the task:
+    /// a clause's keyword alone sets that.
+    pub(super) fn clause_is_task_wide(&self) -> bool {
+        matches!(self.stack.first(), Some(Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det | ClauseKeyword::DetOrRule, .. })))
+    }
+
+    /// The names of the columns of the atom just opened, and whether it holds no site.
+    pub(super) fn open_atom_columns(&self) -> Option<(Arc<[ColumnName]>, bool)> {
+        match self.stack.last() {
+            Some(Frame::Atom(atom)) => Some((Arc::clone(&atom.columns), atom.sites.is_empty())),
+            _ => None,
+        }
+    }
+
+    /// Where the state stands within an open atom, none outside one.
+    pub(super) fn atom_place(&self) -> Option<AtomPlace> {
+        match self.stack.last()? {
+            Frame::Atom(_) => Some(AtomPlace::Sites),
+            Frame::Site(site) => Some(if site.record.is_none() && !site.args.is_empty() { AtomPlace::Sites } else { AtomPlace::Value }),
+            _ => None,
+        }
+    }
+
     pub(super) fn open_relation(&self) -> Option<RelationRef> {
         match self.stack.last() {
             Some(Frame::Atom(atom)) => Some(atom.relation.clone()),

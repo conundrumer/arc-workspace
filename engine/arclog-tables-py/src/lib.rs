@@ -47,6 +47,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.function(wrap_pyfunction!(stream_tables::stream_tables, module)?)?;
     names.function(wrap_pyfunction!(step_tables::step_tables, module)?)?;
     names.function(wrap_pyfunction!(step_tables::successor_tables, module)?)?;
+    names.function(wrap_pyfunction!(step_tables::atom_tables, module)?)?;
     names.function(wrap_pyfunction!(step_tables::base_tables, module)?)?;
     names.function(wrap_pyfunction!(step_tables::output_columns, module)?)?;
     names.function(wrap_pyfunction!(step_tables::step_tables_split, module)?)?;

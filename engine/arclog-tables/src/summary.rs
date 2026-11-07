@@ -310,6 +310,16 @@ pub fn summarize_cached(materializer: &Materializer<'_>, table: &Table, train: &
 }
 
 /// The summary of `contents` with the `DET`s of each assignment in the order of `contents.dets`, unspelled.
+/// The summary of the table that `contents` holds at each of its assignments,
+/// as a reader of many tables of one body takes it: the `DET`s of an assignment,
+/// which the tables share, stand out of it.
+pub fn summarize_body(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
+    let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
+    let bodies = DetFulls::none().with_assemblies(fulls.assemblies.clone());
+    let assignments = (0..assignment_count(contents)).map(|at| at_assignment_with(materializer, contents, &types, at, train, &bodies, false)).collect::<Result<_, _>>()?;
+    Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents) })
+}
+
 fn summarize_rows(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
     let assignments = (0..assignment_count(contents)).map(|at| at_assignment(materializer, contents, &types, at, train, fulls)).collect::<Result<_, _>>()?;
@@ -408,9 +418,14 @@ fn value_hash_of(types: &[ValueType], rows: &Encoded, assemblies: &Assemblies) -
 }
 
 fn at_assignment(materializer: &Materializer<'_>, contents: &Contents, types: &[ValueType], at: usize, train: &[Pair], fulls: &DetFulls<'_>) -> Result<AssignmentSummary, ReachedBound> {
+    at_assignment_with(materializer, contents, types, at, train, fulls, true)
+}
+
+/// [`at_assignment`], with the `DET`s of the assignment where `with_dets` holds.
+fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, types: &[ValueType], at: usize, train: &[Pair], fulls: &DetFulls<'_>, with_dets: bool) -> Result<AssignmentSummary, ReachedBound> {
     let mut dets = Vec::new();
     let mut more: Vec<Vec<StableHash>> = Vec::new();
-    if let Some(values) = det_values(contents, at) {
+    if let Some(values) = det_values(contents, at).filter(|_| with_dets) {
         // The value hashes that each `DET` stands for: those of the full values that project to the value it is read at, or its own.
         let mut choices: Vec<Vec<StableHash>> = Vec::with_capacity(values.len());
         for ((_, rows), det) in values.iter().zip(contents.dets.iter()) {

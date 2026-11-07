@@ -160,7 +160,7 @@ pub fn checked_body_from_written(
         .map_err(|d| diagnostics_text(&d))
 }
 
-fn unkeyed(conjunct: &Conjunct) -> Conjunct {
+pub(crate) fn unkeyed(conjunct: &Conjunct) -> Conjunct {
     fn site(s: &Site) -> Site {
         Site {
             column: s.column.clone(),
