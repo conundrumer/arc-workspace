@@ -75,7 +75,7 @@ An Ident has a meaning only with respect to what made it, so the type contains i
 - **`Open`:** a declared column with no maker yet, and an Ident read from a file.
 - **`Form(id)`:** the one source of the column. The id is a hash of the maker form's resolved content and its output port. So one query has one source in every program, and two forms of one content in one program have one source. A form with no content takes its name and its canonical form in place of the content.
 
-The check gives each maker's Ident output its own source. A join, a `NOT`, an `=` or `!=`, a union or a type parameter that meets two sources is refused.
+The check gives each maker's Ident output its own source. A join, a `NOT`, an `=` or `!=`, a union or a type parameter that meets two sources is refused. A TableHash and the type names of a table export hold no source, so two makers that give equal Ident contents give equal TableHashes.
 
 The intern table keeps a digest of each content, the same in every session. A table export gives the digest's first 32 bits as the Ident's cell. The digest does not contain the maker, so equal contents of two makers have one cell.
 

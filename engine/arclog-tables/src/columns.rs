@@ -168,8 +168,8 @@ pub struct TableColumns {
     /// The source of each Ident in each column's type, in the order of
     /// `column_names`: the form that makes the Ident values
     /// ([`arclog::types::IdentSource`]), as the 32 hexadecimal digits of its
-    /// identity, which is a hash of the maker form's name, its canonical form
-    /// and its output port. A Record type gives the sources of its fields in
+    /// identity, which is a hash of the maker form's resolved content and its
+    /// output port. The TableHash holds no source. A Record type gives the sources of its fields in
     /// their order, joined by `,`. The empty string for a type with no Ident
     /// of a source, such as an Ident that an input names. Two columns hold
     /// Idents of one source where `column_types` and this are equal.

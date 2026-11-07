@@ -15,8 +15,10 @@ pub enum IdentSource {
     Form(SourceId),
 }
 
-/// The identity of a source: a hash of the maker form's name, its canonical
-/// form and its output port.
+/// The identity of a source: a hash of the maker form's resolved content and
+/// its output port, or, for a form with no content, of its name, its canonical
+/// form and its output port. Only the type check reads it, to refuse a join
+/// across sources: no TableHash and no exported type name holds it.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceId(pub StableHash);
 
