@@ -2471,6 +2471,18 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Opti
     }
 }
 
+/// Whether a root has no value at an instance, though the counts it reads all exist: a ratio whose denominator counts 0, or a set that does not have one member.
+fn no_value_by_count(of: RootOf, rows: u32, left: u32, other: u32) -> bool {
+    let known = |counts: &[u32]| counts.iter().all(|count| *count != NO_COUNT);
+    match of {
+        RootOf::Nonempty | RootOf::Cardinality => false,
+        RootOf::Share => known(&[rows, left]) && left == 0,
+        RootOf::Over | RootOf::OverExamples => known(&[rows, other]) && other == 0,
+        RootOf::Under => known(&[rows, other]) && rows == 0,
+        RootOf::ValueSet => rows != NO_COUNT,
+    }
+}
+
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
         Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
@@ -2550,6 +2562,21 @@ impl<'a> Walker<'a> {
     /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` or of a `join` that `step` would write out past `CELL_CAP` cells.
     fn has_no_value(&self, step: &Step, id: u32) -> bool {
         matches!(self.values[id as usize], Val::None) || self.cut_by_cap(step, id)
+    }
+
+    /// Whether the value at `id` gives `step` no value as its second relation: no value, or the rows of `inside` or of a `join` that `step` would write out past `CELL_CAP` cells.
+    fn second_has_no_value(&self, step: &Step, id: u32) -> bool {
+        let held = &self.values[id as usize];
+        matches!(held, Val::None) || (held.is_lazy() && !held.lazy_reads(step, false) && !held.lazy_fits())
+    }
+
+    /// The count of rows that an idle term gives at one instance, as the evaluation gives it: no value where the first relation has none, or the second has none. Any other idle term has no rows.
+    fn idle_rows(&self, step: &Step, first: u32, second: Option<u32>) -> u32 {
+        if self.has_no_value(step, first) || second.is_some_and(|second| self.second_has_no_value(step, second)) {
+            NO_COUNT
+        } else {
+            0
+        }
     }
 
     fn apply(&mut self, step: &Step, a: u32, b: u32) -> Val {
@@ -2685,13 +2712,13 @@ impl<'a> Walker<'a> {
             let extended = term.used;
             let mut own = Vec::new();
             let on_no_rows = matches!(step, Step::Part(part) if part.gives_rows_on_no_rows());
-            // A term whose first relation has no value, or the rows of `inside` that `step` cannot write, has no value at any instance.
+            // A term whose first relation is empty, or whose second relation of a `join` or a `semijoin` is, has no rows. One whose first relation has no value, or is the rows of `inside` or of a `join` that `step` cannot write, has no value.
             let first_empty = !on_no_rows && first[..scope].iter().all(|id| *id == 1);
             let first_cut = first[..scope].iter().all(|id| self.has_no_value(step, *id));
             let second_empty = matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1);
             let idle = first_empty || first_cut || second_empty;
-            // A first relation that a bound cut off, at an instance, leaves the term with no value there: a stop, which spreads to the terms that read it. An empty second relation of a join gives the empty rows, whatever the first relation is.
-            let cut_by_bound = first_cut && !second_empty && first[..scope].iter().any(|id| self.cut_by_cap(step, *id));
+            // A first relation that a bound cut off, at an instance, leaves the term with no value there: a stop, which spreads to the terms that read it.
+            let cut_by_bound = first_cut && first[..scope].iter().any(|id| self.cut_by_cap(step, *id));
             let past_bound = extended && walk_cells + self.written_cells > WALK_CELLS;
             let is_stopped = past_bound || cut_by_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]);
             if extended {
@@ -2725,27 +2752,25 @@ impl<'a> Walker<'a> {
                 }
                 own.resize(instances, 0);
             }
-            if crate::bounds::enabled() && wanted && listed != 0 && scope > 0 && idle && !(past_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize])) {
-                let cause = if cut_by_bound { "cut by cap" } else if first_cut && !second_empty { "no value" } else if term.b != NO_TERM && second[..scope].iter().any(|id| *id == 0) { "empty, second has no value" } else { "empty" };
-                for (place, (_, of)) in term.roots.iter().enumerate() {
-                    if listed & (1 << place) != 0 {
-                        crate::bounds::idle_roots(cause, format!("{of:?}"), scope as u64);
-                    }
-                }
-            }
-            // A root over a first relation with no value has no value: a default would say that the relation is there and empty.
-            if wanted && (is_stopped || (scope > 0 && first_cut && !second_empty)) && listed != 0 {
+            if wanted && is_stopped && listed != 0 {
                 // A root over a stopped term has no value at any instance, which is not its default.
+                let counted = cut_by_bound && !(past_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]));
                 for (place, (hash, of)) in term.roots.iter().enumerate() {
                     if listed & (1 << place) != 0 {
+                        if counted {
+                            crate::bounds::idle_roots("stopped: first cut by cap", format!("{of:?}"), scope as u64);
+                        }
                         let base = table.slots_of(*hash, term.flags, term.size, *of);
                         table.slots[base..base + scope].iter_mut().for_each(|slot| slot.state = SLOT_NO_VALUE);
                     }
                 }
-            } else if wanted && !idle && listed != 0 && !term.roots.is_empty() {
+            } else if wanted && listed != 0 && !term.roots.is_empty() {
                 for pair in 0..scope {
                     let (id, b) = (first[pair], if term.b == NO_TERM { NO_TERM } else { second[pair] });
-                    let (rows, number) = if extended {
+                    // An idle term gives what the evaluation gives, with no evaluation.
+                    let (rows, number) = if idle {
+                        (self.idle_rows(step, id, if term.b == NO_TERM { None } else { Some(b) }), 0)
+                    } else if extended {
                         let value = &self.values[own[pair] as usize];
                         (count_of(value), if term.root == RootKind::Number { number_word(value) } else { 0 })
                     } else {
@@ -2773,6 +2798,13 @@ impl<'a> Walker<'a> {
                         // Nothing to add at a default value, which is a slot's own state.
                         if matches!(value, Some((_, 0))) {
                             continue;
+                        }
+                        if value.is_none() && crate::bounds::enabled() {
+                            let denominator = no_value_by_count(*of, rows, left, if *of == RootOf::OverExamples { self.examples } else { other });
+                            let cause = if !idle && !denominator { None } else if idle && first_cut { Some("idle: first has no value") } else if idle && rows == NO_COUNT { Some("idle: second has no value") } else if idle { Some("idle: no denominator rows or no single member") } else { Some("full path: no denominator rows or no single member") };
+                            if let Some(cause) = cause {
+                                crate::bounds::idle_roots(cause, format!("{of:?}"), 1);
+                            }
                         }
                         let base = table.slots_of(*hash, term.flags, term.size, *of);
                         let slot = &mut table.slots[base + pair];
