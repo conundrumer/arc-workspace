@@ -587,8 +587,8 @@ impl<'a> Decoder<'a> {
     /// is the count of labels at this state, and each atom's work counts under
     /// `cap`.
     pub fn each_atom_rows(&self, sub: Option<&SubBody>, base: &BaseRows, labels: u32, atoms: &[Box<[u32]>], cap: u64, visit: &mut dyn FnMut(usize, AtomRows)) {
-        // A `NOT` that stands before the atoms reads them in a way that the tokens of an atom do not show.
-        if self.state.negation_pending() {
+        // A `NOT` that stands before the atoms reads them in a way that the tokens of an atom do not show, and a body in a form of a body adds its atoms to that form.
+        if self.state.negation_pending() || self.state.in_nested_body() {
             (0..atoms.len()).for_each(|at| visit(at, AtomRows::ByProgram));
             return;
         }

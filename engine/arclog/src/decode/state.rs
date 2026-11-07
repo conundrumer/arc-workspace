@@ -1523,6 +1523,11 @@ impl State {
         found
     }
 
+    /// Whether the body on top stands in a form of a body, such as a branch of an `OR`.
+    pub(super) fn in_nested_body(&self) -> bool {
+        self.stack.iter().filter(|frame| matches!(frame, Frame::Body(_))).count() > 1
+    }
+
     /// Whether a `NOT` stands before the next conjunct of the body on top.
     pub(super) fn negation_pending(&self) -> bool {
         self.stack.iter().rev().find_map(|frame| match frame {
