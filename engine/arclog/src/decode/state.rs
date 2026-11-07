@@ -1210,6 +1210,10 @@ impl State {
         let clause = top!(self, Frame::Clause);
         match (&clause.stage, token) {
             (ClauseStage::Proposers, Token::Proposer(name)) if !clause.predict => {
+                // A second naming of a proposer adds no value to a `DET`'s domain and no reading to a line.
+                if clause.proposers.contains(name) {
+                    return Err("a clause names each proposer once");
+                }
                 clause.proposers.push(name.clone());
                 Ok(Offer::Taken)
             }
