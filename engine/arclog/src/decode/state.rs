@@ -1556,6 +1556,12 @@ impl State {
         found
     }
 
+    /// Whether the form in progress is one whose closing token reads the rows of
+    /// the task: a `DET` or a `RIGID_DET`.
+    pub(super) fn closes_a_det(&self) -> bool {
+        matches!(self.stack.first(), Some(Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det | ClauseKeyword::DetOrRule, .. }) | Frame::Rigid(_)))
+    }
+
     /// The conjuncts of the key body where the next token may open a body of
     /// an `INIT` form, as the engine named it: none for the key body and for an
     /// input that holds for every key. `None` at any other state.

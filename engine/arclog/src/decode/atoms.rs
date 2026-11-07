@@ -381,11 +381,12 @@ impl Decoder<'_> {
                 let mut made = None;
                 self.at(here, |walker| {
                     made = Some(if place == AtomPlace::Sites {
-                        // The token that opens an atom reads no task. Another token, such as an `END` that closes a `DET`, may read the rows of its task.
+                        // The token that opens an atom reads no task. A token that closes a `DET` reads the rows of its task.
                         let by_atom = walker.mask_first(tokens.opening.iter().copied());
                         let closes = by_atom || walker.mask_first(tokens.closing.iter().copied());
+                        let reads_task = !by_atom && walker.state.closes_a_det() && (closes || [Control::End, Control::Set, Control::One].into_iter().any(|control| matches!(walker.next_state(&Token::Control(control)), Err(super::Refusal::DetAdmission(_)))));
                         let above = floor.map_or(0, |floor| floor as usize + 1);
-                        (closes, by_atom, walker.mask_over(tokens.columns[above.min(tokens.columns.len())..].iter().copied()))
+                        (closes, !reads_task, walker.mask_over(tokens.columns[above.min(tokens.columns.len())..].iter().copied()))
                     } else {
                         (false, true, walker.mask_over(tokens.columns.iter().chain(&tokens.end).copied()))
                     });
