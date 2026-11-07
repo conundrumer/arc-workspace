@@ -51,6 +51,10 @@ A store's `contingent` holds about as many entries as its lists, and one group o
 
 A run over many tasks holds too much to sort every entry. `--ids-out FILE` reads every list and writes one column of each set of columns with one source and equal entries, holding only a sum per column, and judges nothing. `--keep-ids FILE` then reads only those columns.
 
+The store's train and dev rows both stand as candidates, the train rows first, so a task of either split in `--v1` is judged. A store with no dev rows gives train rows only. `--keep-ids` holds an entry's column as its place among the kept columns.
+
+Each feature is judged over runs of whole shapes of at most about `BATCH` entries, and the results of the runs are combined, so a feature on many rows holds only a run's entries at a time.
+
 A missing feature also has `equal share`, the most table rows on which one column equals it, with a table row of no entry at 0, and `equal`, that column's name. A feature of two values holding 0 and 1 reads a column as holding where it has an entry that is not 0, so a count can stand for a flag. One odd table keeps a whole column from `covered`, so these say how near it stands.
 
 Streams one line per distinct feature, with the first version's metadata of the feature (what it reads, its aggregation level and what else it
@@ -74,7 +78,7 @@ import zstandard
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gate_lists as g  # noqa: E402
 from candidate import read_lists  # noqa: E402
-from common import open_text, read_pickle  # noqa: E402
+from common import data_exists, open_text, read_pickle  # noqa: E402
 
 TOKEN = re.compile(r'(?:\w+\.)?⟨c:[^⟩]*⟩')
 TABLE = re.compile(r'⟨t:[^⟩]*⟩')
@@ -96,9 +100,28 @@ def judge(item):
     return JUDGE(item)
 
 
-def read_source(blocks, name, wanted):
-    """The rows of a store's source at the candidates in `wanted`: candidate -> columns, values."""
-    reader = zstandard.ZstdDecompressor().stream_reader(open(Path(blocks) / 'blocks' / f'train.{name}.zst', 'rb'), read_across_frames=True)
+BLOCK = 1 << 24
+# A batch of per-feature work holds the entries of whole shapes, about this many at most.
+BATCH = 1 << 21
+
+
+def has_source(blocks, name):
+    return any((Path(blocks) / 'blocks' / f'{split}.{name}.zst').exists() for split in ('train', 'dev'))
+
+
+def read_source(blocks, name, wanted, dev_first):
+    """The rows of a store's source at the candidates in `wanted`: candidate -> columns, values. Rows from `dev_first` on are in the dev file, and the rows before it in the train file."""
+    held = {}
+    for split, shift in (('train', 0), ('dev', dev_first)):
+        here = {at - shift for at in wanted if at >= shift and (split == 'dev' or at < dev_first)}
+        if here:
+            held.update({at + shift: found for at, found in read_file(Path(blocks) / 'blocks' / f'{split}.{name}.zst', here).items()})
+    return held
+
+
+def read_file(path, wanted):
+    """The rows of one source file at the places in `wanted`: place -> columns, values."""
+    reader = zstandard.ZstdDecompressor().stream_reader(open(path, 'rb'), read_across_frames=True)
 
     def read(n):
         out = b''
@@ -124,6 +147,38 @@ def read_source(blocks, name, wanted):
                 start = ends[at - 1] if at else 0
                 held[first + at] = (columns[start:ends[at]], values[start:ends[at]])
         first += rows_here
+
+
+def gather(table, index):
+    """`table[index]` with the index taken in blocks, so that no copy of it as int64 stands."""
+    out = np.empty(len(index), dtype=table.dtype)
+    for at in range(0, len(index), BLOCK):
+        out[at:at + BLOCK] = table[index[at:at + BLOCK]]
+    return out
+
+
+def count_of(index, size):
+    """`np.bincount(index, minlength=size)` over blocks."""
+    total = np.zeros(size, dtype=np.int64)
+    for at in range(0, len(index), BLOCK):
+        total += np.bincount(index[at:at + BLOCK], minlength=size)
+    return total
+
+
+def sort_entries(row, shape, val, size):
+    """The entries ordered by shape, then value, then row, as sorted in blocks of whole shapes. `shape` holds numbers below `size`."""
+    ends = np.cumsum(count_of(shape, size))
+    out_row, out_shape, out_val = np.empty_like(row), np.empty_like(shape), np.empty_like(val)
+    first, at = 0, 0
+    while first < size:
+        last = min(max(int(np.searchsorted(ends, at + BLOCK, side='right')), first + 1), size)
+        end = int(ends[last - 1])
+        if end > at:
+            here = np.flatnonzero((shape >= first) & (shape < last))
+            order = here[np.lexsort((row[here], val[here], shape[here]))]
+            out_row[at:end], out_shape[at:end], out_val[at:end] = row[order], shape[order], val[order]
+        first, at = last, end
+    return out_row, out_shape, out_val
 
 
 def number(value):
@@ -234,7 +289,12 @@ def main():
     begun_at = time.time()
     blocks = Path(args.blocks)
     meta = read_pickle(blocks / 'meta.pkl')
-    candidates = read_pickle(blocks / 'train.rows.pkl')
+    # The candidates of the train split come first, and those of the dev split follow.
+    candidates = list(read_pickle(blocks / 'train.rows.pkl'))
+    dev_first = len(candidates)
+    dev_examples_first = len(read_pickle(blocks / 'train.example_of.pkl'))
+    if data_exists(blocks / 'dev.rows.pkl'):
+        candidates += list(read_pickle(blocks / 'dev.rows.pkl'))
     candidate_of = {(row[0], row[1], row[2]): at for at, row in enumerate(candidates)}
     extra = {}
     extra['base'] = {place: 'base:' + key for key, place in meta['base'].items()}
@@ -245,9 +305,9 @@ def main():
     # Its place stands either way, so a column's number does not change with the option.
     extra['contingent'] = {place: 'contingent:' + meta['names'].get(int(key), '') for place, key in enumerate(meta['columns'])} if args.contingent else {}
     for pool in ('relations_least', 'relations_most'):
-        if (blocks / 'blocks' / f'train.{pool}.zst').exists():
+        if has_source(blocks, pool):
             extra[pool] = {place: pool + ':' + name.split(':', 1)[0] + ':' + name.split(':', 1)[1] for place, name in extra['relations'].items()}
-    if (blocks / 'blocks' / 'train.relations_each.zst').exists():
+    if has_source(blocks, 'relations_each'):
         extra['relations_each'] = {place: 'each:' + name for place, name in extra['relations'].items()}
     offset = {source: OTHER + (place << 32) for place, source in enumerate(extra)}
     name_of = {offset[source] + column: name for source, names in extra.items() for column, name in names.items()}
@@ -257,14 +317,16 @@ def main():
     paths = [path for path in paths if path.name.split('.')[0] in in_store and any((Path(folder) / (path.name.split('.')[0] + '.lists.zst')).exists() for folder in args.lists)]
     paths = paths[:args.tasks] if args.tasks else paths
     tasks = {path.name.split('.')[0] for path in paths}
-    extras = {} if args.base else {source: read_source(blocks, source, {at for key, at in candidate_of.items() if key[0] in tasks}) for source in extra if source != 'relations_each' and (source != 'contingent' or args.contingent)}
+    extras = {} if args.base else {source: read_source(blocks, source, {at for key, at in candidate_of.items() if key[0] in tasks}, dev_first) for source in extra if source != 'relations_each' and (source != 'contingent' or args.contingent)}
     # A candidate's rows of `relations_each` stand together, one per example.
     each_rows, first_each = {}, None
     if 'relations_each' in extra and not args.base:
         example_of = np.asarray(read_pickle(blocks / 'train.example_of.pkl'))
+        if len(candidates) > dev_first:
+            example_of = np.concatenate((example_of, np.asarray(read_pickle(blocks / 'dev.example_of.pkl')) + dev_first))
         first_each = np.searchsorted(example_of, np.arange(len(candidates)))
         wanted = np.isin(example_of, np.array([at for key, at in candidate_of.items() if key[0] in tasks]))
-        each_rows = read_source(blocks, 'relations_each', set(np.flatnonzero(wanted).tolist()))
+        each_rows = read_source(blocks, 'relations_each', set(np.flatnonzero(wanted).tolist()), dev_examples_first)
     print(f'sources read {time.time() - begun_at:.0f}s', flush=True)
     rows = 0
     row_of, shape_of, value_of = [], [], []
@@ -296,12 +358,12 @@ def main():
     seen_ids, seen_sums = [], []
 
     def take(row, ids, values):
-        """A row's entries, of the kept columns where some are kept."""
-        if keep_ids is not None and len(ids):
+        """A row's entries, of the kept columns where some are kept. Where the columns are kept by `--keep-ids` and the run judges, an entry's column is its place among them."""
+        if keep_ids is not None:
             at = np.searchsorted(keep_ids, ids)
             at[at == len(keep_ids)] = 0
             found = keep_ids[at] == ids
-            ids, values = ids[found], values[found]
+            ids, values = (at[found].astype(np.int32) if not args.ids_out else ids[found]), values[found]
         row_of.append(np.full(len(ids), row, dtype=np.int32))
         shape_of.append(ids)
         # A copy, since a list's values are a view that would hold its whole file in memory.
@@ -479,6 +541,7 @@ def main():
     val = np.nan_to_num(val, nan=-7.77e7)
     keep = val != 0
     row, ids, val = row[keep], ids[keep], val[keep]
+    del keep
     # A word's column is 0 where the feature has a value there and another word.
     for key in [key for key in features if isinstance(key, tuple)]:
         at = features.pop(key)
@@ -486,8 +549,14 @@ def main():
             column = features[f'{key[1]} :{word}']
             for own in at:
                 column.setdefault(own, 0.0)
-    unique_ids, shape = np.unique(ids, return_inverse=True)
-    shape = shape.astype(np.int32)
+    if keep_ids is not None and not args.ids_out:
+        # The entries hold their column's place among the kept columns, so the columns that stand are those with an entry.
+        present = count_of(ids, len(keep_ids)) > 0
+        unique_ids = keep_ids[present]
+        shape = gather((np.cumsum(present) - 1).astype(np.int32), ids)
+    else:
+        unique_ids, shape = np.unique(ids, return_inverse=True)
+        shape = shape.astype(np.int32)
     del ids
     wanted = set(unique_ids.tolist())
     if args.aggregates:
@@ -510,11 +579,10 @@ def main():
 
     sources = [source_of(int(key)) for key in unique_ids.tolist()]
     # Columns of one source that give one partition of the rows stand as one, so each feature tests fewer columns.
-    order = np.lexsort((row, val, shape))
-    row, shape, val = row[order], shape[order], val[order]
+    row, shape, val = sort_entries(row, shape, val, len(unique_ids))
     new_group = np.concatenate(([True], (shape[1:] != shape[:-1]) | (val[1:] != val[:-1])))
-    rank = (np.cumsum(new_group) - 1).astype(np.int32)
-    del order
+    rank = np.cumsum(new_group, dtype=np.int32)
+    rank -= 1
     starts = np.flatnonzero(np.concatenate(([True], shape[1:] != shape[:-1])))
     ends = np.concatenate((starts[1:], [len(shape)]))
     signature = set()
@@ -530,22 +598,36 @@ def main():
             signature.add(key)
             keep_shape[shape[start]] = True
     print(f'columns {len(unique_ids)} kept {int(keep_shape.sum())}', flush=True)
-    kept = keep_shape[shape]
+    kept = gather(keep_shape, shape)
     row, shape, val = row[kept], shape[kept], val[kept]
-    del signature, rank, new_group
+    del signature, rank, new_group, kept
     new_group = np.concatenate(([True], (shape[1:] != shape[:-1]) | (val[1:] != val[:-1])))
-    group_start = np.flatnonzero(new_group)
-    group_shape = shape[group_start]
-    shape_start = np.flatnonzero(np.concatenate(([True], group_shape[1:] != group_shape[:-1])))
+    # Each kept shape's entries, its column's place among the kept columns, each entry's group of equal values, and each row's entries.
     entry_shape_start = np.flatnonzero(np.concatenate(([True], shape[1:] != shape[:-1])))
-    columns_here = group_shape[shape_start]
-    # Each entry's group of equal values, each group's shape among those kept, and each row's entries.
-    group_of_entry = np.cumsum(new_group).astype(np.int32) - 1
-    groups_of_shape = np.diff(np.append(shape_start, len(group_start)))
-    shape_of_group = np.repeat(np.arange(len(shape_start)), groups_of_shape)
-    entry_of_row = np.argsort(row, kind='stable')
-    row_entries = np.bincount(row, minlength=rows)
+    entry_shape_end = np.append(entry_shape_start[1:], len(shape))
+    columns_here = shape[entry_shape_start]
+    rank_of_column = np.full(len(unique_ids), -1, dtype=np.int32)
+    rank_of_column[columns_here] = np.arange(len(columns_here), dtype=np.int32)
+    group_of_entry = np.cumsum(new_group, dtype=np.int32)
+    group_of_entry -= 1
+    del new_group
+    groups_of_shape = group_of_entry[entry_shape_end - 1] - group_of_entry[entry_shape_start] + 1
+    row_entries = count_of(row, rows)
     row_first = np.concatenate(([0], np.cumsum(row_entries)))
+    entry_of_row = np.empty(len(row), dtype=np.int32)
+    low_row = 0
+    while low_row < rows:
+        high_row = min(max(int(np.searchsorted(row_first, row_first[low_row] + BLOCK, side='right')) - 1, low_row + 1), rows)
+        here = np.flatnonzero((row >= low_row) & (row < high_row))
+        entry_of_row[row_first[low_row]:row_first[high_row]] = here[np.argsort(row[here], kind='stable')]
+        low_row = high_row
+    # Whole shapes in turn, each run of them holding about `BATCH` entries.
+    batch_ends = []
+    at_shape = 0
+    while at_shape < len(entry_shape_start):
+        last_shape = max(int(np.searchsorted(entry_shape_end, entry_shape_start[at_shape] + BATCH, side='right')), at_shape + 1)
+        batch_ends.append((int(entry_shape_start[at_shape]), int(entry_shape_end[last_shape - 1])))
+        at_shape = last_shape
     total = len(unique_ids)
     source_here = np.array([sources[at] for at in columns_here.tolist()])
     groups = []
@@ -563,18 +645,37 @@ def main():
     def key_of(value):
         return (0, float(value)) if isinstance(value, (bool, int, float)) else (1, str(value))
 
-    def entries_on(rows_here):
-        """The entries on some rows, in the order of their groups. Through the rows' own entries where they are few, since a look at every entry costs more."""
+    def entry_batches(rows_here):
+        """The entries on some rows as runs of whole shapes, each in the order of the groups, with about `BATCH` entries at most in a run. Through the rows' own entries where they are few, since a look at every entry costs more."""
         total_here = int(row_entries[rows_here].sum())
+        if not total_here:
+            return
         if total_here * 8 > len(row):
             defined = np.zeros(rows, dtype=bool)
             defined[rows_here] = True
-            return np.flatnonzero(defined[row])
-        if not total_here:
-            return np.zeros(0, dtype=np.int64)
+            for first, last in batch_ends:
+                held = np.flatnonzero(defined[row[first:last]])
+                if len(held):
+                    yield held + first
+            return
         held = np.concatenate([entry_of_row[row_first[own]:row_first[own + 1]] for own in rows_here.tolist()])
         held.sort()
-        return held
+        edges = np.flatnonzero(shape[held[1:]] != shape[held[:-1]]) + 1
+        first = 0
+        while first < len(held):
+            last = first + BATCH
+            if last >= len(held):
+                last = len(held)
+            else:
+                at = int(np.searchsorted(edges, last, side='right'))
+                if at and edges[at - 1] > first:
+                    last = int(edges[at - 1])
+                elif at < len(edges):
+                    last = int(edges[at])
+                else:
+                    last = len(held)
+            yield held[first:last].astype(np.int64)
+            first = last
 
     def by_pairs(feature, at):
         """Whether two columns together give the feature's value: the status, the best pair's share of the rows and its names, and the best single column's share and name."""
@@ -588,20 +689,24 @@ def main():
         c = np.full(rows, -1, dtype=np.int64)
         c[list(at)] = [keys[key_of(value)] for value in at.values()]
         n = len(rows_here)
-        entries = entries_on(rows_here)
-        if not len(entries):
+        in_all = np.bincount(c[rows_here], minlength=k)[None, :]
+        shapes_here, bests = [], []
+        for entries in entry_batches(rows_here):
+            groups, classes_at = group_of_entry[entries], c[row[entries]]
+            starts = np.flatnonzero(np.concatenate(([True], groups[1:] != groups[:-1])))
+            touched = np.repeat(np.arange(len(starts)), np.diff(np.append(starts, len(entries))))
+            table = np.bincount(touched * k + classes_at, minlength=len(starts) * k).reshape(len(starts), k)
+            members = table.sum(axis=1)
+            most = np.where(members >= 2, table.max(axis=1), 0)
+            shape_of = rank_of_column[shape[entries[starts]]]
+            firsts = np.flatnonzero(np.concatenate(([True], shape_of[1:] != shape_of[:-1])))
+            in_rest = in_all - np.add.reduceat(table, firsts, axis=0)
+            shapes_here.append(shape_of[firsts])
+            bests.append(np.add.reduceat(most, firsts) + in_rest.max(axis=1))
+        if not shapes_here:
             return 'no', 0.0, '', 0.0, ''
-        groups, classes_at = group_of_entry[entries], c[row[entries]]
-        starts = np.flatnonzero(np.concatenate(([True], groups[1:] != groups[:-1])))
-        touched = np.repeat(np.arange(len(starts)), np.diff(np.append(starts, len(entries))))
-        table = np.bincount(touched * k + classes_at, minlength=len(starts) * k).reshape(len(starts), k)
-        members = table.sum(axis=1)
-        most = np.where(members >= 2, table.max(axis=1), 0)
-        shape_of = shape_of_group[groups[starts]]
-        firsts = np.flatnonzero(np.concatenate(([True], shape_of[1:] != shape_of[:-1])))
-        shape_here = shape_of[firsts]
-        in_rest = np.bincount(c[rows_here], minlength=k)[None, :] - np.add.reduceat(table, firsts, axis=0)
-        best = np.add.reduceat(most, firsts) + in_rest.max(axis=1)
+        shape_here = np.concatenate(shapes_here)
+        best = np.concatenate(bests)
         best = np.where(groups_of_shape[shape_here] <= PAIR_VALUES, best, -1)
         allowed = group_of(feature)[1]
         if allowed is not None:
@@ -615,13 +720,12 @@ def main():
         place_of = np.full(rows, -1, dtype=np.int64)
         place_of[rows_here] = np.arange(n)
         classes = c[rows_here]
-        ends = np.append(firsts[1:], len(starts))
-        group_ends = np.append(starts[1:], len(entries))
         dense = []
         for at_chosen in chosen.tolist():
-            first, last = starts[firsts[at_chosen]], group_ends[ends[at_chosen] - 1]
+            first, last = int(entry_shape_start[shape_here[at_chosen]]), int(entry_shape_end[shape_here[at_chosen]])
+            own = np.flatnonzero(place_of[row[first:last]] >= 0) + first
             codes = np.zeros(n, dtype=np.int64)
-            codes[place_of[row[entries[first:last]]]] = groups[first:last] - shape_start[shape_here[at_chosen]] + 1
+            codes[place_of[row[own]]] = group_of_entry[own] - group_of_entry[first] + 1
             dense.append(np.unique(codes, return_inverse=True)[1])
         limit = max(4 * k, 12)
         found, top, top_pair = False, -1, None
@@ -659,23 +763,34 @@ def main():
         c = np.zeros(rows, dtype=np.int64)
         c[list(at)] = [keys[key_of(value)] for value in at.values()]
         n, s1, s2 = len(rows_here), int(c[rows_here].sum()), int((c[rows_here] ** 2).sum())
-        entries = entries_on(rows_here)
-        if not len(entries):
+        # Each shape that has an entry on the feature's rows, in the order of the shapes, gives: its place among those kept, its entries, the sums of its classes and of their squares,
+        # whether a group of it holds two classes, and the runs of its groups' least class.
+        parts = []
+        for entries in entry_batches(rows_here):
+            groups, classes = group_of_entry[entries], c[row[entries]]
+            starts = np.flatnonzero(np.concatenate(([True], groups[1:] != groups[:-1])))
+            low, high = np.minimum.reduceat(classes, starts), np.maximum.reduceat(classes, starts)
+            sizes = np.diff(np.append(starts, len(entries)))
+            shape_of = rank_of_column[shape[entries[starts]]]
+            firsts = np.flatnonzero(np.concatenate(([True], shape_of[1:] != shape_of[:-1])))
+            same = shape_of[1:] == shape_of[:-1]
+            d = low[1:] - low[:-1]
+            parts.append((
+                shape_of[firsts],
+                np.add.reduceat(sizes, firsts),
+                np.add.reduceat(np.add.reduceat(classes, starts), firsts),
+                np.add.reduceat(np.add.reduceat(classes * classes, starts), firsts),
+                np.logical_or.reduceat(low != high, firsts),
+                1 + np.add.reduceat(np.concatenate(([0], same & (d != 0))).astype(np.int64), firsts),
+                np.add.reduceat(np.concatenate(([0], same & (d > 0))).astype(np.int64), firsts),
+                np.add.reduceat(np.concatenate(([0], same & (d < 0))).astype(np.int64), firsts),
+                low[firsts]))
+        if not parts:
             return missing
-        groups, classes = group_of_entry[entries], c[row[entries]]
-        starts = np.flatnonzero(np.concatenate(([True], groups[1:] != groups[:-1])))
-        low, high = np.minimum.reduceat(classes, starts), np.maximum.reduceat(classes, starts)
-        sizes = np.diff(np.append(starts, len(entries)))
-        # Each shape that has an entry on the feature's rows, at the place of its first group among those.
-        shape_of = shape_of_group[groups[starts]]
-        firsts = np.flatnonzero(np.concatenate(([True], shape_of[1:] != shape_of[:-1])))
-        shape_here = shape_of[firsts]
-        cn = np.add.reduceat(sizes, firsts)
-        c1 = np.add.reduceat(np.add.reduceat(classes, starts), firsts)
-        c2 = np.add.reduceat(np.add.reduceat(classes * classes, starts), firsts)
+        shape_here, cn, c1, c2, mixed, runs, up, down, first_class = (np.concatenate(piece) for piece in zip(*parts))
         rest_n, rest_1, rest_2 = n - cn, s1 - c1, s2 - c2
         # A group of one class, and the rows with no entry of one class: a sum of squares equals the square of the sum over the count only there.
-        candidate = ~np.logical_or.reduceat(low != high, firsts) & (rest_n * rest_2 == rest_1 * rest_1)
+        candidate = ~mixed & (rest_n * rest_2 == rest_1 * rest_1)
         allowed = group_of(feature)[1]
         if allowed is not None:
             candidate &= allowed[shape_here]
@@ -683,12 +798,6 @@ def main():
             candidate &= np.isin(source_here[shape_here], sources)
         if not candidate.any():
             return missing
-        same = shape_of[1:] == shape_of[:-1]
-        d = low[1:] - low[:-1]
-        runs = 1 + np.add.reduceat(np.concatenate(([0], same & (d != 0))).astype(np.int64), firsts)
-        up = np.add.reduceat(np.concatenate(([0], same & (d > 0))).astype(np.int64), firsts)
-        down = np.add.reduceat(np.concatenate(([0], same & (d < 0))).astype(np.int64), firsts)
-        first_class = low[firsts]
         with np.errstate(divide='ignore', invalid='ignore'):
             default_class = np.where(rest_n > 0, rest_1 / np.maximum(rest_n, 1), first_class)
         runs = runs + (default_class != first_class)
@@ -711,16 +820,23 @@ def main():
         wanted_value = np.zeros(rows, dtype=np.float64)
         wanted_value[here_rows] = [numbers[here] for here in here_rows.tolist()]
         here_rows.sort()
-        entries = entries_on(here_rows)
-        if not len(entries):
-            return '', ''
-        wanted_here = wanted_value[row[entries]]
         zero_rows = int((wanted_value[here_rows] == 0).sum())
-        on_zero = np.bincount(shape[entries], weights=(wanted_here == 0).astype(np.float64), minlength=len(unique_ids))
-        agree = np.bincount(shape[entries], weights=(np.abs(val[entries] - wanted_here) < 1e-3).astype(np.float64), minlength=len(unique_ids)) + zero_rows - on_zero
-        if set(numbers.values()) <= {0.0, 1.0}:
-            flag = np.bincount(shape[entries], weights=(wanted_here == 1).astype(np.float64), minlength=len(unique_ids)) + zero_rows - on_zero
-            agree = np.maximum(agree, flag)
+        flags = set(numbers.values()) <= {0.0, 1.0}
+        any_entry = False
+        on_zero, equal, flag = (np.zeros(len(unique_ids), dtype=np.float64) for _ in range(3))
+        for entries in entry_batches(here_rows):
+            any_entry = True
+            wanted_here = wanted_value[row[entries]]
+            column = shape[entries]
+            on_zero += np.bincount(column, weights=(wanted_here == 0).astype(np.float64), minlength=len(unique_ids))
+            equal += np.bincount(column, weights=(np.abs(val[entries] - wanted_here) < 1e-3).astype(np.float64), minlength=len(unique_ids))
+            if flags:
+                flag += np.bincount(column, weights=(wanted_here == 1).astype(np.float64), minlength=len(unique_ids))
+        if not any_entry:
+            return '', ''
+        agree = equal + zero_rows - on_zero
+        if flags:
+            agree = np.maximum(agree, flag + zero_rows - on_zero)
         allowed = group_of(feature)[1]
         if allowed is not None:
             mask = np.zeros(len(unique_ids), dtype=bool)
