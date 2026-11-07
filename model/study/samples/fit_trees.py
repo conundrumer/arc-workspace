@@ -25,6 +25,10 @@ The point files must all carry the same header fields that define the features. 
 files are equal where both build a task, so that files of those wheels go in one fit. The report's `wheel` is then the sorted list of the wheels of the files. A fit with
 --wheels-alike needs --wheels-alike-check, the JSON files of run/points_alike.py that show the equality: each with no differing task, and together naming every wheel of
 --wheels-alike. The report's `wheels_alike` holds those files.
+
+With --shapes N (default 900; 0 leaves them out), the point files' `shapes` records (one per table: hashes and least, mean, most of its shapes) and `tok_tables` records (one per sample: the tables of each
+token) add columns after the others: for chosen shapes, the rank and the median-difference form of a point's table tokens' values (shape_rel.py, which holds the choice and the column fill and which
+serving calls too). The choice reads the train files alone; the model's `uses` hold the column names, and `<out>.shapes.json` holds the chosen shapes. Files with no such records add no column.
 """
 import argparse
 import base64
@@ -40,7 +44,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -48,6 +52,7 @@ import lightgbm as lgb
 import numpy as np
 import zstandard
 
+import shape_rel as SR
 from split import OUT_OF_SCOPE, is_held_out, out_of_scope
 
 HELD_FOLDERS = ('points_held-out', 'points_held')  # the folder name, and the one that earlier runs wrote
@@ -244,6 +249,7 @@ class Layout:
     vector_id_cols: Ints | None = None  # with vectors: the columns that the rows of `vo` give
     keep: Ints | None = None  # with vectors and --drop-prefixes: the columns of the whole vector that the matrix keeps, in order; vector_*_cols are columns of the whole vector
     width: int = 0  # with keep: the whole vector's width
+    shapes: SR.Spec | None = None  # --shapes: the shape columns, which are the last columns of `names`
 
 
 DROP_KINDS: frozenset[str] = frozenset()  # --drop-point-kinds: the point kinds (a point's `kind`, such as KIND) that the fit and the evaluation leave out
@@ -278,7 +284,8 @@ def layout_of(fields: dict[str, Any]) -> Layout:
     if sorted(names) != sorted(parts):
         raise FitError('the header\'s uses are not the option, table and point names')
     at = {n: i for i, n in enumerate(names)}
-    return Layout(names, *(np.array([at[n] for n in fields[k]], np.int64) for k in ('option_names', 'table_names', 'point_names')))
+    option, table, point = (np.array([at[n] for n in fields[k]], np.int64) for k in ('option_names', 'table_names', 'point_names'))
+    return Layout(names, option, table, point)
 
 
 def alike_checks(args: argparse.Namespace) -> list[dict]:
@@ -334,15 +341,18 @@ class Kept:
     vo: Floats | None = None
     drawn: Floats | None = None  # (size,) float32 where the point lists drawn counts
     weight: float | None = None  # the point's `weight`, where it has one: the share of a state's targets that a kind point stands for (points_write.write_kind_point)
+    shape_at: Ints | None = None  # with shapes: the index in the point's ids of each table token (an id with an entry in its sample's `tok_tables`); None where the file has no `tok_tables` for the sample
+    shape_tables: list | None = None  # with shape_at: each table token's shape record (hashes, values, stopped), combined over its tables (shape_rel.combine)
 
 
 def choice_key(seed: int, sample: str, position: int) -> int:
     return int.from_bytes(hashlib.sha256(f'{seed}:{sample}:{position}'.encode()).digest()[:8], 'big')
 
 
-def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept], dict[int, Floats], Counter[str]]:
+def kept_of(path: Path, head: dict, per_task: int, seed: int, shapes: bool = False) -> tuple[list[Kept], dict[int, Floats], Counter[str]]:
     """The kept points of one file in file order, the table vectors by index, and the counts. Points with fewer than two ids or with no positive id are counted and left out. With per_task > 0 the
-    points with the smallest hash keys are kept."""
+    points with the smallest hash keys are kept. With shapes, the file's `shapes` records (one per table: its shapes' hashes and values) and `tok_tables` records (one per sample: the tables of each of
+    its tokens) give each kept point its table tokens' records (Kept.shape_at, Kept.shape_tables), wherever the records stand in the file."""
     n_option, n_table, n_point = len(head['option_names']), len(head['table_names']), len(head['point_names'])
     is_vector = head.get('vector_names') is not None
     n_vp = len(head.get('vector_point_cols') or [])
@@ -351,6 +361,9 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
     kept: list[tuple[int, int, Kept]] = []  # a heap of (-key, position, point) where per_task > 0
     count: Counter[str] = Counter()
     table_at = None
+    shape_of: dict[str, tuple] = {}  # table hash -> (hashes, values, stopped)
+    token_tables: dict[str, dict] = {}  # sample -> {token: [table hash, ...]}
+    ids_of: dict[int, tuple[str, Ints]] = {}  # file position -> (sample, ids) of the points that may be kept, where shapes
     if TABLE_CHOICE or TABLE_RANKER:
         if not is_vector:
             raise FitError(f'{path}: --table-choice and --table-ranker read the vector column tokg:table, and the file holds no vectors')
@@ -363,6 +376,13 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
             if vector.shape != (n_table,):
                 raise FitError(f'{path}: table {rec["i"]} has {vector.shape} values; the header names {n_table}')
             tables[int(rec['i'])] = vector
+        elif kind == 'shapes' and shapes:
+            try:
+                shape_of[rec['table']] = SR.decode(rec['h'], rec['v'], rec.get('stopped', False))
+            except ValueError as e:
+                raise FitError(f'{path}: the shapes record of table {rec["table"]}: {e}') from e
+        elif kind == 'tok_tables' and shapes:
+            token_tables[rec['sample']] = rec['map']
         elif kind == 'point':
             count['points'] += 1
             n = len(rec['ids'])
@@ -399,6 +419,7 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
                 if missing:
                     raise FitError(f'{path}: the point at record {position} uses tables {sorted(missing)[:5]} that no record defines')
             positive = np.array(rec['positive'], np.int64)
+            ids = np.array(rec['ids'], np.int64) if shapes else None
             vo = None
             if TABLE_RANKER and is_vector:
                 vo = np.frombuffer(vo_bytes, '<f4').astype(np.float32).reshape(n, n_vo)
@@ -413,6 +434,7 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
                 at = {int(j): k for k, j in enumerate(sel)}
                 positive = np.array(sorted(at[int(i)] for i in positive if int(i) in at), np.int64)
                 vo, n = vo[sel], len(sel)
+                ids = ids[sel] if ids is not None else None
                 drawn = drawn[sel] if drawn is not None else None
             key = choice_key(seed, rec['sample'], position)
             if per_task > 0 and len(kept) >= per_task and -kept[0][0] <= key:
@@ -427,6 +449,8 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
                            np.array(rec['point'], np.float32), np.array(rec['positive'], np.int64), n, drawn=drawn)
             if 'weight' in rec:
                 got.weight = float(rec['weight'])
+            if ids is not None:
+                ids_of[position] = (rec['sample'], ids)
             if per_task > 0 and len(kept) >= per_task:
                 heapq.heapreplace(kept, (-key, position, got))
             elif per_task > 0:
@@ -435,11 +459,55 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
                 kept.append((-key, position, got))
     count['points kept'] = len(kept)
     kept.sort(key=lambda k: k[1])
+    if shapes and token_tables:
+        combined: dict[tuple, tuple] = {}  # a token's tables -> its combined record (a table that is stopped makes it stopped: NaN in every shape)
+        for _, position, got in kept:
+            sample, ids = ids_of[position]
+            by_token = token_tables.get(sample)
+            if by_token is None:
+                continue
+            at, recs = [], []
+            for i, tok in enumerate(ids.tolist()):
+                tabs = by_token.get(str(tok))
+                if tabs is None:
+                    continue
+                key = tuple(tabs)
+                if key not in combined:
+                    missing = [t for t in key if t not in shape_of]
+                    if missing:
+                        raise FitError(f'{path}: sample {sample} token {tok} has tables {missing[:3]} that no shapes record gives')
+                    combined[key] = SR.combine(shape_of[t] for t in key)
+                at.append(i)
+                recs.append(combined[key])
+            got.shape_at, got.shape_tables = np.array(at, np.int64), recs
     return [k for _, _, k in kept], tables, count
+
+
+_SHAPE_LAST: list = [None, None, None]  # the point, the spec and the matrix of the last shape_matrix; rows are read point by point, so a point's matrix is made once
+
+
+def shape_matrix(k: Kept, spec: SR.Spec) -> Floats:
+    """The shape columns of the point k's table tokens (SR.columns)."""
+    if _SHAPE_LAST[0] is not k or _SHAPE_LAST[1] is not spec:
+        _SHAPE_LAST[:] = [k, spec, SR.columns(k.shape_tables or [], spec)]
+    return _SHAPE_LAST[2]
+
+
+def fill_shapes(out: Floats, k: Kept, spec: SR.Spec, lo: int, hi: int) -> None:
+    """Write the shape columns of rows lo to hi of the point k into out: NaN on ids that are not table tokens, and on every id where the point has fewer than 2 table tokens."""
+    out[:] = np.nan
+    if k.shape_at is None or len(k.shape_at) < 2:
+        return
+    sel = (k.shape_at >= lo) & (k.shape_at < hi)
+    out[k.shape_at[sel] - lo] = shape_matrix(k, spec)[sel]
 
 
 def fill_rows(out: Floats, k: Kept, tables: dict[int, Floats], layout: Layout, lo: int, hi: int) -> None:
     """Write rows lo to hi of the point k into out, which has hi - lo rows."""
+    if layout.shapes is not None:
+        base = len(layout.names) - len(layout.shapes.names)
+        fill_shapes(out[:, base:], k, layout.shapes, lo, hi)
+        out = out[:, :base]
     if layout.vector_id_cols is not None and layout.vector_point_cols is not None and k.vo is not None and k.vp is not None:
         if layout.keep is not None:  # --drop-prefixes: the whole vector, then the kept columns
             whole = np.empty((hi - lo, layout.width), out.dtype)
@@ -492,7 +560,7 @@ def joined_drawn(pieces: list[Groups]) -> Floats | None:
 
 def read_file(path: Path, head: dict, layout: Layout, per_task: int, seed: int) -> tuple[Dense, Counter[str]]:
     """The groups of one file, with their rows in one matrix."""
-    kept, tables, count = kept_of(path, head, per_task, seed)
+    kept, tables, count = kept_of(path, head, per_task, seed, layout.shapes is not None)
     positive, sizes, drawn = positive_of(kept)
     matrix = np.empty((len(positive), len(layout.names)), np.float32)
     at = 0
@@ -541,7 +609,7 @@ class PointReader:
     def points(self, path: Path, head: dict) -> tuple[list[Kept], dict[int, Floats]]:
         if self.held is None or self.held[0] != path:
             self.held = None  # free the points of the last file before the next file is read
-            kept, tables, _ = kept_of(path, head, self.per_task, self.seed)
+            kept, tables, _ = kept_of(path, head, self.per_task, self.seed, self.layout.shapes is not None)
             self.held = (path, kept, tables)
         return self.held[1], self.held[2]
 
@@ -591,8 +659,9 @@ class SequenceDataset(lgb.Dataset):
         return params | {k: v for k, v in (self.params or {}).items() if k in ('seed', 'min_data_in_leaf')}
 
 
-def plan_rows(paths: list[Path], heads: dict[str, dict], layout: Layout, per_task: int, seed: int) -> tuple[Groups, list[PointRows], PointReader, Counter[str]]:
-    """The groups of the files without their rows, and one PointRows per file that keeps a point. This pass reads each file to choose its points; the rows are read again later."""
+def plan_rows(paths: list[Path], heads: dict[str, dict], layout: Layout, per_task: int, seed: int, counts: SR.ShapeCounts | None = None) -> tuple[Groups, list[PointRows], PointReader, Counter[str]]:
+    """The groups of the files without their rows, and one PointRows per file that keeps a point. This pass reads each file to choose its points; the rows are read again later. With counts, the
+    table tokens' shape records of the kept points are added to it."""
     reader = PointReader(layout, per_task, seed)
     count: Counter[str] = Counter()
     rows: list[PointRows] = []
@@ -602,8 +671,10 @@ def plan_rows(paths: list[Path], heads: dict[str, dict], layout: Layout, per_tas
     tasks: list[str] = []
     for p in paths:
         head = heads[points_stem(p)]
-        kept, _, c = kept_of(p, head, per_task, seed)
+        kept, _, c = kept_of(p, head, per_task, seed, counts is not None)
         count += c
+        if counts is not None:
+            counts.add_file(k.shape_tables for k in kept if k.shape_tables is not None)
         if not kept:
             continue
         positive, size, file_drawn = positive_of(kept)
@@ -623,6 +694,38 @@ def booster_names(names: list[str]) -> list[str]:
     if len(set(safe)) != len(safe):
         raise FitError('two feature names are equal once their special characters are replaced')
     return safe
+
+
+# ---------------------------------------------------------------- the shape columns
+
+def with_shapes(layout: Layout, spec: SR.Spec) -> Layout:
+    """The layout with the spec's columns after the others."""
+    return replace(layout, names=[*layout.names, *spec.names], shapes=spec)
+
+
+def merge_shapes(spec: SR.Spec, files: list[Path], heads: dict[str, dict], layout: Layout, per_task: int, seed: int) -> tuple[SR.Spec | None, dict[str, str]]:
+    """One pass over the training files: the spec without the columns that equal an earlier column on every kept training point with 2 or more table tokens, and the dropped names with the
+    names that stand for them."""
+    hashed = SR.ColumnHash(len(spec.names))
+    for p in files:
+        kept, _, _ = kept_of(p, heads[points_stem(p)], per_task, seed, True)
+        for k in kept:
+            if k.shape_tables is not None and len(k.shape_tables) >= 2:
+                hashed.add(SR.columns(k.shape_tables, spec))
+    return hashed.merged(spec) if hashed.rows else (spec, {})
+
+
+def shape_sidecar(spec: SR.Spec, merged: dict[str, str], info: dict, encoder_commit: str | None) -> dict[str, Any]:
+    """The kept shapes with their text (arclog.shape_text where arclog imports, else None), their columns, the columns merged into others, and the commit of the encoder."""
+    try:
+        from arclog import shape_text  # type: ignore[import-not-found]
+    except ImportError:
+        shape_text = None
+    by_hash: dict[str, list[str]] = {}
+    for n in spec.names:
+        by_hash.setdefault(SR.NAME.fullmatch(n).group(2), []).append(n)  # type: ignore[union-attr]
+    shapes = [dict(hash=h, text=shape_text(int(h, 16)) if shape_text else None, columns=cols) for h, cols in by_hash.items()]
+    return dict(encoder_commit=encoder_commit, selection=info, shapes=shapes, merged_into=merged)
 
 
 # ---------------------------------------------------------------- the check
@@ -710,9 +813,27 @@ def fit(args: argparse.Namespace) -> int:
     fields = feature_fields([heads[points_stem(p)] for p in (*train_files, *dev_files)], frozenset(filter(None, args.wheels_alike.split(','))))
     plan = plan_of([heads[points_stem(p)] for p in (*train_files, *dev_files)])
     layout = layout_of(fields)
+    counts = SR.ShapeCounts() if args.shapes > 0 else None
+    train, train_rows, reader, train_count = plan_rows(train_files, heads, layout, args.points_per_task, args.seed, counts)
+    shapes_report: dict[str, Any] | None = None
+    sidecar: dict[str, Any] = {}
+    if counts is not None:
+        spec, info = SR.kept_spec(counts, args.shapes)
+        merged: dict[str, str] = {}
+        if spec is not None:
+            before = len(spec.names)
+            spec, merged = merge_shapes(spec, train_files, heads, layout, args.points_per_task, args.seed)
+            assert spec is not None
+            layout = with_shapes(layout, spec)
+            reader.layout = layout
+            train.columns = len(layout.names)
+            info |= dict(columns_before_merge=before, columns=len(spec.names))
+            commits = {heads[points_stem(p)].get('encoder_commit') for p in train_files}
+            shapes_report = dict(info, sidecar=str(args.out) + '.shapes.json')
+            sidecar = shape_sidecar(spec, merged, info, commits.pop() if len(commits) == 1 else None)
+        print(f'shapes: {info}', flush=True)
     names = layout.names
     safe = booster_names(names)
-    train, train_rows, reader, train_count = plan_rows(train_files, heads, layout, args.points_per_task, args.seed)
     dev, dev_count = load(dev_files, heads, layout, args.points_per_task, args.seed)
     sizes = dict(train=train.describe(), dev=dev.describe())
     for split, d in sizes.items():
@@ -744,6 +865,8 @@ def fit(args: argparse.Namespace) -> int:
     out: Path = args.out
     out.parent.mkdir(parents=True, exist_ok=True)
     booster.save_model(str(out), num_iteration=best)
+    if shapes_report is not None:
+        Path(str(out) + '.shapes.json').write_text(json.dumps(sidecar, indent=1))
     scores = booster.predict(dev.matrix, num_iteration=best, raw_score=True)
     got, base = evaluate(np.asarray(scores), dev), uniform_baseline(dev)
     print(f'dev, trees:   mean loss {got["mean_loss"]:.6f}  top-scored id is positive {got["top_is_positive"]:.4f}  ({got["points"]} points)')
@@ -753,7 +876,7 @@ def fit(args: argparse.Namespace) -> int:
         early_stopping_rounds=args.early_stopping, max_rounds=args.rounds, dev_loss_by_round=reporter.curve, dev=got, dev_uniform=base,
         points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=[str(f) for f in args.points], matrix=sizes,
         points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=sorted(set(dev.tasks)),
-        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), wheels_alike=alike, out_of_scope=dict(file=str(OUT_OF_SCOPE), tasks=out_of_scope()), peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
+        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), wheels_alike=alike, out_of_scope=dict(file=str(OUT_OF_SCOPE), tasks=out_of_scope()), shapes=shapes_report, peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
     Path(str(out) + '.json').write_text(json.dumps(report, indent=1))
     print(f'wrote {out} and {out}.json; peak RSS {peak_rss_mib():.0f} MiB')
     return 0
@@ -767,6 +890,10 @@ def score(args: argparse.Namespace) -> int:
         dev_files = [p for p in dev_files if points_stem(p) in want]
     fields = feature_fields([heads[points_stem(p)] for p in dev_files], frozenset(filter(None, args.wheels_alike.split(','))))
     layout = layout_of(fields)
+    meta = Path(str(args.score) + '.json')
+    spec = SR.Spec.of_names(json.loads(meta.read_text())['features']['uses']) if meta.exists() else None  # a model with shape columns reads them from its own names
+    if spec is not None:
+        layout = with_shapes(layout, spec)
     dev, _ = load(dev_files, heads, layout, args.points_per_task, args.seed)
     booster = lgb.Booster(model_file=str(args.score))
     got, base = evaluate(np.asarray(booster.predict(dev.matrix, raw_score=True)), dev), uniform_baseline(dev)
@@ -795,6 +922,7 @@ def main() -> int:
     ap.add_argument('--alpha', type=float, default=0.0, help='the train loss weighs each id in the softmax denominator by 1 + alpha * drawn (0: no weight)')
     ap.add_argument('--wheels-alike', default='', help='W,W: engine wheels whose point files go in one fit (header wheel, such as site-exp61,site-exp62)')
     ap.add_argument('--wheels-alike-check', nargs='+', default=[], help='with --wheels-alike: the JSON files of run/points_alike.py that show the wheels give equal points')
+    ap.add_argument('--shapes', type=int, default=900, help='the column budget of the shape columns (the points files\' `shapes` and `tok_tables` records; shape_rel.py): the shapes most often unequal across a training point\'s table tokens, 6 columns each, 2 for a stable shape (0: none)')
     ap.add_argument('--rounds', type=int, default=2000)
     ap.add_argument('--early-stopping', type=int, default=50, help='stop after this many rounds without a better dev loss')
     ap.add_argument('--log-every', type=int, default=50)
