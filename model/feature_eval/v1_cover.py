@@ -43,6 +43,8 @@ A store's `contingent` holds about as many entries as its lists, and one group o
 
 `--why PATTERN` judges nothing. For each feature whose name the pattern finds, it prints its nearest single column, the feature's values at each of that column's values, and the first table rows where the two part, by task, item, candidate, ARC example and table.
 
+`--left-out FILE` names tables by task and name, tab-separated, whose table rows stand out of the judging: the spec gives such a table no value where the first version gives one, as on a table with a cell off its frame.
+
 A run over many tasks holds too much to sort every entry. `--ids-out FILE` reads every list and writes one column of each set of columns with one source and equal entries, holding only a sum per column, and judges nothing. `--keep-ids FILE` then reads only those columns.
 
 A missing feature also has `equal share`, the most table rows on which one column equals it, with a table row of no entry at 0, and `equal`, that column's name. A feature of two values holding 0 and 1 reads a column as holding where it has an entry that is not 0, so a count can stand for a flag. One odd table keeps a whole column from `covered`, so these say how near it stands.
@@ -136,6 +138,7 @@ def collect(at, name, types_of, tables, form, out, row, coordinates, coordinate_
     `one_binding`, a feature that names a column stands only where its table has one column of that type."""
     own = types_of.get(name, {})
     of_type = collections.Counter(own.values())
+    group_columns = [token for token, ty in own.items() if ty in ('Ident', 'Color') or token.startswith('key.')]
     place_of = {}
     pooled = {}
     words = {}
@@ -145,6 +148,9 @@ def collect(at, name, types_of, tables, form, out, row, coordinates, coordinate_
             place_of[feature[:-len(' describe')]] = place if place in ('parent', 'ancestor') else 'table'
     for feature, value in at.items():
         if value is None or feature.endswith(' describe'):
+            continue
+        # A table whose one group column is the column of the cells gives each cell a group of its own. No part takes a column as its own key.
+        if 'of its Ident, Color and key columns' in feature and len(group_columns) == 1 and group_columns[0] in feature:
             continue
         if form == 'place':
             out[feature][row] = value
@@ -198,6 +204,7 @@ def main():
     parser.add_argument('--why')
     parser.add_argument('--contingent', action='store_true')
     parser.add_argument('--ids-out')
+    parser.add_argument('--left-out')
     parser.add_argument('--keep-ids')
     parser.add_argument('--tasks', type=int)
     parser.add_argument('--procs', type=int, default=3)
@@ -250,6 +257,11 @@ def main():
     row_info = []
 
     keep_ids = np.load(args.keep_ids) if args.keep_ids else None
+    left_out = set()
+    if args.left_out:
+        with open(args.left_out) as lines:
+            left_out = {tuple(line.split('\t')[:2]) for line in lines}
+    left_out_rows = [0]
     seen_ids, seen_sums = [], []
 
     def take(row, ids, values):
@@ -345,6 +357,9 @@ def main():
                 table_at = pair.get(name)
                 if table_at is None:
                     continue
+                if (task, name) in left_out:
+                    left_out_rows[0] += 1
+                    continue
                 # A table at another assignment than its list's reads other rows, so it says nothing of its list's columns.
                 if table_at.get('rows') not in (None, head['train_rows'][place][at]):
                     other_assignment[0] += 1
@@ -387,6 +402,7 @@ def main():
                         own_types.update({key: {token: ty for token, ty in columns} for key, columns in held['columns'].items()})
                         add_rows([by_table(pair) for pair in held['pairs']], name, mutant['table'], candidate_of[(task, item_at, j)], own_types, f'{item_at}/{j}/query')
     del extras, each_rows
+    print(f'table rows left out by name {left_out_rows[0]}', flush=True)
     if args.ids_out:
         sum_entries()
         ids = np.concatenate(seen_ids)
