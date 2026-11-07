@@ -24,9 +24,12 @@
 //!   engine's evaluator.
 //! - [`native`]: the operators over materialized rows, a faster evaluation of
 //!   what those forms compute.
+//! - [`boxes`]: the rows of `inside`, as the boxes they come from, written out where an
+//!   operator reads a cell.
 pub mod atom_lists;
 pub mod body_features;
 pub mod bounds;
+pub mod boxes;
 pub mod candidate_lists;
 pub mod catalog;
 mod catalog_boxes;
