@@ -860,8 +860,8 @@ def fit(args: argparse.Namespace) -> int:
               f'{d["bytes_per_row"]} bytes per row with its positive mark, {d["ids_per_group"]} ids and {d["positives_per_group"]} positives per point, {d["tasks"]} tasks', flush=True)
     print(f'loaded in {time.time() - t0:.1f} s; points left out: train {dict(train_count)} dev {dict(dev_count)}', flush=True)
 
-    params: dict[str, Any] = dict(num_leaves=args.num_leaves, learning_rate=args.learning_rate, min_data_in_leaf=args.min_data_in_leaf, feature_fraction=args.feature_fraction,
-                                  seed=args.seed, num_threads=args.threads, verbosity=-1, metric='None')
+    params: dict[str, Any] = dict(num_leaves=args.num_leaves, learning_rate=args.learning_rate, min_data_in_leaf=args.min_data_in_leaf, min_sum_hessian_in_leaf=args.min_sum_hessian,
+                                  feature_fraction=args.feature_fraction, seed=args.seed, num_threads=args.threads, verbosity=-1, metric='None')
     if args.alpha and (train.drawn is None or not train.drawn.any()):
         print(f'--alpha {args.alpha}: the train points have no drawn count, so the loss has no weight', flush=True)
     train_objective = objective_of(train, args.alpha, args.task_weights)
@@ -957,6 +957,7 @@ def main() -> int:
     ap.add_argument('--num-leaves', type=int, default=63)
     ap.add_argument('--learning-rate', type=float, default=0.05)
     ap.add_argument('--min-data-in-leaf', type=int, default=100)
+    ap.add_argument('--min-sum-hessian', type=float, default=1e-3, help="LightGBM's min_sum_hessian_in_leaf: the least sum of hessians in a leaf (LightGBM's default 1e-3)")
     ap.add_argument('--feature-fraction', type=float, default=0.8)
     ap.add_argument('--threads', type=int, default=int(os.environ.get('ARC_HEAVY_CPUS', '1')))
     args = ap.parse_args()
