@@ -636,6 +636,23 @@ class Sampler:
         return search.configure(self, directory, **options)
 
 
+def tok_graph_add(pg, place, rels, toks, kind):
+    """Adds the form at  of a scope to pg.tok_graph, {relation token: (form place, depth, form places of its ancestors, kind number, port number)}, and to pg.tok_readers, {relation token: the forms that read it}. The dicts are replaced, so a fork or a snapshot keeps its own."""
+    graph, readers = dict(pg.__dict__.get('tok_graph', {})), dict(pg.__dict__.get('tok_readers', {}))
+    reads = {int(t) for t in toks if int(t) in graph}
+    places, depth = set(), 0
+    for t in reads:
+        at, d, above = graph[t][:3]
+        places |= above | {at}
+        depth = max(depth, d + 1)
+        readers[t] = readers.get(t, 0) + 1
+    places = frozenset(places)
+    code = {'RULE': 0, 'DET': 1, 'INIT': 2, 'RIGID_DET': 3, 'CHOOSE': 4}.get(kind, 5)
+    for port, t in enumerate(rels):
+        graph[int(t)] = place, depth, places, code, port
+    pg.tok_graph, pg.tok_readers = graph, readers
+
+
 class Run:
     """One task's draws."""
 
@@ -811,6 +828,7 @@ class Run:
                         made[i] += rels
                         at = M.slot_no(self.V.name(rels[0]))
                         pg.names = pg.names | {self.V.name(x): '&r%d.%d' % (at, j) if kind in ('INIT', 'RIGID_DET') else self.V.name(x) for j, x in enumerate(rels)}
+                tok_graph_add(pg, i, made[i], toks, kind)
                 pg.toks = pg.toks + toks
                 pg.kinds = pg.kinds + [kind]
                 dec = f
@@ -912,6 +930,7 @@ class Run:
                 by.setdefault(r.slot, []).append(r)
                 index.setdefault(r.slot, []).append(j)
         pg.tables, pg.indexes = by, index
+        pg.tok_rows = pg.__dict__.get('tok_rows', {}) | by  # the writer's tok block: a table slot -> its AssignmentSummaries, for the tables of every query so far
         pg.queries = pg.queries | {r.slot: r.table[0] for rs in by.values() for r in rs if isinstance(r.table, tuple) and not r.table[1]}
         if S.STEER_DERIVED:
             pg.rel_tabs = pg.rel_tabs | {s: S.RelTable(rs) for s, rs in by.items()}

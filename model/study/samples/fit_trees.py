@@ -29,6 +29,7 @@ files are equal where both build a task, so that files of those wheels go in one
 import argparse
 import base64
 import gzip
+import io
 import hashlib
 import heapq
 import json
@@ -45,6 +46,7 @@ from typing import Any, Callable, Iterator
 
 import lightgbm as lgb
 import numpy as np
+import zstandard
 
 from split import OUT_OF_SCOPE, is_held_out, out_of_scope
 
@@ -55,6 +57,19 @@ SPECIAL = re.compile(r'[\s",:\[\]{}]')  # the characters that LightGBM refuses i
 type Floats = np.ndarray
 type Ints = np.ndarray
 
+
+
+
+def points_stem(path):
+    """The task of a points file, written as streamable zstd or, for an older file, gzip."""
+    return path.name.split('.jsonl')[0]
+
+
+def open_points(path):
+    """The lines of a points file, in either form."""
+    if path.suffix == '.zst':
+        return io.TextIOWrapper(zstandard.ZstdDecompressor().stream_reader(open(path, 'rb'), read_across_frames=True), encoding='utf-8')
+    return gzip.open(path, 'rt')
 
 class FitError(Exception):
     """A point file or an argument that the fit refuses; the message is the reason."""
@@ -155,7 +170,7 @@ def uniform_baseline(groups: Groups) -> dict[str, float]:
 # ---------------------------------------------------------------- reading point files
 
 def records_of(path: Path) -> Iterator[dict]:
-    with gzip.open(path, 'rt') as f:
+    with open_points(path) as f:
         for text in f:
             yield json.loads(text)
 
@@ -167,7 +182,7 @@ def header_of(path: Path) -> dict:
         raise FitError(f'{path}: unreadable: {e}') from e
     if not first or first.get('record') != 'header':
         raise FitError(f'{path}: the first record is not a header')
-    if path.name != f'{first["task"]}.jsonl.gz':
+    if points_stem(path) != first['task']:
         raise FitError(f'{path}: the header names task {first["task"]}')
     return first
 
@@ -184,15 +199,15 @@ def split_files(folders: list[Path], dev_tasks: set[str]) -> tuple[list[Path], l
     """(train files, dev files, the header of each task) of the folders, by the split in each header; --dev-tasks moves tasks to dev. A header split other than train or dev is an error.
     A task of split.out_of_scope() is left out."""
     skip = out_of_scope()
-    paths = sorted((p for folder in folders for p in point_folder(folder).glob('*.jsonl.gz') if p.name.removesuffix('.jsonl.gz') not in skip), key=lambda p: p.name)
-    heads = {p.name.removesuffix('.jsonl.gz'): header_of(p) for p in paths}
+    paths = sorted((p for folder in folders for p in point_folder(folder).glob('*.jsonl.*') if points_stem(p) not in skip), key=lambda p: p.name)
+    heads = {points_stem(p): header_of(p) for p in paths}
     unknown = dev_tasks - heads.keys()
     if unknown:
         raise FitError(f'--dev-tasks names tasks with no file in {folder}: {sorted(unknown)}')
     train: list[Path] = []
     dev: list[Path] = []
     for p in paths:
-        task = p.name.removesuffix('.jsonl.gz')
+        task = points_stem(p)
         split = heads[task]['split']
         if is_held_out(split):
             raise FitError(f'{p}: the header split is {split!r}; a fit never reads a held-out file')
@@ -409,7 +424,7 @@ def load(paths: list[Path], heads: dict[str, dict], layout: Layout, per_task: in
     pieces: list[Dense] = []
     count: Counter[str] = Counter()
     for p in paths:
-        piece, c = read_file(p, heads[p.name.removesuffix('.jsonl.gz')], layout, per_task, seed)
+        piece, c = read_file(p, heads[points_stem(p)], layout, per_task, seed)
         count += c
         if len(piece.sizes):
             pieces.append(piece)
@@ -502,7 +517,7 @@ def plan_rows(paths: list[Path], heads: dict[str, dict], layout: Layout, per_tas
     drawn: list[Groups] = []  # the drawn counts of each file, as pieces for joined_drawn
     tasks: list[str] = []
     for p in paths:
-        head = heads[p.name.removesuffix('.jsonl.gz')]
+        head = heads[points_stem(p)]
         kept, _, c = kept_of(p, head, per_task, seed)
         count += c
         if not kept:
@@ -531,7 +546,7 @@ def booster_names(names: list[str]) -> list[str]:
 def check(folder: Path, seed: int, alpha: float = 0.0) -> int:
     """Compare the gradient with a central finite difference of the loss on the real group with the most positive ids among those with some, but not all, ids positive. With alpha,
     the group is the one with the most drawn count among those, if one has a drawn count, and the loss has its denominator weights."""
-    for p in sorted(point_folder(folder).glob('*.jsonl.gz')):
+    for p in sorted(point_folder(folder).glob('*.jsonl.*')):
         head = header_of(p)
         if head['split'] not in ('train', 'dev'):
             continue
@@ -608,8 +623,8 @@ def fit(args: argparse.Namespace) -> int:
     train_files, dev_files, heads = split_files(args.points, dev_tasks)
     if not train_files or not dev_files:
         raise FitError(f'{len(train_files)} train files and {len(dev_files)} dev files: the fit needs both')
-    fields = feature_fields([heads[p.name.removesuffix('.jsonl.gz')] for p in (*train_files, *dev_files)], frozenset(filter(None, args.wheels_alike.split(','))))
-    plan = plan_of([heads[p.name.removesuffix('.jsonl.gz')] for p in (*train_files, *dev_files)])
+    fields = feature_fields([heads[points_stem(p)] for p in (*train_files, *dev_files)], frozenset(filter(None, args.wheels_alike.split(','))))
+    plan = plan_of([heads[points_stem(p)] for p in (*train_files, *dev_files)])
     layout = layout_of(fields)
     names = layout.names
     safe = booster_names(names)
@@ -665,8 +680,8 @@ def score(args: argparse.Namespace) -> int:
     _, dev_files, heads = split_files(args.points, set())
     if args.score_tasks:
         want = set(args.score_tasks.split(','))
-        dev_files = [p for p in dev_files if p.name.removesuffix('.jsonl.gz') in want]
-    fields = feature_fields([heads[p.name.removesuffix('.jsonl.gz')] for p in dev_files], frozenset(filter(None, args.wheels_alike.split(','))))
+        dev_files = [p for p in dev_files if points_stem(p) in want]
+    fields = feature_fields([heads[points_stem(p)] for p in dev_files], frozenset(filter(None, args.wheels_alike.split(','))))
     layout = layout_of(fields)
     dev, _ = load(dev_files, heads, layout, args.points_per_task, args.seed)
     booster = lgb.Booster(model_file=str(args.score))

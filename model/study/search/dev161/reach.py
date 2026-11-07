@@ -31,7 +31,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = ROOT.parent.parent / 'work/lm/data-study'
+sys.path.insert(0, str(ROOT))
+from study_paths import DATA_ROOT as DATA  # noqa: E402
 GRAPH = DATA / 'gold/gold-union-exp46/graph-tables-dev.jsonl'
 OUT_OF_SCOPE = DATA / 'gold/gold-union-exp46/out-of-scope.jsonl'  # dataset-worker's list of the tasks that are out of scope, one {task, set, reason} a line
 ROWS = DATA / 'samples/dev/rows'

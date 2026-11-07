@@ -51,7 +51,8 @@ DIR is a folder searched for `draws.jsonl` files. A draw file of a task that is 
 import argparse
 import base64
 import glob
-import gzip
+import io
+import zstandard
 import hashlib
 import importlib
 import json
@@ -328,7 +329,7 @@ class Sink:
 
     def __init__(self, path: Path, header: dict):
         fd, self.tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + '.')
-        self.f = gzip.open(os.fdopen(fd, 'wb'), 'wt', compresslevel=6)
+        self.f = io.TextIOWrapper(zstandard.ZstdCompressor(level=3).stream_writer(os.fdopen(fd, 'wb')), encoding='utf-8')
         self.path = path
         self.header = header
         self.index: dict[bytes, int] = {}
@@ -356,8 +357,7 @@ class Sink:
         fd, whole = tempfile.mkstemp(dir=self.path.parent, prefix=self.path.name + '.')
         try:
             with os.fdopen(fd, 'wb') as out:
-                with gzip.open(out, 'wt', compresslevel=6) as h:
-                    h.write(json.dumps(dict(self.header, **(header_counts or {}))) + '\n')
+                out.write(zstandard.ZstdCompressor(level=3).compress((json.dumps(dict(self.header, **(header_counts or {}))) + '\n').encode()))
                 with open(self.tmp, 'rb') as body:
                     shutil.copyfileobj(body, out)
             os.replace(whole, self.path)
@@ -652,9 +652,9 @@ def chosen(samples: list[dict], k: int, seed: int) -> list[dict]:
 
 def header_of(path: Path) -> dict | None:
     try:
-        with gzip.open(path, 'rt') as f:
+        with io.TextIOWrapper(zstandard.ZstdDecompressor().stream_reader(open(path, 'rb'), read_across_frames=True), encoding='utf-8') as f:
             return json.loads(f.readline())
-    except (OSError, EOFError, ValueError):
+    except (OSError, EOFError, ValueError, zstandard.ZstdError):
         return None
 
 
@@ -671,7 +671,7 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
     samples = [s for s in samples if s['id'] in kept or frozenset(s['state']['queries']) in drawn_states]  # the K chosen, and each sample that a draw matches
     split = head['split']
     folder = out / set_name / ('points_held-out' if is_held_out(split) else 'points') / args.plan
-    path = folder / f'{task}.jsonl.gz'
+    path = folder / f'{task}.jsonl.zst'
     header = dict(record='header', schema=SCHEMA, task=task, set=set_name, plan=args.plan, split=split, skeleton_sha=file_sha(skeleton), extractor_sha=shas['extractor'], writer_sha=shas['writer'],
                   wheel=shas['wheel'], code=shas['code'], samples_per_task=args.samples_per_task, seed=args.seed, seconds=args.seconds, max_states=args.max_states,
                   uses=list(env_base['uses']), point_names=list(env_base['point_names']), option_names=[env_base['option_names'][i] for i in env_base['plain']],

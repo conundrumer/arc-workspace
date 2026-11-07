@@ -1023,7 +1023,7 @@ def _export_step(dec, tok, pg):
     f = dec.fork()
     try:
         f.step(int(tok))
-        ct = arclog.step_tables(f, *live.TABLES, True, pg.before, by_assignment=True, rows=True)
+        ct = arclog.step_tables(f, *live.TABLES, True, pg.before, by_assignment=True, rows='cand' not in VECTOR_OFF)  # the summaries and the column facts read no rows; the cand block's export does
     except Exception as e:  # noqa: BLE001 - a refused step or an unreadable result is an undefined successor
         return Successor(None, '', type(e).__name__)
     T = ct.tables
@@ -1260,9 +1260,207 @@ def _prefixed(block, *parts):
 
 
 # token: the token's class (an index of TOKEN_CLASSES) and its vocabulary id.
+TOKEN_ID_NO_TABLE = os.environ.get('WRITER_TOKEN_ID_NO_TABLE') == '1'  # token:id reads 0 for a token that names a table of the state: its id is a place in the scope's order, which no read of a DAG holds
+
+
 @vector_block('token', 'option', lambda run: ('token:class', 'token:id'))
 def _block_token(pt, ids):
-    return np.stack([token_classes(pt, ids), ids], 1).astype(np.float32)
+    named = ids
+    if TOKEN_ID_NO_TABLE:
+        graph = pt.pg.__dict__.get('tok_graph') or {}
+        named = np.array([0 if i in graph else i for i in ids.tolist()], ids.dtype)
+    return np.stack([token_classes(pt, ids), named], 1).astype(np.float32)
+
+
+# tok: the AssignmentVector of the table that a token names, over the tables of every query of the state; 0 for a token that names none, as a fit's rows read it.
+@vector_block('tok', 'option', lambda run: tuple('tok:' + n for n in AV_NAMES))
+def _block_tok(pt, ids):
+    pg, core = pt.pg, core_of(pt.run)
+    rows = pg.__dict__.get('tok_rows') or {}
+    memo = pt.run.__dict__.setdefault('tok_vectors', {})
+    if len(memo) > 20000:
+        memo.clear()
+    out = np.zeros((len(ids), len(AV_NAMES)), np.float32)
+    for k, i in enumerate(ids.tolist()):
+        if core.kind[i] == 'relation':
+            rs = rows.get(int(M.slot_no(core.names[i])))
+            if rs:
+                got = memo.get(id(rs))
+                if got is None or got[0] is not rs:
+                    got = memo[id(rs)] = rs, _av_of(rs)
+                out[k] = got[1]
+    return out
+
+
+# tokg: a table token's place in the read graph of the state and against the atoms of the query so far; 0 for a token that names none.
+TOKG_NAMES = ('table', 'read_by', 'unread', 'form_read_by', 'depth', 'ancestors', 'kind', 'port', 'used', 'form_used', 'ancestor_of_used', 'descendant_of_used', 'shares_ancestor', 'unused_reads')
+_TOKG_AT = {n: i for i, n in enumerate(TOKG_NAMES)}
+
+
+@vector_block('tokg', 'option', lambda run: tuple('tokg:' + n for n in TOKG_NAMES))
+def _block_tokg(pt, ids):
+    pg = pt.pg
+    graph, readers = pg.__dict__.get('tok_graph') or {}, pg.__dict__.get('tok_readers') or {}
+    out = np.zeros((len(ids), len(TOKG_NAMES)), np.float32)
+    if not graph:
+        return out
+    held = pg.__dict__.get('tok_form_readers')
+    if held is None or held[0] is not graph:
+        counts = collections.Counter()
+        for t, n in readers.items():
+            counts[graph[t][0]] += n
+        held = pg.tok_form_readers = graph, counts
+    form_readers = held[1]
+    atoms = pt.track.past_atoms + pt.atoms
+    used = collections.Counter()
+    for a in atoms:
+        r = a[1] if a[0] == M.NOT and len(a) > 1 else a[0]
+        if r in graph:
+            used[r] += 1
+    used_places, used_above = {graph[r][0] for r in used}, set()
+    for r in used:
+        used_above |= graph[r][2]
+    for k, i in enumerate(ids.tolist()):
+        got = graph.get(i)
+        if got is None:
+            continue
+        place, depth, above, code, port = got
+        read = readers.get(i, 0)
+        row = out[k]
+        row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7] = 1, read, read == 0, form_readers.get(place, 0), depth, len(above), code, port
+        row[8], row[9], row[10], row[11], row[12] = used.get(i, 0), place in used_places, place in used_above, bool(above & used_places), bool(above & used_above or above & used_places)
+        row[13] = len(above) - len(above & used_above)
+    return out
+
+
+# ctx: where the writer stands in the query, beyond place: the open atom's relation and its columns so far, the token before, the INIT's component and the labels at hand. tokc: what each token is against that:
+# a column token's type in the open atom, a relation token's columns against the labels' types, a label token's reads. They read the query's canonical path and the decoder's types, and no table.
+_TYPES = ('Position', 'Color', 'Ident', 'Number', 'Nat', 'Int', 'Box', 'Dir', 'Dir8', 'DiagDir', 'Axis', 'Axis4', 'DiagAxis', 'Offset', 'D4', 'C4', 'Sense', 'Sym', 'Pose', 'Example', 'Bool')
+_TYPE_AT = {t: i + 1 for i, t in enumerate(_TYPES)}
+_KIND_AT = {k: i + 1 for i, k in enumerate(('relation', 'column', 'label', 'proposer', 'lib relation', 'relation macro', 'control', 'component', 'fact relation'))}
+_LABEL_TYPES = ('Position', 'Color', 'Ident', 'Number', 'Box', 'Dir')
+CTX_NAMES = ('open_rel', 'open_table', 'open_taken', 'open_arity', 'last_tok', 'last_kind', 'component', 'decision', 'inkey', 'round', 'labels', 'labels_unread') + tuple('labels_' + t for t in _LABEL_TYPES) + ('col', 'col_type', 'col_labels')
+TOKC_NAMES = ('col_type', 'col_labels', 'rel_arity', 'rel_match', 'rel_new', 'label_reads', 'label_type', 'label_rank', 'rel_used')
+
+
+def _rel_types(pt, core, tok):
+    """The types of the columns of relation token tok, with no parameters."""
+    if core.kind[tok] == 'relation':
+        ts = pt.pg.decl_types.get(M.slot_no(core.names[tok]))
+    else:
+        ts = core.regtypes.get(core.names[tok])
+    return tuple(str(t).split('(')[0] for t in ts) if ts else ()
+
+
+def _column_type(pt, core, rtok, pos, ids=None):
+    """The type of column token position pos of relation token rtok at point pt, with no parameters, '' where unknown. A table's read in a RULE leaves out the Example column that its read in a DET or an INIT has first, so a position there is one past its place in the RULE's columns, where the table has that column; the first column point of an atom shows which, by the count of columns it admits."""
+    if pos is None:
+        return ''
+    if core.kind[rtok] != 'relation':
+        ts = core.regtypes.get(core.names[rtok])
+        return str(ts[pos]).split('(')[0] if ts and 0 <= pos < len(ts) else ''
+    slot = M.slot_no(core.names[rtok])
+    rule = pt.pg.colmaps['RULE'].get(slot, {})
+    if pt.kind == 'RULE':
+        t = rule.get((pos, None))
+    else:
+        memo = pt.pg.__dict__.setdefault('col_offset', {})
+        key = (pt.kind, slot)
+        if key not in memo and not any(core.is_column[x] for x in pt.open_atom):
+            admitted = sum(core.kind[x] == 'column' for x in pt.ids_.tolist())
+            memo[key] = 1 if admitted == sum(f is None for _, f in rule) + 1 else 0
+        offset = memo.get(key, 1)
+        t = 'Example' if pos < offset else rule.get((pos - offset, None))
+    return '' if t is None else str(t).split('(')[0]
+
+
+def _labels_at(pt):
+    """(the usable labels, {type: their count}), kept on the point. A label's type is the type of the site that made it."""
+    got = pt.memo.get('ctx_labels')
+    if got is None:
+        use = pt.labels.usable(pt)
+        items = [L for L in pt.labels.items if L.tok in use]
+        counts = collections.Counter(str(L.types[0]).split('(')[0] for L in items if L.types)
+        got = pt.memo['ctx_labels'] = items, counts
+    return got
+
+
+@vector_block('ctx', 'point', lambda run: tuple('ctx:' + n for n in CTX_NAMES))
+def _block_ctx(pt, ids):
+    core, T = core_of(pt.run), pt.track
+    out = np.zeros(len(CTX_NAMES), np.float32)
+    rtok = T.rtok if pt.open_atom else None
+    if rtok is not None:
+        table = core.kind[rtok] == 'relation'
+        out[0], out[1] = -1 if table else rtok, table
+        out[2] = sum(bool(core.is_column[t]) for t in pt.open_atom)
+        out[3] = len(_rel_types(pt, core, rtok))
+    last = pt.tokens[-1]
+    out[4], out[5] = -1 if core.kind[last] == 'relation' else last, _KIND_AT.get(core.kind[last], 0)
+    if pt.kind == 'INIT' and len(pt.tokens) > 1 and core.kind[pt.tokens[1]] == 'component':
+        out[6] = pt.tokens[1]
+    out[7], out[8], out[9] = T.decision, T.inkey, T.round
+    items, counts = _labels_at(pt)
+    out[10], out[11] = len(items), sum(not L.reads for L in items)
+    for k, t in enumerate(_LABEL_TYPES):
+        out[12 + k] = counts.get(t, 0)
+    if rtok is not None and T.col is not None:
+        t = _column_type(pt, core, rtok, T.col)
+        out[18], out[19], out[20] = T.col + 1, _TYPE_AT.get(t, 0), counts.get(t, 0)
+    return out
+
+
+@vector_block('tokc', 'option', lambda run: tuple('tokc:' + n for n in TOKC_NAMES))
+def _block_tokc(pt, ids):
+    core, T = core_of(pt.run), pt.track
+    out = np.zeros((len(ids), len(TOKC_NAMES)), np.float32)
+    items, counts = _labels_at(pt)
+    rtok = T.rtok if pt.open_atom else None
+    rank = {L.tok: (len(items) - k, L) for k, L in enumerate(items)}
+    used = collections.Counter(a[1] if a[0] == M.NOT and len(a) > 1 else a[0] for a in pt.track.past_atoms + pt.atoms)
+    for k, i in enumerate(ids.tolist()):
+        kind = core.kind[i]
+        if kind == 'column':
+            if rtok is not None:
+                t = _column_type(pt, core, rtok, core.colpos.get(i))
+                out[k, 0], out[k, 1] = _TYPE_AT.get(t, 0), counts.get(t, 0)
+        elif kind in ('relation', 'lib relation', 'relation macro', 'fact relation'):
+            ts = _rel_types(pt, core, i)
+            match = sum(counts.get(t, 0) > 0 for t in ts)
+            out[k, 2], out[k, 3], out[k, 4] = len(ts), match, len(ts) - match
+            out[k, 8] = used.get(i, 0)
+        elif kind == 'label':
+            got = rank.get(i)
+            if got is not None:
+                out[k, 5], out[k, 6], out[k, 7] = len(got[1].reads), _TYPE_AT.get(str(got[1].types[0]).split('(')[0] if got[1].types else '', 0), got[0]
+    return out
+
+
+# tokm: a relation token's columns by type, and a table token's columns against the current body's and against the tables that the query's atoms name: how many share a type with its Ident sources, an Ident source and a frame (writer.match_vector). NaN where there is no body or no named table; 0 for a token that names no relation.
+_TOKM_TYPES = (('position', ('Position',)), ('color', ('Color',)), ('ident', ('Ident',)), ('number', ('Number', 'Nat', 'Int')), ('box', ('Box',)), ('dir', ('Dir', 'Dir8', 'DiagDir')))
+_TOKM_AT = {t: i for i, (_, ts) in enumerate(_TOKM_TYPES) for t in ts}
+TOKM_NAMES = tuple('n_' + n for n, _ in _TOKM_TYPES) + ('n_other', 'body_type', 'body_ident', 'body_frame', 'used_type', 'used_ident', 'used_frame', 'none')
+
+
+@vector_block('tokm', 'option', lambda run: tuple('tokm:' + n for n in TOKM_NAMES))
+def _block_tokm(pt, ids):
+    core = core_of(pt.run)
+    out = np.zeros((len(ids), len(TOKM_NAMES)), np.float32)
+    columns, targets = None, None
+    for k, i in enumerate(ids.tolist()):
+        kind = core.kind[i]
+        if kind not in ('relation', 'lib relation', 'relation macro', 'fact relation'):
+            continue
+        for t in _rel_types(pt, core, i):
+            out[k, _TOKM_AT.get(t, 6)] += 1
+        if kind == 'relation':
+            if columns is None:
+                columns = state_columns(pt.run, pt.pg) or {}
+                targets = _match_targets(pt, current_body(pt))
+            cols = columns.get(int(M.slot_no(core.names[i])))
+            if cols:
+                out[k, 7:] = match_vector(cols, *targets)
+    return out
 
 
 # cand: for each id, whether the engine gives the body after it, then point_tables.successor_vector of that successor body table (NaN where the engine gives none),
@@ -1441,7 +1639,8 @@ def _state_names(run):
 def _block_state(pt, ids):
     PT = point_tables()
     pg = pt.pg
-    held = pg.__dict__.get('state_vector')  # (pg.closed, its vector): the state changes only when a query closes, so every point of a query shares it
+    memo = pt.run.__dict__.setdefault('state_vectors', {})  # id(pg.closed) -> (pg.closed, its vector): the state changes only when a query closes, and each try forks the Program, so the Run keeps them
+    held = memo.get(id(pg.closed))
     if held is not None and held[0] is pg.closed:
         return held[1]
     got = state_tables(pt.run, pg)
@@ -1449,7 +1648,9 @@ def _block_state(pt, ids):
         ORACLE['state: queries not kept'] += 1
         return _nan(len(PT.state_names()))
     v = PT.state_vector(got[0], base_context(pt.run), got[1])
-    pg.state_vector = pg.closed, v
+    if len(memo) >= 64:
+        memo.clear()
+    memo[id(pg.closed)] = pg.closed, v
     return v
 
 

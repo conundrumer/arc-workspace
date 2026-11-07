@@ -111,12 +111,21 @@ def read_export(M: Any, ct: Any) -> list[ExportTable]:
                 rows = V[eo[e]:eo[e] + cnt * tw].reshape(cnt, tw).copy()
                 if boxcols and xcols and xo[e] >= 0:
                     boxes = np.full((cnt, len(boxcols), 2), np.nan, np.float32)
-                    for i in range(cnt):
+                    held = np.frombuffer(b''.join(bytes(x) for x in xst[e]), dtype=np.uint8) if e < len(xst) and len(xst[e]) == cnt else None
+                    if held is not None and held.size == cnt * len(xcols) and cnt:
+                        held = held.reshape(cnt, len(xcols))
+                        extents = V[xo[e]:xo[e] + cnt * len(xcols) * 2].reshape(cnt, len(xcols), 2)
                         for j, c in enumerate(xcols):
-                            st_ = xst[e][i][j] if e < len(xst) and i < len(xst[e]) and j < len(xst[e][i]) else 0
-                            if st_ == 1 and c in boxcols:
-                                k = xo[e] + (i * len(xcols) + j) * 2
-                                boxes[i, boxcols[c]] = (V[k], V[k + 1])
+                            if c in boxcols:
+                                known = held[:, j] == 1
+                                boxes[known, boxcols[c]] = extents[known, j]
+                    else:
+                        for i in range(cnt):
+                            for j, c in enumerate(xcols):
+                                st_ = xst[e][i][j] if e < len(xst) and i < len(xst[e]) and j < len(xst[e][i]) else 0
+                                if st_ == 1 and c in boxcols:
+                                    k = xo[e] + (i * len(xcols) + j) * 2
+                                    boxes[i, boxcols[c]] = (V[k], V[k + 1])
             entries.append(Entry(int(ex[e]), int(ei[e]), int(em[e]), complete, cnt, rows, boxes))
         at = At(hex_of(df[r * 16:r * 16 + 16]) if has_def[r] else None, hex_of(hs[r * 16:r * 16 + 16]) if hashed[r] else None, bool(capped[r]),
                 [float(x) for x in feats[r]], dets.get(r, []), entries, keys.get(r, []), det_queries.get(r, []))

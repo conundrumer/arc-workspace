@@ -123,7 +123,7 @@ def order_env(run):
 
 
 PLANS = ('ordered', 'unordered')
-ORDER_SECONDS = 60.0  # the `ordered` plan's time for the canonical stream of one target (order.canonical_stream)
+ORDER_SECONDS = float(os.environ.get('WRITER_ROW_ORDER_SECONDS', 60.0))  # the `ordered` plan's time for the canonical stream of one target (order.canonical_stream)
 
 
 def points_of_targets(run, forms, kind, streams, uses, prepare=None, plan=None, seconds=10.0, stats=None, max_states=20000, vectors=False, order_seconds=ORDER_SECONDS):

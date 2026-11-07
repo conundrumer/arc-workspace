@@ -12,6 +12,7 @@ import numpy as np
 import writer
 
 
+CASCADE = tuple(float(x) if i else int(x) for i, x in enumerate(os.environ['WRITER_TREE_CASCADE'].split(','))) if os.environ.get('WRITER_TREE_CASCADE') else None  # (first trees, nats): see TreeDistribution.logits
 OPTIONAL = ('matplotlib', 'graphviz', 'datatable', 'dask', 'pyarrow', 'pandas')  # lightgbm's optional imports: on the Kaggle image one of them maps CUDA libraries, which fails under the worker's address space limit
 
 
@@ -74,7 +75,14 @@ class TreeDistribution:
     def logits(self, point, ids, x):
         if len(ids) == 0:
             return np.zeros(0)
-        return np.asarray(self.booster.predict(self.rows(point, ids, x), raw_score=True, num_threads=1), np.float64).reshape(len(ids))
+        rows = self.rows(point, ids, x)
+        if CASCADE is None or len(ids) < 8 or self.booster.num_trees() <= CASCADE[0]:
+            return np.asarray(self.booster.predict(rows, raw_score=True, num_threads=1), np.float64).reshape(len(ids))
+        first, within = CASCADE  # the first trees score every id; only the ids within that many nats of the top go through the rest, and an id far below keeps its partial score
+        s = np.array(self.booster.predict(rows, raw_score=True, num_iteration=first, num_threads=1), np.float64).reshape(len(ids))
+        keep = s >= s.max() - within
+        s[keep] += np.asarray(self.booster.predict(rows[keep], raw_score=True, start_iteration=first, num_threads=1), np.float64).reshape(int(keep.sum()))
+        return s
 
 
 def load(model_file, uses_file=None, name='tree'):
