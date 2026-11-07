@@ -40,6 +40,7 @@ mod catalog_orient;
 mod catalog_pairs;
 pub mod catalog_run;
 pub mod catalog_vector;
+pub mod cell_sets;
 pub mod closed;
 pub mod encoder;
 pub mod enumerate;
