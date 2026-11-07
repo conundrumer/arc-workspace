@@ -15,6 +15,13 @@ use crate::terms::TermId;
 /// A row: a fixed-arity array of term ids, with no type tag.
 pub type Row = Box<[TermId]>;
 
+/// The order of two rows of one arity by their encodings, column by column.
+/// Where Ident numbers are the same in every run, so is this order; it is no
+/// order of the content.
+pub fn encoding_order(a: &[TermId], b: &[TermId]) -> std::cmp::Ordering {
+    a.iter().map(|id| id.encoding()).cmp(b.iter().map(|id| id.encoding()))
+}
+
 /// The position of a column in a relation's rows.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ColumnIndex(pub u16);

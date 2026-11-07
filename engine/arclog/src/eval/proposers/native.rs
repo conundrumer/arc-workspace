@@ -87,6 +87,9 @@ pub(super) fn rows(name: &str, proposer: &Proposer, grids: &Grids<'_>, context: 
         "PanelCombine" => panel_combine(grids, &axes, context.session),
         _ => return None,
     };
+    // In the order of encodings, so the set's order does not follow the hash set's.
+    let mut rows: Vec<Row> = rows.into_iter().collect();
+    rows.sort_unstable_by(|a, b| crate::relations::encoding_order(a, b));
     let mut set = RowSet::empty(proposer.columns.len() as u16);
     for row in rows {
         set.insert(row);
@@ -468,6 +471,9 @@ fn panel_combine(grids: &Grids<'_>, axes: &Axes, session: &TaskSession) -> Rows 
     ]));
     let mut table = session.intern.write().expect("an intern table that no panic poisoned");
     let mut rows = Rows::default();
+    // Interned in an order of the entries' own, so an Ident's number does not follow the hash set's order.
+    let mut entries: Vec<(bool, Color, Color, Color)> = entries.into_iter().collect();
+    entries.sort_unstable_by_key(|&(vertical, c1, c2, out)| (vertical, c1.digit(), c2.digit(), out.digit()));
     for (vertical, c1, c2, out) in entries {
         let axis = axes.each().find(|axis| axis.vertical == vertical).expect("the axis of the entry");
         let panels = [(position(axis.place(0, 2)), color(c1)), (position(axis.place(1, 2)), color(c2))];

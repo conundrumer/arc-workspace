@@ -558,10 +558,13 @@ pub(super) fn relation_read(evaluation: &Evaluation<'_>, form: &NodePath, value:
     Ok(Ok(relation))
 }
 
-/// The rows of `relation`, the product of its parts.
+/// The rows of `relation`, the product of its parts, in the order of their
+/// encodings, so that a read of them does not follow the order the relation
+/// stores them in, which an evaluation's hash maps and sets can set.
 pub(super) fn relation_rows(relation: &Relation) -> Vec<Row> {
-    let mut rows = Vec::new();
+    let mut rows: Vec<Row> = Vec::new();
     join::each_row(relation, &mut |row| rows.push(row.into()));
+    rows.sort_unstable_by(|a, b| crate::relations::encoding_order(a, b));
     rows
 }
 
