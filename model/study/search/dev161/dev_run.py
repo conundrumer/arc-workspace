@@ -174,7 +174,7 @@ def parity_gate(a, out, arm, tasks):
     stamp = Path(a.code) / 'parity' / (key + '.json')
     if stamp.exists():
         return
-    folder = out / 'parity'
+    folder = out / ('parity' if arm != 'base' else 'parity-base')  # each tree's check has its own folder
     short = argparse.Namespace(**{**vars(a), 'seconds': 25})
     for task in tasks[:3]:
         w = folder / task
