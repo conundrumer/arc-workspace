@@ -170,7 +170,7 @@ def parity_gate(a, out, arm, tasks):
     settings = sorted((k, v) for k, v in os.environ.items() if k.startswith('WRITER_') and k not in ('WRITER_ATOM_LOG_DIR', 'WRITER_PARITY_DIR'))
     code = hashlib.sha256(b''.join(p.read_bytes() for p in sorted(samp.glob('*.py')))).hexdigest()  # a change to the sampler's code needs a new check
     tree = arm_tree(a, arm)
-    key = hashlib.sha256(json.dumps([a.site, str(tree), a.plan, settings, code] + ([a.lookahead] if a.lookahead and arm != 'base' else [])).encode()).hexdigest()[:16]
+    key = hashlib.sha256(json.dumps([a.site, str(tree), a.plan, settings, code] + ([a.lookahead] if a.lookahead and arm != 'base' else []) + (sorted(a.tok_env) if arm != 'base' else [])).encode()).hexdigest()[:16]
     stamp = Path(a.code) / 'parity' / (key + '.json')
     if stamp.exists():
         return
@@ -207,6 +207,8 @@ def job_env(a, w, arm, seed):
     env.update({k: v if v is not None else str(arm_tree(a, arm)) for k, v in ARMS[arm].items()}, WRITER_PLAN=a.plan)
     if a.lookahead and 'WRITER_TREE' in ARMS[arm] and arm != 'base':
         env['WRITER_LOOKAHEAD'] = a.lookahead
+    if arm != 'base':  # --tok-env: env of every arm but base
+        env.update(dict(x.split('=', 1) for x in a.tok_env))
     if a.node_score and arm != 'base':  # the scope pick's node score file for every arm but base (policy/nodescore.py)
         env['NODE_SCORE'] = a.node_score
     return env
@@ -309,6 +311,7 @@ def main():
     ap.add_argument('--seconds', type=int, default=120)
     ap.add_argument('--jobs', type=int, default=4)
     ap.add_argument('--tasks', type=int, default=0)
+    ap.add_argument('--tok-env', action='append', default=[], help='KEY=VALUE in the env of every arm but base; may repeat')
     ap.add_argument('--node-score', help='a node score file (.npz) for the scope pick of every arm but base: NODE_SCORE of policy.py, which needs policy/nodescore.py in --code')
     ap.add_argument('--gate-records', action='store_true', help='each job writes the gate\'s record of every form at the gate into its folder (gate-records/<task>.jsonl.gz)')
     ap.add_argument('--task-list', help='a file of the tasks to run, one a line, in its order, in place of the split\'s')
