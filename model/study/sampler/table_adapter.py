@@ -103,6 +103,55 @@ def assignments_of(ct):
     return got
 
 
+def entry_rows(V, e, n, o, tw, xo, xst, xcols, boxcols):
+    """(rows, extents) of entry e of a result whose values are V (an int32 view): its n rows of tw cells from offset o, and for each row its extents, [h, w] or None per column of boxcols,
+    from xo (the offset of its extents, negative where it has none) and xst (the extent status of each row of each entry, one byte per column of xcols). The same as `entry_rows_each`,
+    made for all the rows at once where the entry has the usual layout (a status of each row for each column of xcols, and all the extents after the rows), and by `entry_rows_each` where it has not."""
+    nx, nb = len(xcols), len(boxcols)
+    if n <= 0 or tw <= 0 or len(set(xcols)) != nx:
+        return entry_rows_each(V, e, n, o, tw, xo, xst, xcols, boxcols)
+    flat = V[o:o + n * tw].tolist()
+    if len(flat) != n * tw:
+        return entry_rows_each(V, e, n, o, tw, xo, xst, xcols, boxcols)
+    rows = list(zip(*[iter(flat)] * tw))
+    if not (nx and xo >= 0):
+        return rows, [[None] * nb for _ in range(n)]
+    xs = xst[e] if e < len(xst) else None
+    try:
+        usual = xs is not None and len(xs) == n and set(map(len, xs)) == {nx} and xo + n * nx * 2 <= len(V)
+        st = b''.join(xs) if usual else b''
+    except TypeError:
+        usual = False
+    if not usual:
+        return entry_rows_each(V, e, n, o, tw, xo, xst, xcols, boxcols)
+    it = iter(V[xo:xo + n * nx * 2].tolist())
+    pairs = list(map(list, zip(it, it)))  # [h, w] of column j of row r, at r * nx + j
+    at = {c: j for j, c in enumerate(xcols)}
+    js = [at.get(c) for c in boxcols]
+    if st.count(1) == n * nx:
+        if js == list(range(nx)):
+            return rows, ([[p] for p in pairs] if nx == 1 else [pairs[i:i + nx] for i in range(0, n * nx, nx)])
+        return rows, [[None if j is None else pairs[i + j] for j in js] for i in range(0, n * nx, nx)]
+    return rows, [[None if j is None or st[i + j] != 1 else pairs[i + j] for j in js] for i in range(0, n * nx, nx)]
+
+
+def entry_rows_each(V, e, n, o, tw, xo, xst, xcols, boxcols):
+    """The rows of entry e and their extents (see `entry_rows`), made one cell at a time."""
+    rows, exts = [], []
+    for r in range(n):
+        p = o + r * tw
+        rows.append(tuple(V[p:p + tw]))
+        ext = {}
+        if xcols and xo >= 0:
+            for j, c in enumerate(xcols):
+                st_ = xst[e][r][j] if e < len(xst) and r < len(xst[e]) and j < len(xst[e][r]) else 0
+                if st_ == 1:
+                    k = xo + (r * len(xcols) + j) * 2
+                    ext[c] = [int(V[k]), int(V[k + 1])]
+        exts.append([ext.get(c) for c in boxcols])
+    return rows, exts
+
+
 def parse_table(ct, js=None, with_rows=True):
     """The table of rows js of ct (default all): labels, types, frames, and per entry its example, assignment, rows in native order, each row's extents ([h, w] or
     None per Box, Position or Offset column, in label order) and its constraint model. The assignment of an entry is {DET: value hash}, that of the table row the entry
@@ -149,18 +198,7 @@ def parse_table(ct, js=None, with_rows=True):
         if not with_rows:
             out.append(((int(ex[e]), int(ei[e])), {}, range(er[e]), [], int(em[e])))
             continue
-        rows, exts = [], []
-        for r in range(er[e]):
-            o = eo[e] + r * tw
-            rows.append(tuple(V[o:o + tw]))
-            ext = {}
-            if xcols and xo[e] >= 0:
-                for j, c in enumerate(xcols):
-                    st_ = xst[e][r][j] if e < len(xst) and r < len(xst[e]) and j < len(xst[e][r]) else 0
-                    if st_ == 1:
-                        k = xo[e] + (r * len(xcols) + j) * 2
-                        ext[c] = [int(V[k]), int(V[k + 1])]
-            exts.append([ext.get(c) for c in boxcols])
+        rows, exts = entry_rows(V, e, int(er[e]), int(eo[e]), tw, int(xo[e]), xst, xcols, boxcols)
         out.append(((int(ex[e]), int(ei[e])), asg_of.get(int(et[e]), {}), rows, exts, int(em[e])))
     if done is not None:
         done()
