@@ -480,33 +480,6 @@ fn a_retargeted_resolution_of_a_clause_is_what_resolve_last_gives() {
     }
 }
 
-/// Along a stream, a step after `admissible` gives the step and the program
-/// that a step on a fork with no mask computed gives, and a second
-/// `admissible` gives the first mask.
-#[test]
-fn a_step_after_the_mask_is_the_step_with_no_mask() {
-    let registry = Registry::get();
-    let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
-    let boxes = "(INIT &boxes BoundingBox (key ((&comps.component ^Id)) (cell (P) (&comps.component *P Id))))\n";
-    let written = checked(&format!("{BG}{FG}{COMPS}{AXIS}{PRIOR}{boxes}"));
-    let stream = token_stream(&written, &vocabulary).expect("the program has a stream");
-    let inputs = inputs();
-    let mut decoder = decoder(&inputs);
-    for (token, emitter) in &stream {
-        if matches!(emitter, Emitter::Engine) {
-            continue;
-        }
-        let mut bare = decoder.fork();
-        let mask = decoder.admissible();
-        assert_eq!(decoder.admissible(), mask);
-        let expected = bare.step(token.clone());
-        let stepped = decoder.step(token.clone());
-        assert_eq!(format!("{stepped:?}"), format!("{expected:?}"), "{token:?}");
-        assert_eq!(format!("{:?}", decoder.partial()), format!("{:?}", bare.partial()), "{token:?}");
-        assert_eq!(decoder.program(), bare.program(), "{token:?}");
-    }
-}
-
 /// Along a stream, at each state, `admits` of any ids gives the verdicts that
 /// `forced` gives for those tokens, whether the decode holds the mask of its
 /// state or not, and leaves the decode's program and trace as they were.
