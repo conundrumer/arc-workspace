@@ -12,7 +12,7 @@ Environment: SITE (the engine), GOLD_UNION_DIR, ROWS_VERSION, ARC_SAMPLE_OUT (th
 """
 import glob, json, os, subprocess, sys, threading, time
 
-CODE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../../..')) + '/'  # the checkout that holds this file
+CODE = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../../../..')) + '/'  # the checkout that holds this file
 DATA = '/Users/davidlu/code/arc-workspace/'  # the main checkout: .venv and the data
 U = CODE + 'model/study/gold/reads/union/'
 E = CODE + 'model/study/gold/cover_forms/gold_union_env.sh'
