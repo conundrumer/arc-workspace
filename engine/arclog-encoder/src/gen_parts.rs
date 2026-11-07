@@ -88,6 +88,14 @@ pub enum PartStep {
     Complement { p: u16 },
     /// The keys whose cells lie on one row, one column or one diagonal.
     Straight { keys: Box<[u16]>, p: u16 },
+    /// The distinct cells per key: keys, N.
+    CellCount { keys: Box<[u16]>, p: u16 },
+    /// The fewest eight-neighbor steps from each key's cells to a cell of the column that the key does not hold: keys, N.
+    GroupGap { keys: Box<[u16]>, p: u16 },
+    /// The cells of a column's frame inside the box of its cells, or outside it: (P).
+    BoxCells { p: u16, outside: bool },
+    /// The cells of a column's frame that its cells enclose: (P).
+    HoleCells { p: u16 },
     /// Whether the rows are each key with each value of the other columns, with at least two of each.
     Product { keys: Box<[u16]> },
     /// Whether the rows of the two are one set on paired columns, and whether the first's paired columns are a key of it.
@@ -139,7 +147,7 @@ impl PartStep {
     pub fn hole_columns(&self) -> Vec<u16> {
         let with = |keys: &[u16], rest: &[u16]| keys.iter().chain(rest).copied().collect::<Vec<u16>>();
         match self {
-            PartStep::Complement { p } | PartStep::CellsOn { p } | PartStep::ColorsUnder { p } | PartStep::Around { p } | PartStep::Neighbors { p } | PartStep::Split { p } | PartStep::Margin { p } | PartStep::CornerDist { p } | PartStep::Parity { p } | PartStep::BorderDistance { p } | PartStep::NeighborhoodClass { p } | PartStep::NeighborColorClass { p } | PartStep::SameColorNeighbors { p } | PartStep::Distance { p } | PartStep::FrameExtent { p } => vec![*p],
+            PartStep::Complement { p } | PartStep::BoxCells { p, .. } | PartStep::HoleCells { p } | PartStep::CellsOn { p } | PartStep::ColorsUnder { p } | PartStep::Around { p } | PartStep::Neighbors { p } | PartStep::Split { p } | PartStep::Margin { p } | PartStep::CornerDist { p } | PartStep::Parity { p } | PartStep::BorderDistance { p } | PartStep::NeighborhoodClass { p } | PartStep::NeighborColorClass { p } | PartStep::SameColorNeighbors { p } | PartStep::Distance { p } | PartStep::FrameExtent { p } => vec![*p],
             PartStep::Inside { b } | PartStep::BoxMargin { b } | PartStep::BoxExtent { b } | PartStep::BoxRead { b, .. } => vec![*b],
             PartStep::NumberExtreme { n, .. } => vec![*n],
             PartStep::SharedLine { a, .. } | PartStep::SameValues { a, .. } | PartStep::InsideBoxes { a, .. } | PartStep::BoxesHolding { a, .. } => vec![*a],
@@ -147,7 +155,7 @@ impl PartStep {
             PartStep::DeterminesJointly { p, v, w } => vec![*p, *v, *w],
             PartStep::Displacement { a, b } => vec![*a, *b],
             PartStep::BoxFrameRead { b, x, .. } | PartStep::BoxCellRead { b, x, .. } => vec![*b, *x],
-            PartStep::BoxSides { keys, p } | PartStep::BoxMargins { keys, p } | PartStep::LineCounts { keys, p } | PartStep::Straight { keys, p } | PartStep::Pieces { keys, p, .. } | PartStep::BoxOf { keys, p } | PartStep::RelBox { keys, p } | PartStep::ShapeClass { keys, p, .. } | PartStep::Holes { keys, p } | PartStep::Symmetry { keys, p } | PartStep::TouchesEdge { keys, p } | PartStep::FillsBox { keys, p } | PartStep::FullLines { keys, p } => with(keys, &[*p]),
+            PartStep::BoxSides { keys, p } | PartStep::BoxMargins { keys, p } | PartStep::LineCounts { keys, p } | PartStep::Straight { keys, p } | PartStep::CellCount { keys, p } | PartStep::GroupGap { keys, p } | PartStep::Pieces { keys, p, .. } | PartStep::BoxOf { keys, p } | PartStep::RelBox { keys, p } | PartStep::ShapeClass { keys, p, .. } | PartStep::Holes { keys, p } | PartStep::Symmetry { keys, p } | PartStep::TouchesEdge { keys, p } | PartStep::FillsBox { keys, p } | PartStep::FullLines { keys, p } => with(keys, &[*p]),
             PartStep::Count { keys } | PartStep::ClassOf { keys } => keys.to_vec(),
             PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => with(keys, &[*f]),
             PartStep::Extreme { keys, t, score, .. } => with(keys, &[*t, *score]),
@@ -223,6 +231,10 @@ impl PartStep {
             PartStep::Complement { p } => format!("(complement &r {})", c(p)),
             PartStep::Straight { keys, p } => format!("(straight &r {} {})", list(keys), c(p)),
             PartStep::Product { keys } => format!("(product &r {})", list(keys)),
+            PartStep::CellCount { keys, p } => format!("(cell-count &r {} {})", list(keys), c(p)),
+            PartStep::GroupGap { keys, p } => format!("(group-gap &r {} {})", list(keys), c(p)),
+            PartStep::BoxCells { p, outside } => format!("({} &r {})", if *outside { "outside-box" } else { "box-cells" }, c(p)),
+            PartStep::HoleCells { p } => format!("(hole-cells &r {})", c(p)),
             PartStep::BoxRead { b, kept } => format!("({} &r {})", if *kept { "box-kept" } else { "box-changed" }, c(b)),
             PartStep::BoxFrameRead { b, x, kept } => format!("({} &r {} {})", if *kept { "box-frame-kept" } else { "box-frame-changed" }, c(b), c(x)),
             PartStep::BoxCellRead { b, x, kept } => format!("({} &r {} {})", if *kept { "box-cell-kept" } else { "box-cell-changed" }, c(b), c(x)),
@@ -445,6 +457,41 @@ fn on_one_frame(table: &Table, keys: &[u16], p: u16) -> bool {
         let own = (m[0] + m[1], m[2] + m[3]);
         is_cell(&m) && *frames[*id as usize].get_or_insert(own) == own
     })
+}
+
+/// The fewest eight-neighbor steps from a set of cells to a held cell outside it.
+fn nearest_other(own: &[(u8, u8)], held: &[bool], h: usize, w: usize) -> Option<i64> {
+    let mut seen = vec![false; h * w];
+    let mut frontier: Vec<usize> = own.iter().map(|(r, c)| usize::from(*r) * w + usize::from(*c)).collect();
+    for at in &frontier {
+        seen[*at] = true;
+    }
+    let mut steps = 0;
+    while !frontier.is_empty() {
+        steps += 1;
+        let mut next = Vec::new();
+        for at in frontier {
+            let (r, c) = ((at / w) as i32, (at % w) as i32);
+            for dr in -1..=1 {
+                for dc in -1..=1 {
+                    let (nr, nc) = (r + dr, c + dc);
+                    if nr < 0 || nc < 0 || nr >= h as i32 || nc >= w as i32 {
+                        continue;
+                    }
+                    let near = nr as usize * w + nc as usize;
+                    if !seen[near] {
+                        if held[near] {
+                            return Some(steps);
+                        }
+                        seen[near] = true;
+                        next.push(near);
+                    }
+                }
+            }
+        }
+        frontier = next;
+    }
+    None
 }
 
 /// A class per set of cells, up to a move, and with `turned` also up to a rotation or a reflection.
@@ -1312,6 +1359,77 @@ impl PartStep {
                         }
                     }
                 }
+                Val::of_table(Table::distinct(1, out))
+            }
+            PartStep::CellCount { keys, p } => {
+                if !on_one_frame(t, keys, *p) {
+                    return None;
+                }
+                let (cells, heads) = cells_by_key(t, keys, *p);
+                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(held.len() as i64)])), keys.len() + 1)
+            }
+            PartStep::GroupGap { keys, p } => {
+                if !on_one_frame(t, &[], *p) {
+                    return None;
+                }
+                let m = t.rows().next().map(|row| margins_of(row[usize::from(*p)]))?;
+                let (h, w) = ((m[0] + m[1] + 1) as usize, (m[2] + m[3] + 1) as usize);
+                let (cells, heads) = cells_by_key(t, keys, *p);
+                let mut held = vec![false; h * w];
+                for own in &cells {
+                    for (r, c) in own {
+                        held[usize::from(*r) * w + usize::from(*c)] = true;
+                    }
+                }
+                keyed_values(&heads, cells.iter().map(|own| nearest_other(own, &held, h, w).map(|steps| vec![number_bits(steps)])), keys.len() + 1)
+            }
+            PartStep::BoxCells { p, outside } => {
+                if !on_one_frame(t, &[], *p) {
+                    return None;
+                }
+                let m = t.rows().next().map(|row| margins_of(row[usize::from(*p)]))?;
+                let (h, w) = (m[0] + m[1] + 1, m[2] + m[3] + 1);
+                let (mut r0, mut r1, mut c0, mut c1) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
+                for row in t.rows() {
+                    let m = margins_of(row[usize::from(*p)]);
+                    (r0, r1, c0, c1) = (r0.min(m[0]), r1.max(m[0]), c0.min(m[2]), c1.max(m[2]));
+                }
+                let mut out = Vec::new();
+                for r in 0..h {
+                    for c in 0..w {
+                        if (r >= r0 && r <= r1 && c >= c0 && c <= c1) != *outside {
+                            out.push(box_bits(r, h - 1 - r, c, w - 1 - c));
+                        }
+                    }
+                }
+                Val::of_table(Table::distinct(1, out))
+            }
+            PartStep::HoleCells { p } => {
+                if !on_one_frame(t, &[], *p) {
+                    return None;
+                }
+                let m = t.rows().next().map(|row| margins_of(row[usize::from(*p)]))?;
+                let (h, w) = ((m[0] + m[1] + 1) as usize, (m[2] + m[3] + 1) as usize);
+                let mut seen = vec![false; h * w];
+                for row in t.rows() {
+                    let m = margins_of(row[usize::from(*p)]);
+                    seen[m[0] as usize * w + m[2] as usize] = true;
+                }
+                let held = seen.clone();
+                let mut stack: Vec<usize> = (0..h * w).filter(|at| !seen[*at] && (at / w == 0 || at / w == h - 1 || at % w == 0 || at % w == w - 1)).collect();
+                for at in &stack {
+                    seen[*at] = true;
+                }
+                while let Some(at) = stack.pop() {
+                    let (r, c) = (at / w, at % w);
+                    for (near, inside) in [(at.wrapping_sub(w), r > 0), (at + w, r + 1 < h), (at.wrapping_sub(1), c > 0), (at + 1, c + 1 < w)] {
+                        if inside && !seen[near] {
+                            seen[near] = true;
+                            stack.push(near);
+                        }
+                    }
+                }
+                let out: Vec<Cell> = (0..h * w).filter(|at| !seen[*at] && !held[*at]).map(|at| box_bits((at / w) as i32, (h - 1 - at / w) as i32, (at % w) as i32, (w - 1 - at % w) as i32)).collect();
                 Val::of_table(Table::distinct(1, out))
             }
             PartStep::Product { keys } => {

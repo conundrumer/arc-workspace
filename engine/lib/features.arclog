@@ -1795,6 +1795,106 @@
   (QUERY &q (&free (:Free (*new P ?R))))
   (gives &q))
 
+(fragment (cell-count (?R relation) (?keys columns ?R) (?p column ?R))
+  "The distinct cells per value of the key columns."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &c Cardinality
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:m Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell))))))
+  (QUERY &q (?R (?keys *)) (&c.size (:key ?keys) (:N (*new N ?R))))
+  (gives &q))
+
+(fragment (group-gap (?R relation) (?keys columns ?R) (?p column ?R))
+  "The fewest eight-neighbor steps from each key's cells to a cell of the column that the key does not hold."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &cells_of Order
+    (member ((:t ?keys (:Cell ?p)))
+      (?R (?keys *) (?p *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?R (?p *))
+      (frame_extent (:P ?p) *A *N)))
+  (INIT &d CellDistance
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (node ((:P Free))
+        (&whole Whole)
+        (&frame.cell (:P *Free)))
+      (source ((:P Cell))
+        (&whole Whole)
+        (&cells_of.minimal (:t ?keys (:Cell *Cell)))))
+    (step ((:Delta V))
+      (step_offset *V)))
+  (INIT &every_cell Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (INIT &near Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t K))
+        (&whole Whole)
+        (&every_cell.minimal (:t *Other))
+        (&d.distance (:key ?keys) (:P Other) *K)
+        (NOT (&cells_of.minimal (:t ?keys (:Cell Other)))))
+      (score ((:t K) (:S K))
+        (&whole Whole)
+        (&every_cell.minimal (:t *Other))
+        (&d.distance (:key ?keys) (:P Other) *K)
+        (NOT (&cells_of.minimal (:t ?keys (:Cell Other)))))))
+  (QUERY &q (?R (?keys *)) (&near.minimal (:key ?keys) (:t (*new N ?R))))
+  (gives &q))
+
+(fragment (box-cells (?R relation) (?p column ?R))
+  "The cells of a column's frame inside the box of its cells."
+  (INIT &box BoundingBox
+    (cell ((:P ?p))
+      (?R (?p *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?R (?p *))
+      (frame_extent (:P ?p) *A *N)))
+  (QUERY &in
+    (&frame.cell (:P *Free))
+    (&box.box *B)
+    (inside (:A Free) (:B B)))
+  (QUERY &q (&in (:Free (*new P ?R))))
+  (gives &q))
+
+(fragment (outside-box (?R relation) (?p column ?R))
+  "The cells of a column's frame outside the box of its cells."
+  (INIT &box BoundingBox
+    (cell ((:P ?p))
+      (?R (?p *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?R (?p *))
+      (frame_extent (:P ?p) *A *N)))
+  (QUERY &out
+    (&frame.cell (:P *Free))
+    (&box.box *B)
+    (NOT (inside (:A Free) (:B B))))
+  (QUERY &q (&out (:Free (*new P ?R))))
+  (gives &q))
+
+(fragment (hole-cells (?R relation) (?p column ?R))
+  "The cells of a column's frame that its cells enclose."
+  (INIT &have Order
+    (member ((:t ?p))
+      (?R (?p *))))
+  (INIT &frame Frame
+    (extent (A N)
+      (?R (?p *))
+      (frame_extent (:P ?p) *A *N)))
+  (INIT &enclosed Enclosure
+    (cell ((:P Free))
+      (&frame.cell (:P *Free))
+      (NOT (&have.minimal (:t Free)))))
+  (QUERY &q (&enclosed.enclosed (:P (*new P ?R))))
+  (gives &q))
+
 (fragment (product (?R relation) (?keys columns ?R))
   "Whether a relation's rows are each key with each value of its other columns, with at least two of each."
   (INIT &rows Order

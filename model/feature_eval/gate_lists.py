@@ -170,8 +170,9 @@ def with_named(lists, others, folder, name, items):
             continue
         ids = np.concatenate((own[0], theirs[0]))
         order = np.argsort(ids)
-        pairs = theirs[4].shape[1]
-        at_pairs = np.concatenate((own[4].reshape(len(own[0]), pairs), theirs[4]))[order]
+        # A list of the train outputs has only the train pairs, and a named shape is 0 past those.
+        pairs = own[4].size // len(own[0]) if len(own[0]) else theirs[4].shape[1]
+        at_pairs = np.concatenate((own[4].reshape(len(own[0]), pairs), theirs[4][:, :pairs]))[order]
         others[owner] = (ids[order], *(np.concatenate((own[at], theirs[at]))[order] for at in (1, 2, 3)), at_pairs)
     return queries
 

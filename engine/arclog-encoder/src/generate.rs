@@ -396,6 +396,7 @@ impl Generated {
         family.binary(LEAF_TABLE, u_leaf, 1, true);
         family.binary(u_leaf, LEAF_TABLE, 1, false);
         family.same_rows(u_leaf);
+        family.derived_cells(u_leaf);
         family.by_size.push(family.terms.len());
         let places = |columns: &[Column], kinds: &[ValueType]| -> Vec<u16> { (0..columns.len() as u16).filter(|at| kinds.contains(&columns[usize::from(*at)].ty)).collect() };
         // The value sets of a column of each.
@@ -656,6 +657,7 @@ impl Generated {
         }
         family.common_values(own_rows);
         family.groupings(own_rows);
+        family.output_functions();
         family.by_size.push(family.terms.len());
         family.name_roots(types, names);
         family
@@ -1330,6 +1332,78 @@ impl Generated {
         }
     }
 
+    /// A table's cells against the cells derived from another relation's: the rest of their frame, their box, the frame outside it, and what they enclose.
+    fn derived_cells(&mut self, other: u32) {
+        let (own, theirs) = (self.terms[LEAF_TABLE as usize].columns.clone(), self.terms[other as usize].columns.clone());
+        let other_text = self.terms[other as usize].text.clone();
+        let cells = |columns: &[Column]| -> Vec<(u16, String)> { columns.iter().enumerate().filter(|(_, column)| column.ty == ValueType::Position).map(|(at, column)| (at as u16, column.name.clone())).collect() };
+        let own_cells = cells(&own);
+        for (b, y) in cells(&theirs) {
+            let name = unique("P", &theirs);
+            let parts = [("complement", PartStep::Complement { p: b }), ("box-cells", PartStep::BoxCells { p: b, outside: false }), ("outside-box", PartStep::BoxCells { p: b, outside: true }), ("hole-cells", PartStep::HoleCells { p: b })];
+            for (word, part) in parts {
+                let derived_text = format!("({word} {other_text} {y})");
+                self.force_next = true;
+                self.push(Step::Part(Box::new(part)), other, NO_TERM, vec![Column { name: name.clone(), ty: ValueType::Position, source: 0 }], 2, derived_text.clone(), RootKind::Rows);
+                let derived = self.terms.len() as u32 - 1;
+                for (a, x) in &own_cells {
+                    let own_text = format!("(project T {x})");
+                    let values = match self.terms.iter().rposition(|term| term.text == own_text) {
+                        Some(at) => at as u32,
+                        None => {
+                            self.force_next = true;
+                            self.push(Step::Project { columns: vec![*a].into_boxed_slice() }, LEAF_TABLE, NO_TERM, vec![own[usize::from(*a)].clone()], 1, own_text.clone(), RootKind::Rows);
+                            self.terms.len() as u32 - 1
+                        }
+                    };
+                    let own_column = self.terms[values as usize].columns.clone();
+                    let place: Box<[u16]> = Box::new([0]);
+                    self.force_next = true;
+                    self.push(Step::Part(Box::new(PartStep::SameRows { left: place.clone(), right: place.clone(), key: false })), values, derived, Vec::new(), 2, format!("(rows-equal {own_text} {derived_text} T*:{x}={name})"), RootKind::Holds);
+                    self.force_next = true;
+                    self.push(Step::All { left: place.clone(), right: place.clone(), outer: Box::new([]) }, values, derived, Vec::new(), 2, format!("(all {own_text} {derived_text} () ({x} {name}))"), RootKind::Holds);
+                    self.force_next = true;
+                    self.push(Step::All { left: place.clone(), right: place.clone(), outer: Box::new([]) }, derived, values, Vec::new(), 2, format!("(all {derived_text} {own_text} () ({name} {x}))"), RootKind::Holds);
+                    self.force_next = true;
+                    self.push(Step::Semijoin { left: place.clone(), right: place }, values, derived, own_column, 2, format!("(semijoin {own_text} {derived_text} ({x} {name}))"), RootKind::Share);
+                }
+            }
+        }
+    }
+
+    /// Whether a table's column and the output color at its cell determine each other over the rows of every example, and whether the column with the input
+    /// color at that cell determines the output color. A task-wide family holds these whatever its size.
+    fn output_functions(&mut self) {
+        let own = self.terms[LEAF_TABLE as usize].columns.clone();
+        for (p, place) in own.iter().enumerate().filter(|(_, column)| column.ty == ValueType::Position) {
+            let text = format!("(join T ex_output (E E) ({} P))", place.name);
+            let Some(join) = self.terms.iter().rposition(|term| term.text == text) else { continue };
+            let columns = self.terms[join].columns.clone();
+            let color = columns.len() - 1;
+            let color_name = columns[color].name.clone();
+            let input_name = unique("Col", &columns);
+            let input_text = format!("(join {text} ex_input (E E) ({} P))", columns[p].name);
+            let e = own.iter().position(|column| column.ty == ValueType::Example).unwrap_or(0);
+            let mut with_input = columns.clone();
+            with_input.push(Column { name: input_name.clone(), ty: ValueType::Color, source: 0 });
+            self.force_next = true;
+            self.push(Step::Join { left: vec![e as u16, p as u16].into_boxed_slice(), right: vec![0, 1].into_boxed_slice(), kept: vec![2].into_boxed_slice(), left_arity: columns.len() as u16 }, join as u32, LEAF_INPUT, with_input, 3, input_text.clone(), RootKind::Rows);
+            let both = self.terms.len() as u32 - 1;
+            for x in 0..own.len() {
+                if x == p || matches!(own[x].ty, ValueType::Example | ValueType::Position | ValueType::Box | ValueType::Offset) {
+                    continue;
+                }
+                let x_name = columns[x].name.clone();
+                self.force_next = true;
+                self.push(Step::Part(Box::new(PartStep::Determines { keys: vec![x as u16].into_boxed_slice(), f: color as u16 })), join as u32, NO_TERM, Vec::new(), 3, format!("(determines {text} ({x_name}) {color_name})"), RootKind::Holds);
+                self.force_next = true;
+                self.push(Step::Part(Box::new(PartStep::Determines { keys: vec![color as u16].into_boxed_slice(), f: x as u16 })), join as u32, NO_TERM, Vec::new(), 3, format!("(determines {text} ({color_name}) {x_name})"), RootKind::Holds);
+                self.force_next = true;
+                self.push(Step::Part(Box::new(PartStep::Determines { keys: vec![x as u16, columns.len() as u16].into_boxed_slice(), f: color as u16 })), both, NO_TERM, Vec::new(), 3, format!("(determines {input_text} ({x_name} {input_name}) {color_name})"), RootKind::Holds);
+            }
+        }
+    }
+
     /// `project` and `select` over a term.
     fn unary_operators(&mut self, at: u32, size: u8) {
         let columns = self.terms[at as usize].columns.clone();
@@ -1488,6 +1562,8 @@ impl Generated {
                     add(PartStep::TouchesEdge { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(touches-edge {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::FillsBox { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(fills-box {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::Straight { keys: keys.clone(), p }, NO_TERM, heads.clone(), format!("(straight {text} {key_text} {name})"), RootKind::Rows);
+                    add(PartStep::CellCount { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(cell-count {text} {key_text} {name})"), RootKind::Rows);
+                    add(PartStep::GroupGap { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("N", ValueType::Nat, 0)]), format!("(group-gap {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::BoxSides { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("N", ValueType::Int, 0)]), format!("(box-sides {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::BoxMargins { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("D", ValueType::Dir, 0), fresh("K", ValueType::Int, 0)]), format!("(box-margins {text} {key_text} {name})"), RootKind::Rows);
                     add(PartStep::LineCounts { keys: keys.clone(), p }, NO_TERM, extended(vec![fresh("A", ValueType::Axis, 0), fresh("Along", ValueType::Box, 0), fresh("N", ValueType::Nat, 0)]), format!("(line-counts {text} {key_text} {name})"), RootKind::Rows);
