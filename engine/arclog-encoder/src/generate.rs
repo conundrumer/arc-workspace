@@ -224,6 +224,35 @@ fn pair_sets(left: &[Column], right: &[Column]) -> Vec<Vec<(u16, u16)>> {
     out
 }
 
+const MAX_PAIRINGS: usize = 24;
+
+/// Each way to pair every column of `from` with its own column of `to`, or none where there are more than `MAX_PAIRINGS`, so that no value depends on the
+/// columns' order.
+fn pairings(from: &[Column], to: &[Column]) -> Vec<Vec<(u16, u16)>> {
+    fn extend(from: &[Column], to: &[Column], held: &mut Vec<(u16, u16)>, out: &mut Vec<Vec<(u16, u16)>>) -> bool {
+        let Some(column) = from.get(held.len()) else {
+            out.push(held.clone());
+            return out.len() <= MAX_PAIRINGS;
+        };
+        for (at, other) in to.iter().enumerate() {
+            if meets(column, other) && !held.iter().any(|pair| usize::from(pair.1) == at) {
+                held.push((held.len() as u16, at as u16));
+                let room = extend(from, to, held, out);
+                held.pop();
+                if !room {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+    let mut out = Vec::new();
+    if !from.is_empty() && !extend(from, to, &mut Vec::new(), &mut out) {
+        out.clear();
+    }
+    out
+}
+
 impl Generated {
     /// The family over a table of the column types `types`, up to size `d` in parts. Two Ident
     /// columns of one source can meet, and an Ident column whose source is open meets no other.
@@ -260,6 +289,7 @@ impl Generated {
         family.push(Step::Part(Box::new(PartStep::Same)), LEAF_TABLE, NO_TERM, own_columns, 0, "T".to_string(), RootKind::Rows);
         let own_rows = family.terms.len() as u32 - 1;
         family.unary_operators(LEAF_TABLE, 1);
+        family.product();
         family.parts_of(LEAF_TABLE, 1);
         family.unary_operators(LEAF_OUTPUT, 1);
         family.unary_operators(LEAF_INPUT, 1);
@@ -267,6 +297,8 @@ impl Generated {
         family.binary(LEAF_OUTPUT, LEAF_TABLE, 1, false);
         family.binary(LEAF_TABLE, LEAF_INPUT, 1, true);
         family.binary(LEAF_INPUT, LEAF_TABLE, 1, false);
+        family.same_rows(LEAF_OUTPUT);
+        family.same_rows(LEAF_INPUT);
         family.binary(LEAF_OUTPUT, LEAF_INPUT, 1, true);
         family.binary(LEAF_INPUT, LEAF_OUTPUT, 1, false);
         family.by_size.push(family.terms.len());
@@ -363,6 +395,7 @@ impl Generated {
         // The rows of each kept by the other.
         family.binary(LEAF_TABLE, u_leaf, 1, true);
         family.binary(u_leaf, LEAF_TABLE, 1, false);
+        family.same_rows(u_leaf);
         family.by_size.push(family.terms.len());
         let places = |columns: &[Column], kinds: &[ValueType]| -> Vec<u16> { (0..columns.len() as u16).filter(|at| kinds.contains(&columns[usize::from(*at)].ty)).collect() };
         // The value sets of a column of each.
@@ -374,10 +407,8 @@ impl Generated {
                 }
                 let (a, b) = (a as u16, b as u16);
                 family.push(Step::Part(Box::new(PartStep::SameValues { a, b })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(same-values T {u_text} {} {})", x.name, y.name), RootKind::Holds);
+                // A column's values are its `project` at every width, so a shape's name does not depend on a table's width.
                 let mut project_of = |family: &mut Generated, leaf: u32, place: u16| -> u32 {
-                    if family.terms[leaf as usize].columns.len() == 1 {
-                        return leaf;
-                    }
                     *own_projects.entry((leaf, place)).or_insert_with(|| {
                         let column = family.terms[leaf as usize].columns[usize::from(place)].clone();
                         let text = format!("(project {} {})", family.terms[leaf as usize].text, column.name);
@@ -1272,6 +1303,25 @@ impl Generated {
         self.terms.push(Term { step: Some(step), a, b, columns, flags, size, root, roots: Vec::new(), text, used: false, plan });
     }
 
+    /// Whether the table's rows are those of another relation under a pairing of all the narrower one's columns. The pairing stands in no shape's name, so
+    /// one shape reads every type and width. A pair of relations with more pairings than `MAX_PAIRINGS` has none of these terms.
+    fn same_rows(&mut self, other: u32) {
+        let (own, theirs) = (self.terms[LEAF_TABLE as usize].columns.clone(), self.terms[other as usize].columns.clone());
+        let other_text = self.terms[other as usize].text.clone();
+        let narrow_own = own.len() <= theirs.len();
+        let (from, to) = if narrow_own { (&own, &theirs) } else { (&theirs, &own) };
+        let word = if own.len() == theirs.len() { "rows-equal" } else if narrow_own { "rows-project" } else { "rows-extend" };
+        for pairing in pairings(from, to) {
+            let (left, right): (Vec<u16>, Vec<u16>) = if narrow_own { pairing.iter().copied().unzip() } else { pairing.iter().map(|at| (at.1, at.0)).unzip() };
+            let pairs: Vec<String> = left.iter().zip(right.iter()).map(|(a, b)| format!("{}={}", own[usize::from(*a)].name, theirs[usize::from(*b)].name)).collect();
+            let free: Vec<&str> = own.iter().enumerate().filter(|(at, _)| !left.contains(&(*at as u16))).map(|(_, column)| column.name.as_str()).collect();
+            let free_text = if free.is_empty() { String::new() } else { format!(" T*:{}", free.join(",")) };
+            let key = !free.is_empty();
+            self.force_next = true;
+            self.push(Step::Part(Box::new(PartStep::SameRows { left: left.into_boxed_slice(), right: right.into_boxed_slice(), key })), LEAF_TABLE, other, Vec::new(), 1, format!("({word} T {other_text} T*:{}{free_text})", pairs.join(",")), RootKind::Holds);
+        }
+    }
+
     /// `project` and `select` over a term.
     fn unary_operators(&mut self, at: u32, size: u8) {
         let columns = self.terms[at as usize].columns.clone();
@@ -1339,6 +1389,22 @@ impl Generated {
             out.push((group.into_boxed_slice(), format!("(T*:{})", names.join(","))));
         }
         out
+    }
+
+    /// Whether the table is a product of two groups of its columns, for each way to split them. The split stands in no shape's name.
+    fn product(&mut self) {
+        let columns = self.terms[LEAF_TABLE as usize].columns.clone();
+        if columns.len() < 2 || columns.len() > 8 {
+            return;
+        }
+        // Each split once: the group that holds the first column is the key.
+        let whole = (1u32 << columns.len()) - 1;
+        for mask in (1..whole).step_by(2) {
+            let keys: Box<[u16]> = (0..columns.len() as u16).filter(|at| mask >> at & 1 == 1).collect();
+            let names: Vec<&str> = keys.iter().map(|at| columns[usize::from(*at)].name.as_str()).collect();
+            self.force_next = true;
+            self.push(Step::Part(Box::new(PartStep::Product { keys })), LEAF_TABLE, NO_TERM, Vec::new(), 1, format!("(product T (T*:{}))", names.join(",")), RootKind::Holds);
+        }
     }
 
     /// The parts with holes over a term.
@@ -1600,6 +1666,10 @@ fn ident_source(name: &str) -> u16 {
         "input-foreground-components" => 3,
         "output-foreground-components" => 4,
         "changed-components" | "changed-component-boxes" => 5,
+        "input-component-shapes" => 6,
+        "output-component-shapes" => 7,
+        "input-component-shapes-d4" => 8,
+        "output-component-shapes-d4" => 9,
         _ => 0,
     }
 }

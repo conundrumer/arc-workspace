@@ -88,6 +88,10 @@ pub enum PartStep {
     Complement { p: u16 },
     /// The keys whose cells lie on one row, one column or one diagonal.
     Straight { keys: Box<[u16]>, p: u16 },
+    /// Whether the rows are each key with each value of the other columns, with at least two of each.
+    Product { keys: Box<[u16]> },
+    /// Whether the rows of the two are one set on paired columns, and whether the first's paired columns are a key of it.
+    SameRows { left: Box<[u16]>, right: Box<[u16]>, key: bool },
     /// A column of boxes read against the two grids. An input cell of a box of the output's
     /// extents stands for the output cell at its place in the box: B, P, X_rel, Col, and Col_2
     /// where the two colors differ.
@@ -153,6 +157,8 @@ impl PartStep {
             PartStep::DiffRows { p, .. } | PartStep::DiffCells { p, .. } => vec![*p],
             PartStep::DiffGroupsOff { keys, p, .. } => with(keys, &[*p]),
             PartStep::Same => Vec::new(),
+            PartStep::Product { keys } => keys.to_vec(),
+            PartStep::SameRows { left, .. } => left.to_vec(),
             PartStep::CommonValues { e, n } => vec![*e, *n],
             PartStep::ExampleClasses { e } => vec![*e],
         }
@@ -164,7 +170,7 @@ impl PartStep {
         let c = |at: &u16| format!("C{at}");
         let list = |keys: &[u16]| format!("({})", keys.iter().map(|at| format!("C{at}")).collect::<Vec<_>>().join(" "));
         Some(match self {
-            PartStep::Same | PartStep::CommonValues { .. } | PartStep::ExampleClasses { .. } => return None,
+            PartStep::Same | PartStep::CommonValues { .. } | PartStep::ExampleClasses { .. } | PartStep::SameRows { .. } => return None,
             PartStep::DiffRows { p, output, on } => format!("({}-{}-diff &r {})", if *on { "on" } else { "off" }, if *output { "output" } else { "input" }, c(p)),
             PartStep::DiffCells { p, output, on } => format!("({}-diff-{} &r {})", if *output { "output" } else { "input" }, if *on { "on" } else { "off" }, c(p)),
             PartStep::DiffGroupsOff { keys, p, output } => format!("(groups-off-{}-diff &r {} {})", if *output { "output" } else { "input" }, list(keys), c(p)),
@@ -216,6 +222,7 @@ impl PartStep {
             PartStep::LineCounts { keys, p } => format!("(line-counts &r {} {})", list(keys), c(p)),
             PartStep::Complement { p } => format!("(complement &r {})", c(p)),
             PartStep::Straight { keys, p } => format!("(straight &r {} {})", list(keys), c(p)),
+            PartStep::Product { keys } => format!("(product &r {})", list(keys)),
             PartStep::BoxRead { b, kept } => format!("({} &r {})", if *kept { "box-kept" } else { "box-changed" }, c(b)),
             PartStep::BoxFrameRead { b, x, kept } => format!("({} &r {} {})", if *kept { "box-frame-kept" } else { "box-frame-changed" }, c(b), c(x)),
             PartStep::BoxCellRead { b, x, kept } => format!("({} &r {} {})", if *kept { "box-cell-kept" } else { "box-cell-changed" }, c(b), c(x)),
@@ -438,6 +445,11 @@ fn on_one_frame(table: &Table, keys: &[u16], p: u16) -> bool {
         let own = (m[0] + m[1], m[2] + m[3]);
         is_cell(&m) && *frames[*id as usize].get_or_insert(own) == own
     })
+}
+
+/// A class per set of cells, up to a move, and with `turned` also up to a rotation or a reflection.
+pub fn shape_hash(cells: &[(u8, u8)], turned: bool) -> u32 {
+    hash_cells(&if turned { canon(cells) } else { normalized(cells) })
 }
 
 fn hash_cells(cells: &[(u8, u8)]) -> u32 {
@@ -1301,6 +1313,18 @@ impl PartStep {
                     }
                 }
                 Val::of_table(Table::distinct(1, out))
+            }
+            PartStep::Product { keys } => {
+                let others: Vec<u16> = (0..t.arity as u16).filter(|at| !keys.contains(at)).collect();
+                let distinct = |places: &[u16]| t.rows().map(|row| places.iter().map(|at| row[usize::from(*at)]).collect::<Vec<Cell>>()).collect::<std::collections::HashSet<_>>().len();
+                let (own, rest) = (distinct(keys), distinct(&others));
+                Val::of_table(Table::unit(own >= 2 && rest >= 2 && own * rest == t.len))
+            }
+            PartStep::SameRows { left, right, key } => {
+                let other = flat(children[1])?;
+                let rows = |table: &Table, places: &[u16]| table.rows().map(|row| places.iter().map(|at| row[usize::from(*at)]).collect::<Vec<Cell>>()).collect::<std::collections::HashSet<_>>();
+                let own = rows(t, left);
+                Val::of_table(Table::unit(t.len > 0 && (!key || own.len() == t.len) && own == rows(&other, right)))
             }
             PartStep::Straight { keys, p } => {
                 if !on_one_frame(t, keys, *p) {

@@ -368,6 +368,28 @@ impl Reader<'_> {
             ("antijoin", [left, right, rest @ ..]) => Ok(Rel::Antijoin(boxed(left)?, boxed(right)?, pairs(rest)?)),
             ("semijoin", [left, right, rest @ ..]) => Ok(Rel::Semijoin(boxed(left)?, boxed(right)?, pairs(rest)?)),
             ("all", [domain, body, outer, rest @ ..]) => Ok(Rel::All(boxed(domain)?, boxed(body)?, columns(items(outer)?)?, pairs(rest)?)),
+            // Whether each row of the two stands at a row of the other, on the columns that the tokens `a=b` pair. A token with no `=` is a
+            // column of the first that the paired columns determine.
+            ("rows-equal" | "rows-project" | "rows-extend", [left, right, rest @ ..]) => {
+                let (mut forward, mut back, mut free) = (Vec::new(), Vec::new(), Vec::new());
+                for token in rest {
+                    let token = symbol(token)?;
+                    match token.split_once('=') {
+                        Some((a, b)) => {
+                            forward.push((a.to_string(), b.to_string()));
+                            back.push((b.to_string(), a.to_string()));
+                        }
+                        None => free.push(token.to_string()),
+                    }
+                }
+                let keys: Vec<Written> = forward.iter().map(|(a, _)| Written::Symbol(a.clone())).collect();
+                let mut out = Rel::Join(Box::new(Rel::All(boxed(left)?, boxed(right)?, Vec::new(), forward)), Box::new(Rel::All(boxed(right)?, boxed(left)?, Vec::new(), back)), Vec::new());
+                for column in free {
+                    let determined = Rel::Call("determines".to_string(), vec![Written::of(left)?, Written::List(keys.clone()), Written::Symbol(column)]);
+                    out = Rel::Join(Box::new(out), Box::new(determined), Vec::new());
+                }
+                Ok(out)
+            }
             ("union", [left, right, rest @ ..]) if !rest.is_empty() => {
                 let pairs = pairs(rest)?.into_iter().map(|(column, operand)| (column, if operand == "0" { Operand::Zero } else { Operand::Column(operand) })).collect();
                 Ok(Rel::Union(boxed(left)?, boxed(right)?, pairs))

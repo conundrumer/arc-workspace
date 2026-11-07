@@ -99,6 +99,9 @@ pub fn constant_parts() -> Vec<ConstantPart> {
         part(format!("{grid}-components"), vec![("P", p.clone()), ("Col", col.clone()), ("Id", id_of(1))]);
         part(format!("{grid}-foreground-components"), vec![("P", p.clone()), ("Id", id_of(2))]);
         part(format!("{grid}-component-boxes"), vec![("Col", col.clone()), ("Id", id_of(1)), ("B", b.clone())]);
+        part(format!("{grid}-component-shapes"), vec![("P", p.clone()), ("Id_2", id_of(1))]);
+        part(format!("{grid}-component-shapes-d4"), vec![("P", p.clone()), ("Id_2", id_of(1))]);
+        part(format!("{grid}-component-sizes"), vec![("P", p.clone()), ("N", n.clone())]);
         part(format!("{grid}-full-lines"), vec![("A", ValueType::Axis), ("Along", b.clone()), ("Col", col.clone())]);
         part(format!("{grid}-extents"), vec![("A", ValueType::Axis), ("N", ValueType::Int)]);
         for side in ["longer-side", "shorter-side"] {
@@ -331,6 +334,24 @@ fn grid_tables(g: &GridFacts, e: &Encoding, out: &mut Vec<Arc<Table>>) {
     }
     out.push(Table::new(2, parts));
     out.push(Table::new(3, boxes));
+    // Each cell with a class per shape of its piece, with that up to D4, and with its piece's size.
+    let mut shapes = Vec::with_capacity(h * w * 2);
+    let mut turned = Vec::with_capacity(h * w * 2);
+    let mut sizes = Vec::with_capacity(h * w * 2);
+    for piece in &g.pieces {
+        let mut cells: Vec<(u8, u8)> = Vec::with_capacity(piece.size as usize);
+        piece.cells.each(|at| cells.push(((at / w) as u8, (at % w) as u8)));
+        let (own, all) = (crate::gen_parts::shape_hash(&cells, false), crate::gen_parts::shape_hash(&cells, true));
+        piece.cells.each(|at| {
+            let cell = cell_bits(h, w, at);
+            shapes.extend_from_slice(&[cell, own]);
+            turned.extend_from_slice(&[cell, all]);
+            sizes.extend_from_slice(&[cell, number_bits(i64::from(piece.size))]);
+        });
+    }
+    out.push(Table::new(2, shapes));
+    out.push(Table::new(2, turned));
+    out.push(Table::new(2, sizes));
     let mut lines = Vec::new();
     for (r, mask) in g.line_colors[0].iter().enumerate() {
         if mask.count_ones() == 1 {
@@ -598,6 +619,15 @@ pub fn part_call(name: &str) -> String {
     }
     if name == "input-full-lines" || name == "output-full-lines" {
         return format!("(full-lines-of {})", &name[..name.find('-').unwrap_or(0)]);
+    }
+    for grid in ["input", "output"] {
+        let (pieces, word) = (format!("(components {grid})"), name.strip_prefix(grid).unwrap_or(""));
+        match word {
+            "-component-shapes" => return format!("(project (join {pieces} (shape-class {pieces} (Col Id) P) (Col Col) (Id Id)) P Id_2)"),
+            "-component-shapes-d4" => return format!("(project (join {pieces} (shape-class-d4 {pieces} (Col Id) P) (Col Col) (Id Id)) P Id_2)"),
+            "-component-sizes" => return format!("(project (join {pieces} (count {pieces} (Col Id)) (Col Col) (Id Id)) P N)"),
+            _ => {}
+        }
     }
     for grid in ["input", "output"] {
         if let Some(rest) = name.strip_prefix(grid).and_then(|rest| rest.strip_prefix('-')) {
