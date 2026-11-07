@@ -2393,12 +2393,12 @@ pub struct Walker<'a> {
     eval: Evaluator<'a>,
     values: Vec<Val>,
     value_index: FastMap<u128, u32>,
-    memo: FastMap<(u32, u32, u32), u32>,
-    counts: FastMap<(u32, u32, u32), (u32, u32)>,
+    memo: FastMap<(u32, u32, u32), (u32, usize)>,
+    counts: FastMap<(u32, u32, u32), (u32, u32, usize)>,
     /// How keys group a value's rows: a hash of the grouping, and the count of groups.
     groupings: FastMap<(u32, u32), (u128, u32)>,
     /// A part's count of rows at a grouping of its first value, with its second value.
-    group_counts: FastMap<(u32, u32, u128, u32), u32>,
+    group_counts: FastMap<(u32, u32, u128, u32), (u32, usize)>,
     /// The cells that `values` holds.
     held_cells: usize,
     /// The cells of `inside` rows that the walk in progress has written out.
@@ -2531,9 +2531,13 @@ impl<'a> Walker<'a> {
             return id;
         }
         let value = boxes.written();
-        let before = self.held_cells;
+        // The cells of the written rows count whether or not an earlier walk left them held, so a stop does not depend on what was walked before.
+        let cells = match &value {
+            Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
+            _ => 0,
+        };
         let written = self.value_id(value);
-        self.written_cells += self.held_cells - before;
+        self.written_cells += cells;
         written
     }
 
@@ -2563,8 +2567,9 @@ impl<'a> Walker<'a> {
 
     /// A term's count of rows and, for a number root, its number, with what can be left unbuilt left so.
     fn count_only(&mut self, step: &Step, at: usize, id: u32, b: u32, number: bool, steps: &StepIds) -> (u32, u32) {
-        if let Some(found) = self.memo.get(&(steps.ids[at], id, b)) {
-            let value = &self.values[*found as usize];
+        if let Some(&(found, cost)) = self.memo.get(&(steps.ids[at], id, b)) {
+            self.written_cells += cost;
+            let value = &self.values[found as usize];
             return (count_of(value), if number { number_word(value) } else { 0 });
         }
         // A part that reads cells of `inside` runs on the rows written out, once per grouping. Rows of `inside` that the part takes as boxes group as the relation's rows do, where its keys are the relation's.
@@ -2585,11 +2590,13 @@ impl<'a> Walker<'a> {
                     return (groups, 0);
                 }
                 let key = (part, written, grouping, b);
-                if let Some(found) = self.group_counts.get(&key) {
-                    return (*found, 0);
+                if let Some(&(found, cost)) = self.group_counts.get(&key) {
+                    self.written_cells += cost;
+                    return (found, 0);
                 }
+                let before = self.written_cells;
                 let found = count_of(&self.apply(step, written, b));
-                self.group_counts.insert(key, found);
+                self.group_counts.insert(key, (found, self.written_cells - before));
                 return (found, 0);
             }
         }
@@ -2668,12 +2675,17 @@ impl<'a> Walker<'a> {
                 for pair in 0..if walk_cells + self.written_cells > WALK_CELLS { 0 } else { scope } {
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
                     let key = (step_id, first[pair], b);
+                    // A memo hit adds the cells that the evaluation wrote out when it ran, as a fresh evaluation adds them.
                     let id = match self.memo.get(&key) {
-                        Some(found) => *found,
+                        Some(&(found, cost)) => {
+                            self.written_cells += cost;
+                            found
+                        }
                         None => {
+                            let before = self.written_cells;
                             let value = self.apply(step, first[pair], b);
                             let id = self.value_id(value);
-                            self.memo.insert(key, id);
+                            self.memo.insert(key, (id, self.written_cells - before));
                             id
                         }
                     };
@@ -2693,10 +2705,14 @@ impl<'a> Walker<'a> {
                     } else {
                         let key = (step_id, id, b);
                         match self.counts.get(&key) {
-                            Some(found) => *found,
+                            Some(&(rows, number, cost)) => {
+                                self.written_cells += cost;
+                                (rows, number)
+                            }
                             None => {
+                                let before = self.written_cells;
                                 let found = self.count_only(step, at, id, b, term.root == RootKind::Number, steps);
-                                self.counts.insert(key, found);
+                                self.counts.insert(key, (found.0, found.1, self.written_cells - before));
                                 found
                             }
                         }
@@ -3092,6 +3108,12 @@ impl NameStore {
 
     pub fn get(&self, hash: &u128) -> Option<String> {
         self.names.lock().expect("no panic").get(hash).cloned()
+    }
+
+    /// The name of each root of `wanted` that the store holds in memory, by the low 64 bits of its hash, which is how a vector names it.
+    pub fn texts_of(&self, wanted: &HashSet<u64>) -> std::collections::HashMap<u64, String> {
+        let names = self.names.lock().expect("no panic");
+        names.iter().filter(|(hash, _)| wanted.contains(&(**hash as u64))).map(|(hash, name)| (*hash as u64, name.clone())).collect()
     }
 
     /// Each root's name that the store holds in memory.
