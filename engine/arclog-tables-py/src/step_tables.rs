@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use arclog::stream::Emitter;
 use arclog_bindings::PyDecoder;
-use arclog_tables::columns::{step_case_columns_by_assignment_in, step_case_columns_by_assignment_with, step_case_columns_in};
+use arclog_tables::columns::{step_case_columns_by_assignment_hashed, step_case_columns_by_assignment_in, step_case_columns_by_assignment_with, step_case_columns_in};
 use arclog_tables::split::{self, Part};
 use arclog_tables::summary::{train_pairs, Assemblies, DetFulls, SummaryCache};
 use arclog::eval::join::Materializer;
@@ -81,18 +81,32 @@ use crate::case_tables::{Base, PyCaseTables, Step};
 /// `by_assignment`, the result is the layout of `stream_tables`, as it was before `by_assignment`
 /// existed, and `rows` has no effect.
 ///
+/// With `summaries` false (and `by_assignment`), the call computes no summary of a table beyond its TableHash, and packs no row, whatever `rows` says.
+/// The TableHash is a hash of a table's rows at an assignment, so the call still walks the rows of each table that has one. It leaves out the value hash
+/// of each `DET`, the key of each example, the TableVector, and the entries with their rows. The result is the one that `summaries` true gives, but for these
+/// parts:
+///
+/// - `tables` has a row for each table at each of its assignments, and none for a full value of a `DET` that the table reads through some of its
+///   columns. A table of a finished query (`has_query` 1) and an evidence table have `hash`, `hashed` and `unhashed_reason` as with `summaries` true.
+///   A body table has one row, with `hash` 0, `hashed` 0 and `unhashed_reason` `NotComputed`, and the call walks none of its rows. `capped` and `name` are
+///   as with `summaries` true, and `features` is 0 at each feature, in every row. Each other column is as with `summaries` true, `query`, `has_query`,
+///   `fault` and the columns' facts (`column_types`, `column_ident_sources`, `column_frames`, `column_slots`) among them;
+/// - `assignments`, `example_keys`, `entries`, `projections` and `projection_rows` have no row, and `values` has no cell;
+/// - `flows`, `copies` and the `step` that a later call takes as its `before` are as with `summaries` true.
+///
 /// `output_position` and `output_color` are -1 in each table, since the `OUT`
 /// form that selects a column ends the decode at a step after the one that
 /// gives that column's table: `output_columns` gives that selection.
 #[pyfunction]
-#[pyo3(signature = (decoder, task, case, bodies=false, before=None, by_assignment=true, rows=false))]
-pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, bodies: bool, before: Option<PyRef<'_, PyCaseTables>>, by_assignment: bool, rows: bool) -> PyResult<PyCaseTables> {
+#[pyo3(signature = (decoder, task, case, bodies=false, before=None, by_assignment=true, rows=false, summaries=true))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, bodies: bool, before: Option<PyRef<'_, PyCaseTables>>, by_assignment: bool, rows: bool, summaries: bool) -> PyResult<PyCaseTables> {
     let _timed = arclog::stats::span(arclog::stats::Phase::PyStepTables);
     let points = if bodies { Points::All } else { Points::Relations };
     let (engine, evidence) = (decoder.decoder(), decoder.task());
     // The evidence tables hold the task alone, so a session derives them once.
     let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
-    let summaries = decoder.derived(SummaryCache::default);
+    let cache = decoder.derived(SummaryCache::default);
     let train = decoder.derived(|| train_pairs(evidence));
     // The indexes of the tokens the model wrote, which the engine's forced tokens follow in the trace. The last is the index `stream_tables` gives the step; a decode before its first step has none, and no table.
     let written: Vec<usize> = engine.trace().records().iter().enumerate().filter(|(_, record)| record.emitter == Emitter::Model).map(|(index, _)| index).collect();
@@ -122,7 +136,12 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
                 let _timed = split::span(Part::OwnQueryHash);
                 tables.iter().map(|(_, table)| query_of(table)).collect()
             };
-            step_case_columns_by_assignment_with(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, &train, queries, rows, &summaries, assemblies(engine))
+            let before = earlier.map(|step| &*step.stream);
+            if summaries {
+                step_case_columns_by_assignment_with(&materializer, before, &evidence_tables, tables, &train, queries, rows, &cache, assemblies(engine))
+            } else {
+                step_case_columns_by_assignment_hashed(&materializer, before, &evidence_tables, tables, &train, queries, &cache, assemblies(engine))
+            }
         } else {
             step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, evidence.train.len())
         };
@@ -141,8 +160,8 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
 
 /// The base tables of the task of `decoder`: `input`, `ex_input` and
 /// `ex_output`, numbered 0, 1 and 2, at token 0, with point 2, in the layout
-/// of `step_tables` with `by_assignment=True`, and `rows` as `step_tables`
-/// takes it. `input` has one entry for each example, train and test, which
+/// of `step_tables` with `by_assignment=True`, and `rows` and `summaries` as
+/// `step_tables` takes them. `input` has one entry for each example, train and test, which
 /// holds the cells of the example's input grid, with no Example column, and
 /// its TableVector and TableHash are those of those entries; `ex_input` and
 /// `ex_output` are the evidence tables that the first result of `step_tables`
@@ -151,8 +170,8 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
 /// `RuntimeError` is raised where the export leaves out a table, as in
 /// `step_tables`.
 #[pyfunction]
-#[pyo3(signature = (decoder, task, case, rows=false))]
-pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, rows: bool) -> PyResult<PyCaseTables> {
+#[pyo3(signature = (decoder, task, case, rows=false, summaries=true))]
+pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, rows: bool, summaries: bool) -> PyResult<PyCaseTables> {
     let (engine, evidence) = (decoder.decoder(), decoder.task());
     let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
     let train = decoder.derived(|| train_pairs(evidence));
@@ -161,7 +180,11 @@ pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
         let base: Vec<Table> = std::iter::once(input_table(evidence, engine.registry())).chain(evidence_tables.iter().cloned()).collect();
         // A cache of its own: the evidence tables' summaries are kept by their place, which differs here.
-        step_case_columns_by_assignment_in(&materializer, None, &base, Vec::new(), &train, Vec::new(), rows, &SummaryCache::default()).0
+        if summaries {
+            step_case_columns_by_assignment_in(&materializer, None, &base, Vec::new(), &train, Vec::new(), rows, &SummaryCache::default()).0
+        } else {
+            step_case_columns_by_assignment_hashed(&materializer, None, &base, Vec::new(), &train, Vec::new(), &SummaryCache::default(), Assemblies::default()).0
+        }
     });
     complete(&columns)?;
     PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, None)

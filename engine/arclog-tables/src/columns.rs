@@ -87,7 +87,7 @@ use arclog::types::{IdentSource, SourceId};
 use crate::extents::{EntryExtents, Extent, ExtentRows, Merged};
 use crate::flows::{ColumnSource, SourceColumn, SourceFrame, SourceKind};
 use crate::split::{self, Part};
-use crate::summary::{bound_name, evidence_key, summarize_cached, Assemblies, DetFulls, SummaryCache, SummaryKey, TableSummary};
+use crate::summary::{bound_name, evidence_key, summarize_cached, summarize_hashes_cached, Assemblies, DetFulls, SummaryCache, SummaryKey, TableSummary};
 use crate::tables::{evidence_shells, Contents, Point, Table, TableColumn, TableRelation};
 
 /// The point of a table, as the code in [`TableColumns::point`].
@@ -595,17 +595,24 @@ enum RowExport {
     /// not; no projections, and no `DET` value runs, since the assignments part
     /// holds the value hashes.
     Grouped {rows:bool},
+    /// The export that groups a table's entries by assignment and holds the
+    /// summaries' TableHash alone ([`step_case_columns_by_assignment_hashed`]):
+    /// the columns of each table, and no entry, no projection and no `DET`
+    /// value run, so no row is packed.
+    Hashed,
 }
 impl RowExport {
-    fn omit_projections(self)->bool {matches!(self,Self::Grouped {..})}
+    fn omit_projections(self)->bool {matches!(self,Self::Grouped {..}|Self::Hashed)}
     fn count_only(self,rows:&Relation,projected:bool)->bool {
         match self {
             Self::Default=>projected,
             Self::Held {cap}=>rows.parts().len()>1 && rows.len()>cap,
             Self::Grouped {rows}=>!rows,
+            Self::Hashed=>true,
         }
     }
-    fn skips_dets(self)->bool {matches!(self,Self::Grouped {..})}
+    fn skips_dets(self)->bool {matches!(self,Self::Grouped {..}|Self::Hashed)}
+    fn skips_entries(self)->bool {matches!(self,Self::Hashed)}
 }
 
 /// Packs with the caller's CURRENT operation limits and native session.
@@ -837,6 +844,41 @@ pub fn step_case_columns_by_assignment_in(materializer:&Materializer<'_>,before:
 /// the value hashes name each Pose type ([`crate::summary`]).
 #[allow(clippy::too_many_arguments)]
 pub fn step_case_columns_by_assignment_with(materializer:&Materializer<'_>,before:Option<&StreamTables>,evidence:&[Table],tables:Vec<(usize,Table)>,train:&[arclog_features::Pair],queries:Vec<Option<StableHash>>,rows:bool,cache:&SummaryCache,assemblies:Assemblies)->(CaseColumns,StreamTables) {
+    by_assignment_columns(materializer,before,evidence,tables,train,queries,RowExport::Grouped {rows},cache,assemblies)
+}
+
+/// [`step_case_columns_by_assignment_with`] for the export that computes no
+/// summary of a table beyond its TableHash and packs no row. Its columns are
+/// those of the other export, with these parts of them empty or left to the
+/// table alone:
+///
+/// - `tables` has a row for each table at each of its assignments, as the other
+///   export has, with no row for a full value of a `DET` that the table reads
+///   through some of its columns ([`crate::summary::DetFulls`]). A table of a
+///   finished query and an evidence table have the `hash`, `hashed` and
+///   `unhashed_reason` that its summary gives. A body table has one row,
+///   with `hashed` 0 and the reason `NotComputed`. `capped` and `name` come from
+///   the table, and `features` is 0 at each feature, in every row. Every other
+///   column of `tables` is the other export's;
+/// - `entries`, `assignments`, `example_keys`, `assigned`, `projections` and
+///   `projection_rows` have no row, and `values` no cell;
+/// - `flows` has the rows that the other export gives.
+///
+/// The TableHash is that of the rows the table holds, so the walk of those rows
+/// that it takes remains: it is the part of a summary that this export keeps.
+/// What it leaves out is the value hash of each `DET`, the key of each example,
+/// the value hash of each model's TableRows, the TableVector, and the entries
+/// with their rows. The summaries of `cache` serve it as they serve the other
+/// export, and a summary that it puts there serves no call of the other export
+/// ([`crate::summary::summarize_hashes_cached`]).
+#[allow(clippy::too_many_arguments)]
+pub fn step_case_columns_by_assignment_hashed(materializer:&Materializer<'_>,before:Option<&StreamTables>,evidence:&[Table],tables:Vec<(usize,Table)>,train:&[arclog_features::Pair],queries:Vec<Option<StableHash>>,cache:&SummaryCache,assemblies:Assemblies)->(CaseColumns,StreamTables) {
+    by_assignment_columns(materializer,before,evidence,tables,train,queries,RowExport::Hashed,cache,assemblies)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn by_assignment_columns(materializer:&Materializer<'_>,before:Option<&StreamTables>,evidence:&[Table],tables:Vec<(usize,Table)>,train:&[arclog_features::Pair],queries:Vec<Option<StableHash>>,row_export:RowExport,cache:&SummaryCache,assemblies:Assemblies)->(CaseColumns,StreamTables) {
+    let hashed = matches!(row_export,RowExport::Hashed);
     let mut stop = None;
     let held: &[Table] = if before.is_some() {&[]} else {evidence};
     // The cache key of each table: its QueryHash with its `DET`s ([`summary_query`]), and its place among the step's tables of the same form. A body
@@ -857,14 +899,14 @@ pub fn step_case_columns_by_assignment_with(materializer:&Materializer<'_>,befor
     let summaries: Vec<TableSummary> = {
         // The full `DET`s of the stream so far, which a table that reads one through some of its columns stands for each full value of.
         let fulls = DetFulls::new(before.into_iter().flat_map(|before|before.tables.iter().map(|table|&**table)).chain(tables.iter().map(|(_,table)|table)).collect()).with_assemblies(assemblies);
-        held.iter().chain(tables.iter().map(|(_,table)|table)).zip(keys).map(|(table,key)|summarize_cached(materializer,table,train,&fulls,cache,key).unwrap_or_else(|bound|{
+        held.iter().chain(tables.iter().map(|(_,table)|table)).zip(keys).map(|(table,key)|(if hashed {summarize_hashes_cached(materializer,table,train,&fulls,cache,key)} else {summarize_cached(materializer,table,train,&fulls,cache,key)}).unwrap_or_else(|bound|{
             stop.get_or_insert(Stop {bound,form:table.form.clone()});
             TableSummary::unhashed(table, bound_name(bound))
         })).collect()
     };
     let (columns, mut stream) = {
         let _timed = split::span(Part::StepColumns);
-        step_columns(materializer,before,evidence,tables,train.len(),RowExport::Grouped {rows})
+        step_columns(materializer,before,evidence,tables,train.len(),row_export)
     };
     // The QueryHash of each table of this step is the one the step gives: an assignment names a `DET` by that hash, whatever columns later steps read of it.
     let own_from = stream.queries.len()-queries.len();
@@ -1158,7 +1200,7 @@ fn packing_growth(out:&CaseColumns,names:&TableNames,runs:&Runs,table:&Table,row
     let mut det_runs=0usize;
     if let Ok(contents)=&table.contents {
         flows=contents.flows.iter().map(Vec::len).sum();
-        for example in &contents.examples {match &example.rows {
+        for example in contents.examples.iter().filter(|_|!row_export.skips_entries()) {match &example.rows {
             Err(_)=>entries=entries.saturating_add(1),
             Ok(rows)=>{
                 if rows.at.is_empty() {entries=entries.saturating_add(1);}
@@ -1215,7 +1257,7 @@ fn metadata_bytes(materializer:&Materializer<'_>,table:&Table,names:&TableNames,
     }
     for key in &contents.keys {add(256usize.saturating_add(key.len().saturating_mul(32)));}
     for sources in &contents.flows {for source in sources {add(2048usize.saturating_add(source.row.heap_bytes().saturating_mul(8)).saturating_add(source.atom.0.len().saturating_mul(256)));}}
-    for example in &contents.examples {
+    for example in contents.examples.iter().filter(|_|!row_export.skips_entries()) {
         materializer.check()?;
         match &example.rows {
             Err(fault)=>add(4096usize.saturating_add(fault.message.len().saturating_mul(8))),
@@ -1946,6 +1988,7 @@ fn annotation_copy(materializer:&Materializer<'_>,allocations:&mut Vec<Arc<arclo
 /// Gives what the entries and projection rows keep once each has settled.
 fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseColumns, runs: &mut Runs, row: u32, contents: &Contents, types: &[ValueType], extent_columns: &[u32], train: usize, row_export:RowExport) -> Settled {
     let mut settled = Settled::default();
+    if row_export.skips_entries() {return settled;}
     let mut starts = Vec::with_capacity(contents.examples.len());
     for (place, example) in contents.examples.iter().enumerate() {
         starts.push(out.entries.table.len());

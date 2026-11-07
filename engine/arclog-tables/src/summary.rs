@@ -72,7 +72,7 @@ use arclog_features::{Grid as FeatureGrid, Input, Pair, TableRows};
 
 use crate::columns::{row_width, sorted_rows, sorted_rows_at, type_names};
 use crate::split::{self, Part};
-use crate::tables::{example_axis, Contents, Table, TableDet, TableRelation};
+use crate::tables::{example_axis, Contents, Point, Table, TableDet, TableRelation};
 
 /// The most column orders that the TableHash tries.
 const MAX_ORDERS: usize = 720;
@@ -137,6 +137,10 @@ pub struct TableSummary {
     /// canonical form, `slot 0`, `slot 1` and so on, and not by the relation
     /// it reads, so the Name holds no name of the program.
     pub name: String,
+    /// Whether the summary is of [`summarize_hashes_cached`]: each assignment
+    /// holds the TableHash and the reason that it has none, and its `dets`,
+    /// `more`, `examples`, `models` and `features` are empty.
+    pub hashes_only: bool,
 }
 
 impl TableSummary {
@@ -145,11 +149,18 @@ impl TableSummary {
     pub fn unhashed(table: &Table, reason: &str) -> Self {
         let Ok(contents) = &table.contents else { return TableSummary::faulted() };
         let assignments = (0..assignment_count(contents)).map(|_| AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: reason.to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() }).collect();
-        TableSummary { assignments, capped: capped(contents), name: name_of(contents) }
+        TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: false }
     }
 
     fn faulted() -> Self {
-        TableSummary { assignments: vec![AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "TableFault".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() }], capped: false, name: String::new() }
+        TableSummary { assignments: vec![AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "TableFault".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() }], capped: false, name: String::new(), hashes_only: false }
+    }
+
+    /// The summary of a table that [`summarize_hashes_cached`] leaves out: one
+    /// assignment with no TableHash, for the reason `NotComputed`.
+    fn not_computed(contents: &Contents) -> Self {
+        let held = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "NotComputed".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() };
+        TableSummary { assignments: vec![held], capped: capped(contents), name: name_of(contents), hashes_only: true }
     }
 }
 
@@ -233,7 +244,7 @@ pub fn evidence_key(at: usize) -> SummaryKey {
 /// QueryHash fixes the content of its tables within a task, and the order of
 /// its `DET`s fixes the place of each `DET`'s value in the summary, so a summary
 /// holds for every later table of that query with its `DET`s in that order. A summary does not depend on whether
-/// the export packs rows. The cache keeps two generations, each with at most
+/// the export packs rows. A summary of [`summarize_hashes_cached`] is flagged, and serves no export that gives full summaries. The cache keeps two generations, each with at most
 /// [`SUMMARY_CACHE_ENTRIES`] summaries and a bounded count of assignments:
 /// when the young generation is full it becomes the old one and the old one is
 /// dropped, and a summary found in the old generation moves to the young one.
@@ -291,7 +302,7 @@ pub fn summarize_cached(materializer: &Materializer<'_>, table: &Table, train: &
     {
         let _timed = split::span(Part::SummaryHit);
         if let Some(held) = cache.get(&key) {
-            let fits = held.assignments.len() == assignment_count(contents) && held.assignments.iter().enumerate().all(|(at, held)| held.dets.len() == det_count(contents, at));
+            let fits = !held.hashes_only && held.assignments.len() == assignment_count(contents) && held.assignments.iter().enumerate().all(|(at, held)| held.dets.len() == det_count(contents, at));
             if fits {
                 let mut summary = TableSummary::clone(&held);
                 summary.capped = capped(contents);
@@ -316,14 +327,56 @@ pub fn summarize_cached(materializer: &Materializer<'_>, table: &Table, train: &
 pub fn summarize_body(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
     let bodies = DetFulls::none().with_assemblies(fulls.assemblies.clone());
-    let assignments = (0..assignment_count(contents)).map(|at| at_assignment_with(materializer, contents, &types, at, train, &bodies, false)).collect::<Result<_, _>>()?;
-    Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents) })
+    let assignments = (0..assignment_count(contents)).map(|at| at_assignment_with(materializer, contents, &types, at, train, &bodies, false, false)).collect::<Result<_, _>>()?;
+    Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: false })
 }
 
 fn summarize_rows(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
     let assignments = (0..assignment_count(contents)).map(|at| at_assignment(materializer, contents, &types, at, train, fulls)).collect::<Result<_, _>>()?;
-    Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents) })
+    Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: false })
+}
+
+/// The summary of `contents` at each of its assignments with the TableHash alone: each assignment holds the TableHash and the reason that it has none, and
+/// nothing that the other parts of a summary hold. The TableHash is the one that [`summarize_rows`] gives, and so is the walk of the rows that it takes,
+/// but the value hashes of the `DET`s, the keys of the examples, the value hash of each model's TableRows and the TableVector are left out.
+fn summarize_hash_rows(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
+    let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
+    let assignments = (0..assignment_count(contents)).map(|at| at_assignment_with(materializer, contents, &types, at, train, fulls, true, true)).collect::<Result<_, _>>()?;
+    Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: true })
+}
+
+/// The summary of `table` for the export that gives the TableHash of a table and nothing else of its summary: a table of a finished query and an evidence table
+/// have the TableHash at each assignment, as [`summarize_cached`] gives it, and the rest of each assignment is empty. A body table has no TableHash
+/// and one assignment, for the reason `NotComputed`, and no walk of its rows. A table that faulted has the summary that [`summarize`] gives it.
+///
+/// The cache holds the result under `key`, flagged [`TableSummary::hashes_only`], where `key` is given; a summary that [`summarize_cached`] put under the
+/// key gives its TableHash here, with the rest dropped, and a summary of this function does not stand for the full summary there.
+pub fn summarize_hashes_cached(materializer: &Materializer<'_>, table: &Table, train: &[Pair], fulls: &DetFulls<'_>, cache: &SummaryCache, key: Option<SummaryKey>) -> Result<TableSummary, ReachedBound> {
+    let Ok(contents) = &table.contents else { return Ok(TableSummary::faulted()) };
+    if matches!(table.point, Point::Body { .. }) {
+        return Ok(TableSummary::not_computed(contents));
+    }
+    let Some(key) = key else { return summarize_hash_rows(materializer, contents, train, fulls) };
+    {
+        let _timed = split::span(Part::SummaryHit);
+        if let Some(held) = cache.get(&key) {
+            if held.assignments.len() == assignment_count(contents) {
+                let mut summary = TableSummary::clone(&held);
+                for assignment in &mut summary.assignments {
+                    *assignment = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: assignment.hash, reason: std::mem::take(&mut assignment.reason), examples: Arc::default(), models: Arc::default(), features: Arc::default() };
+                }
+                summary.capped = capped(contents);
+                summary.name = name_of(contents);
+                summary.hashes_only = true;
+                return Ok(summary);
+            }
+        }
+    }
+    let _timed = split::span(Part::SummaryMiss);
+    let summary = summarize_hash_rows(materializer, contents, train, fulls)?;
+    cache.put(key, Arc::new(summary.clone()));
+    Ok(summary)
 }
 
 /// The values of the `DET`s at assignment `at` of `contents`: those of the first example that has the assignment.
@@ -549,14 +602,17 @@ fn value_hash_of(types: &[ValueType], rows: &Encoded, assemblies: &Assemblies) -
 }
 
 fn at_assignment(materializer: &Materializer<'_>, contents: &Contents, types: &[ValueType], at: usize, train: &[Pair], fulls: &DetFulls<'_>) -> Result<AssignmentSummary, ReachedBound> {
-    at_assignment_with(materializer, contents, types, at, train, fulls, true)
+    at_assignment_with(materializer, contents, types, at, train, fulls, true, false)
 }
 
-/// [`at_assignment`], with the `DET`s of the assignment where `with_dets` holds.
-fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, types: &[ValueType], at: usize, train: &[Pair], fulls: &DetFulls<'_>, with_dets: bool) -> Result<AssignmentSummary, ReachedBound> {
+/// [`at_assignment`], with the `DET`s of the assignment where `with_dets` holds. Where `hash_only` holds, the summary has the TableHash and its reason alone:
+/// the assignment takes no `DET`s, no key of an example, no value hash of a model's TableRows and no TableVector, and the walk of the rows that the
+/// TableHash takes stays.
+#[allow(clippy::too_many_arguments)]
+fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, types: &[ValueType], at: usize, train: &[Pair], fulls: &DetFulls<'_>, with_dets: bool, hash_only: bool) -> Result<AssignmentSummary, ReachedBound> {
     let mut dets = Vec::new();
     let mut more: Vec<Vec<StableHash>> = Vec::new();
-    if let Some(values) = det_values(contents, at).filter(|_| with_dets) {
+    if let Some(values) = det_values(contents, at).filter(|_| with_dets && !hash_only) {
         // The value hashes that each `DET` stands for: those of the full values that project to the value it is read at, or its own.
         let mut choices: Vec<Vec<StableHash>> = Vec::with_capacity(values.len());
         for ((_, rows), det) in values.iter().zip(contents.dets.iter()) {
@@ -632,7 +688,7 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
     // A table that no `DET` reads as a value needs a hash that tells its rows from those of its other assignments, and no other: it reads its rows once for each part.
     let (hash, hashes) = if with_dets { table_hash(types, &views, &fulls.assemblies) } else { (rows_hash_of_table(types, &views, &fulls.assemblies), vec![0; views.len()]) };
     // The value hash of each distinct TableRows.
-    let sets: Vec<Vec<u128>> = views.iter().map(|(_, _, distinct)| distinct.iter().map(|rows| if with_dets { value_hash_of(types, rows, &fulls.assemblies).0 } else { rows.key.0 }).collect()).collect();
+    let sets: Vec<Vec<u128>> = if hash_only { Vec::new() } else { views.iter().map(|(_, _, distinct)| distinct.iter().map(|rows| if with_dets { value_hash_of(types, rows, &fulls.assemblies).0 } else { rows.key.0 }).collect()).collect() };
     failed.sort_unstable();
     failed.dedup();
     let hash = if failed.is_empty() {
@@ -649,6 +705,9 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
         hasher.finish128()
     };
     let hash = reason.is_none().then_some(hash);
+    if hash_only {
+        return Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() });
+    }
     let models: Vec<Vec<Option<(u64, u128)>>> = places
         .iter()
         .zip(&examples)
