@@ -69,6 +69,7 @@ use arclog::types::{AssemblyId, ValueType};
 use arclog_features::{Grid as FeatureGrid, Input, Pair, TableRows};
 
 use crate::columns::{row_width, sorted_rows, sorted_rows_at, type_names};
+use crate::shape_rows::{ShapeExample, ShapeModel, ShapeRows, SharedShapeRows};
 use crate::split::{self, Part};
 use crate::tables::{example_axis, Contents, Point, Table, TableDet, TableRelation};
 
@@ -119,6 +120,9 @@ pub struct AssignmentSummary {
     pub models: Arc<Vec<Vec<Option<(u64, u128)>>>>,
     /// The TableVector: a value for each of `arclog_features::FEATURES`.
     pub features: Arc<Vec<f32>>,
+    /// The rows of the table at this assignment, sharing the engine's rows, for the reader that walks the table's shapes. None where the summary
+    /// holds none: a summary of [`summarize_hashes_cached`], or a table with no TableHash.
+    pub shape_rows: SharedShapeRows,
 }
 
 /// A table at each of its assignments, in the order of the walk, and at least
@@ -146,18 +150,18 @@ impl TableSummary {
     /// the table's examples walk.
     pub fn unhashed(table: &Table, reason: &str) -> Self {
         let Ok(contents) = &table.contents else { return TableSummary::faulted() };
-        let assignments = (0..assignment_count(contents)).map(|_| AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: reason.to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() }).collect();
+        let assignments = (0..assignment_count(contents)).map(|_| AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: reason.to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None }).collect();
         TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: false }
     }
 
     fn faulted() -> Self {
-        TableSummary { assignments: vec![AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "TableFault".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() }], capped: false, name: String::new(), hashes_only: false }
+        TableSummary { assignments: vec![AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "TableFault".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None }], capped: false, name: String::new(), hashes_only: false }
     }
 
     /// The summary of a table that [`summarize_hashes_cached`] leaves out: one
     /// assignment with no TableHash, for the reason `NotComputed`.
     fn not_computed(contents: &Contents) -> Self {
-        let held = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "NotComputed".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() };
+        let held = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "NotComputed".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None };
         TableSummary { assignments: vec![held], capped: capped(contents), name: name_of(contents), hashes_only: true }
     }
 }
@@ -223,6 +227,9 @@ pub const SUMMARY_CACHE_ENTRIES: usize = 4096;
 /// assignments, so the count bounds the generation's size.
 const SUMMARY_CACHE_ASSIGNMENTS: usize = 1 << 17;
 
+/// The most cells of the relations of [`ShapeRows`], over all the summaries of one generation of a [`SummaryCache`]: the relations share the engine's rows, and this keeps the rows of a generation near 4 bytes for each cell, 256 MiB, with the cache holding them past their session.
+const SUMMARY_CACHE_SHAPE_CELLS: usize = 1 << 26;
+
 /// The key of a table's summary in a [`SummaryCache`]: the hash of the
 /// QueryHash of the table's query and of the `DET`s of its assignments in their
 /// order ([`crate::columns`]), and the table's place among the tables of its
@@ -259,6 +266,8 @@ struct Generations {
     young: HashMap<SummaryKey, Arc<TableSummary>>,
     /// The assignments of the summaries in `young`.
     assignments: usize,
+    /// The cells of the shape rows of the summaries in `young`.
+    cells: usize,
     old: HashMap<SummaryKey, Arc<TableSummary>>,
 }
 
@@ -278,16 +287,25 @@ impl SummaryCache {
     }
 }
 
+/// The cells of the shape rows that the assignments of `summary` hold.
+fn shape_cells(summary: &TableSummary) -> usize {
+    summary.assignments.iter().filter_map(|at| at.shape_rows.as_ref()).map(|rows| rows.cells()).sum()
+}
+
 impl Generations {
     fn insert(&mut self, key: SummaryKey, summary: Arc<TableSummary>) {
         let size = summary.assignments.len();
-        if !self.young.contains_key(&key) && (self.young.len() >= SUMMARY_CACHE_ENTRIES || self.assignments.saturating_add(size) > SUMMARY_CACHE_ASSIGNMENTS) {
+        let cells = shape_cells(&summary);
+        if !self.young.contains_key(&key) && (self.young.len() >= SUMMARY_CACHE_ENTRIES || self.assignments.saturating_add(size) > SUMMARY_CACHE_ASSIGNMENTS || self.cells.saturating_add(cells) > SUMMARY_CACHE_SHAPE_CELLS) {
             self.old = std::mem::take(&mut self.young);
             self.assignments = 0;
+            self.cells = 0;
         }
         self.assignments += size;
+        self.cells += cells;
         if let Some(replaced) = self.young.insert(key, summary) {
             self.assignments = self.assignments.saturating_sub(replaced.assignments.len());
+            self.cells = self.cells.saturating_sub(shape_cells(&replaced));
         }
     }
 }
@@ -362,7 +380,7 @@ pub fn summarize_hashes_cached(materializer: &Materializer<'_>, table: &Table, t
             if held.assignments.len() == assignment_count(contents) {
                 let mut summary = TableSummary::clone(&held);
                 for assignment in &mut summary.assignments {
-                    *assignment = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: assignment.hash, reason: std::mem::take(&mut assignment.reason), examples: Arc::default(), models: Arc::default(), features: Arc::default() };
+                    *assignment = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: assignment.hash, reason: std::mem::take(&mut assignment.reason), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None };
                 }
                 summary.capped = capped(contents);
                 summary.name = name_of(contents);
@@ -638,9 +656,12 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
     let mut examples: Vec<(u8, u32, Vec<Encoded>)> = Vec::with_capacity(contents.examples.len());
     // The place among the example's distinct TableRows of each of its models.
     let mut places: Vec<Vec<Option<usize>>> = Vec::with_capacity(contents.examples.len());
+    // The rows of each example's distinct TableRows as the reader of shape values takes them.
+    let mut shapes: Vec<Vec<ShapeModel>> = Vec::with_capacity(contents.examples.len());
     for example in &contents.examples {
         let (kind, index) = example_axis(example.example, train.len());
         let mut distinct: Vec<Encoded> = Vec::new();
+        let mut shape_distinct: Vec<ShapeModel> = Vec::new();
         let mut place: Vec<Option<usize>> = Vec::new();
         let index = u32::try_from(index).expect("fewer than 2^32 examples");
         // A bound that depends only on the query fails the example; any other cause leaves the table with no TableHash.
@@ -665,6 +686,9 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
                                 Some(at) => place.push(Some(at)),
                                 None => {
                                     place.push(Some(distinct.len()));
+                                    if !hash_only {
+                                        shape_distinct.push(ShapeModel::of(rows));
+                                    }
                                     distinct.push(found);
                                 }
                             }
@@ -681,6 +705,7 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
         }
         examples.push((kind, index, distinct));
         places.push(place);
+        shapes.push(shape_distinct);
     }
     let views: Vec<(u8, u32, &[Encoded])> = examples.iter().map(|(kind, index, distinct)| (*kind, *index, &distinct[..])).collect();
     // A table that no `DET` reads as a value needs a hash that tells its rows from those of its other assignments, and no other: it reads its rows once for each part.
@@ -704,7 +729,7 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
     };
     let hash = reason.is_none().then_some(hash);
     if hash_only {
-        return Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() });
+        return Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None });
     }
     let models: Vec<Vec<Option<(u64, u128)>>> = places
         .iter()
@@ -734,12 +759,17 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
         }
     }
     let features = arclog_features::vector(&Input { types: &names, example_column, rows: &rows, train, capped: capped(contents), task_level });
+    // The rows for the shape values, where the table has a TableHash, which keys what the reader computes.
+    let shape_rows = hash.map(|_| {
+        let held = examples.iter().zip(shapes).map(|((kind, index, _), models)| ShapeExample { kind: *kind, index: *index, models }).collect();
+        Arc::new(ShapeRows { types: types.to_vec(), train: train.len(), examples: held })
+    });
     let examples: Vec<ExampleKey> = examples
         .iter()
         .zip(hashes)
         .map(|((kind, index, rows), hash)| ExampleKey { kind: *kind, index: *index, distinct: rows.len() as u32, rows: rows.iter().map(|rows| rows.count).max().unwrap_or(0), hash })
         .collect();
-    Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::new(examples), models: Arc::new(models), features: Arc::new(features) })
+    Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::new(examples), models: Arc::new(models), features: Arc::new(features), shape_rows })
 }
 
 /// A hash of the types of a table and of the keys of the TableRows of each of
