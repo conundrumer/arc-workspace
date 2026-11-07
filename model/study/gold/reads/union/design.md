@@ -46,6 +46,12 @@ Each output in this folder records the code that made it, as `{"sha": HEAD, "dir
 
 A large output of the stages is a zstd stream, `NAME.jsonl.zst`: a sequence of independent frames, each of whole rows, written as the rows go out, so a reader can read a file that a stage still writes. Every stage reads a file through `model/study/study_zst.py`, which reads `NAME.jsonl.zst` and a plain `NAME.jsonl` alike, and where both exist reads the one modified last. A name in this document is the logical name, without `.zst`. A `NAME.jsonl.sha256` holds the sha256 of the text, and `NAME.jsonl.code.json` keeps the logical name too.
 
+## Check against a grammar
+
+`gold_union_grammar_check.py` decodes each distinct program text of `cases-SET.jsonl` on an engine (as `gold_union_fits.sampler_decode` does: the reader and `Session.check_stream`, no table evaluated) and lists the tasks and cases the engine's grammar refuses, with each reason. Its output, `grammar-SET[-K].jsonl` in a folder of its own, is one line per task, written as the task is checked; a restart skips the tasks it has. The tasks it names are the tasks whose gold must be made again, by the conversion of the solver and a publication, on that engine.
+
+`runs/strip_tasks.py` removes the lines of tasks from the shard files of a folder, `.zst` or plain, before the stages take those tasks again. A task that a shard of an earlier batch still holds is skipped by the union stage, and a merge can take the older line, as the shard names sort as text.
+
 ## Search programs
 
 Search-found right programs are not gold. They go to `search-programs.jsonl`, one line per program: task, source file, line, the program pruned to the forms OUT reads, and which test attempts are right.
