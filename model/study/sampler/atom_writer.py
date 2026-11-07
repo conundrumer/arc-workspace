@@ -5,6 +5,7 @@ Rows and the live writer share this module, so a model reads at serving what it 
   WRITER_ATOM_TREE     a LightGBM text model over those columns (with its .uses.json), or
   WRITER_ATOM_SOCKET   the socket of a server, whose Client.score(point, cands) gives one logit per candidate; WRITER_ATOM_SERVER_DIR holds atom_serve.py
   WRITER_ATOM_K        the atoms a decision proposes (default 8)
+  WRITER_ATOM_ENOUGH   the token tree's mass at which a proposal walk ends (default: no limit)
   WRITER_ATOM_POPS     the items that a proposal walk takes off its heap, per atom wanted (default 12)
 
 A share of the mass that the token tree gives to atoms outside the proposals (WRITER_ATOM_ESCAPE) stays as one more option of the choice, and a search that takes it writes the rest of the body by tokens, so each atom stays reachable.
@@ -26,6 +27,8 @@ M, Phase = writer.M, writer.Phase
 STRUCT = ('n_tokens', 'n_columns', 'n_fresh', 'n_key', 'n_join', 'n_zero', 'negated', 'is_end', 'is_group', 'is_comparison')
 K = int(os.environ.get('WRITER_ATOM_K', 8))
 ESCAPE = float(os.environ.get('WRITER_ATOM_ESCAPE', 0.25))  # the share of the mass outside the proposals that stays with token writing: the true atom lies outside them far less often than the tree's mass there says
+SET_NAMES = ['atom:bits_rank', 'atom:bits_share', 'atom:same_first', 'atom:first_share']
+ENOUGH = float(os.environ.get('WRITER_ATOM_ENOUGH', 2.0))  # a walk ends once the atoms it has found hold this much of the token tree's mass
 POPS = int(os.environ.get('WRITER_ATOM_POPS', 12))  # the items that a walk takes off its heap, per atom wanted
 FINISHED = -1  # an item of the walk that is an atom with its closing share counted
 MIN_CHANCE = 1e-5  # a token below this chance at a point goes on no heap
@@ -103,12 +106,13 @@ def token_probs(cur, plan):
 
 def top_atoms(pt, want, core, plan, skip=frozenset()):
     """The atoms that the token tree ranks highest from decision pt, most likely first: [(tokens, the point at its end, bits, bits off the bound)]. A best-first walk over tokens, where an atom ends at a column point that can close, at the next atom start, or where the body ends. It steps a token only when the token comes off the heap, so the walk pays for no point that it doesn't reach. An item is (bound, count, token or FINISHED, tokens, the point at them, bits, cost)."""
-    heap, count, out, pops, stepped = [(0.0, 0, None, (), pt, 0.0, 0.0)], 1, [], 0, 0
-    while heap and len(out) < want and pops < want * POPS:
+    heap, count, out, pops, stepped, found = [(0.0, 0, None, (), pt, 0.0, 0.0)], 1, [], 0, 0, 0.0
+    while heap and len(out) < want and pops < want * POPS and found < ENOUGH:
         _, _, t, tokens, cur, bits, cost = heapq.heappop(heap)
         pops += 1
         if t == FINISHED:
             out.append((list(tokens), cur, bits, cost))
+            found += 2.0 ** -bits
             continue
         if t is not None:
             try:
@@ -120,6 +124,7 @@ def top_atoms(pt, want, core, plan, skip=frozenset()):
             if cur.track.where != 'body' or (len(tokens) == 1 and is_group_token(core, t)) or (cur.place.phase == Phase.ATOM_START and tokens != (M.NOT,)):
                 if tokens not in skip:
                     out.append((list(tokens), cur, bits, cost))
+                    found += 2.0 ** -bits
                 continue
         ids, prob, costs = token_probs(cur, plan)
         if not len(ids):
@@ -170,6 +175,16 @@ def rows_of(pt, cands, core):
     return X[0][point_at], np.stack(tok), np.array(struct, np.float32), np.array(defined, np.float32), np.stack(av), np.stack(delta), keep
 
 
+def set_columns(bits, first):
+    """A candidate's place in its set: its rank by the tree's bits, its share of the set's mass, the candidates with its first token, and their share. n x len(SET_NAMES)."""
+    share = 2.0 ** -(bits - bits.min())
+    share = share / share.sum()
+    rank = np.argsort(np.argsort(bits, kind='stable'), kind='stable')
+    first = np.asarray(first)
+    same = first[:, None] == first[None, :]
+    return np.stack([rank, share, same.sum(1), (same * share[None, :]).sum(1)], 1).astype(np.float32)
+
+
 class TreeScore:
     def __init__(self, path):
         import tree_dist
@@ -178,14 +193,14 @@ class TreeScore:
         self.uses = json.load(open(os.path.splitext(path)[0] + '.uses.json'))
         self.columns = None
 
-    def score(self, run, point, tok, struct, defined, av, delta, bits):
+    def score(self, run, point, tok, struct, defined, av, delta, bits, first):
         if self.columns is None:
             point_names, token_names, _, _ = names_of(run)
-            names = point_names + token_names + ['atom:' + x for x in STRUCT] + ['atom:defined', 'atom:bits', 'atom:bits_gap'] + ['a:' + x for x in writer.AV_NAMES] + ['d:' + x for x in writer.AV_NAMES]
+            names = point_names + token_names + ['atom:' + x for x in STRUCT] + ['atom:defined', 'atom:bits', 'atom:bits_gap'] + SET_NAMES + ['a:' + x for x in writer.AV_NAMES] + ['d:' + x for x in writer.AV_NAMES] + ['r:' + x for x in writer.AV_NAMES]
             at = {n: i for i, n in enumerate(names)}
             self.columns = np.array([at[n] for n in self.uses])
         n = len(tok)
-        rows = np.concatenate([np.broadcast_to(point, (n, len(point))), tok, struct, defined[:, None], bits[:, None], (bits - bits.min())[:, None], av, delta], 1)
+        rows = np.concatenate([np.broadcast_to(point, (n, len(point))), tok, struct, defined[:, None], bits[:, None], (bits - bits.min())[:, None], set_columns(bits, first), av, delta, av - av.mean(0, keepdims=True)], 1)
         return np.asarray(self.booster.predict(rows[:, self.columns], raw_score=True, num_threads=1), np.float64)
 
 
@@ -195,7 +210,7 @@ class ServerScore:
         from atom_serve import Client
         self.client = Client(socket)
 
-    def score(self, run, point, tok, struct, defined, av, delta, bits):
+    def score(self, run, point, tok, struct, defined, av, delta, bits, first):
         cands = np.concatenate([tok, struct, defined[:, None], av, delta], 1)
         wall, cpu = time.perf_counter(), time.process_time()
         got = np.asarray(self.client.score(point, cands), np.float64)
@@ -237,15 +252,15 @@ def choose(pt, plan, rng):
             STATS['no candidates'] += 1
         else:
             point, tok, struct, defined, av, delta, keep = got
-            s = model().score(run, point, tok, struct, defined, av, delta, np.array([c[2] for c in keep], np.float32))
+            s = model().score(run, point, tok, struct, defined, av, delta, np.array([c[2] for c in keep], np.float32), [c[0][0] for c in keep])
             s = np.round(s / ROUND) * ROUND
             e = np.exp(s - s.max())
             covered = min(1.0, sum(2.0 ** -c[2] for c in keep))
             outside = ESCAPE * (1.0 - covered)
             probs = e / e.sum() * (1.0 - outside)
             costs = [c[3] for c in keep]
-            if outside > 0.0:
-                probs, costs = np.append(probs, outside), costs + [0.0]
+            if outside > 0.0:  # a path that writes a proposed atom by tokens dies at its close, so the bound of an atom outside is ESCAPE times its chance under the tree
+                probs, costs = np.append(probs, outside), costs + [float(np.log2(1.0 - covered))]
             held = pt.memo['atoms'] = (keep, probs, np.array(costs) if any(costs) else None)
             STATS['decisions'] += 1
             STATS['candidates'] += len(keep)
