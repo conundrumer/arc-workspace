@@ -2540,9 +2540,27 @@ impl PartStep {
             }
             PartStep::Product { keys } => {
                 let others: Vec<u16> = (0..t.arity as u16).filter(|at| !keys.contains(at)).collect();
-                let distinct = |places: &[u16]| t.rows().map(|row| places.iter().map(|at| row[usize::from(*at)]).collect::<Vec<Cell>>()).collect::<std::collections::HashSet<_>>().len();
-                let (own, rest) = (distinct(keys), distinct(&others));
-                Val::of_table(Table::unit(own >= 2 && rest >= 2 && own * rest == t.len))
+                // A group has at least as many rows as its widest column has values, and no more than the product of its columns' value counts.
+                let spread = |places: &[u16]| places.iter().fold((0usize, 1usize), |(widest, room), at| {
+                    let values = t.sorted_column(usize::from(*at)).len();
+                    (widest.max(values), room.saturating_mul(values))
+                });
+                let ((key_widest, key_room), (other_widest, other_room)) = (spread(keys), spread(&others));
+                if key_widest.saturating_mul(other_widest) > t.len || key_room.saturating_mul(other_room) < t.len {
+                    Val::of_table(Table::unit(false))
+                } else {
+                    // Up to four cells of a row pack into one number.
+                    let distinct = |places: &[u16]| -> usize {
+                        if places.len() <= 4 {
+                            t.rows().map(|row| places.iter().fold(0u128, |packed, at| packed << 32 | u128::from(row[usize::from(*at)]))).collect::<std::collections::HashSet<u128>>().len()
+                        } else {
+                            t.rows().map(|row| places.iter().map(|at| row[usize::from(*at)]).collect::<Vec<Cell>>()).collect::<std::collections::HashSet<_>>().len()
+                        }
+                    };
+                    // The rows divide into one equal share for each value of the keys.
+                    let own = distinct(keys);
+                    Val::of_table(Table::unit(own >= 2 && t.len % own == 0 && { let rest = distinct(&others); rest >= 2 && own * rest == t.len }))
+                }
             }
             PartStep::SameRows { left, right, key } => {
                 let other = flat(children[1])?;

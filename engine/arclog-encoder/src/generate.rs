@@ -1739,12 +1739,26 @@ impl Generated {
         let count = columns.len();
         // A shape's name does not depend on a table's width, so a table's own `project` of all its columns stands as a term.
         let every = at == LEAF_TABLE;
-        if (count >= 2 || (every && count == 1)) && count <= 10 {
-            for mask in 1u32..(1 << count) - u32::from(!every) {
-                if mask.count_ones() as usize > MAX_PROJECTED {
+        if count >= 2 || (every && count == 1) {
+            // Each set of at most MAX_PROJECTED columns as a mask, in the order of the masks, built from the sets of one column fewer.
+            let mut masks: Vec<u64> = Vec::new();
+            let mut level: Vec<u64> = vec![0];
+            for _ in 0..MAX_PROJECTED.min(count) {
+                let mut next: Vec<u64> = Vec::new();
+                for mask in &level {
+                    let first = (u64::BITS - mask.leading_zeros()) as usize;
+                    next.extend((first..count).map(|place| *mask | (1u64 << place)));
+                }
+                masks.extend(&next);
+                level = next;
+            }
+            masks.sort_unstable();
+            for mask in masks {
+                // Only a table has a projection that keeps all its columns.
+                if !every && mask == (1u64 << count) - 1 {
                     continue;
                 }
-                let places: Vec<u16> = (0..count as u16).filter(|place| mask & (1 << place) != 0).collect();
+                let places: Vec<u16> = (0..count as u16).filter(|place| mask >> place & 1 == 1).collect();
                 let kept: Vec<Column> = places.iter().map(|place| columns[usize::from(*place)].clone()).collect();
                 let names: Vec<&str> = kept.iter().map(|column| column.name.as_str()).collect();
                 let line = format!("(project {text} {})", names.join(" "));
@@ -1942,7 +1956,7 @@ impl Generated {
     /// Whether the table is a product of two groups of its columns, for each way to split them. The split stands in no shape's name.
     fn product(&mut self) {
         let columns = self.terms[LEAF_TABLE as usize].columns.clone();
-        if columns.len() < 2 || columns.len() > 8 {
+        if columns.len() < 2 {
             return;
         }
         // Each split once: the group that holds the first column is the key.

@@ -242,7 +242,7 @@ The five items below are refusals that stand outside `judge`. `rejected_by_rule`
     - Refuses (C, follows from the other count): a `ratio` with a relation of at most one row.
     - Arclog: refuse a `ratio` root against a relation with the empty key. Needs the keys of the relation.
 
-41. width and size limits, `generate.rs:1379` (`MAX_COLUMNS` 8), `generate.rs:1727` (`MAX_PROJECTED` 3), `generate.rs:1725` (at most 10 columns)
+41. width and size limits, `generate.rs` (`MAX_COLUMNS`, `MAX_PROJECTED`)
     - Reads: the number of columns.
-    - Refuses: a term with more than 8 columns, and a project of more than 3 columns. These are limits of size. They do not follow from any fact of the data.
+    - Refuses: a term with more than `MAX_COLUMNS` columns, and a project of more than `MAX_PROJECTED` columns. These are limits of size. They do not follow from any fact of the data.
     - Arclog: no reading unless the engine adopts the same limits.
