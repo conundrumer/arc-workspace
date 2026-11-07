@@ -29,6 +29,9 @@ Under `--one-binding`, a feature that names a column stands only on the rows whe
 `--disposition` names a file that gives each group of features the sources of the columns that may give it, by the form the specification states it in:
 `shape`, `named`, or a store's source. A line gives its feature's group.
 
+A missing feature is also judged on the rows whose table has more columns than the feature names: `on wider tables` gives that status, since a shape over a
+`project` of all of a table's columns has no entry on that table, and such a feature is missing for that reason alone.
+
 Streams one line per distinct feature, with the first version's metadata of the feature (what it reads, its aggregation level and what else it
 reads) and the names that share its values.
 """
@@ -54,6 +57,7 @@ from common import open_text  # noqa: E402
 
 TOKEN = re.compile(r'(?:\w+\.)?⟨c:[^⟩]*⟩')
 TABLE = re.compile(r'⟨t:[^⟩]*⟩')
+OWN_HOLE = re.compile(r'(?<!\.)\?\w')
 OTHER_COLUMN = re.compile(r'(⟨t:[^⟩]*⟩)\.((?:\w+\.)?⟨c:[^⟩]*⟩)')
 BASE_TYPES = {'⟨c:P⟩': 'Position', '⟨c:Col⟩': 'Color'}
 DEFAULT = np.iinfo(np.int64).max
@@ -196,6 +200,7 @@ def main():
     started = time.time()
     used = 0
     other_assignment = [0]
+    row_width = []
 
     def add_list(row, held, other, at):
         """A row's entries from a table's list at a pair."""
@@ -261,6 +266,7 @@ def main():
                     continue
                 row = rows
                 rows += 1
+                row_width.append(len(own_types.get(name, {})))
                 add_list(row, lists[place], others[place], at)
                 if own_named:
                     add_list(row, own_named[0], own_named[1], at)
@@ -454,7 +460,15 @@ def main():
         feature, at = item
         values = list(at.values())
         random.Random(feature).shuffle(values)
-        return judged(feature, at, args.nearest) + (judged(feature, dict(zip(at, values)), False)[4], group_of(feature)[0])
+        real = judged(feature, at, args.nearest)
+        # A shape over a `project` of all of a table's columns has no entry on that table, so a feature can be missing for that reason alone.
+        wider = ''
+        holes = len(OWN_HOLE.findall(feature))
+        if real[4] == 'missing' and holes and not args.base:
+            narrow = {own: value for own, value in at.items() if row_width[own] > holes}
+            if len(narrow) < len(at):
+                wider = judged(feature, narrow, False)[4]
+        return real + (judged(feature, dict(zip(at, values)), False)[4], group_of(feature)[0], wider)
 
     JUDGE = one
     same_values = collections.defaultdict(list)
@@ -467,7 +481,7 @@ def main():
     begun = time.time()
     tally = collections.Counter()
     with open(args.out, 'w') as sink, mp.get_context('fork').Pool(args.procs) as pool:
-        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tnearest\tnearest share\tshuffled\tgroup\treads\tlevel\tarity\tsame values\n')
+        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tnearest\tnearest share\tshuffled\tgroup\ton wider tables\treads\tlevel\tarity\tsame values\n')
         for done, result in enumerate(pool.imap_unordered(judge, items, chunksize=4), 1):
             coordinate = coordinate_of.get(result[0]) or ['', '', '']
             sink.write('\t'.join(map(str, result)) + '\t' + '\t'.join(coordinate) + '\t' + ' ;; '.join(others_of[result[0]][:6]) + '\n')
