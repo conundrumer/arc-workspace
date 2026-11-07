@@ -2726,6 +2726,14 @@ impl<'a> Walker<'a> {
                 }
                 own.resize(instances, 0);
             }
+            if crate::bounds::enabled() && wanted && listed != 0 && scope > 0 && idle && !(past_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize])) {
+                let cause = if cut_by_bound { "cut by cap" } else if first_cut && !second_empty { "no value" } else if term.b != NO_TERM && second[..scope].iter().any(|id| *id == 0) { "empty, second has no value" } else { "empty" };
+                for (place, (_, of)) in term.roots.iter().enumerate() {
+                    if listed & (1 << place) != 0 {
+                        crate::bounds::idle_roots(cause, format!("{of:?}"), scope as u64);
+                    }
+                }
+            }
             // A root over a first relation with no value has no value: a default would say that the relation is there and empty.
             if wanted && (is_stopped || (scope > 0 && first_cut && !second_empty)) && listed != 0 {
                 // A root over a stopped term has no value at any instance, which is not its default.

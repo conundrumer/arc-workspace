@@ -162,6 +162,16 @@ pub fn skipped(bound: Bound, count: u64) {
     }
 }
 
+/// The slots that the idle shortcut of a walk decides, by its cause and by the kind of root.
+static IDLE_ROOTS: OnceLock<Mutex<HashMap<(&'static str, String), u64>>> = OnceLock::new();
+
+/// `slots` slots of roots of one kind, that a term idle for `cause` decides.
+pub fn idle_roots(cause: &'static str, kind: String, slots: u64) {
+    if enabled() && slots > 0 {
+        *IDLE_ROOTS.get_or_init(Default::default).lock().unwrap().entry((cause, kind)).or_insert(0) += slots;
+    }
+}
+
 /// Adds this thread's counts to the totals.
 pub fn flush() {
     if !enabled() {
@@ -188,6 +198,14 @@ pub fn summary() -> String {
         out.push_str(&format!("bounds\t{name}\t(all heads)\t{whole}\n"));
         for (head, count) in heads {
             out.push_str(&format!("bounds\t{name}\t{head}\t{count}\n"));
+        }
+    }
+    out.push_str("bounds\tidle cause\troot kind\tslots\n");
+    if let Some(idle) = IDLE_ROOTS.get() {
+        let mut rows: Vec<_> = idle.lock().unwrap().iter().map(|((cause, kind), slots)| (*cause, kind.clone(), *slots)).collect();
+        rows.sort();
+        for (cause, kind, slots) in rows {
+            out.push_str(&format!("bounds\tidle\t{cause}\t{kind}\t{slots}\n"));
         }
     }
     out.push_str("bounds\thead\tevaluations\tinput had no value\n");
