@@ -280,6 +280,7 @@ def build(root, out):
     state_root = root.parent / 'state'
     named_root = root.parent / 'named'
     more_root = root.parent / 'more'
+    state_each_root = root.parent / 'state_each'
     query_seen = []
     told_wide = []
     pair_seen = []
@@ -406,7 +407,7 @@ def build(root, out):
     each_keep = column_tasks >= 1
     for split in ('train', 'dev'):
         rows = []
-        mats = {name: maker() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most', 'each', 'null_each', 'graph', 'query') + tuple(RELATION_NUMBERS)}
+        mats = {name: maker() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most', 'each', 'null_each', 'graph', 'query', 'relations_each') + tuple(RELATION_NUMBERS)}
         example_of = []
         example_pair = []
         row_task = []
@@ -433,6 +434,7 @@ def build(root, out):
             pair_numbers = wide_others.get('constant-values', (np.zeros(0, dtype=np.uint64),) + (np.zeros(0, dtype=np.float32),) * 3)
             pair_spots, pair_hit = place(pair_numbers[0], pair_columns)
             state, state_others, state_item = state_lists(state_root / 'lists', path.name)
+            _, state_each_others, _ = state_lists(state_each_root / 'lists', path.name)
             first_example.append(examples_so_far)
             task_train.append(head['train'])
             example_count = head['train'] + head.get('test', 0)
@@ -529,6 +531,21 @@ def build(root, out):
                             mats[name].add(np.concatenate(relation_at), np.concatenate(relation_values[name]))
                         else:
                             mats[name].add([])
+                    # The values against the state's tables at each example, for the row of each.
+                    for pair in range(example_count):
+                        each_at, each_values = [], []
+                        for number, relation in enumerate(RELATIONS):
+                            each_held = state_each_others.get(f'{state_at}/{j}/{relation}')
+                            if each_held is not None and each_held[4].shape[1] > pair:
+                                spots, hit = place(each_held[0], relation_columns)
+                                values = each_held[4][:, pair][hit]
+                                active = values != 0
+                                each_at.append(spots[hit][active] + number * len(relation_columns))
+                                each_values.append(values[active])
+                        if each_at:
+                            mats['relations_each'].add(np.concatenate(each_at), np.concatenate(each_values))
+                        else:
+                            mats['relations_each'].add([])
                     held = query_lists.get(f'{at}/{j}/query')
                     if held is None:
                         mats['query'].add([])
@@ -603,7 +620,7 @@ def build(root, out):
             pickle.dump(data[split]['index'], sink, protocol=4)
     meta = dict(columns=columns, column_tasks=column_tasks, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab, wide_columns=wide_columns, pair_columns=pair_columns, wide_names=wide_names, wide_flags=wide_flags, family_columns=family_columns, family_names=family_names, family_flags=family_flags, graph_columns=graph_columns, relation_columns=relation_columns, query_columns=query_columns)
     meta['blocks'] = True
-    meta['widths'] = dict({name: len(columns) for name in ('stable', 'null', 'contingent', 'null_contingent', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'each', 'null_each')}, base=len(base_vocab), ctx=len(context_vocab), qv=len(QV_NAMES), wide=len(wide_columns), null_wide=len(wide_columns), pair_least=len(pair_columns), pair_mean=len(pair_columns), pair_most=len(pair_columns), graph=len(graph_columns), query=len(query_columns), **{name: len(RELATIONS) * len(relation_columns) for name in RELATION_NUMBERS})
+    meta['widths'] = dict({name: len(columns) for name in ('stable', 'null', 'contingent', 'null_contingent', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'each', 'null_each')}, base=len(base_vocab), ctx=len(context_vocab), qv=len(QV_NAMES), wide=len(wide_columns), null_wide=len(wide_columns), pair_least=len(pair_columns), pair_mean=len(pair_columns), pair_most=len(pair_columns), relations_each=len(RELATIONS) * len(relation_columns), graph=len(graph_columns), query=len(query_columns), **{name: len(RELATIONS) * len(relation_columns) for name in RELATION_NUMBERS})
     with (out / 'meta.pkl').open('wb') as sink:
         pickle.dump(meta, sink, protocol=4)
     code = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=ROOT_REPO).stdout.strip()

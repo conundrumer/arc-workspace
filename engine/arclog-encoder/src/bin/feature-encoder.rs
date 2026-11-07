@@ -622,8 +622,9 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
     };
     let chosen = |folder: &str| arguments.kinds.as_ref().is_none_or(|kinds| kinds.iter().any(|kind| kind == folder));
     let mut kinds: Vec<(&str, ListsOf, Generators)> = Vec::new();
-    for (folder, lists_of, term_limit) in [("state", ListsOf::State, 500_000), ("wide", ListsOf::Wide(wide), 500_000), ("on", ListsOf::Tables, 2_500_000), ("named", ListsOf::Named, 0), ("more", ListsOf::TablesOnly, 2_500_000)] {
-        if folder == "more" && arguments.kinds.is_none() {
+    for (folder, lists_of, term_limit) in [("state", ListsOf::State, 500_000), ("wide", ListsOf::Wide(wide), 500_000), ("on", ListsOf::Tables, 2_500_000), ("named", ListsOf::Named, 0), ("more", ListsOf::TablesOnly, 2_500_000), ("state_each", ListsOf::StateEach, 500_000)] {
+        // These stand only where a run names them.
+        if matches!(folder, "more" | "state_each") && arguments.kinds.is_none() {
             continue;
         }
         if chosen(folder) {

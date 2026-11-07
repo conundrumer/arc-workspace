@@ -187,6 +187,8 @@ pub enum ListsOf {
     Parents,
     /// Each candidate's State features, and the numbers of the pair.
     State,
+    /// Each candidate's values against the tables of its state, at each example.
+    StateEach,
     /// Each table's named shapes, at its place among the task's tables.
     Named,
 }
@@ -195,6 +197,34 @@ pub enum ListsOf {
 /// where a table with no value of the shape counts as 0.
 fn pooled(owner: String, vectors: &[&TableVector]) -> Written {
     Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded: pool(vectors), pairs: 0, at_pairs: Vec::new() }
+}
+
+/// A shape over several tables of a state, at each example: its greatest value over the tables, where a table with no value counts as 0.
+fn pooled_each(owner: String, vectors: &[&TableVector], examples: usize) -> Written {
+    let mut held: BTreeMap<u64, Vec<f32>> = BTreeMap::new();
+    for vector in vectors {
+        for shape in 0..vector.shapes.len() {
+            let scope = vector.scope(shape);
+            for (example, slot) in vector.at(shape).iter().enumerate().take(scope) {
+                if slot.state != SLOT_NO_VALUE && slot.state != SLOT_DEFAULT {
+                    let value = slot.greatest.float() as f32;
+                    if value != 0.0 {
+                        let entry = held.entry(vector.shapes[shape]).or_insert_with(|| vec![0.0; examples]);
+                        entry[example] = entry[example].max(value);
+                    }
+                }
+            }
+        }
+    }
+    let mut graded = Vec::with_capacity(held.len());
+    let mut at_pairs = Vec::with_capacity(held.len() * examples);
+    for (shape, values) in held {
+        let least = values.iter().copied().fold(f32::INFINITY, f32::min);
+        let most = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        graded.push((shape, least, values.iter().sum::<f32>() / examples.max(1) as f32, most));
+        at_pairs.extend(values);
+    }
+    Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded, pairs: examples, at_pairs }
 }
 
 /// A table's two-table values with another table of the state, each the mean over the examples.
@@ -337,7 +367,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
     let mut held: Vec<(String, Arc<Generated>)> = Vec::new();
     let walked: Vec<usize> = match lists_of {
         ListsOf::Tables | ListsOf::TablesOnly => (0..stored.len()).collect(),
-        ListsOf::Wide(_) | ListsOf::State | ListsOf::Named => Vec::new(),
+        ListsOf::Wide(_) | ListsOf::State | ListsOf::StateEach | ListsOf::Named => Vec::new(),
         ListsOf::Parents => {
             let mut places: Vec<usize> = named.iter().map(|(_, at)| *at).collect();
             places.sort_unstable();
@@ -365,7 +395,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
                 lists.push(stable_of(at.into(), &vector));
             }
             ListsOf::Named => lists.push(named_of(at.into(), table, &grids, families, examples, only_output)),
-            ListsOf::Parents | ListsOf::State => {}
+            ListsOf::Parents | ListsOf::State | ListsOf::StateEach => {}
         }
         rows_at.push(serde_json::json!(table.rows[..train].iter().map(|models| models.iter().map(|model| model.len).max().map_or(serde_json::Value::Null, Into::into)).collect::<Vec<serde_json::Value>>()));
     }
@@ -388,7 +418,7 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
             }
         }
     }
-    if lists_of == ListsOf::State {
+    if lists_of == ListsOf::State || lists_of == ListsOf::StateEach {
         // Each pair of a candidate's table and a table of its state, once.
         let mut pairs: Vec<(usize, usize)> = Vec::new();
         for (form, members) in &candidates {
@@ -428,8 +458,12 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
                 for relation in Relation::ALL {
                     let others: Vec<&TableVector> = related.iter().filter(|(_, own)| *own == relation).filter_map(|(node, _)| prefix.get(&node.name)).filter(|other| *other != table).filter_map(|other| vectors.get(&(*table, *other))).collect();
                     if !others.is_empty() {
-                        lists.push(pooled(format!("{at}/{member}/{}", relation.word()), &others));
+                        let owner = format!("{at}/{member}/{}", relation.word());
+                        lists.push(if lists_of == ListsOf::StateEach { pooled_each(owner, &others, examples) } else { pooled(owner, &others) });
                     }
+                }
+                if lists_of == ListsOf::StateEach {
+                    continue;
                 }
                 let mut numbers = graph_numbers(&nodes, *form, parents);
                 numbers.push(("same-table", related.iter().filter(|(node, _)| prefix.get(&node.name) == Some(table)).count() as f32));
@@ -456,8 +490,10 @@ pub fn lists_task(text: &str, task_dir: &std::path::Path, families: &Generators,
         for (t, u) in edges.keys() {
             lists.push(edge_of(format!("edge/{t}/{u}"), &vectors[&(*t, *u)]));
         }
-        let pair = pair_vector(&grids, families, d, only_output);
-        lists.push(stable_of("pair".into(), &pair));
+        if lists_of == ListsOf::State {
+            let pair = pair_vector(&grids, families, d, only_output);
+            lists.push(stable_of("pair".into(), &pair));
+        }
     } else if lists_of == ListsOf::Parents {
         walks = walked.len() as u64;
         let mut vectors: FastMap<usize, TableVector> = FastMap::default();
