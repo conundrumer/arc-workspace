@@ -535,10 +535,6 @@ impl<'a> Decoder<'a> {
             let Token::Column(position) = token(column) else { return Err(AtomRows::ByProgram) };
             let name = opened.columns.get(*position as usize).ok_or(AtomRows::ByProgram)?;
             let ty = column_type(&opened.reference, name).ok_or(AtomRows::ByProgram)?;
-            // A program places a column of Examples by rules of its own.
-            if ty == ValueType::Example {
-                return Err(AtomRows::ByProgram);
-            }
             let column = match &opened.places {
                 Some(places) => ColumnIndex(*places.get(*position as usize).ok_or(AtomRows::ByProgram)?),
                 None => ColumnIndex(u16::try_from(*position).map_err(|_| AtomRows::ByProgram)?),

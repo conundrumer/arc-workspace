@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use super::*;
 use crate::summary::{summarize_body, DetFulls, TableSummary};
 use arclog::decode::{AtomRows, BaseRows};
+use arclog::program::LabelId;
+use arclog::stream::{Control, Token};
 use arclog::terms::Example;
 use arclog::eval::join::Materializer;
 
@@ -69,8 +71,55 @@ fn summary_key(summary: &TableSummary) -> (bool, Vec<u32>, Vec<Option<u128>>) {
     (summary.capped, bits, hashes)
 }
 
-/// The summary of the table of the atom `tokens` with a program made for it.
-fn summary_by_program(decoder: &Decoder<'_>, tokens: &[u32], materializer: &Materializer<'_>, train: &[arclog_features::Pair], fulls: &DetFulls<'_>) -> Option<TableSummary> {
+/// `contents`, the table of the atom `tokens` from a program made for it, with
+/// its columns in the order that a table of the join holds them: the columns of
+/// the body, `base`, then each label that the atom adds, in the order of its sites.
+/// A program holds them in the canonical order of its body, and a feature can
+/// read a column by its place among the columns of its type.
+fn in_atom_order(contents: Contents, base: &[LabelId], tokens: &[u32], decoder: &Decoder<'_>) -> Contents {
+    let labels = decoder.state().label_count();
+    let mut wanted: Vec<LabelId> = base.to_vec();
+    let mut made = 0;
+    for id in tokens {
+        match decoder.vocabulary().token(*id) {
+            Some(Token::Label(label)) if !wanted.contains(&LabelId(*label)) => wanted.push(LabelId(*label)),
+            Some(Token::Control(Control::Fresh | Control::Key)) => {
+                wanted.push(LabelId(labels + made));
+                made += 1;
+            }
+            _ => {}
+        }
+    }
+    let mut order: Vec<usize> = wanted.iter().filter_map(|label| contents.columns.iter().position(|column| column.label_id == Some(*label))).collect();
+    order.extend((0..contents.columns.len()).filter(|at| contents.columns[*at].label_id.is_none_or(|label| !wanted.contains(&label))));
+    if order.iter().enumerate().all(|(at, old)| at == *old) {
+        return contents;
+    }
+    let mut new_place = vec![0u16; order.len()];
+    for (new, old) in order.iter().enumerate() {
+        new_place[*old] = new as u16;
+    }
+    let reordered = |value: RelationValue| match value {
+        RelationValue::Rows(rows) => {
+            let parts = rows.parts().iter().map(|part| arclog::relations::RelationPart { columns: part.columns.iter().map(|column| arclog::relations::ColumnIndex(new_place[usize::from(column.0)])).collect(), rows: part.rows.clone() }).collect();
+            RelationValue::Rows(std::sync::Arc::new(arclog::relations::Relation::from_parts(rows.arity(), parts)))
+        }
+        other => other,
+    };
+    let columns: Box<[TableColumn]> = order.iter().map(|old| contents.columns[*old].clone()).collect();
+    let examples: Box<[ExampleRows]> = contents.examples.into_vec().into_iter().map(|example| ExampleRows {
+        example: example.example,
+        rows: example.rows.map(|assigned| Assigned {
+            at: assigned.at.into_iter().map(|(values, models)| (values, models.into_iter().map(reordered).collect())).collect(),
+            stop: assigned.stop,
+        }),
+    }).collect();
+    Contents { columns, examples, ..contents }
+}
+
+/// The summary of the table of the atom `tokens` with a program made for it,
+/// where `base` holds the labels of the body's columns.
+fn summary_by_program(decoder: &Decoder<'_>, tokens: &[u32], base: &[LabelId], materializer: &Materializer<'_>, train: &[arclog_features::Pair], fulls: &DetFulls<'_>) -> Option<TableSummary> {
     let mut walk = decoder.fork();
     let vocabulary = decoder.vocabulary();
     for id in tokens {
@@ -86,7 +135,7 @@ fn summary_by_program(decoder: &Decoder<'_>, tokens: &[u32], materializer: &Mate
     let work = walk.query_work();
     let examples = walk.examples_of(sub.scope).into_iter().zip(walk.values_of(&sub, Some(&work)).into_vec()).map(|(example, rows)| ExampleRows { example, rows: rows.map(|rows| models_of_body(&rows)) }).collect();
     let contents = body_metadata(walk.registry(), &sub.program, &form, &relation, slot, &walked_dets(&sub.program, relation.node), examples).ok()?;
-    summarize_body(materializer, &contents, train, fulls).ok()
+    summarize_body(materializer, &in_atom_order(contents, base, tokens, decoder), train, fulls).ok()
 }
 
 /// The summary of the table of each atom of `atoms`, ids of the tokens of each,
@@ -107,7 +156,9 @@ pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &M
         out.index = vec![None; atoms.len()];
         return out;
     }
-    let base = if by_program { None } else { base_of(decoder, closed.as_ref()) };
+    let contents = base_contents(decoder, closed.as_ref());
+    let base_labels: Vec<LabelId> = contents.as_ref().map_or_else(Vec::new, |(contents, _)| contents.columns.iter().filter_map(|column| column.label_id).collect());
+    let base = if by_program { None } else { contents.and_then(|(contents, dets)| base_of(decoder, closed.as_ref(), contents, dets)) };
     let mut visit = |at: usize, rows: AtomRows| {
         let mut key = None;
         let summary = match rows {
@@ -129,7 +180,7 @@ pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &M
             }
             AtomRows::ByProgram => {
                 out.by_program += 1;
-                summary_by_program(decoder, &atoms[at], materializer, train, fulls)
+                summary_by_program(decoder, &atoms[at], &base_labels, materializer, train, fulls)
             }
         };
         let place = summary.map(|summary| *distinct.entry(summary_key(&summary)).or_insert_with(|| {
@@ -148,18 +199,28 @@ pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &M
     out
 }
 
-/// The body at the state of `decoder`, closed: its contents with no rows, its rows, and its sub-body.
-fn base_of<'s>(decoder: &Decoder<'_>, closed: Option<&'s Option<Outcome<arclog::decode::SubBody>>>) -> Option<(Contents, BaseRows, Option<&'s arclog::decode::SubBody>)> {
-    let work = decoder.query_work();
-    let empty = || Contents { assignment_layout: AssignmentLayout::Search, relation: TableRelation::Slot(decoder.state().open_slot()), columns: Box::default(), dets: Box::default(), examples: Box::default(), projections: None, name: String::new(), output_name: String::new(), flows: Box::default(), rows: None, bound_labels: Box::default(), depth: 0, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None };
+/// The columns of the body at the state of `decoder`, closed, with no rows, and the `DET`s that it reads.
+fn base_contents(decoder: &Decoder<'_>, closed: Option<&Option<Outcome<arclog::decode::SubBody>>>) -> Option<(Contents, Vec<Det>)> {
     match closed? {
-        None => Some((empty(), decoder.base_rows(None, Vec::new(), Vec::new(), &work), None)),
+        None => Some((Contents { assignment_layout: AssignmentLayout::Search, relation: TableRelation::Slot(decoder.state().open_slot()), columns: Box::default(), dets: Box::default(), examples: Box::default(), projections: None, name: String::new(), output_name: String::new(), flows: Box::default(), rows: None, bound_labels: Box::default(), depth: 0, keys: Vec::new(), selected: SelectedColumns::default(), frames: Vec::new(), extents: None }, Vec::new())),
         Some(Err(_)) => None,
         Some(Ok(sub)) => {
             let form = NodePath::top(decoder.program().value().forms.len() as u32);
             let relation = derived_at(&sub.program, &sub.form);
             let dets = walked_dets(&sub.program, relation.node);
             let contents = body_metadata(decoder.registry(), &sub.program, &form, &relation, decoder.state().open_slot(), &dets, Vec::new()).ok()?;
+            Some((contents, dets))
+        }
+    }
+}
+
+/// The body at the state of `decoder`, closed: its contents with no rows, its rows, and its sub-body.
+fn base_of<'s>(decoder: &Decoder<'_>, closed: Option<&'s Option<Outcome<arclog::decode::SubBody>>>, contents: Contents, dets: Vec<Det>) -> Option<(Contents, BaseRows, Option<&'s arclog::decode::SubBody>)> {
+    let work = decoder.query_work();
+    match closed? {
+        None => Some((contents, decoder.base_rows(None, Vec::new(), Vec::new(), &work), None)),
+        Some(Err(_)) => None,
+        Some(Ok(sub)) => {
             let columns = contents.columns.iter().map(|column| column.label_id.map(|label| (label, column.ty.clone()))).collect::<Option<Vec<_>>>()?;
             let names = dets.iter().map(|det| det.relation.clone()).collect();
             let rows = decoder.base_rows(Some(sub), columns, names, &work);
