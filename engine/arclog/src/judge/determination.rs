@@ -15,7 +15,7 @@ use crate::check::CheckedProgram;
 use crate::eval::determinations::{det_node, det_relation, determinations, is_by_clauses, relation_spelled};
 use crate::eval::instance::Constructions;
 use crate::eval::join::{each_row, one_part, union};
-use crate::eval::{output_relation, Domain, Evaluation, ModelsEnd, RelationValue, Limits, ParameterValues, ReachedBound, RunFault, Stop};
+use crate::eval::{output_relation, Domain, DomainSize, Evaluation, ModelsEnd, RelationValue, Limits, ParameterValues, ReachedBound, RunFault, Stop};
 use crate::hash::StableHashSet;
 use crate::program::path::{node_at, NodeRef};
 use crate::program::{ClauseKeyword, ProgramRelation};
@@ -554,6 +554,18 @@ pub(crate) fn descend_assignments(
 /// evaluation's session and table work count.
 pub(crate) trait Domains {
     fn domain(&self, evaluation: &Evaluation<'_>, at: usize, assigned: &[Assignment]) -> crate::eval::Outcome<Domain>;
+
+    /// The count of values in that domain, as [`Evaluation::domain_size`]
+    /// gives it, with the same effect on the session and the count as
+    /// [`Domains::domain`] has. The count is the length of the `Rows` that
+    /// `domain` gives, so this method has that for its default.
+    fn size(&self, evaluation: &Evaluation<'_>, at: usize, assigned: &[Assignment]) -> crate::eval::Outcome<DomainSize> {
+        Ok(match self.domain(evaluation, at, assigned)? {
+            Domain::Rows(values) => DomainSize::Count(values.len()),
+            Domain::Undefined => DomainSize::Undefined,
+            Domain::Stopped(stop) => DomainSize::Stopped(stop),
+        })
+    }
 }
 
 /// [`descend_assignments`], with each domain of a `DET` that is no pick
@@ -566,12 +578,63 @@ pub(crate) fn descend_with(
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
     domains: Option<&dyn Domains>,
 ) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
+    walk_dets(inputs, dets, None, root, cap, &mut |evaluation, assigned, _| leaf(evaluation, assigned), domains)
+}
+
+/// [`descend_with`] for a walk whose `leaf` reads the values that it holds
+/// only through the evaluation of `readers`, the picks that it tests.
+///
+/// A `DET` of `dets` is unread where it is no pick, it has no `(ONE)`, and no
+/// later `DET` of `dets` and none of `readers` reads it at any depth. An
+/// evaluation reads the value of a `DET` only where the node that it
+/// evaluates reaches the node of that `DET` in the dependency graph, and each
+/// step after an unread `DET` is a later domain or an evaluation of a node of
+/// `readers`, so no step reads the value of an unread `DET`.
+///
+/// For an unread `DET` the walk asks only for the count of its values
+/// ([`Domains::size`]). For each of them it takes the later steps once, with
+/// the values it holds and none for that `DET`. Those steps are the same at
+/// each value, and the walk takes them as many times as the count, so the
+/// leaves, the work counted, the stops and the `DET`s met with several
+/// values stand as the values would give them. `leaf` gets, as its last
+/// argument, the count of `DET`s of `dets` that `assigned` leaves out in this
+/// way.
+pub(crate) fn descend_unread(
+    inputs: EvaluationInputs<'_>,
+    dets: &[Det],
+    readers: &[Det],
+    root: GraphNodeIndex,
+    cap: u64,
+    leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment], usize) -> Result<(), End>,
+    domains: Option<&dyn Domains>,
+) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
+    walk_dets(inputs, dets, Some(readers), root, cap, leaf, domains)
+}
+
+/// For each of `dets`, whether no later `DET` of `dets` and none of `readers`
+/// reads it at any depth, and it is no pick and has no `(ONE)`.
+fn unread_dets(program: &CheckedProgram, dets: &[Det], readers: &[Det]) -> Vec<bool> {
+    let graph = &program.program.graph;
+    let reached: Vec<Vec<bool>> = dets.iter().chain(readers).map(|det| graph.reached(det.node)).collect();
+    dets.iter().enumerate().map(|(at, det)| !det.pick && !det.open && reached[at + 1..].iter().all(|reached| !reached[det.node.0 as usize])).collect()
+}
+
+fn walk_dets(
+    inputs: EvaluationInputs<'_>,
+    dets: &[Det],
+    readers: Option<&[Det]>,
+    root: GraphNodeIndex,
+    cap: u64,
+    leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment], usize) -> Result<(), End>,
+    domains: Option<&dyn Domains>,
+) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
     let _timed = stats::span(Phase::TableWalk);
     stats::seen(Phase::TableWalk, || {
         let program = &inputs.program.program;
         stats::digest(&(program.stats_finished_id(), program.program.value().forms.len(), dets.iter().map(|det| &det.relation).collect::<Vec<_>>()))
     });
-    let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf, domains, stop: None };
+    let unread = readers.map(|readers| unread_dets(inputs.program, dets, readers)).unwrap_or_default();
+    let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf, domains, unread, skipped: 0, stop: None };
     let end = walk.descend(0, &mut Vec::new());
     (walk.branching, end, walk.stop)
 }
@@ -586,8 +649,13 @@ struct Walk<'w, 'a> {
     count: u64,
     /// The `DET`s met with several values in the domain, in the order met.
     branching: Vec<ProgramRelation>,
-    leaf: &'w mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
+    leaf: &'w mut dyn FnMut(&Evaluation<'_>, &[Assignment], usize) -> Result<(), End>,
     domains: Option<&'w dyn Domains>,
+    /// For each of `dets`, whether the walk takes only the count of its values,
+    /// as [`descend_unread`] gives; empty where it takes each value.
+    unread: Vec<bool>,
+    /// The count of `DET`s that the walk has left out of the values it holds.
+    skipped: usize,
     stop: Option<Stop>,
 }
 
@@ -618,7 +686,7 @@ impl Walk<'_, '_> {
                 let form = self.dets.last().map_or_else(|| program.form_of(self.root), |det| program.form_of(det.node));
                 return Err(End::Stop(Stop { bound: ReachedBound::Assignments { cap }, form: form.clone() }));
             }
-            return (self.leaf)(&evaluation, assigned);
+            return (self.leaf)(&evaluation, assigned, self.skipped);
         };
         if det.open {
             if let Some(fault) = keyed_one(self.inputs.program, det.node) {
@@ -627,6 +695,9 @@ impl Walk<'_, '_> {
         }
         let evaluation = self.inputs.at(&parameters);
         stats::units(Phase::TableWalk, 1);
+        if self.unread.get(at).copied().unwrap_or(false) {
+            return self.descend_counted(at, assigned, &evaluation);
+        }
         let domain = if det.pick {
             let mut values: Vec<Arc<Relation>> = Vec::new();
             let mut stop = None;
@@ -670,6 +741,34 @@ impl Walk<'_, '_> {
             walked?;
         }
         Ok(())
+    }
+}
+
+impl Walk<'_, '_> {
+    /// Each assignment that extends `assigned` with a value of `dets[at]`,
+    /// an unread `DET`: the later steps once for each value, with `assigned`
+    /// as it is, as [`descend_unread`] gives. The domain's `undefined`, its
+    /// stop and the `DET`s met with several values are as the walk of each
+    /// value gives them.
+    fn descend_counted(&mut self, at: usize, assigned: &mut Vec<Assignment>, evaluation: &Evaluation<'_>) -> Result<(), End> {
+        let dets = self.dets;
+        let det = &dets[at];
+        let size = match self.domains {
+            Some(domains) => domains.size(evaluation, at, assigned),
+            None => evaluation.domain_size(det.node),
+        };
+        let count = match size.map_err(End::Fault)? {
+            DomainSize::Count(count) => count,
+            DomainSize::Undefined => return self.descend(at + 1, assigned),
+            DomainSize::Stopped(stop) => return Err(End::Stop(stop)),
+        };
+        if count > 1 && !self.branching.contains(&det.relation) {
+            self.branching.push(det.relation.clone());
+        }
+        self.skipped += 1;
+        let walked = (0..count).try_for_each(|_| self.descend(at + 1, assigned));
+        self.skipped -= 1;
+        walked
     }
 }
 

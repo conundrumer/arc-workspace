@@ -21,7 +21,7 @@ use crate::resolver::registry_columns::{is_domain, proposer_columns};
 use crate::relations::{Relation, Row, RowSet};
 use crate::stats::{self, Phase};
 use crate::resolver::{DependencyKind, GraphNodeIndex};
-use crate::types::GraphRelation;
+use crate::types::{GraphRelation, ValueType};
 
 /// The domain of a `DET`, or the value of a read of its forms that is
 /// `undefined` or stopped, as [`super::picks::Pick`] gives a pick's.
@@ -30,6 +30,15 @@ pub enum Domain {
     /// Each value in the domain as rows of the `DET`'s relation, each once, in the
     /// canonical order by content of `crate::terms::content_order`.
     Rows(Vec<Arc<Relation>>),
+    Undefined,
+    Stopped(Stop),
+}
+
+/// How many values the domain of a `DET` has, or the value of a read of its
+/// forms that is `undefined` or stopped, as [`Domain`] gives it.
+#[derive(Clone, Debug)]
+pub enum DomainSize {
+    Count(usize),
     Undefined,
     Stopped(Stop),
 }
@@ -184,6 +193,68 @@ impl Evaluation<'_> {
         }
         let _timed = stats::span(Phase::EvalDomain);
         stats::seen(Phase::EvalDomain, || stats::digest(&(node.0, self.parameters.stats_digest())));
+        let (mut kept, types) = match self.gather(node, Order::Content)? {
+            Gathered::Sets { kept, types } => (kept, types),
+            Gathered::Undefined => return Ok(Domain::Undefined),
+            Gathered::Stopped(stop) => return Ok(Domain::Stopped(stop)),
+        };
+        {
+            let table = self.session.intern.read().expect("an intern table that no panic poisoned");
+            kept.sort_by(|a, b| {
+                let rows = a.iter().zip(b).map(|(x, y)| crate::terms::content_order(types, x, y, &table));
+                rows.fold(std::cmp::Ordering::Equal, std::cmp::Ordering::then).then(a.len().cmp(&b.len()))
+            });
+        }
+        kept.dedup();
+        let values = kept.into_iter().map(|rows| {
+            let mut set = RowSet::empty(types.len() as u16);
+            for row in rows {
+                set.insert(row);
+            }
+            Arc::new(join::one_part(set))
+        });
+        Ok(Domain::Rows(values.collect()))
+    }
+
+    /// The count of values in the domain of the `DET` node `node`: the length
+    /// of the `Rows` that [`Evaluation::domain`] gives, or the `undefined` or
+    /// the stop that it gives.
+    ///
+    /// The evaluation of the forms is that of `domain`. It makes the same
+    /// lookups, ids and stores in the session and counts the same table work,
+    /// and a fault or a stop comes at the same place. It skips the two steps
+    /// that `domain` takes after that, which read no session and count no
+    /// work: the order of the values by content, and the build of the
+    /// relation of each value. A walk asks for the count where no later step
+    /// reads the values of the `DET` ([`crate::judge::determination::descend_unread`]),
+    /// so no step reads the values that it skips.
+    ///
+    /// The count does not depend on the order of the rows. Each form gives
+    /// its values as sets of rows with each row once, and the forms give a
+    /// value where each gives the same rows, so the rows of a value stand in
+    /// the order of their terms' encodings, which keeps equal rows equal.
+    pub fn domain_size(&self, node: GraphNodeIndex) -> Outcome<DomainSize> {
+        let program = &self.program.program;
+        assert!(is_det(program, node), "the node of a `DET`");
+        if let Some((concept, node)) = self.in_concept(node) {
+            return concept.domain_size(node);
+        }
+        let _timed = stats::span(Phase::EvalDomain);
+        stats::seen(Phase::EvalDomain, || stats::digest(&(node.0, self.parameters.stats_digest())));
+        Ok(match self.gather(node, Order::Id)? {
+            Gathered::Sets { kept, .. } => DomainSize::Count(kept.len()),
+            Gathered::Undefined => DomainSize::Undefined,
+            Gathered::Stopped(stop) => DomainSize::Stopped(stop),
+        })
+    }
+
+    /// The values of the domain of the `DET` node `node` that has no concept
+    /// program's form, each as its rows, each value once, in no order, with
+    /// the columns' types. The rows of each value are in `order`, which is
+    /// the same for each form, so that two values are equal where their rows
+    /// are.
+    fn gather(&self, node: GraphNodeIndex, order: Order) -> Outcome<Gathered<'_>> {
+        let program = &self.program.program;
         let relation = GraphRelation { node, output: None };
         let types = self.program.types.columns(&relation).ok_or_else(|| RunFault {
             message: "the `DET`'s columns have no types".into(),
@@ -201,13 +272,16 @@ impl Evaluation<'_> {
             let domain = derivation(clause, at)?.is_some_and(|index| per_row(self.registry, clause, &clause.proposers[index]));
             let mut rows = match super::init_form::rows_of(self, at, driver.clause(at, None)?, types.len()).map_err(fault)? {
                 Ok(rows) => rows,
-                Err(RelationValue::Undefined) => return Ok(Domain::Undefined),
-                Err(RelationValue::Stopped(stop)) => return Ok(Domain::Stopped(stop)),
+                Err(RelationValue::Undefined) => return Ok(Gathered::Undefined),
+                Err(RelationValue::Stopped(stop)) => return Ok(Gathered::Stopped(stop)),
                 Err(RelationValue::Rows(_)) => unreachable!("a value that holds no rows"),
             };
-            {
-                let table = self.session.intern.read().expect("an intern table that no panic poisoned");
-                rows.sort_by(|a, b| crate::terms::content_order(types, a, b, &table));
+            match order {
+                Order::Content => {
+                    let table = self.session.intern.read().expect("an intern table that no panic poisoned");
+                    rows.sort_by(|a, b| crate::terms::content_order(types, a, b, &table));
+                }
+                Order::Id => rows.sort_unstable_by(|a, b| a.iter().map(|term| term.encoding()).cmp(b.iter().map(|term| term.encoding()))),
             }
             rows.dedup();
             let found: Vec<Vec<Row>> = if domain { rows.into_iter().map(|row| vec![row]).collect() } else { vec![rows] };
@@ -216,27 +290,32 @@ impl Evaluation<'_> {
                 Some(kept) => kept.into_iter().filter(|value| found.contains(value)).collect(),
             });
         }
-        let mut kept = kept.expect("a `DET` node with a form");
-        {
-            let table = self.session.intern.read().expect("an intern table that no panic poisoned");
-            kept.sort_by(|a, b| {
-                let rows = a.iter().zip(b).map(|(x, y)| crate::terms::content_order(types, x, y, &table));
-                rows.fold(std::cmp::Ordering::Equal, std::cmp::Ordering::then).then(a.len().cmp(&b.len()))
-            });
-        }
-        kept.dedup();
+        let kept = kept.expect("a `DET` node with a form");
         if stats::enabled() {
             stats::units(Phase::EvalDomain, kept.iter().map(Vec::len).sum());
         }
-        let values = kept.into_iter().map(|rows| {
-            let mut set = RowSet::empty(types.len() as u16);
-            for row in rows {
-                set.insert(row);
-            }
-            Arc::new(join::one_part(set))
-        });
-        Ok(Domain::Rows(values.collect()))
+        Ok(Gathered::Sets { kept, types })
     }
+}
+
+/// How the rows of one value are put in order, so that two values are
+/// equal where their rows are.
+#[derive(Clone, Copy)]
+enum Order {
+    /// By `crate::terms::content_order`, the order of a value's rows in a
+    /// domain.
+    Content,
+    /// By the encodings of the terms, which needs no read of the intern
+    /// table.
+    Id,
+}
+
+/// What the forms of a `DET` give: the values of its domain, each as its
+/// rows, in no order, each once, or the `undefined` or the stop of a read.
+enum Gathered<'t> {
+    Sets { kept: Vec<Vec<Row>>, types: &'t [ValueType] },
+    Undefined,
+    Stopped(Stop),
 }
 
 /// The fault of the `DET` form `clause` at `form` where it has no body and no

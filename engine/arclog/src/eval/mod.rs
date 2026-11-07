@@ -56,7 +56,7 @@ pub mod rigid;
 pub mod unfold;
 pub mod values;
 
-pub use determinations::Domain;
+pub use determinations::{Domain, DomainSize};
 pub use driver::FormBodies;
 pub use lookup::{input_relation, output_relation, relation_of};
 pub use models::ModelsEnd;

@@ -6,7 +6,7 @@ use super::{Decoder, Refusal, State};
 use crate::check::CheckedProgram;
 use crate::eval::carry::Carry;
 use crate::eval::{Cancellation, Limits, ModelsEnd, ReachedBound, RelationValue, TableWork};
-use crate::judge::determination::{descend_with, held_dets, written_dets, Det, Domains, End, EvaluationInputs};
+use crate::judge::determination::{descend_unread, held_dets, written_dets, Det, Domains, End, EvaluationInputs};
 use crate::resolver::GraphNodeIndex;
 use crate::session::TaskSession;
 use crate::stats::{self, Phase};
@@ -187,12 +187,14 @@ impl Decoder<'_> {
         };
         let mut live = false;
         let mut leaves = 0;
-        let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[_]| {
+        let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[_], unassigned: usize| {
             // Undefined domains remain visible in the canonical walker as missing
             // bindings. A partial leaf cannot certify that the written DETs live.
+            // A DET whose values no pick reads is left out of `assigned`, and
+            // the walk counts it in `unassigned`.
             stats::units(Phase::DetLiveness, 1);
             leaves += 1;
-            if assigned.len() != dets.len() { return Ok(()); }
+            if assigned.len() + unassigned != dets.len() { return Ok(()); }
             for pick in picks {
                 let mut found = false;
                 let mut stop = None;
@@ -212,7 +214,7 @@ impl Decoder<'_> {
             live = true;
             Ok(())
         };
-        let (_, end, stop) = descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains);
+        let (_, end, stop) = descend_unread(inputs, dets, picks, root, self.context.settings.caps.assignments, &mut leaf, domains);
         let verdict = match end {
             Err(End::Fault(fault)) => Err(DetRefusal::Fault(format!("{fault:?}"))),
             Err(End::Stop(found)) if matches!(found.bound, ReachedBound::Assignments { .. }) => Err(DetRefusal::Bound(found.bound)),

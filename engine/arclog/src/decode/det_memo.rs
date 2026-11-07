@@ -23,6 +23,13 @@
 //! makes them and counts that work, so its cache and its count stand as
 //! the computation would leave them. Otherwise it computes the domain.
 //!
+//! A walk asks for only the count of a `DET`'s values where no later step
+//! reads the values ([`crate::judge::determination::descend_unread`]). The
+//! memo keeps the computation of such a count as a computation that gave the
+//! count, with the same lookups, ids, stores and table work that the
+//! computation of the domain has. A walk that asks for the count takes a kept
+//! domain too, and a walk that asks for the values takes no kept count.
+//!
 //! The memo holds its domains in two tiers, each with at most half of the
 //! share of the byte bound that [`KEPT_SHARE`] gives, counting each relation
 //! of a tier once, by its rows, however many events and values hold it. A
@@ -67,7 +74,7 @@ use crate::check::CheckedProgram;
 use crate::eval::cache::{relation_estimate, replay, Recorded, RecordedKey};
 use crate::eval::carry::{kept_relation, Carry, CarryStore};
 use crate::eval::determinations::det_relation;
-use crate::eval::{Domain, Evaluation, Outcome};
+use crate::eval::{Domain, DomainSize, Evaluation, Outcome};
 use crate::hash::{StableHash, StableHashMap, StableHasher};
 use crate::judge::determination::{Assignment, Det, Domains};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
@@ -212,11 +219,41 @@ struct Computed {
     events: Box<[Recorded]>,
     /// The table work it counted.
     charged: u64,
-    domain: Domain,
+    given: Given,
     /// The keys of the entries that its lookups found, by the ids of their
     /// relations in the session where it ran, for a computation whose
     /// every lookup found its entry ([`crate::session::ResultCache::found_keys`]).
     found: Option<Box<[ResultKey]>>,
+}
+
+/// What a computation of a domain gave: the domain, or only its count of
+/// values ([`Domains::size`]), which a walk asks for where no later step
+/// reads the values. The computations of both do the same in the session and
+/// the count of work.
+#[derive(Clone)]
+enum Given {
+    Values(Domain),
+    Size(DomainSize),
+}
+
+impl Given {
+    /// The domain, where this holds it.
+    fn values(&self) -> Option<&Domain> {
+        match self {
+            Given::Values(domain) => Some(domain),
+            Given::Size(_) => None,
+        }
+    }
+
+    /// The count of values, which a domain gives as the length of its rows.
+    fn size(&self) -> DomainSize {
+        match self {
+            Given::Values(Domain::Rows(values)) => DomainSize::Count(values.len()),
+            Given::Values(Domain::Undefined) => DomainSize::Undefined,
+            Given::Values(Domain::Stopped(stop)) => DomainSize::Stopped(stop.clone()),
+            Given::Size(size) => size.clone(),
+        }
+    }
 }
 
 impl std::fmt::Debug for ProbeMemo {
@@ -306,12 +343,12 @@ impl ProbeMemo {
 
     /// Keeps `computed` under `key`, each relation it holds replaced by the
     /// kept relation of the same rows and columns of parts, where one is
-    /// kept, and gives its domain so replaced. `None` where it keeps none.
+    /// kept, and gives what it gave so replaced. `None` where it keeps none.
     ///
     /// The young tier holds at most its share of the bytes. Where `computed`
     /// does not fit, the young tier becomes the old one, which drops the old
     /// tier it replaces.
-    fn keep(&self, generation: u64, key: Key, computed: Computed) -> Option<Domain> {
+    fn keep(&self, generation: u64, key: Key, computed: Computed) -> Option<Given> {
         let mut kept = self.kept.lock().expect("the kept domains are not poisoned");
         if kept.generation != generation {
             return None;
@@ -333,10 +370,10 @@ impl ProbeMemo {
         let mut one = |relation: &Arc<Relation>| kept_relation(&mut young.relations, relation);
         let key = Key { values: key.values.iter().map(|value| value.as_ref().map(&mut one)).collect(), shape: key.shape };
         let kept_computed = computed.with_relations(&mut one);
-        let domain = kept_computed.domain.clone();
+        let given = kept_computed.given.clone();
         young.domains.entry(key).or_default().push(Arc::new(kept_computed));
         young.bytes += fresh;
-        Some(domain)
+        Some(given)
     }
 }
 
@@ -381,7 +418,7 @@ impl Tier {
         for computed in computed {
             events += computed.events.len();
             computed.events.iter().for_each(|event| event.each_relation(&mut count));
-            if let Domain::Rows(rows) = &computed.domain {
+            if let Some(Domain::Rows(rows)) = computed.given.values() {
                 rows.iter().for_each(&mut count);
             }
         }
@@ -393,11 +430,11 @@ impl Tier {
 impl Computed {
     /// This computation with each relation it holds replaced by `one` of it.
     fn with_relations(&self, one: &mut impl FnMut(&Arc<Relation>) -> Arc<Relation>) -> Computed {
-        let domain = match &self.domain {
-            Domain::Rows(values) => Domain::Rows(values.iter().map(&mut *one).collect()),
+        let given = match &self.given {
+            Given::Values(Domain::Rows(values)) => Given::Values(Domain::Rows(values.iter().map(&mut *one).collect())),
             other => other.clone(),
         };
-        Computed { events: self.events.iter().map(|event| event.with_relations(&mut *one)).collect(), charged: self.charged, domain, found: None }
+        Computed { events: self.events.iter().map(|event| event.with_relations(&mut *one)).collect(), charged: self.charged, given, found: None }
     }
 }
 
@@ -591,9 +628,10 @@ impl Domains for ProbeDomains<'_> {
         let session = evaluation.session;
         let memo = self.probe.memo;
         for computed in memo.computed(self.probe.generation, &key) {
+            let Some(domain) = computed.given.values() else { continue };
             if work.fits(computed.charged) && replay(session, &computed.events) {
                 work.charge(computed.charged).expect("a count that stays within the cap");
-                return Ok(computed.domain.clone());
+                return Ok(domain.clone());
             }
         }
         let capture = session.results.begin_capture();
@@ -602,12 +640,45 @@ impl Domains for ProbeDomains<'_> {
         let (events, _) = session.results.end_capture(capture);
         let charged = work.count() - before;
         if let Ok(domain @ (Domain::Rows(_) | Domain::Undefined)) = &found {
-            let computed = Computed { events: events.into(), charged, domain: domain.clone(), found: None };
-            if let Some(domain) = memo.keep(self.probe.generation, key, computed) {
+            let computed = Computed { events: events.into(), charged, given: Given::Values(domain.clone()), found: None };
+            if let Some(Given::Values(domain)) = memo.keep(self.probe.generation, key, computed) {
                 // The kept values hold the rows of the values computed, in
                 // parts of the same columns.
                 return Ok(domain);
             }
+        }
+        found
+    }
+
+    /// The count of values that the domain would give, from a kept
+    /// computation of the domain or of its count, or else from the count
+    /// computed alone ([`Evaluation::domain_size`]). A computation that gave
+    /// only the count is kept as that. A walk that asks for the values does
+    /// not take it, and computes and keeps the domain, which a later walk
+    /// that asks for the count takes. A computation of the count does in the
+    /// session and the count of work what that of the domain does, so the
+    /// replay of either leaves both as the other would.
+    fn size(&self, evaluation: &Evaluation<'_>, at: usize, assigned: &[Assignment]) -> Outcome<DomainSize> {
+        let node = self.dets[at].node;
+        let (Some(det), Some(work)) = (&self.keys[at], &evaluation.limits.table_work) else {
+            return evaluation.domain_size(node);
+        };
+        let key = key_at(self.dets, det, assigned);
+        let session = evaluation.session;
+        let memo = self.probe.memo;
+        for computed in memo.computed(self.probe.generation, &key) {
+            if work.fits(computed.charged) && replay(session, &computed.events) {
+                work.charge(computed.charged).expect("a count that stays within the cap");
+                return Ok(computed.given.size());
+            }
+        }
+        let capture = session.results.begin_capture();
+        let before = work.count();
+        let found = evaluation.domain_size(node);
+        let (events, _) = session.results.end_capture(capture);
+        let charged = work.count() - before;
+        if let Ok(size @ (DomainSize::Count(_) | DomainSize::Undefined)) = &found {
+            memo.keep(self.probe.generation, key, Computed { events: events.into(), charged, given: Given::Size(size.clone()), found: None });
         }
         found
     }
@@ -681,8 +752,8 @@ impl SessionMemo {
     }
 
     fn keep(&self, key: Key, computed: Computed) {
-        let values = match &computed.domain {
-            Domain::Rows(values) => values.iter().map(|value| relation_estimate(value)).sum(),
+        let values = match computed.given.values() {
+            Some(Domain::Rows(values)) => values.iter().map(|value| relation_estimate(value)).sum(),
             _ => 0,
         };
         let bytes = computed.events.iter().map(Recorded::bytes).sum::<usize>() + values + 1024;
@@ -718,13 +789,14 @@ impl Domains for SessionDomains<'_> {
         let key = key_at(self.dets, det, assigned);
         let session = evaluation.session;
         for computed in self.memo.computed(&key) {
+            let Some(domain) = computed.given.values() else { continue };
             let replayed = || match &computed.found {
                 Some(keys) if session.results.replay_found(&computed.events, keys) => true,
                 _ => replay(session, &computed.events),
             };
             if work.fits(computed.charged) && replayed() {
                 work.charge(computed.charged).expect("a count that stays within the cap");
-                return Ok(computed.domain.clone());
+                return Ok(domain.clone());
             }
         }
         let Some(recording) = session.results.record_on_thread() else {
@@ -768,7 +840,7 @@ impl Domains for SessionDomains<'_> {
             other => other.clone(),
         };
         let found = results.found_keys(&events);
-        self.memo.keep(key, Computed { events, charged, domain: domain.clone(), found });
+        self.memo.keep(key, Computed { events, charged, given: Given::Values(domain.clone()), found });
         Ok(domain)
     }
 }
