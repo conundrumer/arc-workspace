@@ -3,7 +3,7 @@
 The training instances that the gradient-boosted trees fit on. The trees score the admitted ids at each writing point of the query writer. The training instances come from the writer's own feature code, so that training and serving compute features in one way.
 
 - **Source.** The samples of the sample build: each sample is a state and its target queries, in `samples/SET/skeleton/<task>.jsonl`. The scope of a sample is the union of its members' programs (`query.program`, without each query's own last line where it is a closure).
-- **Extraction.** The writer kit's extractor replays the target queries from the sample's scope through its own writing-point code (`start_point`, `step_point`) and its own `Features`. No other code computes a training instance's features.
+- **Extraction.** The writer code's extractor replays the target queries from the sample's scope through its own writing-point code (`start_point`, `step_point`) and its own `Features`. No other code computes a training instance's features.
 - **Training instance.** One training instance is one (sample, writing point, admitted id). Training instances are grouped by writing point. A writing point with fewer than two admitted ids gives no training instances.
 - **Features.** `Features.option(uses)` for the id and `Features.point(uses)` for the writing point, as `Distribution.logits` takes them. The table features of an id that names a parameterized table are the export's TableVector, aggregated over the parameterized table's assignments by the writer's aggregates.
 - **Plans.** Two writer plans are tested, each with its own training instances and its own tree. The header of the training instances names the plan.
@@ -18,31 +18,31 @@ The training instances that the gradient-boosted trees fit on. The trees score t
     - The chance of writing some target query, summed over every path that writes it under the plan.
     - The share of samples whose most probable completed query is a target query.
 
-## Search draws
+## Sampled queries of the search
 
-The search's draws on train tasks are negative examples. A draw is never a target and never a feature, because serving has no draws.
+The queries that the search samples on train tasks give negative training instances. A sampled query is never a target and never a feature, because serving has no record of earlier samples.
 
-- **Source.** A recorded search over the train tasks writes one record per draw. Draws of dev and held-out tasks are not used, and `points_write.py` refuses them.
-- **Record.** Each draw record has these fields:
-    - The task, the search run, the draw's index, the seed, the writer plan, the writer kit release, the model file's sha and the engine site.
+- **Source.** A recorded search over the train tasks writes one record per sampled query. Sampled queries of dev and held-out tasks are not used, and `points_write.py` refuses them.
+- **Record.** Each sampled-query record has these fields:
+    - The task, the search run, the sample's index, the seed, the writer plan, the writer code release, the model file's sha and the engine build.
     - For each query of the program, in the order the writer wrote it: its text as written, its `QueryHash` on the run's engine site, and the `QueryHash`es of the queries written before it. That set is the step's state.
-    - The outcome: whether the program ran; for each train ARC example, whether the output equals the expected output; the first query that failed, with its reason (an engine error, a refusal, no table, the deadline); and whether the draw solves every train ARC example.
-    - The count of identical draws that the record stands for.
-- **Matching.** Only a draw's last step, the query the draw wrote, gives negatives. Its other steps are queries of its scope, which earlier draws wrote. The last step matches a sample when its state equals the sample's state. A draw that solves every train ARC example gives no negatives.
-- **Drawn ids.** At each writing point of a matched step, the draw's next token is a drawn id when no live target has that token next. An id's `drawn` count is the number of failed draws that took it at that writing point. A positive id has no `drawn` count.
+    - The outcome: whether the program ran; for each train ARC example, whether the output equals the expected output; the first query that failed, with its reason (an engine error, a refusal, no table, the deadline); and whether the sampled program solves every train ARC example.
+    - The count of identical samples that the record stands for.
+- **Matching.** Only a sample's last step, the query that the sample wrote, gives negatives. Its other steps are queries of its scope, which earlier samples wrote. The last step matches a sample when its state equals the sample's state. A sample that solves every train ARC example gives no negatives.
+- **Ids of failed samples.** At each writing point of a matched step, the sample's next token is an id of a failed sample when no live target has that token next. An id's `drawn` count is the number of failed samples that took it at that writing point. A positive id has no `drawn` count.
 - **Loss.** In the fit only, each id's term in the softmax denominator has the weight 1 + α · `drawn`, with α a fit option. The trees' scores do not read the weight.
-- **States off the samples.** A last step whose state equals no sample's state adds that state as a sample. Its targets are the graph queries that are applicable over the state's own queries and that the state has not written. No graph query reads a query outside the union, so these are the targets of the sample whose state is the step state's gold part: the step state's queries that are union queries. The step state's queries outside the union get row-store tables from the engine, as the union's queries do. The drawn ids at its writing points are counted as above.
+- **States off the samples.** A last step whose state equals no sample's state adds that state as a sample. Its targets are the graph queries that are applicable over the state's own queries and that the state has not written. No graph query reads a query outside the union, so these are the targets of the sample whose state is the step state's ground-truth part: the step state's queries that are union queries. The step state's queries outside the union get row-store tables from the engine, as the union's queries do. The ids of failed samples at its writing points are counted as above.
 - **Header.** The header of each task's file counts the last steps that match a sample, and the last steps that add one.
-- **Check.** `model/study/samples/run/draw_targets.py` counts, for draw files, the last steps whose gold part is a sample's state, and the distinct states and queries outside the union that the added samples need.
+- **Check.** `model/study/samples/run/draw_targets.py` counts, for files of sampled-query records, the last steps whose ground-truth part is a sample's state, and the distinct states and queries outside the union that the added samples need.
 
 ## Fit noise
 
-The dev score of a fit varies with its seed (`fit_trees.py --seed`), which sets the trees' feature sampling and the choice of each task's points. Four seeds of one configuration were each scored on one set of dev points (`fit_trees.py --score` at seed 0). The configuration was the exp59 row stores, 854 train tasks, 161 dev tasks, 40 points per task, and the default tree settings. The scores were:
+The dev score of a fit varies with its seed (`fit_trees.py --seed`), which sets the trees' feature sampling and the choice of each task's writing points. Four seeds of one configuration were each scored on one set of dev writing points (`fit_trees.py --score` at seed 0). The configuration was the exp59 row stores, 854 train tasks, 161 dev tasks, 40 writing points per task, and the default tree settings. The scores were:
 
 - dev loss: 1.1241 to 1.1287, standard deviation 0.0022;
-- top-scored id is positive: 65.1% to 65.7%, standard deviation 0.3 points.
+- top-scored id is positive: 65.1% to 65.7%, standard deviation 0.3 percentage points.
 
-A change counts as a gain only when its dev gain is outside this range. Fits are compared on one set of dev points: each fit is scored with `--score` at one seed.
+A change counts as a gain only when its dev gain is outside this range. Fits are compared on one set of dev writing points: each fit is scored with `--score` at one seed.
 
 ## Table columns of the writing-point vector
 
