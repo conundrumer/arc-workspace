@@ -86,7 +86,8 @@ def main():
             continue
         width = widths[source]
         ids.append(np.uint64(OTHER + (place << 32)) + np.arange(width, dtype=np.uint64))
-        counts.append(counted(blocks / 'blocks' / f'train.{source}.zst', width, examples))
+        # `relations_each` has a row per example already.
+        counts.append(counted(blocks / 'blocks' / f'train.{source}.zst', width, None if source == 'relations_each' else examples))
         print(f'{source} {time.time() - started:.0f}s', flush=True)
     if args.named:
         named = {}
