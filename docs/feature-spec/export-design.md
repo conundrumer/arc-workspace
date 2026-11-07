@@ -6,9 +6,7 @@ How the engine gives the learned model a parameterized table's features. The rea
 
 - A feature expression in `engine/arclog-encoder` is the definition. `table_vector` walks a parameterized table's generated shapes over its tables and the base tables, and the catalog is a native implementation of named kinds, checked against the definition, as a native lib element is.
 - `feature-encoder candidate-lists` writes the vectors of candidate queries' parameterized tables, `vector` those of a solver's parameterized table, and `base-vectors` and `query-vectors` the rest of a state's features.
-- `arclog_tables::summary` stores the older `arclog_features::vector` with each exported record, and the table's rows by reference (`arclog_tables::shape_rows`). The encoder depends on `arclog-tables`, so the call into it stands in `arclog-tables-py`, which `step_tables`, `successor_tables` and `base_tables` use.
-- `CaseTables.shapes(row)` gives a `TableShapes` for the table at a row, and its `vector` gives the shape values as a `ShapeVector`. The walk runs at the first `vector` call that needs it, so a draw pays for the vectors that something reads. A session keeps each vector by its `TableHash`.
-- Each walk starts on a `Walker` of its own, and the walker's bound on cells stops it. So a table's vector is a function of its rows, the task's grids and the list of shapes, whatever was walked before it.
+- `arclog_tables::summary` still stores the older `arclog_features::vector` with each exported record, so nothing in the export or a search reads the encoder's features. A search needs a call into the encoder before it can read a fit's columns.
 
 ## What the catalog takes
 

@@ -17,7 +17,6 @@ mod study_features;
 mod corpus_tables;
 mod orientation;
 mod record;
-mod shapes;
 mod step_tables;
 mod stream_tables;
 
@@ -44,13 +43,6 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     study_render::register(names)?;
     study_features::register(names)?;
     names.class::<case_tables::PyCaseTables>()?;
-    names.class::<shapes::PyTableShapes>()?;
-    names.class::<shapes::PyShapeVector>()?;
-    names.class::<shapes::PySelection>()?;
-    names.function(wrap_pyfunction!(shapes::shape_text, module)?)?;
-    names.function(wrap_pyfunction!(shapes::shape_texts, module)?)?;
-    names.function(wrap_pyfunction!(shapes::shape_hash, module)?)?;
-    names.function(wrap_pyfunction!(shapes::table_shape_counts, module)?)?;
     names.function(wrap_pyfunction!(corpus_tables::corpus_tables, module)?)?;
     names.function(wrap_pyfunction!(stream_tables::stream_tables, module)?)?;
     names.function(wrap_pyfunction!(step_tables::step_tables, module)?)?;
