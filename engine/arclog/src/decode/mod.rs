@@ -73,7 +73,7 @@ use crate::program::path::NodePath;
 use crate::program::{ProgramRelation, RelationRef};
 use crate::program::{ConstraintOp, Node, Program};
 use crate::registry::Registry;
-use crate::resolver::resolve_prefix;
+use crate::resolver::resolve_for_checks;
 use crate::session::TaskSession;
 use crate::stats::{self, Phase};
 use crate::judge::run::Tested;
@@ -365,6 +365,9 @@ impl<'a> Decoder<'a> {
             for id in ids {
                 let token = vocabulary.token(id).expect("an id of the vocabulary");
                 if matches!(token, Token::Label(label) if conflicts.contains(label)) {
+                    continue;
+                }
+                if self.state.closes_an_empty_site(token) {
                     continue;
                 }
                 if self.state.mask_may_take(token) {
@@ -777,7 +780,7 @@ impl<'a> Decoder<'a> {
     /// progress whose innermost open node is at `open`, with `candidate`.
     fn check_partial(&self, program: &Node<Program>, open: Option<&NodePath>, candidate: Candidate, checks: &PrefixChecks<'_>) -> Result<(), Refusal> {
         let check = || {
-            let resolved = resolve_prefix(&self.state.resolved(self.context.registry), program, self.context.registry);
+            let resolved = resolve_for_checks(&self.state.resolved(self.context.registry), program, self.context.registry);
             match checks.check(&resolved, open, candidate, None) {
                 Some((check, refusals)) => Err(Refusal::Check { check, refusals }),
                 None => Ok(()),

@@ -15,7 +15,7 @@ use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{Atom, Body, Choose, Clause, ColumnName, Conjunct, Form, Instance, InstanceInput, KeyBody, KeyClause, LabelId, LabelUse, Negated, Node, Out, Program, RigidDet, Site, SiteArg, SiteValue};
 use crate::registry::{LibEntry, Mode, Registry};
 use crate::program::{OutputName, OutputOwner, RelationRef};
-use crate::resolver::{resolve_prefix, DependencyKind, ResolvedProgram, Side};
+use crate::resolver::{resolve_for_checks, DependencyKind, ResolvedProgram, Side};
 use crate::stats::{self, Phase};
 use crate::stream::write::reads_example_column;
 use crate::types::each_site_label;
@@ -449,7 +449,7 @@ impl PrefixChecks<'_> {
         let retargeted = held.as_mut().is_some_and(|held| held.at == *at && held.resolved.retarget_atom(program, at, relation, self.registry));
         match held.as_mut().filter(|_| retargeted) {
             Some(held) => held.relation = relation.clone(),
-            None => *held = Some(HeldResolution { at: at.clone(), relation: relation.clone(), resolved: resolve_prefix(earlier, program, self.registry) }),
+            None => *held = Some(HeldResolution { at: at.clone(), relation: relation.clone(), resolved: resolve_for_checks(earlier, program, self.registry) }),
         }
     }
 

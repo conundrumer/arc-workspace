@@ -1587,6 +1587,19 @@ impl State {
         self.stack.iter().any(|frame| matches!(frame, Frame::Lists(_) | Frame::Body(BodyFrame { close: Close::Not, .. })))
     }
 
+    /// Whether `token` would close the site open on top while the site holds
+    /// no value: a token that is no label, no label mark and no column token
+    /// that makes the site a record's. The checks refuse a complete site of no
+    /// value, so no completion of the program the token gives passes them.
+    pub(super) fn closes_an_empty_site(&self, token: &Token) -> bool {
+        let Some(Frame::Site(site)) = self.stack.last() else { return false };
+        if site.field.is_some() || site.record.is_some() || !site.args.is_empty() {
+            return false;
+        }
+        let value = matches!(token, Token::Label(_) | Token::Control(Control::Fresh | Control::Key | Control::Zero));
+        !value && !(site.unbound && matches!(token, Token::Column(_)))
+    }
+
     /// Whether a `NOT` stands before the next conjunct of the body on top.
     pub(super) fn negation_pending(&self) -> bool {
         self.stack.iter().rev().find_map(|frame| match frame {
