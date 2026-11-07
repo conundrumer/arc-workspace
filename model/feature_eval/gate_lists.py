@@ -210,6 +210,13 @@ def with_named(lists, others, folder, name, items):
         if owner not in lists:
             lists[owner], others[owner] = held, named_others[owner]
             continue
+        # A shape that the first list already gives for this table keeps the first list's value: a second pass can reach a shape of the first under another binding of its holes.
+        given = np.concatenate((lists[owner][0], others[owner][0])) if owner in others else lists[owner][0]
+        kept = ~np.isin(held[0], given)
+        held = (held[0][kept], held[1][kept])
+        theirs_all = named_others[owner]
+        kept = ~np.isin(theirs_all[0], given)
+        named_others[owner] = tuple(part[kept] for part in theirs_all)
         ids = np.concatenate((lists[owner][0], held[0]))
         order = np.argsort(ids, kind='stable')
         ids = ids[order]
