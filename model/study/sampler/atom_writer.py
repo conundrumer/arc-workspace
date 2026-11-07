@@ -1,13 +1,13 @@
 """Whole-atom writing: at a point where the next token starts an item or ends a body, a token tree proposes its top atoms, the engine gives each one's body table, and a learned model scores them as one choice of the search.
 
-Rows and the live writer share this module, so a model reads at serving what it read in its fit. A candidate's row is the point's columns, the columns of its first token, the atom's structure, whether the engine gave a body table, the AssignmentVector of the body with the atom added, and its difference from the body before.
+Rows and the live writer share this module, so a model reads at serving what it read in its fit. A candidate's row is the point's columns, the columns of its first token, the atom's structure, whether the engine gave a body table, the token tree's bits for the atom and their gap to the best proposal's, the AssignmentVector of the body with the atom added, and its difference from the body before. A server's rows leave out the bits.
 
   WRITER_ATOM_TREE     a LightGBM text model over those columns (with its .uses.json), or
   WRITER_ATOM_SOCKET   the socket of a server, whose Client.score(point, cands) gives one logit per candidate; WRITER_ATOM_SERVER_DIR holds atom_serve.py
   WRITER_ATOM_K        the atoms a decision proposes (default 8)
   WRITER_ATOM_POPS     the items that a proposal walk takes off its heap, per atom wanted (default 12)
 
-The mass that the token tree gives to atoms outside the proposals stays as one more option of the choice, and a search that takes it writes the rest of the body by tokens, so each atom stays reachable.
+A share of the mass that the token tree gives to atoms outside the proposals (WRITER_ATOM_ESCAPE) stays as one more option of the choice, and a search that takes it writes the rest of the body by tokens, so each atom stays reachable.
 
 Time blocked on a server counts toward a job's budget, through time.blocked_seconds where the CPU clock is on (cpu_clock/sitecustomize.py)."""
 import collections
@@ -25,6 +25,7 @@ from lookahead import closers
 M, Phase = writer.M, writer.Phase
 STRUCT = ('n_tokens', 'n_columns', 'n_fresh', 'n_key', 'n_join', 'n_zero', 'negated', 'is_end', 'is_group', 'is_comparison')
 K = int(os.environ.get('WRITER_ATOM_K', 8))
+ESCAPE = float(os.environ.get('WRITER_ATOM_ESCAPE', 0.25))  # the share of the mass outside the proposals that stays with token writing: the true atom lies outside them far less often than the tree's mass there says
 POPS = int(os.environ.get('WRITER_ATOM_POPS', 12))  # the items that a walk takes off its heap, per atom wanted
 FINISHED = -1  # an item of the walk that is an atom with its closing share counted
 MIN_CHANCE = 1e-5  # a token below this chance at a point goes on no heap
@@ -177,14 +178,14 @@ class TreeScore:
         self.uses = json.load(open(os.path.splitext(path)[0] + '.uses.json'))
         self.columns = None
 
-    def score(self, run, point, tok, struct, defined, av, delta):
+    def score(self, run, point, tok, struct, defined, av, delta, bits):
         if self.columns is None:
             point_names, token_names, _, _ = names_of(run)
-            names = point_names + token_names + ['atom:' + x for x in STRUCT] + ['atom:defined'] + ['a:' + x for x in writer.AV_NAMES] + ['d:' + x for x in writer.AV_NAMES]
+            names = point_names + token_names + ['atom:' + x for x in STRUCT] + ['atom:defined', 'atom:bits', 'atom:bits_gap'] + ['a:' + x for x in writer.AV_NAMES] + ['d:' + x for x in writer.AV_NAMES]
             at = {n: i for i, n in enumerate(names)}
             self.columns = np.array([at[n] for n in self.uses])
         n = len(tok)
-        rows = np.concatenate([np.broadcast_to(point, (n, len(point))), tok, struct, defined[:, None], av, delta], 1)
+        rows = np.concatenate([np.broadcast_to(point, (n, len(point))), tok, struct, defined[:, None], bits[:, None], (bits - bits.min())[:, None], av, delta], 1)
         return np.asarray(self.booster.predict(rows[:, self.columns], raw_score=True, num_threads=1), np.float64)
 
 
@@ -194,7 +195,7 @@ class ServerScore:
         from atom_serve import Client
         self.client = Client(socket)
 
-    def score(self, run, point, tok, struct, defined, av, delta):
+    def score(self, run, point, tok, struct, defined, av, delta, bits):
         cands = np.concatenate([tok, struct, defined[:, None], av, delta], 1)
         wall, cpu = time.perf_counter(), time.process_time()
         got = np.asarray(self.client.score(point, cands), np.float64)
@@ -223,7 +224,7 @@ def model():
 
 
 def choose(pt, plan, rng):
-    """The point after the atom that the search takes at decision pt, or None where the rest of the body goes by tokens: there's no atom to choose among, or the search takes the mass outside the proposals. The model shares out among the proposals the mass that the token tree gives them."""
+    """The point after the atom that the search takes at decision pt, or None where the rest of the body goes by tokens: there's no atom to choose among, or the search takes the mass outside the proposals. The model shares out among the proposals all the mass but that option's."""
     run = pt.run
     core = writer.core_of(run)
     held = pt.memo.get('atoms')
@@ -236,15 +237,15 @@ def choose(pt, plan, rng):
             STATS['no candidates'] += 1
         else:
             point, tok, struct, defined, av, delta, keep = got
-            s = model().score(run, point, tok, struct, defined, av, delta)
+            s = model().score(run, point, tok, struct, defined, av, delta, np.array([c[2] for c in keep], np.float32))
             s = np.round(s / ROUND) * ROUND
             e = np.exp(s - s.max())
             covered = min(1.0, sum(2.0 ** -c[2] for c in keep))
-            probs = e / e.sum() * covered
+            outside = ESCAPE * (1.0 - covered)
+            probs = e / e.sum() * (1.0 - outside)
             costs = [c[3] for c in keep]
-            if covered < 1.0:
-                probs, costs = np.append(probs, 1.0 - covered), costs + [0.0]
-            probs = probs / probs.sum()
+            if outside > 0.0:
+                probs, costs = np.append(probs, outside), costs + [0.0]
             held = pt.memo['atoms'] = (keep, probs, np.array(costs) if any(costs) else None)
             STATS['decisions'] += 1
             STATS['candidates'] += len(keep)

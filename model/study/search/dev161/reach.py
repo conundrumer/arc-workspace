@@ -32,6 +32,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import draw_file  # noqa: E402
 from study_paths import DATA_ROOT as DATA  # noqa: E402
 GRAPH = DATA / 'gold/gold-union-exp46/graph-tables-dev.jsonl'
 OUT_OF_SCOPE = DATA / 'gold/gold-union-exp46/out-of-scope.jsonl'  # dataset-worker's list of the tasks that are out of scope, one {task, set, reason} a line
@@ -81,10 +83,7 @@ def row_store(rows, task):
 def job_tables(w):
     """(drawn QueryHashes, outputs, entries) of a job folder's draw records."""
     qhs, outputs, entries = set(), [], []
-    p = w / 'draws.jsonl'
-    if not p.exists():
-        return qhs, outputs, entries
-    for r in map(json.loads, open(p)):
+    for r in draw_file.draws(w):
         if 'steps' not in r:
             continue
         q = r['steps'][-1]['query_hash']

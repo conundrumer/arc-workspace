@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import draw_file  # noqa: E402
 import reach as R
 
 run, arm = Path(sys.argv[1]), sys.argv[2]
@@ -37,7 +38,7 @@ for r in map(json.loads, open(run / 'results.jsonl')):
     task = r['task']
     w = run / 'jobs' / r['job']
     outputs, entries, draws = [], [], []
-    for d in map(json.loads, open(w / 'draws.jsonl')):
+    for d in draw_file.draws(w):
         if 'steps' not in d:
             continue
         q = d['steps'][-1]['query_hash']

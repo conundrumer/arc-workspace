@@ -18,7 +18,7 @@ attempt that reaches --wall-cap before it has used its CPU budget writes its lin
 runs again in a fresh folder when the limit lets it; the capped attempt's folder, with its draws, is not the job's result. summary.txt is rewritten after each line, and runs.jsonl gets each start's arguments and the kit's manifest. The file <RUN>/limit, where it
 holds a number, sets how many jobs run at once while the run goes on.
 The run stops where its first STOP_AFTER jobs all die with no draw. Held-out tasks never run, and --skip leaves out the tasks it lists. With --record, each worker writes one draw record per draw to the
-job's draws.jsonl (sampler/draw_record.py).
+job's draws.jsonl (sampler/draw_record.py), which becomes draws.jsonl.zst when the job ends (draw_file.py).
 """
 import argparse
 import collections
@@ -39,6 +39,9 @@ from study_paths import DATA_ROOT, MAIN_ROOT  # noqa: E402
 DATASET = MAIN_ROOT / 'work/synth-kaggle/kernel-writer-dry8/dataset'  # the v9 bundle's dataset: models, policy model, supervisor
 PY = MAIN_ROOT / 'work/lm/data-study/ast/run/runtime-kaggle-py313/venv/bin/python'
 TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import draw_file  # noqa: E402
+
 ARMS = {'tree': {'WRITER_TREE': None}, 'tok': {'WRITER_TREE': None}, 'fast': {'WRITER_TREE': None}, 'tok_read': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '8', 'SEARCH_READ_SCOPE': '1'}, 'hand': {}, 'tree_reads': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
         'tree_fp': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '4'}, 'tree_first_fp': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst', 'FIRST_PASS_SECONDS': '4'},
         'tree_any': {'WRITER_TREE': None, 'SEARCH_PARTITION': '1', 'FIRST_PASS_SECONDS': '4'}}  # WRITER_TREE None: --tree; the checks of the ReadsScope rules; tok and fast: tree under other names, so that two runs of different kits or sites pair by reach.py's --arms
@@ -176,6 +179,7 @@ def run_job(a, out, task, arm, seed):
     dk = re.search(r'deaths (\d+) kills (\d+)', last)
     cands = sum(1 for p in (w / 'work').glob('*.out.jsonl') for l in open(p) if l.strip())
     draws, cpu = effort(w)
+    draw_file.compress(w)
     rec = dict(task=task, arm=arm, seed=seed, job=w.name, budget=a.budget, solved=ok, tests=ntest, candidates=cands, draws=draws, cpu=cpu, rc=rc, seconds=round(time.time() - t0, 1),
                deaths=int(dk.group(1)) if dk else None, kills=int(dk.group(2)) if dk else None,
                tracebacks=sum(p.read_text(errors='replace').count('Traceback') for p in (w / 'work').glob('*.log')))

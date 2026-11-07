@@ -4,6 +4,9 @@
 For each task with draw records in a run of dev_run.py, it takes up to K distinct non-empty states of the draws' last steps (docs/sample-build/training-rows.md, "States off the samples"). A state's queries that the union holds are its gold part. Its targets are the union's target queries that aren't in the state and whose closure lies in the gold part. A query outside the union becomes a query record whose program is its text with local labels, and whose closure comes from what its text reads in the draw. `points_write.py SPLIT --skeleton SKELETON_OUT --samples-per-task 0` then writes the points."""
 import argparse, collections, hashlib, json, re, sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'search/dev161'))
+import draw_file  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from study_paths import DATA_ROOT  # noqa: E402
 
@@ -54,8 +57,7 @@ def main():
     totals = collections.Counter()
     for task, job in sorted(jobs.items()):
         path = SAMPLES / a.split / 'skeleton' / f'{task}.jsonl'
-        draws = job / 'draws.jsonl'
-        if not path.exists() or not draws.exists():
+        if not path.exists() or not draw_file.has_draws(job):
             totals['no skeleton or draws'] += 1
             continue
         records = [json.loads(x) for x in path.read_text().splitlines()]

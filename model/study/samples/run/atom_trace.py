@@ -30,6 +30,25 @@ def table_json(cur):
     return out
 
 
+def sites_ascending(core, tokens):
+    """Whether an atom's sites are in ascending column order. A column followed by a column opens a record, which an END closes."""
+    depth, last = 0, [-1]
+    for i, t in enumerate(tokens):
+        name = core.names[t]
+        if name == 'END' and depth:
+            depth -= 1
+            last.pop()
+        elif core.is_column[t]:
+            k = int(name[1:])
+            if k <= last[-1]:
+                return False
+            last[-1] = k
+            if i + 1 < len(tokens) and core.is_column[tokens[i + 1]]:
+                depth += 1
+                last.append(-1)
+    return True
+
+
 STEPS = []
 
 
@@ -181,13 +200,13 @@ def main():
                                         continue
                                     T = cur.table.ct.tables
                                     n = len(T['form'])
-                                    raw, flag = bytes(memoryview(T['hash']).cast('B')), bytes(memoryview(T['hashed']).cast('B'))
-                                    held = [raw[r * 16:r * 16 + 16] for r in range(n)]
+                                    hash_bytes, flag = bytes(memoryview(T['hash']).cast('B')), bytes(memoryview(T['hashed']).cast('B'))
+                                    held = [hash_bytes[r * 16:r * 16 + 16] for r in range(n)]
                                     unhashed += sum(1 for r in range(n) if not flag[r])
                                     keys.add(tuple(sorted(held)))
                                     instances.update(held)
                                     per.append(n)
-                                hashes = dict(atoms=len(cands), no_table=none, distinct_tables=len(keys), distinct_instances=len(instances), mean_instances=float(np.mean(per)) if per else 0.0, unhashed=unhashed, seconds=time.monotonic() - t1)
+                                hashes = dict(atoms=len(cands), not_ascending=sum(not sites_ascending(core, c[0]) for c in cands), no_table=none, distinct_tables=len(keys), distinct_instances=len(instances), mean_instances=float(np.mean(per)) if per else 0.0, unhashed=unhashed, seconds=time.monotonic() - t1)
                                 print(task, kind, 'atoms closed', pt.place.atoms, hashes, 'walk points', nodes, 'walk seconds', round(spent, 1), 'truncated', truncated, flush=True)
                             t1 = time.monotonic()
                             chosen = range(len(cands)) if not a.hashes else []

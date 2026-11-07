@@ -4,6 +4,7 @@ Tables are named from the draw records (reach.py --by tables). Only tasks that b
 import collections, json, math, statistics as st, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import draw_file  # noqa: E402
 import reach as R
 
 U = R.DATA / 'gold/gold-union-exp46'
@@ -22,7 +23,7 @@ def band(d):
 def first_draws(job):
     """{graph table: the draw that first gave it}, and the count of draws."""
     outputs, entries, order = [], [], []
-    for d in map(json.loads, open(job / 'draws.jsonl')):
+    for d in draw_file.draws(job):
         if 'steps' not in d:
             continue
         q = d['steps'][-1]['query_hash']
