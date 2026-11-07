@@ -2,7 +2,7 @@
 
 The model scores one id at a time. Its row for an id is the feature names of `uses`, in that order: an option-scope name gives the id's own value,
 and a point-scope name gives the point's value, the same for every id. Where no name of `uses` is a registered prefix feature, the names are columns of the
-writing-point vector (writer.vector_names), and the row of an id is its row of Features.vectors() at those columns. The logit of an id is the model's raw score."""
+writing-point vector (writer.vector_names), and the row of an id is its row of Features.vectors() at those columns. The logit of an id is the model's raw score, from tree_compile's C library of the model where it builds and agrees with the Booster (WRITER_TREE_COMPILED)."""
 import json
 import os
 import sys
@@ -13,6 +13,7 @@ import writer
 
 
 CASCADE = tuple(float(x) if i else int(x) for i, x in enumerate(os.environ['WRITER_TREE_CASCADE'].split(','))) if os.environ.get('WRITER_TREE_CASCADE') else None  # (first trees, nats): see TreeDistribution.logits
+COMPILED = os.environ.get('WRITER_TREE_COMPILED', '1') != '0'  # score with tree_compile's C library of the model, which load() checks against the Booster; '0': the Booster scores
 OPTIONAL = ('matplotlib', 'graphviz', 'datatable', 'dask', 'pyarrow', 'pandas')  # lightgbm's optional imports: on the Kaggle image one of them maps CUDA libraries, which fails under the worker's address space limit
 
 
@@ -51,6 +52,10 @@ class TreeDistribution:
         self.point_at = [] if self.vector else [i for i, n in enumerate(self.uses) if writer.PREFIX_FEATURES[n].scope == 'point']
         self.name = name
         self.version = '%s:%s' % (name, model_file)
+        self.compiled = None
+        if COMPILED and CASCADE is None:
+            import tree_compile
+            self.compiled = tree_compile.load(model_file, self.booster)
 
     def rows(self, point, ids, x):
         """The model's input rows for `ids` at `point`: len(ids) x len(uses), float32."""
@@ -76,6 +81,8 @@ class TreeDistribution:
         if len(ids) == 0:
             return np.zeros(0)
         rows = self.rows(point, ids, x)
+        if self.compiled is not None:
+            return self.compiled.raw(rows)
         if CASCADE is None or len(ids) < 8 or self.booster.num_trees() <= CASCADE[0]:
             return np.asarray(self.booster.predict(rows, raw_score=True, num_threads=1), np.float64).reshape(len(ids))
         first, within = CASCADE  # the first trees score every id; only the ids within that many nats of the top go through the rest, and an id far below keeps its partial score
