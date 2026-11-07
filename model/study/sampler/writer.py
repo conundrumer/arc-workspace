@@ -1887,13 +1887,24 @@ def write(start, plan, rng, cache=None, on_atom=None):
     (rng.hash) at the start of the body; it may raise to end the path."""
     pt = start
     body, ctx = pt.track.body, getattr(rng, 'hash', 0)
-    atoms = None
-    if os.environ.get('WRITER_ATOM_TREE') or os.environ.get('WRITER_ATOM_SOCKET'):
+    atoms = full = None
+    if os.environ.get('WRITER_ATOM_FULL'):
+        import atom_writer as full
+    elif os.environ.get('WRITER_ATOM_TREE') or os.environ.get('WRITER_ATOM_SOCKET'):
         import atom_writer as atoms
     whole, closing = atoms is not None, False  # whether the next atom is one choice; and, for an atom that goes by tokens, whether the search has chosen to close the one before it
     while True:
         if pt.track.where == 'done':
             return finish(pt)
+        if full is not None and full.first_item(pt):
+            before = len(pt.track.texts)
+            pt = full.choose_full(pt, plan, rng)
+            closing = full.closes_here(pt)  # the chosen atom is whole: the next token closes it
+            if pt.track.body != body:
+                body, ctx = pt.track.body, getattr(rng, 'hash', 0)
+            if on_atom is not None and len(pt.track.texts) > before:
+                on_atom(ctx, pt)
+            continue
         if atoms is not None:
             if not whole and pt.place.phase in atoms.START_PHASES and atoms.decision(pt):
                 whole = True
@@ -1917,7 +1928,10 @@ def write(start, plan, rng, cache=None, on_atom=None):
             probs, costs = probabilities(pt, plan, ids, fac)
             keys = getattr(rng, 'keys', None)
             tie = None if keys is None else (lambda i, pt=pt, ids=ids, keys=keys: keys.of(pt, int(ids[i])))
-            if atoms is not None and not whole and atoms.closes_here(pt):
+            if full is not None and closing and full.closes_here(pt):
+                j = full.token_choice(pt, ids, probs, costs, rng, True)
+                closing = False
+            elif atoms is not None and not whole and atoms.closes_here(pt):
                 j = atoms.token_choice(pt, ids, probs, costs, rng, closing)
                 closing = False
                 if j is None:  # the open atom closes: the next atom is one choice
