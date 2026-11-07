@@ -509,52 +509,32 @@ impl<'a> Search<'a> {
     /// and, where the count is under the cap, the positions of the part's rows
     /// outside `positions` that hold one value in all the rows of each row of
     /// the projection: each is a function of the projection.
+    ///
+    /// The rows are numbered in the groups of [`Groups`], from 0 in the order
+    /// first read, as the projected rows are read, which gives the same count,
+    /// the same rows read and the same columns as a table that holds each
+    /// projected row whole. A group's first row is kept only while a column may
+    /// still be a function, since no other read of it follows.
     fn count(part: &RelationPart, positions: &[u16], cap: u64) -> (usize, u64, Vec<u16>) {
-        // A row of at most four cells packs into one key.
-        if positions.len() <= 4 {
-            let mut groups: StableHashMap<u128, u32> = StableHashMap::default();
-            return Self::scan(part, positions, cap, |row| {
-                let next = groups.len() as u32;
-                let key = positions.iter().fold(0u128, |packed, &position| packed << 32 | u128::from(row[usize::from(position)].encoding()));
-                let group = *groups.entry(key).or_insert(next);
-                (group, group == next)
-            });
-        }
-        let mut groups: StableHashMap<Box<[TermId]>, u32> = StableHashMap::default();
-        let mut projected: Vec<TermId> = Vec::with_capacity(positions.len());
-        Self::scan(part, positions, cap, |row| {
-            projected.clear();
-            projected.extend(positions.iter().map(|&position| row[usize::from(position)]));
-            // A repeat of a row takes no allocation.
-            if let Some(&group) = groups.get(projected.as_slice()) {
-                return (group, false);
-            }
-            let next = groups.len() as u32;
-            groups.insert(projected.as_slice().into(), next);
-            (next, true)
-        })
-    }
-
-    /// [`Search::count`] where `group` gives the number of a row's projection,
-    /// numbered from 0 in the order first read, and whether the row is the
-    /// first read of it.
-    fn scan(part: &RelationPart, positions: &[u16], cap: u64, mut group: impl FnMut(&[TermId]) -> (u32, bool)) -> (usize, u64, Vec<u16>) {
         let width = part.columns.len();
         let mut functions: Vec<u16> = (0..width as u16).filter(|position| !positions.contains(position)).collect();
+        let mut groups = Groups::new(positions.len());
         // The cells of the first row read of each projection, row after row.
         let mut first: Vec<TermId> = Vec::new();
         let (mut count, mut read) = (0usize, 0u64);
         for row in part.rows.rows() {
             read += 1;
-            let (number, new) = group(row);
+            let (group, new) = groups.number(row, positions);
             if new {
                 count += 1;
                 if count as u64 > cap {
                     return (count, read, Vec::new());
                 }
-                first.extend_from_slice(row);
+                if !functions.is_empty() {
+                    first.extend_from_slice(row);
+                }
             } else if !functions.is_empty() {
-                let held = &first[number as usize * width..(number as usize + 1) * width];
+                let held = &first[group as usize * width..(group as usize + 1) * width];
                 functions.retain(|&position| row[usize::from(position)] == held[usize::from(position)]);
             }
         }
@@ -624,6 +604,80 @@ impl<'a> Search<'a> {
             parts.push(RelationPart { columns, rows: self.part_rows(relation, part, &positions)? });
         }
         Ok(Relation::from_parts(arity, parts.into()))
+    }
+}
+
+/// The numbers of the distinct projected rows that a scan reads, in the order it
+/// reads them first. A table of open addressing holds, for each group, the group's
+/// projected cells, and a slot holds the hash of the cells in its upper 32 bits and
+/// 1 + the group's number in its lower 32 bits, as a slot of a row set does, so a
+/// probe that passes a slot of another group ends at the compare of two hashes. The
+/// groups are those of a table that holds each projected row whole, because a
+/// hash decides no group: a slot with the hash of a row is its group only where the
+/// cells are equal.
+struct Groups {
+    /// The count of cells of a projected row.
+    width: usize,
+    /// The cells of each group, group after group.
+    cells: Vec<u32>,
+    count: u32,
+    /// 0 in an empty slot. The length is a power of two, and at most half of the
+    /// slots are in use.
+    slots: Vec<u64>,
+}
+
+impl Groups {
+    fn new(width: usize) -> Self {
+        Groups { width, cells: Vec::new(), count: 0, slots: vec![0; 64] }
+    }
+
+    /// The number of the group of `row` projected onto `positions`, whose count
+    /// is the groups' `width`, and whether the row is the first read of it.
+    fn number(&mut self, row: &[TermId], positions: &[u16]) -> (u32, bool) {
+        let mut hash = 0x9E37_79B9_7F4A_7C15_u64;
+        for &position in positions {
+            hash = (hash.rotate_left(5) ^ u64::from(row[usize::from(position)].encoding())).wrapping_mul(0x517C_C1B7_2722_0A95);
+        }
+        let hash = (hash ^ (hash >> 32)) as u32;
+        let mask = self.slots.len() - 1;
+        let mut at = hash as usize & mask;
+        loop {
+            let slot = self.slots[at];
+            if slot == 0 {
+                break;
+            }
+            if (slot >> 32) as u32 == hash {
+                let group = slot as u32 - 1;
+                let held = &self.cells[group as usize * self.width..(group as usize + 1) * self.width];
+                if positions.iter().zip(held).all(|(&position, &cell)| row[usize::from(position)].encoding() == cell) {
+                    return (group, false);
+                }
+            }
+            at = (at + 1) & mask;
+        }
+        let group = self.count;
+        self.count += 1;
+        self.cells.extend(positions.iter().map(|&position| row[usize::from(position)].encoding()));
+        self.slots[at] = u64::from(hash) << 32 | u64::from(group + 1);
+        if self.count as usize * 2 > self.slots.len() {
+            self.grow();
+        }
+        (group, true)
+    }
+
+    /// Doubles the table. The groups are distinct, so each takes the first
+    /// empty slot of its probe, and a slot keeps its hash, so no cell is read.
+    fn grow(&mut self) {
+        let mut slots = vec![0u64; self.slots.len() * 2];
+        let mask = slots.len() - 1;
+        for &held in self.slots.iter().filter(|&&held| held != 0) {
+            let mut at = (held >> 32) as usize & mask;
+            while slots[at] != 0 {
+                at = (at + 1) & mask;
+            }
+            slots[at] = held;
+        }
+        self.slots = slots;
     }
 }
 
