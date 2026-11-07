@@ -3,7 +3,7 @@
 
   <runtime python> -u -I -B v1_dump.py OUT ROOT [--mutants K] TASK...
 
-ROOT holds `train/mutants/`, whose files name each task's ground-truth program and its mutants. A task's file holds:
+ROOT holds `train/mutants/` and `dev/mutants/`, whose files name each task's ground-truth program and its mutants. A task's file holds:
 - `pairs`: at each pair, the values of each table of the ground-truth program, at the assignment its list reads, with the features across the
   program's other retained assignments.
 - `base`: at each pair, what the first version says of the input grid, the output and the changed cells.
@@ -89,8 +89,17 @@ def features_of(solver, tables, task_json, others, cache):
     return pairs, coordinates
 
 
+def mutants_file(root, task):
+    """A task's file of mutants, in the split that holds the task."""
+    for split in ('train', 'dev'):
+        path = Path(root) / split / 'mutants' / f'{task}.json'
+        if path.exists() or path.with_name(path.name + '.zst').exists():
+            return path
+    raise FileNotFoundError(f'no mutants file of {task}')
+
+
 def dump(out, root, task, mutants):
-    source = read_json(Path(root) / 'train' / 'mutants' / f'{task}.json')
+    source = read_json(mutants_file(root, task))
     task_json = json.loads((REPO / 'data/tasks' / f'{task}.json').read_text())
     for pair in task_json['test']:
         pair['output'] = pair['input']

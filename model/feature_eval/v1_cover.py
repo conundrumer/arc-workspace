@@ -45,6 +45,8 @@ A store's `contingent` holds about as many entries as its lists, and one group o
 
 `--aggregates` also gives each shape of a table's lists its least, mean and greatest over the ARC examples, as columns of their own, so a feature that states something across the examples can be judged against them. A shape that holds one value at every example has that value as all three.
 
+`--places FILE` gives the upstream tables of each table under the spec, by task, table, `gold` or a mutant's number, upstream table and place (`parent` or `ancestor`), tab-separated. The first version takes every table of an instance as upstream once a query reads one of the instance's tables, tables that no query reads among them, and the spec takes the tables that the queries read. A first-version feature that names an upstream table then takes that table's place under the spec, and stands only where the spec puts that table upstream.
+
 `--left-out FILE` names tables by task and name, tab-separated, whose table rows stand out of the judging: the spec gives such a table no value where the first version gives one, as on a table with a cell off its frame.
 
 A run over many tasks holds too much to sort every entry. `--ids-out FILE` reads every list and writes one column of each set of columns with one source and equal entries, holding only a sum per column, and judges nothing. `--keep-ids FILE` then reads only those columns.
@@ -137,9 +139,10 @@ def by_table(pair):
     return out
 
 
-def collect(at, name, types_of, tables, form, out, row, coordinates, coordinate_of, one_binding=False):
+def collect(at, name, types_of, tables, form, out, row, coordinates, coordinate_of, one_binding=False, places=None):
     """Adds to `out` a row's values of the features of one table at one pair, given as {feature: value}. `types_of` gives each table's column tokens' types by its name. Under
-    `one_binding`, a feature that names a column stands only where its table has one column of that type."""
+    `one_binding`, a feature that names a column stands only where its table has one column of that type. `places` gives the upstream tables under the spec with their
+    places, and a feature that names a table the first version puts upstream and the spec does not stands out. Returns the count of features that stand out so."""
     own = types_of.get(name, {})
     of_type = collections.Counter(own.values())
     group_columns = [token for token, ty in own.items() if ty in ('Ident', 'Color') or token.startswith('key.')]
@@ -150,8 +153,20 @@ def collect(at, name, types_of, tables, form, out, row, coordinates, coordinate_
         if feature.endswith(' describe') and isinstance(value, str) and TABLE.fullmatch(feature[:-len(' describe')]):
             place = value.split(' ')[0].lstrip('[')
             place_of[feature[:-len(' describe')]] = place if place in ('parent', 'ancestor') else 'table'
+    not_upstream = set()
+    if places is not None:
+        for token, place in list(place_of.items()):
+            if place in ('parent', 'ancestor'):
+                if tables.get(token, '') in places:
+                    place_of[token] = places[tables[token]]
+                else:
+                    not_upstream.add(token)
+    dropped = 0
     for feature, value in at.items():
         if value is None or feature.endswith(' describe'):
+            continue
+        if not_upstream and any(token in not_upstream for token in TABLE.findall(feature)):
+            dropped += 1
             continue
         # A table whose one group column is the column of the cells gives each cell a group of its own. No part takes a column as its own key.
         if 'of its Ident, Color and key columns' in feature and len(group_columns) == 1 and group_columns[0] in feature:
@@ -184,6 +199,7 @@ def collect(at, name, types_of, tables, form, out, row, coordinates, coordinate_
             out[f'{shape} :{word}'][row] = 1.0
             coordinate_of.setdefault(f'{shape} :{word}', coordinate_of.get(shape))
         out[('words', shape)][row] = held
+    return dropped
 
 
 def main():
@@ -209,6 +225,7 @@ def main():
     parser.add_argument('--contingent', action='store_true')
     parser.add_argument('--ids-out')
     parser.add_argument('--left-out')
+    parser.add_argument('--places')
     parser.add_argument('--aggregates', action='store_true')
     parser.add_argument('--keep-ids')
     parser.add_argument('--tasks', type=int)
@@ -267,6 +284,15 @@ def main():
         with open(args.left_out) as lines:
             left_out = {tuple(line.split('\t')[:2]) for line in lines}
     left_out_rows = [0]
+    places = {}
+    if args.places:
+        with open(args.places) as lines:
+            for line in lines:
+                task_name, table_name, variant, other, place = line.rstrip('\n').split('\t')
+                held = places.setdefault((task_name, table_name, variant), {})
+                if other:
+                    held[other] = place
+    not_upstream_values = [0]
     seen_ids, seen_sums = [], []
 
     def take(row, ids, values):
@@ -361,7 +387,7 @@ def main():
 
         gold_pairs = [by_table(pair) for pair in data['pairs']]
 
-        def add_rows(pairs, name, place, candidate, own_types, query_list=None):
+        def add_rows(pairs, name, place, candidate, own_types, query_list=None, variant='gold'):
             nonlocal rows
             own_named = (named_lists[place], named_others[place]) if place in named_lists else None
             for at, pair in enumerate(pairs):
@@ -399,7 +425,7 @@ def main():
                     columns, values = each_rows[int(first_each[candidate]) + at]
                     take(row, np.uint64(offset['relations_each']) + columns.astype(np.uint64), values)
                 if not args.ids_out:
-                    collect(table_at, name, own_types, tables, args.form, features, row, coordinates, coordinate_of, args.one_binding)
+                    not_upstream_values[0] += collect(table_at, name, own_types, tables, args.form, features, row, coordinates, coordinate_of, args.one_binding, places.get((task, name, variant)) if args.places else None)
 
         for item_at, item in enumerate(head['items']):
             name, place = item['table'], item['gold']
@@ -411,9 +437,11 @@ def main():
                     if mutant['table'] in lists and (task, item_at, j) in candidate_of:
                         own_types = dict(types_of)
                         own_types.update({key: {token: ty for token, ty in columns} for key, columns in held['columns'].items()})
-                        add_rows([by_table(pair) for pair in held['pairs']], name, mutant['table'], candidate_of[(task, item_at, j)], own_types, f'{item_at}/{j}/query')
+                        add_rows([by_table(pair) for pair in held['pairs']], name, mutant['table'], candidate_of[(task, item_at, j)], own_types, f'{item_at}/{j}/query', str(mutant['mutant']))
     del extras, each_rows
     print(f'table rows left out by name {left_out_rows[0]}', flush=True)
+    if args.places:
+        print(f'first-version values that name a table the spec does not put upstream {not_upstream_values[0]}', flush=True)
     if args.ids_out:
         sum_entries()
         ids = np.concatenate(seen_ids)

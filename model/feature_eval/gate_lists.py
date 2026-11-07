@@ -280,12 +280,12 @@ def rows_of(entry, key):
 
 
 def state_lists(folder, name):
-    """A task's state lists, with each of its items' place among them by the item's form."""
+    """A task's state lists, with each of its items' place among them by the item's table. The tables of one instance share a form, and each has lists of its own."""
     path = folder / name
     if not path.exists():
         return {}, {}, {}
     head, lists, others = read_lists(path, graded=True)
-    return lists, others, {item['form']: at for at, item in enumerate(head['items'])}
+    return lists, others, {item['table']: at for at, item in enumerate(head['items'])}
 
 
 QV_NAMES = ('active', 'stable', 'stable_share', 'new_stable', 'new_stable_share', 'new_active', 'new_active_share', 'uses', 'assignments',
@@ -567,7 +567,7 @@ def build(root, out):
                     example_of.extend([len(rows) - 1] * example_count)
                     example_pair.extend(range(example_count))
                     row_task.append(len(first_example) - 1)
-                    state_at = state_item.get(item['form'])
+                    state_at = state_item.get(item['table'])
                     graph = state.get(f'{state_at}/{j}/graph')
                     if graph is None:
                         mats['graph'].add([])
