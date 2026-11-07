@@ -8,7 +8,7 @@
 //! on one: most give an empty relation, `antijoin` with an empty right side gives
 //! its left, and a component runs on its empty input.
 //!
-//! The rows of `inside` stand as their boxes ([`Val::Boxes`]) until an operator reads a cell.
+//! The rows of `inside` stand as their boxes ([`Val::Boxes`]) until an operator needs the rows themselves.
 
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
@@ -312,8 +312,8 @@ pub enum Val {
     /// The product of the parts, each with a row. No parts is the one row of
     /// no columns.
     Rows(Arc<Vec<Part>>),
-    /// The rows of `inside`, as the relation and the grid they come from. An operator that reads
-    /// a cell of a box writes them out; the others, and the count of rows, read the boxes.
+    /// The rows of `inside`, as the relation and the grid they come from. An operator that needs
+    /// the rows themselves writes them out; the others, and the count of rows, read the boxes.
     Boxes(Arc<crate::boxes::Boxes>),
 }
 
@@ -537,13 +537,24 @@ impl<'a> Evaluator<'a> {
             return Val::None;
         }
         if children.iter().any(|child| matches!(child, Val::Boxes(_))) {
-            // The rows of `inside` serve an operator that reads no cell of a box as they are. Any other reads them written out.
-            if let Val::Boxes(boxes) = children[0] {
-                if let Some(value) = boxes.read(step, children) {
+            // The rows of `inside` serve an operator that takes what it needs from the boxes as they are. Any other reads them written out.
+            let second = match children.get(1) {
+                Some(Val::Boxes(boxes)) => boxes.read_second(step),
+                _ => None,
+            };
+            let mut held: Vec<&Val> = children.to_vec();
+            if let Some(value) = &second {
+                held[1] = value;
+                if matches!(value, Val::None) {
+                    return Val::None;
+                }
+            }
+            if let Val::Boxes(boxes) = held[0] {
+                if let Some(value) = boxes.read(step, &held) {
                     return value;
                 }
             }
-            let written: Vec<Val> = children.iter().map(|child| child.written()).collect();
+            let written: Vec<Val> = held.iter().map(|child| child.written()).collect();
             let held: Vec<&Val> = written.iter().collect();
             return self.apply(step, &held);
         }
@@ -1666,7 +1677,7 @@ fn rows_in(table: &Table, at: &[u16], keys: &[u64]) -> Vec<bool> {
     table.rows().map(|row| keys.binary_search(&row_word(row, at)).is_ok()).collect()
 }
 
-fn semijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Option<Val> {
+pub(crate) fn semijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Option<Val> {
     if matches!(left, Val::Empty) || matches!(right, Val::Empty) {
         return Some(Val::Empty);
     }
@@ -1685,7 +1696,7 @@ fn semijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Optio
     Some(Val::of_table(Table::new(table.arity, cells)))
 }
 
-fn all(domain: &Val, body: &Val, left_at: &[u16], right_at: &[u16], outer: &[u16]) -> Option<Val> {
+pub(crate) fn all(domain: &Val, body: &Val, left_at: &[u16], right_at: &[u16], outer: &[u16]) -> Option<Val> {
     if matches!(domain, Val::Empty) {
         return Some(Val::Empty);
     }
@@ -1707,7 +1718,7 @@ fn all(domain: &Val, body: &Val, left_at: &[u16], right_at: &[u16], outer: &[u16
     Some(Val::of_table(Table::new(1, out)))
 }
 
-fn antijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Option<Val> {
+pub(crate) fn antijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16]) -> Option<Val> {
     let Val::Rows(left_parts) = left else { return Some(Val::Empty) };
     let Val::Rows(right_parts) = right else { return Some(left.clone()) };
     if left_at.is_empty() {

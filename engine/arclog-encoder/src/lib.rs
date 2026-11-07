@@ -25,7 +25,7 @@
 //! - [`native`]: the operators over materialized rows, a faster evaluation of
 //!   what those forms compute.
 //! - [`boxes`]: the rows of `inside`, as the boxes they come from, written out where an
-//!   operator reads a cell.
+//!   operator needs the rows themselves.
 pub mod atom_lists;
 pub mod body_features;
 pub mod bounds;

@@ -2473,10 +2473,10 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// The id of the value at `id` with the rows of `inside` written out, unless `step` reads them as the boxes they come from: the id of no value where they pass `CELL_CAP` cells.
+    /// The id of the value at `id` with the rows of `inside` written out, unless `step` takes what it needs from the boxes they come from, as its first relation or, where `first` is false, its second: the id of no value where they pass `CELL_CAP` cells.
     fn written_id(&mut self, step: &Step, id: u32, first: bool) -> u32 {
         let Val::Boxes(boxes) = &self.values[id as usize] else { return id };
-        if first && boxes.reads(step) {
+        if if first { boxes.reads(step) } else { boxes.reads_second(step) } {
             return id;
         }
         let value = boxes.written();
@@ -2516,25 +2516,30 @@ impl<'a> Walker<'a> {
             let value = &self.values[*found as usize];
             return (count_of(value), if number { number_word(value) } else { 0 });
         }
-        // A part that reads cells of `inside` runs on the rows written out, once per grouping.
+        // A part that reads cells of `inside` runs on the rows written out, once per grouping. Rows of `inside` that the part takes as boxes group as the relation's rows do, where its keys are the relation's.
         let written = if steps.grouped[at].is_some() { self.written_id(step, id, true) } else { id };
-        if let (Some((part, keys)), Val::Rows(parts)) = (steps.grouped[at], &self.values[written as usize]) {
+        if let Some((part, keys)) = steps.grouped[at] {
+            let table = match &self.values[written as usize] {
+                Val::Rows(parts) => match parts.as_slice() {
+                    [one] if one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) => Some(one.table.clone()),
+                    _ => None,
+                },
+                Val::Boxes(boxes) => steps.keys[keys as usize].iter().all(|key| *key < boxes.width()).then(|| boxes.support()),
+                _ => None,
+            };
             // Keys that group the rows alike give one count, so a part runs once per grouping.
-            if let [one] = parts.as_slice() {
-                if one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) {
-                    let table = one.table.clone();
-                    let (grouping, groups) = *self.groupings.entry((written, keys)).or_insert_with(|| crate::gen_parts::grouping_signature(&table, &steps.keys[keys as usize]));
-                    if part == PROJECT {
-                        return (groups, 0);
-                    }
-                    let key = (part, written, grouping, b);
-                    if let Some(found) = self.group_counts.get(&key) {
-                        return (*found, 0);
-                    }
-                    let found = count_of(&self.apply(step, written, b));
-                    self.group_counts.insert(key, found);
-                    return (found, 0);
+            if let Some(table) = table {
+                let (grouping, groups) = *self.groupings.entry((written, keys)).or_insert_with(|| crate::gen_parts::grouping_signature(&table, &steps.keys[keys as usize]));
+                if part == PROJECT {
+                    return (groups, 0);
                 }
+                let key = (part, written, grouping, b);
+                if let Some(found) = self.group_counts.get(&key) {
+                    return (*found, 0);
+                }
+                let found = count_of(&self.apply(step, written, b));
+                self.group_counts.insert(key, found);
+                return (found, 0);
             }
         }
         if !number && matches!(step, Step::Join { .. } | Step::Antijoin { .. }) {
@@ -2876,6 +2881,10 @@ impl Walker<'_> {
 
 /// The word of a relation's one number, where it has one row.
 fn number_word(value: &Val) -> u32 {
+    // The rows of `inside` have three columns at least.
+    if matches!(value, Val::Boxes(_)) {
+        return 0;
+    }
     let Some(table) = flat(value) else { return 0 };
     if table.len == 1 && table.arity == 1 {
         // 0 stands for no number. A number from 0 up stands one above itself, and one below 0 in two's complement, which is the word's top half.

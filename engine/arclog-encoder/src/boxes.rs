@@ -2,18 +2,24 @@
 //!
 //! `inside` gives each row of a relation with each cell of the grid that lies in the row's box.
 //! A [`Boxes`] holds the relation and the grid, and the count of those rows, which is the sum of
-//! the clipped box areas. It writes the rows only where an operator reads a cell of a box, and
-//! then once, up to `CELL_CAP` cells. An operator that reads the columns of the relation alone
-//! takes what it needs from the relation's rows whose box has a cell in the grid.
+//! the clipped box areas. An operator whose value depends on the distinct tuples of the rows at
+//! some columns reads those tuples from the boxes: from the relation's rows whose box has a cell
+//! in the grid where the columns are the relation's, and otherwise from a union of boxes per
+//! tuple of the relation's columns. An operator that keeps rows whole, over the relation's
+//! columns, keeps the relation's rows, and gives boxes again. Any other operator reads the rows
+//! written out, once, up to `CELL_CAP` cells.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::gen_constants::{box_bits, margins_of};
 use crate::gen_parts::GridView;
-use crate::native::{hash_words, project, select, Cell, FastMap, Step, Table, Val, CELL_CAP};
+use crate::native::{all, antijoin, hash_words, project, select, semijoin, Cell, FastMap, Step, Table, Val, CELL_CAP};
 
 /// Marks the hash of a [`Boxes`], which no other value's hash has.
 const BOXES_WORD: u64 = 0x426f_7865_7352_6f77;
+
+/// The most cells of the tables of `Boxes::sketch` that one value keeps for later readers.
+const SKETCH_KEPT: usize = 1 << 18;
 
 pub struct Boxes {
     /// The relation: its rows, each with a box at `at`.
@@ -29,6 +35,8 @@ pub struct Boxes {
     support: OnceLock<Arc<Table>>,
     /// The rows of `inside`, once written: no value where they pass `CELL_CAP` cells.
     written: OnceLock<Val>,
+    /// The tables of `sketch`, by their columns, and the cells that they hold.
+    sketches: Mutex<(usize, FastMap<Box<[u16]>, Option<Arc<Table>>>)>,
 }
 
 impl std::fmt::Debug for Boxes {
@@ -58,7 +66,7 @@ impl Boxes {
         }
         let relation = table.hash();
         let hash = hash_words([BOXES_WORD, relation as u64, (relation >> 64) as u64, u64::from(at), grid_hash as u64, (grid_hash >> 64) as u64]);
-        Val::Boxes(Arc::new(Boxes { table: table.clone(), at, grid, grid_hash, hash, rows, support: OnceLock::new(), written: OnceLock::new() }))
+        Val::Boxes(Arc::new(Boxes { table: table.clone(), at, grid, grid_hash, hash, rows, support: OnceLock::new(), written: OnceLock::new(), sketches: Mutex::new((0, FastMap::default())) }))
     }
 
     /// The count of rows of `inside`.
@@ -148,15 +156,176 @@ impl Boxes {
         }
     }
 
-    /// Whether `step` takes what it needs from the relation's rows, with no cell of a box.
+    /// The count of columns of the relation: `P` stands at this column of `inside`, and `Col` after it.
+    pub fn width(&self) -> u16 {
+        self.table.arity as u16
+    }
+
+    /// These boxes over other rows of the relation, in the same grid.
+    pub fn with_rows(&self, table: &Arc<Table>) -> Val {
+        Boxes::of(table, self.at, self.grid.clone(), self.grid_hash)
+    }
+
+    /// A table in which the rows of `inside` stand at `columns`: the relation's rows whose box has a cell in the grid where every column is the relation's, and otherwise `sketch`.
+    pub fn rows_at(&self, columns: &[u16]) -> Option<Arc<Table>> {
+        if columns.iter().all(|column| *column < self.width()) {
+            return Some(self.support());
+        }
+        self.sketch(columns)
+    }
+
+    /// The distinct tuples of the rows of `inside` at `columns`, as rows of the arity of `inside` with 0 at each other column: no value where they pass `CELL_CAP` cells. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
+    fn sketch(&self, columns: &[u16]) -> Option<Arc<Table>> {
+        let mut key: Vec<u16> = columns.to_vec();
+        key.sort_unstable();
+        key.dedup();
+        let key = key.into_boxed_slice();
+        let held = self.sketches.lock().expect("a sketch lock").1.get(&key).cloned();
+        let built = match held {
+            Some(built) => built,
+            None => {
+                let built = self.build_sketch(&key);
+                let mut kept = self.sketches.lock().expect("a sketch lock");
+                let cells = built.as_ref().map_or(0, |table| table.cells.len());
+                if kept.0 + cells <= SKETCH_KEPT {
+                    kept.0 += cells;
+                    kept.1.insert(key, built.clone());
+                }
+                built
+            }
+        };
+        if built.is_none() {
+            crate::bounds::mark(crate::bounds::Bound::InsideCells);
+        }
+        built
+    }
+
+    fn build_sketch(&self, key: &[u16]) -> Option<Arc<Table>> {
+        let grid = &self.grid;
+        let width = self.table.arity;
+        let arity = width + 2;
+        let at = usize::from(self.at);
+        let want_p = key.contains(&(width as u16));
+        let want_color = key.contains(&(width as u16 + 1));
+        let relation: Vec<usize> = key.iter().filter(|column| usize::from(**column) < width).map(|column| usize::from(*column)).collect();
+        let support = self.support();
+        // The distinct pairs of the relation's columns and a box, in order, so that the pairs of one tuple stand together.
+        let mut pairs: Vec<Cell> = Vec::with_capacity(support.len * (relation.len() + 1));
+        for row in support.rows() {
+            pairs.extend(relation.iter().map(|column| row[*column]));
+            pairs.push(row[at]);
+        }
+        let stride = relation.len() + 1;
+        let pairs = Table::distinct(stride, pairs);
+        // The cells of each box in the grid, as bits in the order of the grid's cells.
+        let words = ((grid.h * grid.w) as usize).div_ceil(64);
+        let mut masks_at: FastMap<Cell, usize> = FastMap::default();
+        let mut masks: Vec<u64> = Vec::new();
+        let mut out: Vec<Cell> = Vec::new();
+        let mut union = vec![0u64; words];
+        let mut row = vec![0 as Cell; arity];
+        let mut colors: Vec<Cell> = Vec::new();
+        let mut start = 0;
+        while start < pairs.len {
+            let tuple = &pairs.cells[start * stride..start * stride + relation.len()];
+            union.fill(0);
+            let mut end = start;
+            while end < pairs.len && pairs.cells[end * stride..end * stride + relation.len()] == *tuple {
+                let held = pairs.cells[end * stride + relation.len()];
+                let from = *masks_at.entry(held).or_insert_with(|| {
+                    let from = masks.len();
+                    masks.resize(from + words, 0);
+                    let (r0, r1, c0, c1) = span(held, grid.h, grid.w);
+                    for r in r0..=r1 {
+                        set_bits(&mut masks[from..from + words], (r * grid.w + c0) as usize, (r * grid.w + c1 + 1) as usize);
+                    }
+                    from
+                });
+                for (word, mask) in union.iter_mut().zip(&masks[from..from + words]) {
+                    *word |= mask;
+                }
+                end += 1;
+            }
+            start = end;
+            row.fill(0);
+            for (column, cell) in relation.iter().zip(tuple) {
+                row[*column] = *cell;
+            }
+            let cells_of = |union: &[u64]| -> Vec<usize> {
+                let mut found = Vec::new();
+                for (at, word) in union.iter().enumerate() {
+                    let mut bits = *word;
+                    while bits != 0 {
+                        found.push(at * 64 + bits.trailing_zeros() as usize);
+                        bits &= bits - 1;
+                    }
+                }
+                found
+            };
+            let held = cells_of(&union);
+            if want_p {
+                if (out.len() / arity + held.len()).saturating_mul(arity) > CELL_CAP {
+                    return None;
+                }
+                for place in held {
+                    let (r, c) = ((place as i32) / grid.w, (place as i32) % grid.w);
+                    row[width] = box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c);
+                    if want_color {
+                        row[width + 1] = grid.colors[place];
+                    }
+                    out.extend_from_slice(&row);
+                }
+            } else {
+                colors.clear();
+                colors.extend(held.iter().map(|place| grid.colors[*place]));
+                colors.sort_unstable();
+                colors.dedup();
+                if (out.len() / arity + colors.len()).saturating_mul(arity) > CELL_CAP {
+                    return None;
+                }
+                for color in &colors {
+                    row[width + 1] = *color;
+                    out.extend_from_slice(&row);
+                }
+            }
+        }
+        Some(Table::new(arity, out))
+    }
+
+    /// Whether `step` takes what it needs from the boxes, without writing the rows.
     pub fn reads(&self, step: &Step) -> bool {
-        let width = self.table.arity as u16;
+        let width = self.width();
         match step {
-            Step::Project { columns } => columns.iter().all(|column| *column < width),
+            Step::Project { .. } | Step::All { .. } => true,
             Step::Select { at, other, drop, .. } => *at < width && other.is_none_or(|other| other < width) && *drop != Some(self.at),
+            Step::Semijoin { left, .. } | Step::Antijoin { left, .. } => left.iter().all(|column| *column < width),
             Step::Part(part) => part.reads_boxes(width),
             _ => false,
         }
+    }
+
+    /// Whether `step` takes what it needs from these boxes as its second relation, without writing the rows.
+    pub fn reads_second(&self, step: &Step) -> bool {
+        second_columns(step).is_some()
+    }
+
+    /// The relation that `step` reads in place of these boxes as its second relation, where `reads_second` holds of it: no value where the rows pass `CELL_CAP` cells.
+    pub fn read_second(&self, step: &Step) -> Option<Val> {
+        let columns = second_columns(step)?;
+        Some(self.rows_at(&columns).map_or(Val::None, Val::of_table))
+    }
+
+    /// The boxes of the relation's rows that `value` holds, where `value` gives a set of them whole.
+    fn kept(&self, value: Val) -> Option<Val> {
+        let table = match &value {
+            Val::None | Val::Empty => return Some(value),
+            Val::Rows(parts) => match parts.as_slice() {
+                [one] if one.table.arity == usize::from(self.width()) && one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) => one.table.clone(),
+                _ => return None,
+            },
+            Val::Boxes(_) => return None,
+        };
+        Some(self.with_rows(&table))
     }
 
     /// What `step` gives over these rows, where `reads` holds of it.
@@ -165,7 +334,10 @@ impl Boxes {
             return None;
         }
         match step {
-            Step::Project { columns } => Some(project(&Val::of_table(self.support()), columns)),
+            Step::Project { columns } => Some(match self.rows_at(columns) {
+                Some(table) => project(&Val::of_table(table), columns),
+                None => Val::None,
+            }),
             Step::Select { at, op, other, drop } => {
                 // The rows that stay are those of the relation, which keep the box column's place unless a column before it goes.
                 let Some(kept) = select(&Val::of_table(self.support()), *at, *op, *other, *drop) else { return Some(Val::None) };
@@ -180,8 +352,45 @@ impl Boxes {
                 let moved = if drop.is_some_and(|dropped| dropped < self.at) { self.at - 1 } else { self.at };
                 Some(Boxes::of(&table, moved, self.grid.clone(), self.grid_hash))
             }
+            Step::Semijoin { left, right } => {
+                let kept = semijoin(&Val::of_table(self.support()), children[1], left, right);
+                self.kept(kept.unwrap_or(Val::None))
+            }
+            Step::Antijoin { left, right } => {
+                let kept = antijoin(&Val::of_table(self.support()), children[1], left, right);
+                self.kept(kept.unwrap_or(Val::None))
+            }
+            Step::All { left, right, outer } => {
+                let columns: Vec<u16> = left.iter().chain(outer.iter()).copied().collect();
+                Some(match self.rows_at(&columns) {
+                    Some(table) => all(&Val::of_table(table), children[1], left, right, outer).unwrap_or(Val::None),
+                    None => Val::None,
+                })
+            }
             Step::Part(part) => part.read_boxes(self, children),
             _ => None,
         }
+    }
+}
+
+/// The columns of `step`'s second relation that it reads, where what it gives depends on the distinct tuples of the rows at those columns alone.
+fn second_columns(step: &Step) -> Option<Vec<u16>> {
+    match step {
+        Step::Semijoin { right, .. } | Step::Antijoin { right, .. } | Step::All { right, .. } => Some(right.to_vec()),
+        Step::Part(part) => part.second_columns(),
+        _ => None,
+    }
+}
+
+/// Sets the bits from `from` up to `to`, in words of 64 bits.
+fn set_bits(words: &mut [u64], from: usize, to: usize) {
+    let mut at = from;
+    while at < to {
+        let word = at / 64;
+        let end = to.min((word + 1) * 64);
+        let count = end - at;
+        let mask = if count == 64 { u64::MAX } else { ((1u64 << count) - 1) << (at % 64) };
+        words[word] |= mask;
+        at = end;
     }
 }
