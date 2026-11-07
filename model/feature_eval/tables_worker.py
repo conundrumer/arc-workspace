@@ -78,6 +78,8 @@ def read_table(tb, name, prefer=None, sources=False):
 
     out, models = {}, {}
     large = False
+    # Each example's count of rows, the greatest over its constraint models, held where the rows themselves are too many to keep.
+    counts = {ex: max(len(raw) for raw in held.values()) for ex, held in by_example.items() if held}
     for ex, held in by_example.items():
         tables = list(held.values())
         if any(len(raw) > ROW_CAP for raw in tables):
@@ -93,7 +95,7 @@ def read_table(tb, name, prefer=None, sources=False):
     if sources:
         held = tb.T['column_ident_sources'][t]
         types = [f'{ty}@{source}' if ty == 'Ident' and source else ty for ty, source in zip(types, held)]
-    return dict(columns=names, types=types, assignments=len(by_key), distinct_assignments=len(contents), capped=stopped, assignment=chosen, task_level='task' in out or 'task' in models, too_large=large, rows=out, models=models), None
+    return dict(columns=names, types=types, assignments=len(by_key), distinct_assignments=len(contents), capped=stopped, assignment=chosen, task_level='task' in out or 'task' in models, too_large=large, row_counts=counts, rows=out, models=models), None
 
 
 def worker(root, task):
