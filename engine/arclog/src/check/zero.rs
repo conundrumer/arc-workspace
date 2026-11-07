@@ -47,11 +47,11 @@ impl Check for EqualityAndZeroCheck {
     /// - a `=` whose second label is made, `(= Y *X)`;
     /// - a `(= X Y)` whose first label a site or a `=` of its own list
     ///   makes, where `Y` is no label it makes;
-    /// - a `(= *V Y)` in an `OR`'s first branch or an `IF`'s then, whose
-    ///   label `Y` a site of a positive atom of the same list makes, where
-    ///   that site could make `V`. In the first branch of an `OR` that is a
-    ///   body's one conjunct, the `OR` may export `V`, and the check refuses
-    ///   the `=` only where it does not.
+    /// - a `(= *V Y)` at the top level of a body, or in an `OR`'s first
+    ///   branch or an `IF`'s then, whose label `Y` a site of a positive atom
+    ///   of the same list makes, where that site could make `V`. In the first
+    ///   branch of an `OR` that is a body's one conjunct, the `OR` may export
+    ///   `V`, and the check refuses the `=` only where it does not.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
         let mut refused = rule_refusals(input.form, input.path, &input.scope, &|_| false);
         refused.extend(head_zero(input.form, input.scope.clauses));
@@ -301,12 +301,12 @@ fn each_body(conjunct: &Conjunct, at: &NodePath, visit: &mut dyn FnMut(&Body, &N
     }
 }
 
-/// Pushes onto `refused` each `(= *V Y)` of an `OR`'s first branch or an
-/// `IF`'s then within `form_body` whose `Y` a site of a positive atom of
-/// the same list makes. `union` holds where the body's one conjunct is an
-/// `OR`, whose first branch may make `V` where the `OR` exports it, and
-/// `union_open` where the body is open, so that its first branch is
-/// undecided.
+/// Pushes onto `refused` each `(= *V Y)` at the top level of `form_body`, or
+/// in an `OR`'s first branch or an `IF`'s then within it, whose `Y` a site
+/// of a positive atom of the same list makes. `union` holds where the body's
+/// one conjunct is an `OR`, whose first branch may make `V` where the `OR`
+/// exports it, and `union_open` where the body is open, so that its first
+/// branch is undecided.
 fn lists(form_body: &FormBody<'_>, union: bool, union_open: bool, refused: &mut Vec<Refusal>) {
     fn walk(body: &Body, at: &NodePath, top: Option<(bool, bool)>, refused: &mut Vec<Refusal>) {
         for (at, conjunct) in list_of(body, at) {
@@ -320,23 +320,30 @@ fn lists(form_body: &FormBody<'_>, union: bool, union_open: bool, refused: &mut 
                     };
                     match top {
                         Some((_, true)) => {}
-                        Some((true, false)) => made_from_site(branches[0].value(), &at.child(0), &|label| !exported(label), refused),
-                        _ => made_from_site(branches[0].value(), &at.child(0), &|_| true, refused),
+                        Some((true, false)) => made_from_site(branches[0].value(), &at.child(0), &|label| !exported(label), MADE_IN_BRANCH, refused),
+                        _ => made_from_site(branches[0].value(), &at.child(0), &|_| true, MADE_IN_BRANCH, refused),
                     }
                 }
-                Conjunct::If { then, .. } => made_from_site(then.value(), &at.child(1), &|_| true, refused),
+                Conjunct::If { then, .. } => made_from_site(then.value(), &at.child(1), &|_| true, MADE_IN_BRANCH, refused),
                 _ => {}
             }
             each_body(conjunct, &at, &mut |body, at| walk(body, at, None, refused));
         }
     }
+    // At the top level of a body, the `=` makes a column of the clause or a label of the body that a head site
+    // projects, which the site that makes `Y` could make as well.
+    made_from_site(form_body.body.value(), &form_body.at, &|_| true, MADE_AT_TOP, refused);
     walk(form_body.body.value(), &form_body.at, Some((union, union_open)), refused);
 }
 
-/// Pushes onto `refused` each `(= *V Y)` of the list `body`, at `at`, whose
-/// `Y` a site of a positive atom of the list makes, a site of one label on
-/// a column of a fixed type, where `refuse` holds for `V`.
-fn made_from_site(body: &Body, at: &NodePath, refuse: &dyn Fn(LabelId) -> bool, refused: &mut Vec<Refusal>) {
+const MADE_IN_BRANCH: &str = "a site of the list makes the second label, so it could make the first";
+const MADE_AT_TOP: &str = "at the top level of a body, a site of the list makes the second label of `=`, so it could make the first";
+
+/// Pushes onto `refused`, with `message`, each `(= *V Y)` of the list
+/// `body`, at `at`, whose `Y` a site of a positive atom of the list makes, a
+/// site of one label on a column of a fixed type, where `refuse` holds for
+/// `V`.
+fn made_from_site(body: &Body, at: &NodePath, refuse: &dyn Fn(LabelId) -> bool, message: &str, refused: &mut Vec<Refusal>) {
     let list = list_of(body, at);
     let mut made = Vec::new();
     for (_, conjunct) in &list {
@@ -351,7 +358,7 @@ fn made_from_site(body: &Body, at: &NodePath, refuse: &dyn Fn(LabelId) -> bool, 
     for (at, conjunct) in list {
         if let Conjunct::Constraint(Constraint { op: ConstraintOp::Eq, first, second: Operand::Label(second) }) = conjunct {
             if first.fresh && !second.fresh && made.contains(&second.label) && refuse(first.label) {
-                refused.push(refusal("a site of the list makes the second label, so it could make the first", at));
+                refused.push(refusal(message, at));
             }
         }
     }

@@ -1894,6 +1894,11 @@ impl State {
                 return Ok(Offer::Taken);
             }
             (None, Some(fields), Token::Column(field)) if *field < u32::from(fields) => {
+                // The site rule applies at every level (`docs/arclog/arclog.md#sites`): a field takes one site, as a column does.
+                let name = site.names.as_ref().and_then(|names| names.get(*field as usize).cloned()).unwrap_or(ColumnName::Slot(*field));
+                if site.args.iter().any(|arg| matches!(arg, SiteArg::NamedLabel { name: held, .. } | SiteArg::Field(Site { column: held, .. }) if *held == name)) {
+                    return Err("a site on a record holds one field site on each field");
+                }
                 site.field = Some(*field);
                 return Ok(Offer::Taken);
             }
@@ -1941,10 +1946,13 @@ impl State {
             LabelUse::Zero => Operand::Zero,
             label => Operand::Label(ConstraintLabel::try_from(label).expect("a label")),
         };
-        // `=`, `<=` and `>=` of a label with itself hold wherever the label is bound. `!=`, `<` and `>` of a
-        // label with itself hold nowhere, which leaves a list with no row, as an input that no row fills.
-        if matches!(second, Operand::Label(second) if second.label == first.label) && matches!(constraint.op, ConstraintOp::Eq | ConstraintOp::Le | ConstraintOp::Ge) {
-            return Err("the second label of `=`, `<=` or `>=` is not its first, since the comparison of a label with itself holds wherever the label is bound");
+        // `=`, `<=` and `>=` of a label with itself hold wherever the label is bound, and `!=`, `<` and `>` of a
+        // label with itself hold nowhere, so the second label of a constraint is not its first.
+        if matches!(second, Operand::Label(second) if second.label == first.label) {
+            return Err(match constraint.op {
+                ConstraintOp::Eq | ConstraintOp::Le | ConstraintOp::Ge => "the second label of `=`, `<=` or `>=` is not its first, since the comparison of a label with itself holds wherever the label is bound",
+                ConstraintOp::Ne | ConstraintOp::Lt | ConstraintOp::Gt => "the second label of `!=`, `<` or `>` is not its first, since the comparison of a label with itself holds nowhere",
+            });
         }
         let conjunct = Conjunct::Constraint(Constraint { op: constraint.op, first, second });
         self.stack.pop();
