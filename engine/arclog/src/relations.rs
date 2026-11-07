@@ -48,8 +48,10 @@ struct Rows {
     slots: Box<[u32]>,
 }
 
-/// The largest share of a [`Rows`] table's slots in use, as a fraction.
-const SLOTS_USED: (usize, usize) = (3, 4);
+/// The largest share of a [`Rows`] table's slots in use, as a fraction. At
+/// half, a row not in the table takes about 2.5 probes, against about 8.5 at
+/// three quarters, and the probes of a join's new rows dominate its inserts.
+const SLOTS_USED: (usize, usize) = (1, 2);
 
 fn row_hash(row: &[TermId]) -> usize {
     let mut hash = 0x9E37_79B9_7F4A_7C15_u64;
