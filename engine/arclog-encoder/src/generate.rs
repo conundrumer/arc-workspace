@@ -2906,7 +2906,8 @@ impl<'a> Walker<'a> {
                 }
                 own.resize(instances, 0);
             }
-            let is_stopped = past_bound || cut_by_bound || inherited;
+            let mut is_stopped = past_bound || cut_by_bound || inherited;
+            let mut cut_off = false;
             if wanted && is_stopped && listed != 0 {
                 // A root over a stopped term has no value at any instance, which is not its default.
                 let counted = cut_by_bound && !(past_bound || inherited);
@@ -2931,6 +2932,13 @@ impl<'a> Walker<'a> {
                     }
                 }
                 for pair in 0..scope {
+                    // A term that no result is kept for is bounded by the rows of the lazy values it writes out, as an extended one is by its results and those.
+                    if !extended && !idle && self.written_cells > WALK_CELLS {
+                        cut_off = true;
+                        self.over_budget = true;
+                        crate::bounds::skipped(crate::bounds::Bound::Walk, (scope - pair) as u64);
+                        break;
+                    }
                     let (id, b) = (first[pair], if term.b == NO_TERM { NO_TERM } else { second[pair] });
                     // An idle term gives what the evaluation gives, with no evaluation.
                     let (rows, number) = if idle {
@@ -3007,6 +3015,19 @@ impl<'a> Walker<'a> {
                         }
                     }
                 }
+            }
+            if cut_off {
+                // The term passed its budget: it has no value at any instance, and so has each root over it.
+                is_stopped = true;
+                for (place, (hash, of)) in term.roots.iter().enumerate() {
+                    if listed & (1 << place) != 0 {
+                        let base = table.slots_of(*hash, term.flags, term.size, *of);
+                        table.slots[base..base + scope].iter_mut().for_each(|slot| slot.state = SLOT_NO_VALUE);
+                    }
+                }
+            }
+            if crate::bounds::enabled() && term_cells + self.written_cells > 5_000_000 {
+                eprintln!("term\t{}\textended {extended}\tresults {term_cells}\tforced {}\tstopped {is_stopped}\theld {}", term.text.chars().take(160).collect::<String>(), self.written_cells, self.held_cells);
             }
             ids[term.a as usize] = first;
             if term.b != NO_TERM {
