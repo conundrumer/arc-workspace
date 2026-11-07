@@ -144,14 +144,26 @@ def loss_weight(groups: Groups, alpha: float) -> Floats | None:
     return 1.0 + alpha * groups.drawn.astype(np.float64)
 
 
-def objective_of(groups: Groups, alpha: float = 0.0) -> Callable[[Floats, Any], tuple[Floats, Floats]]:
-    """The custom objective of LightGBM over a set of groups: (gradient, Hessian) of the summed group losses, with the denominator weights of alpha."""
+def task_weight(groups: Groups) -> Floats:
+    """The weight of each row under --task-weights: 1 over its task's count of groups, scaled so that the mean group weight is 1. Each task then weighs the same in
+    the loss, as a cap of points per task would make it, and no point is left out."""
+    tasks = np.asarray(groups.tasks)
+    names, at, counts = np.unique(tasks, return_inverse=True, return_counts=True)
+    w = (len(tasks) / len(names)) / counts[at].astype(np.float64)
+    return np.repeat(w, groups.sizes)
+
+
+def objective_of(groups: Groups, alpha: float = 0.0, task_weights: bool = False) -> Callable[[Floats, Any], tuple[Floats, Floats]]:
+    """The custom objective of LightGBM over a set of groups: (gradient, Hessian) of the summed group losses, with the denominator weights of alpha, and with
+    task_weights each group's loss weighed by task_weight."""
     starts, sizes, positive = groups.starts, groups.sizes, groups.positive.astype(np.float64)
     weight = loss_weight(groups, alpha)
+    rows = task_weight(groups) if task_weights else None
 
     def objective(scores: Floats, _data: Any) -> tuple[Floats, Floats]:
         t = group_terms(np.asarray(scores, np.float64), positive, starts, sizes, weight)
-        return t.p - t.q, np.maximum(t.p * (1.0 - t.p), HESSIAN_FLOOR)
+        g, h = t.p - t.q, np.maximum(t.p * (1.0 - t.p), HESSIAN_FLOOR)
+        return (g, h) if rows is None else (g * rows, h * rows)
     return objective
 
 
@@ -640,7 +652,7 @@ def fit(args: argparse.Namespace) -> int:
                                   seed=args.seed, num_threads=args.threads, verbosity=-1, metric='None')
     if args.alpha and (train.drawn is None or not train.drawn.any()):
         print(f'--alpha {args.alpha}: the train points have no drawn count, so the loss has no weight', flush=True)
-    train_objective = objective_of(train, args.alpha)
+    train_objective = objective_of(train, args.alpha, args.task_weights)
     dev_starts, dev_sizes, dev_positive = dev.starts, dev.sizes, dev.positive.astype(np.float64)
 
     def dev_loss(scores: Floats, _data: Any) -> tuple[str, float, bool]:
@@ -701,6 +713,7 @@ def main() -> int:
     ap.add_argument('--score', type=Path, help='a saved booster: score it on the dev points, and fit nothing')
     ap.add_argument('--score-tasks', help='with --score: comma-separated dev tasks, the only ones scored')
     ap.add_argument('--dev-tasks', help='comma-separated tasks to treat as dev, whatever their header says (development only)')
+    ap.add_argument('--task-weights', action='store_true', help="weigh each train point by 1 over its task's points (scaled to a mean of 1), so that each task weighs the same; use with --points-per-task 0")
     ap.add_argument('--alpha', type=float, default=0.0, help='the train loss weighs each id in the softmax denominator by 1 + alpha * drawn (0: no weight)')
     ap.add_argument('--wheels-alike', default='', help='W,W: engine wheels whose point files go in one fit (header wheel, such as site-exp61,site-exp62)')
     ap.add_argument('--wheels-alike-check', nargs='+', default=[], help='with --wheels-alike: the JSON files of run/points_alike.py that show the wheels give equal points')
