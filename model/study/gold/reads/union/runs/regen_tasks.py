@@ -3,7 +3,7 @@
   python3 regen_tasks.py cases BATCH TASK...      per split of the tasks: cases-SPLIT.jsonl (the whole split)
   python3 regen_tasks.py fits BATCH TASK...       the fits of each task, one process a task, at most FITS_PROCS at once, in fits-SPLIT-<BATCH * 100 + n>.jsonl; each program that a fits file of GOLD_UNION_DIR (or FITS_REUSE, files separated by commas) already fitted is not run again
   python3 regen_tasks.py union BATCH TASK...      per split of the tasks: the fits merge, the union rows and the union keys, each followed by its merge
-  python3 regen_tasks.py graph BATCH TASK...      per split of the tasks: graph-*-SPLIT-BATCH.jsonl, then graph-*-SPLIT.jsonl made as `regen_run.py` makes it (a later batch's line of a task replaces an earlier one's). It needs the row store of each task (ARC_SAMPLE_OUT/SPLIT/rows/TASK.jsonl.gz).
+  python3 regen_tasks.py graph BATCH TASK...      per split of the tasks: graph-*-SPLIT-BATCH.jsonl, then graph-*-SPLIT.jsonl made as `regen_run.py` makes it (a later batch's line of a task replaces an earlier one's, and a task whose latest graph-tasks line is an error has no line in graph-tables and graph-prods). It needs the row store of each task (ARC_SAMPLE_OUT/SPLIT/rows/TASK.jsonl.gz).
   python3 regen_tasks.py walks                    the walks of every split that has a graph-tasks file
 
 BATCH is the number of the shard files, above every number in GOLD_UNION_DIR. A task's lines in the shard files of the union, the union keys and the fits must be gone first, as the stages skip a task that a shard holds. A task in the union phase with no fits row gets the union row `no fits row`.
@@ -86,16 +86,20 @@ def graph_phase(b, tasks):
         tag = '%s-%d' % (split, b)
         say(tag, 'graph')
         sh(tag + '-graph', [E, U + 'gold_union_graph.py', split, str(b), '1000'], dict(UNION_TASKS=' '.join(ts)))
-        for f in ('tables', 'prods', 'tasks'):
+        failed = set()  # tasks whose latest graph-tasks line is an error: the merged tables and prods files hold no line of them
+        for f in ('tasks', 'tables', 'prods'):
             parts = sorted(glob.glob(G + 'graph-%s-%s-[0-9]*.jsonl' % (f, split)), key=lambda p: int(p.rsplit('-', 1)[1].split('.')[0]))
             last = {}
             for p in parts:  # a later batch's line for a task replaces an earlier one
                 for l in open(p):
                     last.setdefault(json.loads(l)['task'], {})[p] = None
             keep = {t: list(ps)[-1] for t, ps in last.items()}
+            if f == 'tasks':
+                failed = {t for p in set(keep.values()) for l in open(p) for r in [json.loads(l)] for t in [r['task']] if keep[t] == p and 'error' in r}
+            keep = {t: p for t, p in keep.items() if t not in failed or f == 'tasks'}
             with open(G + 'graph-%s-%s.jsonl.part' % (f, split), 'w') as out:
                 for p in parts:
-                    out.writelines(l for l in open(p) if keep[json.loads(l)['task']] == p)
+                    out.writelines(l for l in open(p) if keep.get(json.loads(l)['task']) == p)
             os.replace(G + 'graph-%s-%s.jsonl.part' % (f, split), G + 'graph-%s-%s.jsonl' % (f, split))
             subprocess.run(['python3', U + 'gold_union_code.py', 'concat', G + 'graph-%s-%s.jsonl' % (f, split)] + parts, check=True)
 
