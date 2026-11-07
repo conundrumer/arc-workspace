@@ -246,6 +246,9 @@ class Layout:
     width: int = 0  # with keep: the whole vector's width
 
 
+DROP_KINDS: frozenset[str] = frozenset()  # --drop-point-kinds: the point kinds (a point's `kind`, such as KIND) that the fit and the evaluation leave out
+TABLE_CHOICE = False  # --table-choice: only the points where two or more ids name a table (the vector's tokg:table is not 0) are kept
+WRITERS_ALIKE: frozenset[str] = frozenset()  # --writers-alike: writer_sha values whose point files are equal, as a change of the writer's serving code alone leaves them
 DROP: tuple[str, ...] = ()  # --drop-prefixes: the vector columns whose names start with one of these are left out of the matrix and the model
 
 
@@ -297,7 +300,7 @@ def feature_fields(heads: list[dict], wheels_alike: frozenset[str] = frozenset()
         raise FitError('no point files')
 
     def of(h: dict) -> dict[str, Any]:
-        return {k: ('alike' if k == 'wheel' and h.get(k) in wheels_alike else h.get(k)) for k in FEATURE_FIELDS}
+        return {k: ('alike' if (k == 'wheel' and h.get(k) in wheels_alike) or (k == 'writer_sha' and h.get(k) in WRITERS_ALIKE) else h.get(k)) for k in FEATURE_FIELDS}
     fields = of(heads[0])
     for h in heads[1:]:
         other = of(h)
@@ -345,6 +348,12 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
     tables: dict[int, Floats] = {}
     kept: list[tuple[int, int, Kept]] = []  # a heap of (-key, position, point) where per_task > 0
     count: Counter[str] = Counter()
+    table_at = None
+    if TABLE_CHOICE:
+        if not is_vector:
+            raise FitError(f'{path}: --table-choice reads the vector column tokg:table, and the file holds no vectors')
+        in_point = set(head.get('vector_point_cols') or [])
+        table_at = [name for at, name in enumerate(head['vector_names']) if at not in in_point].index('tokg:table')
     for position, rec in enumerate(records_of(path)):
         kind = rec['record']
         if kind == 'table':
@@ -361,6 +370,13 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
                     raise FitError(f'{path}: the point at record {position} has parts of different sizes')
             elif len(rec['option']) != n or len(rec['table']) != n or len(rec['point']) != n_point:
                 raise FitError(f'{path}: the point at record {position} has parts of different sizes')
+            if rec.get('kind') in DROP_KINDS:
+                count['points of a left-out kind'] += 1
+                continue
+            # A point left out keeps its position, so the choice keys of the others do not move.
+            if table_at is not None and np.count_nonzero(np.frombuffer(vo_bytes, '<f4').reshape(n, n_vo)[:, table_at]) < 2:
+                count['points with fewer than two table ids'] += 1
+                continue
             if n < 2:
                 count['points with fewer than two ids'] += 1
                 continue
@@ -749,6 +765,9 @@ def main() -> int:
     ap.add_argument('--score', type=Path, help='a saved booster: score it on the dev points, and fit nothing')
     ap.add_argument('--score-tasks', help='with --score: comma-separated dev tasks, the only ones scored')
     ap.add_argument('--dev-tasks', help='comma-separated tasks to treat as dev, whatever their header says (development only)')
+    ap.add_argument('--writers-alike', default='', help="S,S: writer_sha values whose point files go in one fit: shas of writers that differ only in code that no feature reads, checked by extracting tasks again under the newer writer and finding the same points")
+    ap.add_argument('--drop-point-kinds', default='', help='K,K: leave out the points of these kinds, such as KIND, from the fit and the evaluation')
+    ap.add_argument('--table-choice', action='store_true', help='keep only the points where two or more ids name a table (the vector column tokg:table)')
     ap.add_argument('--drop-prefixes', default='', help='P,P: leave out the vector columns whose names start with one of these (an arm of column blocks, such as tok:,state:,task:,pq:body:)')
     ap.add_argument('--task-weights', action='store_true', help="weigh each train point by 1 over its task's points (scaled to a mean of 1), so that each task weighs the same; use with --points-per-task 0")
     ap.add_argument('--alpha', type=float, default=0.0, help='the train loss weighs each id in the softmax denominator by 1 + alpha * drawn (0: no weight)')
@@ -763,8 +782,11 @@ def main() -> int:
     ap.add_argument('--feature-fraction', type=float, default=0.8)
     ap.add_argument('--threads', type=int, default=int(os.environ.get('ARC_HEAVY_CPUS', '1')))
     args = ap.parse_args()
-    global DROP
+    global DROP, DROP_KINDS, TABLE_CHOICE, WRITERS_ALIKE
+    WRITERS_ALIKE = frozenset(x for x in args.writers_alike.split(',') if x)
     DROP = tuple(x for x in args.drop_prefixes.split(',') if x)
+    DROP_KINDS = frozenset(x for x in args.drop_point_kinds.split(',') if x)
+    TABLE_CHOICE = args.table_choice
     try:
         if args.check:
             return check(args.points[0], args.seed, args.alpha)
