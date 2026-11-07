@@ -26,6 +26,7 @@ import concurrent.futures as cf
 import hashlib
 import importlib.util
 import json
+import pickle
 import os
 import re
 import subprocess
@@ -145,6 +146,17 @@ def cpu_job(a, w, task, seed, env, samp, sup):
     return rc, text, json.loads((w / 'submission.json').read_text())
 
 
+def check_priors(a):
+    """Refuses a run whose live_priors.pkl was fitted on a task outside the train split, or does not record its tasks (live_priors.py writes fit_tasks): such priors have seen the gold of the tasks a run reads."""
+    split = {t: s for t, s, *_ in (l.split('\t') for l in (DATA_ROOT / 'samples/split.tsv').read_text().splitlines()[1:])}
+    for models in {a.models, a.base_models} - {None}:
+        with open(Path(models) / 'live_priors.pkl', 'rb') as f:
+            fit = pickle.load(f).get('fit_tasks')
+        bad = None if fit is None else sorted(t for t in fit if split.get(t, 'train') != 'train')
+        if (fit is None or bad) and not a.allow_dev_priors:
+            raise SystemExit('%s/live_priors.pkl %s: a run may read only priors fitted on train tasks (live_priors.py --leave-out). --allow-dev-priors runs it anyway.' % (models, 'does not record its tasks' if fit is None else 'was fitted on %d tasks outside train, such as %s' % (len(bad), bad[:3])))
+
+
 def arm_tree(a, arm):
     """The tree of an arm: --base-tree for the arm base, which runs beside the others under one load, and --tree for every other arm."""
     return a.base_tree if arm == 'base' and a.base_tree else a.tree
@@ -186,7 +198,7 @@ def parity_gate(a, out, arm, tasks):
 
 def job_env(a, w, arm, seed):
     samp = Path(a.code) / 'model/study/sampler'
-    env = dict(os.environ, PYTHONPATH='%s:%s' % (a.site, samp), ARC_MODELS=str(a.models), ARC_POLICY=str(Path(a.code) / 'model/study/policy'),
+    env = dict(os.environ, PYTHONPATH='%s:%s' % (a.site, samp), ARC_MODELS=str(a.base_models if arm == 'base' and a.base_models else a.models), ARC_POLICY=str(Path(a.code) / 'model/study/policy'),
                POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES=a.source, ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
                RUST_BACKTRACE='1', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1')
@@ -283,6 +295,8 @@ def main():
     ap.add_argument('--models', default=str(DATASET))
     ap.add_argument('--tree', default=str(TREE))
     ap.add_argument('--lookahead', help='the writer\'s lookahead components for the tree arms other than base (WRITER_LOOKAHEAD), such as legal,GrammarOneValue; the search\'s default where not given')
+    ap.add_argument('--base-models', help='the models folder of the arm base; --models where not given')
+    ap.add_argument('--allow-dev-priors', action='store_true', help='runs with a priors file fitted on dev or held-out tasks, or one that does not say which tasks it fitted on (check_priors)')
     ap.add_argument('--base-tree', help='the tree of the arm base, which runs beside the other arms under one load; --tree where not given')
     ap.add_argument('--skip', default='')
     ap.add_argument('--arms', default='tree,hand')
@@ -299,6 +313,7 @@ def main():
     ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu, the wall-clock seconds after which a job is killed')
     a = ap.parse_args()
     a.plan = run_plan(a)
+    check_priors(a)
     CPU_MODE[0] = a.budget == 'cpu'
     out = DATA_ROOT / 'search' / OUT_DIRS.get(a.split, 'none') / a.run
     out.mkdir(parents=True, exist_ok=True)
