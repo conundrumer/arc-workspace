@@ -45,7 +45,7 @@ use crate::check::CheckedProgram;
 use crate::eval::cache::{relation_estimate, replay, Recorded, RecordedKey};
 use crate::eval::determinations::det_relation;
 use crate::eval::{Domain, Evaluation, Outcome};
-use crate::hash::{StableHash, StableHashMap};
+use crate::hash::{StableHash, StableHashMap, StableHasher};
 use crate::judge::determination::{Assignment, Det, Domains};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
 use crate::program::ProgramRelation;
@@ -251,7 +251,7 @@ impl ProbeMemo {
             return None;
         }
         let mut one = |relation: &Arc<Relation>| kept_relation(&mut kept.relations, relation);
-        let key = Key { reads: key.reads.iter().map(|(name, content, value)| (name.clone(), *content, value.as_ref().map(&mut one))).collect(), ..key };
+        let key = Key { values: key.values.iter().map(|value| value.as_ref().map(&mut one)).collect(), shape: key.shape };
         let events = computed.events.iter().map(|event| event.with_relations(&mut one)).collect();
         let domain = match &computed.domain {
             Domain::Rows(values) => Domain::Rows(values.iter().map(&mut one).collect()),
@@ -314,13 +314,16 @@ fn det_keys(program: &CheckedProgram, dets: &[Det]) -> Vec<Option<DetKey>> {
             let node = resolved.node_content(det.node)?.content_hash();
             let columns = program.types.columns(&GraphRelation { node: det.node, output: None })?.into();
             let reached = resolved.graph.reached(det.node);
-            let reads = dets[..at]
+            let read = dets[..at]
                 .iter()
                 .enumerate()
                 .filter(|(_, read)| reached[read.node.0 as usize])
                 .map(|(index, read)| Some((index, resolved.node_content(read.node)?.content_hash())))
                 .collect::<Option<Vec<_>>>()?;
-            Some(DetKey { node, columns, reads, forms: forms_read(program, &reached) })
+            let forms = forms_read(program, &reached);
+            let reads = read.iter().map(|&(index, content)| (dets[index].relation.clone(), content)).collect();
+            let shape = Arc::new(KeyShape::new(node, columns, reads, forms));
+            Some(DetKey { shape, reads: read.into_iter().map(|(index, _)| index).collect() })
         })
         .collect()
 }
@@ -357,12 +360,11 @@ fn forms_read(program: &CheckedProgram, reached: &[bool]) -> Option<Box<[StableH
 /// The key of the domain of `dets[at]`, whose key parts are `det`, at the
 /// values `assigned` of the `DET`s before it.
 fn key_at(dets: &[Det], det: &DetKey, assigned: &[Assignment]) -> Key {
-    let reads = det.reads.iter().map(|&(index, content)| {
+    let value = |&index: &usize| {
         let relation = &dets[index].relation;
-        let value = assigned.iter().find(|(name, _)| name == relation).map(|(_, value)| Arc::clone(value));
-        (relation.clone(), content, value)
-    });
-    Key { node: det.node, columns: det.columns.clone(), reads: reads.collect(), forms: det.forms.clone() }
+        assigned.iter().find(|(name, _)| name == relation).map(|(_, value)| Arc::clone(value))
+    };
+    Key { shape: Arc::clone(&det.shape), values: det.reads.iter().map(value).collect() }
 }
 
 /// The domains of the `DET`s of one walk.
@@ -374,37 +376,62 @@ pub(crate) struct ProbeDomains<'p> {
     keys: Vec<Option<DetKey>>,
 }
 
+/// The parts of the key of a `DET`'s domain that its values leave out.
 struct DetKey {
-    node: StableHash,
-    columns: Box<[ValueType]>,
+    shape: Arc<KeyShape>,
     /// Each `DET` before it in the walk that it reads at any depth, by its
-    /// index in the walk, with that `DET`'s content.
-    reads: Vec<(usize, StableHash)>,
-    forms: Option<Box<[StableHash]>>,
+    /// index in the walk.
+    reads: Vec<usize>,
 }
 
-/// The key of a domain: the content of the `DET`'s node, which holds the
-/// content of each of its forms and, at any depth, of each relation they
-/// read; the types of its columns, by which the domain orders its values;
-/// each `DET` it reads at any depth that the walk assigns before it, by its
-/// relation and its content, with its value, or none where the walk left it
-/// unassigned; and the forms it reads ([`forms_read`]), which tell which of
+/// What the keys of one `DET`'s domain hold beside the values of the `DET`s
+/// that it reads: the content of its node, which holds the content of each
+/// of its forms and, at any depth, of each relation they read; the types of
+/// its columns, by which the domain orders its values; each `DET` it reads
+/// at any depth that the walk assigns before it, by its relation and its
+/// content; and the forms it reads ([`forms_read`]), which tell which of
 /// those `DET`s each of its reads reads where the content does not.
-struct Key {
+///
+/// The hash of these parts is taken once, where the shape is made, and not
+/// at each lookup of a key.
+struct KeyShape {
     node: StableHash,
     columns: Box<[ValueType]>,
-    reads: Box<[(ProgramRelation, StableHash, Option<Arc<Relation>>)]>,
+    reads: Box<[(ProgramRelation, StableHash)]>,
     forms: Option<Box<[StableHash]>>,
+    /// The hash of the parts above.
+    digest: StableHash,
+}
+
+impl KeyShape {
+    fn new(node: StableHash, columns: Box<[ValueType]>, reads: Box<[(ProgramRelation, StableHash)]>, forms: Option<Box<[StableHash]>>) -> Self {
+        let mut hasher = StableHasher::new();
+        node.hash(&mut hasher);
+        columns.hash(&mut hasher);
+        reads.hash(&mut hasher);
+        forms.hash(&mut hasher);
+        KeyShape { node, columns, reads, forms, digest: hasher.finish128() }
+    }
+}
+
+impl PartialEq for KeyShape {
+    fn eq(&self, other: &KeyShape) -> bool {
+        self.digest == other.digest && self.node == other.node && self.columns == other.columns && self.reads == other.reads && self.forms == other.forms
+    }
+}
+
+/// The key of a domain: its [`KeyShape`], and the value of each `DET` of
+/// the shape's reads, in their order, or none where the walk left it
+/// unassigned.
+struct Key {
+    shape: Arc<KeyShape>,
+    values: Box<[Option<Arc<Relation>>]>,
 }
 
 impl Hash for Key {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.node.hash(state);
-        self.columns.hash(state);
-        self.forms.hash(state);
-        for (relation, content, value) in self.reads.iter() {
-            relation.hash(state);
-            content.hash(state);
+        self.shape.digest.hash(state);
+        for value in self.values.iter() {
             value.as_ref().map(|value| value.rows_hash()).hash(state);
         }
     }
@@ -417,11 +444,9 @@ impl PartialEq for Key {
             (Some(a), Some(b)) => a.rows_hash() == b.rows_hash() && same_rows(a, b),
             _ => false,
         };
-        self.node == other.node
-            && self.columns == other.columns
-            && self.forms == other.forms
-            && self.reads.len() == other.reads.len()
-            && self.reads.iter().zip(other.reads.iter()).all(|(a, b)| a.0 == b.0 && a.1 == b.1 && value(&a.2, &b.2))
+        (Arc::ptr_eq(&self.shape, &other.shape) || self.shape == other.shape)
+            && self.values.len() == other.values.len()
+            && self.values.iter().zip(other.values.iter()).all(|(a, b)| value(a, b))
     }
 }
 
