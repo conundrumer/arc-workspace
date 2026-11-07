@@ -21,9 +21,9 @@ impl Check for PicksCheck {
         Some(at.base(self.id()))
     }
 
-    /// Refuses a `SET` mark on a clause that is a `RULE`, has a body, or
-    /// names a proposer other than one of one column that the registry does
-    /// not mark `domain`. Refuses an atom that reads `ONE`, a mark that stands only after a
+    /// Refuses a `SET` mark on a clause that is a `RULE` or a `RULE_OR_DET`
+    /// line, has a body, or names a proposer other than one of one column
+    /// that the registry does not mark `domain`. Refuses an atom that reads `ONE`, a mark that stands only after a
     /// clause's body. It refuses, at the clause, a `ONE` mark that names a
     /// label which is no column of the clause, as a mark with a key on a clause whose columns
     /// a proposer gives. At a `CHOOSE` form, it refuses:
@@ -73,12 +73,13 @@ fn refusals(input: &CheckInput<'_>, ended: &dyn Fn(&[PathStep]) -> bool) -> Chec
     result(refused.into_iter().map(|(at, message)| Refusal { message: message.into(), at: input.refusal_path(&at) }).collect())
 }
 
-/// Whether the `SET` mark of `clause`, if it has one, stands after a body of
-/// no conjunct and proposers that have one column each and that the registry
-/// does not mark `domain`.
+/// Whether the `SET` mark of `clause`, if it has one, stands on a `DET` or a
+/// `DET_OR_RULE` line, after a body of no conjunct and proposers that have
+/// one column each and that the registry does not mark `domain`.
 fn set_mark_fits(clause: &Clause, registry: &Registry) -> bool {
     let one_column = |name: &LibName| !is_domain(registry, name) && proposer_columns(registry, name).is_some_and(|columns| columns.len() == 1);
-    !clause.set || (clause.keyword != ClauseKeyword::Rule && clause.body.value().conjuncts.is_empty() && !clause.proposers.is_empty() && clause.proposers.iter().all(one_column))
+    let keyword = matches!(clause.keyword, ClauseKeyword::Det | ClauseKeyword::DetOrRule);
+    !clause.set || (keyword && clause.body.value().conjuncts.is_empty() && !clause.proposers.is_empty() && clause.proposers.iter().all(one_column))
 }
 
 /// Why the `SET` mark of `clause`, which [`set_mark_fits`] refuses, is
@@ -86,6 +87,8 @@ fn set_mark_fits(clause: &Clause, registry: &Registry) -> bool {
 fn set_mark_refusal(clause: &Clause) -> &'static str {
     if clause.keyword == ClauseKeyword::Rule {
         "a `SET` mark stands on a `DET`, and on no `RULE`"
+    } else if clause.keyword == ClauseKeyword::RuleOrDet {
+        "a `SET` mark stands on a `DET` or a `DET_OR_RULE` line, and on no `RULE_OR_DET` line"
     } else if !clause.body.value().conjuncts.is_empty() || clause.proposers.is_empty() {
         "a `SET` mark stands only on a clause of no body, after its proposers"
     } else {
