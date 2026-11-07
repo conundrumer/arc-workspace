@@ -45,10 +45,14 @@ with a `key`, is stale.
 covers. It prints a line for each task and verdict whose count exceeds the
 baseline's, with the first such case; a line for each case that the task's
 previous record gives as `Consistent` and that is not now; a line for each
-task and verdict whose count fell below the baseline's; and a final line
-with the counts. The exit status is 1 where a count exceeds the baseline or
-a case that was `Consistent` is not now, and 0 otherwise. Only
-`arclog_convert.verify --accept` rewrites the baseline."""
+case of the previous record that is `Consistent`, whose name names no case
+now, and that selects cases of which none is `Consistent` now, as a name with
+a line's `&x=$Stored` selects each stored reading of a line with one per
+proposer (`lint_alts.selects`); a line for each task and verdict whose count
+fell below the baseline's; and a final line with the counts. The exit status
+is 1 where a count exceeds the baseline or a case that was `Consistent` is
+not now, and 0 otherwise. Only `arclog_convert.verify --accept` rewrites the
+baseline."""
 
 import argparse
 import hashlib
@@ -67,6 +71,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from arc.task import TASKS_DIR
+from arclog_convert.lint_alts import selects_case
 from engine import checkout
 
 BASELINE = Path(__file__).with_name("unreproduced.tsv")
@@ -293,6 +298,13 @@ def replay(stems: list[str], out: Path, accept: bool = False) -> int:
             if c.case in was and c.verdict != "Consistent":
                 regressed += 1
                 print(f"{stem}: case {c.case} was Consistent and is {c.verdict} (token {c.token}) {c.detail}")
+        for name in sorted(was - {c.case for c in cases[stem]}):
+            selected = [c for c in cases[stem] if len(c.case.split()) == len(name.split())
+                        and selects_case(name.split(), c.case.split())]
+            if selected and not any(c.verdict == "Consistent" for c in selected):
+                regressed += 1
+                print(f"{stem}: case {name} was Consistent, and no case it selects is: "
+                      + "; ".join(f"{c.case} is {c.verdict} (token {c.token}) {c.detail}" for c in selected))
     for (stem, verdict), (n, _) in sorted(baseline.items()):
         if stem in cases and counts.get((stem, verdict), 0) < n:
             below += n - counts.get((stem, verdict), 0)

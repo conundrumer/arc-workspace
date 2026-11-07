@@ -100,7 +100,7 @@ from engine.pool import pool_size
 from engine.program import Qualifier, Variable
 from arclog_convert.implied import drop_implied
 from arclog_convert.libmap import rename as libmap_rename
-from arclog_convert.lint_alts import alt_blocks, derived, placements
+from arclog_convert.lint_alts import alt_blocks, derived, placements, selects_case
 from arclog_convert.lint_read import L, read
 from arclog_convert import paths
 from arclog_convert.phases import phase, use_out
@@ -483,12 +483,11 @@ class Prepared(NamedTuple):
     """The number of cases of which `arclog.case_files` gives a fault."""
 
 
-def _excluded(arcdata: str) -> list[set[str]]:
-    """The combinations of alts that the `exclude` records of the arcdata text leave out, each as the alt names in
-    a case's file name: without their `$`. A case that holds one is no case of the solver, and its program may
-    derive a relation twice."""
-    return [{alt.replace("$", "") for alt in m.group(1).split()}
-            for m in re.finditer(r"\(exclude \(([^()]*)\)", arcdata)]
+def _excluded(arcdata: str) -> list[list[str]]:
+    """The combinations of alts that the `exclude` records of the arcdata text leave out, each as the names the
+    record gives. A case that one selects (`selects_case`) is no case of the solver, and its program may derive a
+    relation twice."""
+    return [m.group(1).split() for m in re.finditer(r"\(exclude \(([^()]*)\)", arcdata)]
 
 
 def _prepare_cases(stem: str, answers: Answers) -> Prepared:
@@ -503,7 +502,7 @@ def _prepare_cases(stem: str, answers: Answers) -> Prepared:
         files = case_files(stem, *texts, str(gen))
         skipped = sum(1 for f in files if f.fault is not None)
         cases = [(f.file, f.arclog, f.arcdata) for f in files
-                 if f.fault is None and not any(e <= set(f.file.split("+")) for e in excluded)]
+                 if f.fault is None and not any(selects_case(e, f.case.split()) for e in excluded)]
         _drop_cases(stem)
         rows = Rows(stem, json.loads((paths.COLUMNS_DIR / f"{stem}.json").read_text()))
         rows.answers.update(answers)

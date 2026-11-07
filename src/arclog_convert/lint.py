@@ -2077,8 +2077,12 @@ def arcdata_errs(path: Path, imp: Linter | None = None) -> list[tuple[int, str, 
                 if isinstance(a, L) and a.head in ("DET_OR_RULE", "RULE_OR_DET") and len(a.items) > 1 \
                         and isinstance(a.items[1], Sym):
                     r = a.items[1].text
-                    sides = {f"{r}=$Stored", f"{r}=$Derived"} | {f"{r}={x.text}" for x in a.items[2:]
-                                                                   if isinstance(x, Sym) and x.text[:1].isupper()}
+                    props = [x.text for x in a.items[2:] if isinstance(x, Sym) and x.text[:1].isupper()]
+                    body = any(isinstance(x, L) and x.head not in ("ONE", "SET") for x in a.items[2:])
+                    # `$Stored` selects each stored reading of a line with a stored reading per proposer
+                    sides = {f"{r}=$Stored", f"{r}=$Derived"} | {f"{r}={p}" for p in props}
+                    if len(props) > 1 and not body:
+                        sides |= {f"{r}=$Stored.{p}" for p in props}
                     alts_of[r] = sides
                     alt_names |= sides
         claim_forms = claims_of(iforms)

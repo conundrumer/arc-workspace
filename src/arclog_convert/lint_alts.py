@@ -1,12 +1,13 @@
 """The placement of the forms of an arclog file in its claim blocks, `ALT`
 blocks and `RIGID` forms (`Placed`, `placements`), and the analysis of its
 alternatives over them: the points of the alts, the cases they make, the
-forms that restate another block's meaning, and the things (a relation, or the
+forms that restate another block's meaning, the things (a relation, or the
 `OUT` form) that blocks of a case derive with no block that states the
-combination."""
+combination, and the cases that an arcdata file's names select (`selects`)."""
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from arclog_convert.lint_read import L, Sym, flat, walk
@@ -14,6 +15,23 @@ from arclog_convert.lint_read import L, Sym, flat, walk
 CLAIMS = {"INPUT", "OUTPUT"}
 OUT = "OUT"
 DECL_HEADS = {"RULE", "DET", "INIT", "CHOOSE", "RIGID_DET", "RIGID", "DEMONSTRATED", "DET_OR_RULE", "RULE_OR_DET"}
+STORED = "$Stored"
+"""The stored reading of a line's relation `&x`, `&x=$Stored`, and the start of the name of each of its stored
+readings where the line has one per proposer, `&x=$Stored.TileCount`."""
+
+
+def selects(selector: str, alt: str) -> bool:
+    """Whether the alt `selector`, as an `exclude` form, a `representative` line or an `output` form of an arcdata
+    file names it, selects the alt `alt` of a case's name: `selector` is `alt`, or `selector` is a line's
+    `&x=$Stored` and `alt` one of that line's stored readings by a proposer, `&x=$Stored.TileCount`
+    (`docs/arclog/arcdata.md#alts`)."""
+    return selector == alt or selector.endswith("=" + STORED) and alt.startswith(selector + ".")
+
+
+def selects_case(selectors: Sequence[str], alts: Sequence[str]) -> bool:
+    """Whether the alts `selectors`, an `exclude` form's combination, select the case whose name holds the alts
+    `alts`: each selects one of them (`selects`)."""
+    return all(any(selects(s, a) for a in alts) for s in selectors)
 
 
 @dataclass

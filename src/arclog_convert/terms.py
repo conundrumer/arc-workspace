@@ -57,7 +57,8 @@ for each, `tiling_divider`."""
 def name_of(n: str, many: set[str] = frozenset()) -> str:
     """A witness-file case name in arcdata's spelling; `many` holds the
     parameters whose @derive lines give several proposers, a derived side
-    per proposer."""
+    per proposer. The stored side is `&x=$Stored`, which selects each stored
+    reading of a line with one per proposer (`lint_alts.selects`)."""
     if n.startswith("&"):
         return n
     parts = [p.strip() for p in n.split("&")]

@@ -504,7 +504,8 @@ class ParamsMixin:
         cases of the names it gives that take the side it dismisses, the
         side of the @derive line it stands under where it stands under one.
         A line that dismisses a side no form declares has none: no case
-        takes that side."""
+        takes that side. The stored side is `&x=$Stored`, which selects each
+        stored reading of a line with one per proposer (`lint_alts.selects`)."""
         m = re.match(r"(\w+)\s*(.*?)\s*—\s*(.*)", rest)
         if not m:
             return [f";; TODO ignore: {rest}"]
