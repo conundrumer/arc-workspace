@@ -387,15 +387,46 @@ impl<'a> Decoder<'a> {
     }
 
     /// The sub-body of the clause in progress, or `None` where none is in
-    /// progress.
+    /// progress. The clause in progress of an `INIT` form is as
+    /// [`Decoder::open_clause_in`] gives it.
     pub fn sub_body(&self) -> Option<Outcome<SubBody>> {
         let _timed = crate::stats::span(crate::stats::Phase::TableSubBody);
         let (program, open) = self.state.partial()?;
         let open = open?;
-        let (last, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");
-        let OpenClause { clause, kept, .. } = open_clause(last, &open, self.context.registry)?;
+        let (_, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");
+        let OpenClause { clause, kept, .. } = self.open_clause_in(&self.state, &program, &open, || self.form_keyword(&self.state, &program))?;
         let labels = atom_labels(&kept);
         Some(self.body_of(finished, clause, kept, labels))
+    }
+
+    /// The clause in progress of the form in progress of `program`, the
+    /// partial program of `state`, whose innermost open node is at `open`, as
+    /// [`open_clause`] gives it for a clause or a `CHOOSE` form. For an `INIT`
+    /// form it is the clause of its open key body, or of its open input's
+    /// body, with the key body's conjuncts before the input's where the input
+    /// is keyed, and each `^` label of the key read as a label of the body.
+    /// Where the engine has named a body and no token has opened it, that body
+    /// is the clause in progress, and its conjuncts are those of the key body
+    /// or none. `keyword` gives the keyword of an `INIT` form's clause, which
+    /// its side gives, and is called for an `INIT` form alone. `None` where no
+    /// clause is in progress.
+    pub fn open_clause_in(&self, state: &State, program: &Node<Program>, open: &NodePath, keyword: impl FnOnce() -> Option<ClauseKeyword>) -> Option<OpenClause> {
+        let registry = self.context.registry;
+        let last = program.value().forms.last()?;
+        let Form::Instance(instance) = last else { return open_clause(last, open, registry) };
+        let keyword = keyword()?;
+        let derives = ProgramRelation::Declared(RelationName(DeclaredName::Slot(state.open_slot())));
+        let found = match open_instance_clause(instance.value(), open, keyword, derives.clone(), registry) {
+            Some(found) => found,
+            // The next token may open the body that the engine named.
+            None => {
+                let kept: Vec<Conjunct> = state.named_body_before()?.to_vec();
+                let empty = Node::new(Body { conjuncts: Arc::from([]) });
+                let clause = Clause { keyword, derives, gloss: None, proposers: Arc::from([]), body: empty, ones: Arc::from([]), set: false, columns: Arc::from([]) };
+                OpenClause { clause, kept, open_at: None, below: Vec::new() }
+            }
+        };
+        Some(OpenClause { kept: found.kept.iter().map(crate::study_clause::unkeyed).collect(), ..found })
     }
 
     /// What identifies the sub-body that [`Decoder::sub_body`] gives at this
@@ -403,8 +434,7 @@ impl<'a> Decoder<'a> {
     pub fn sub_body_key(&self) -> Option<SubBodyKey> {
         let (program, open) = self.state.partial()?;
         let open = open?;
-        let (last, _) = program.value().forms.split_last()?;
-        let OpenClause { clause, kept, open_at, .. } = open_clause(last, &open, self.context.registry)?;
+        let OpenClause { clause, kept, open_at, .. } = self.open_clause_in(&self.state, &program, &open, || self.form_keyword(&self.state, &program))?;
         let body = &clause.body;
         let left_out = match open_at.and_then(|at| body.value().conjuncts.get(at)) {
             Some(open) if complete_or_atoms(body, open_at, self.context.registry).len() < body.value().conjuncts.len() => Some(match open {
@@ -427,23 +457,7 @@ impl<'a> Decoder<'a> {
         let open = open?;
         let (last, finished) = program.value().forms.split_last()?;
         let registry = self.context.registry;
-        let view = match last {
-            Form::Instance(instance) => Some((instance, self.form_keyword(&program)?)),
-            _ => None,
-        };
-        let OpenClause { clause, mut kept, open_at, below } = match view {
-            Some((instance, keyword)) => match open_instance_clause(instance.value(), &open, keyword, self.fresh_relation(), registry) {
-                Some(open) => open,
-                // The next token may open the body that the engine named.
-                None => {
-                    let kept: Vec<Conjunct> = self.state.named_body_before()?.to_vec();
-                    let empty = Node::new(Body { conjuncts: Arc::from([]) });
-                    let clause = Clause { keyword, derives: self.fresh_relation(), gloss: None, proposers: Arc::from([]), body: empty, ones: Arc::from([]), set: false, columns: Arc::from([]) };
-                    OpenClause { clause, kept, open_at: None, below: Vec::new() }
-                }
-            },
-            None => open_clause(last, &open, registry)?,
-        };
+        let OpenClause { clause, mut kept, open_at, below } = self.open_clause_in(&self.state, &program, &open, || self.form_keyword(&self.state, &program))?;
         if let Some(at) = open_at {
             let conjuncts = clause.body.value().conjuncts.get(at);
             // A body keeps its open conjunct only where the conjunct binds what its mode asks.
@@ -457,7 +471,7 @@ impl<'a> Decoder<'a> {
                 }
             }
         }
-        if view.is_some() {
+        if matches!(last, Form::Instance(_)) {
             kept = kept.iter().map(crate::study_clause::unkeyed).collect();
         }
         if kept.is_empty() {
@@ -468,10 +482,11 @@ impl<'a> Decoder<'a> {
     }
 
     /// The keyword of a clause of the side of the form in progress of
-    /// `program`, whose side what it reads so far gives.
-    fn form_keyword(&self, program: &Node<Program>) -> Option<ClauseKeyword> {
+    /// `program`, the partial program of `state`, whose side what it reads so
+    /// far gives.
+    fn form_keyword(&self, state: &State, program: &Node<Program>) -> Option<ClauseKeyword> {
         let registry = self.context.registry;
-        let resolved = crate::resolver::resolve_prefix(&self.state.resolved(registry), program, registry);
+        let resolved = crate::resolver::resolve_prefix(&state.resolved(registry), program, registry);
         let at = NodePath::top(u32::try_from(program.value().forms.len().checked_sub(1)?).ok()?);
         Some(match resolved.form_side(&at)? {
             crate::resolver::Side::TaskWide => ClauseKeyword::Det,
@@ -482,7 +497,7 @@ impl<'a> Decoder<'a> {
     /// Whether a body in progress at this state is evaluated once for the task.
     pub(super) fn body_is_task_wide(&self) -> bool {
         match self.state.partial() {
-            Some((program, _)) if matches!(program.value().forms.last(), Some(Form::Instance(_))) => self.form_keyword(&program) == Some(ClauseKeyword::Det),
+            Some((program, _)) if matches!(program.value().forms.last(), Some(Form::Instance(_))) => self.form_keyword(&self.state, &program) == Some(ClauseKeyword::Det),
             _ => self.state.clause_is_task_wide(),
         }
     }
@@ -508,8 +523,8 @@ impl<'a> Decoder<'a> {
     pub fn complete_sub_body(&self) -> Option<Outcome<SubBody>> {
         let (program, open) = self.state.partial()?;
         let open = open?;
-        let (last, finished) = program.value().forms.split_last()?;
-        let OpenClause { clause, mut kept, open_at, .. } = open_clause(last, &open, self.context.registry)?;
+        let (_, finished) = program.value().forms.split_last()?;
+        let OpenClause { clause, mut kept, open_at, .. } = self.open_clause_in(&self.state, &program, &open, || self.form_keyword(&self.state, &program))?;
         let conjuncts = clause.body.value().conjuncts.len();
         // The open conjunct is the last of its body, and so the last of the sub-body where the sub-body holds it.
         let open_at = open_at.filter(|&at| at + 1 == conjuncts)?;

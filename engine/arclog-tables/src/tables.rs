@@ -38,14 +38,14 @@ use std::sync::Arc;
 
 use arclog::check::CheckedProgram;
 use arclog::check::out::selected_sites;
-use arclog::decode::{derived_at, open_clause, projections, relation_dets, walked_dets, Assigned, Decoder, OpenClause, Projections, State};
+use arclog::decode::{derived_at, projections, relation_dets, walked_dets, Assigned, Decoder, OpenClause, Projections, State};
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::examples::scope_of;
 use arclog::eval::join::{each_row, Budget};
 use arclog::eval::{BodyValue, Evaluation, ModelsEnd, Outcome, RelationValue, RunFault, TableWork};
 use arclog::judge::determination::{Assignment, Det, End};
 use arclog::program::path::{node_at, NodePath, NodeRef};
-use arclog::program::{ColumnName, Conjunct, FactRelation, LabelId, Negated, OutputOwner, OutputStep, Program, ProgramRelation, RelationRef};
+use arclog::program::{ClauseKeyword, ColumnName, Conjunct, FactRelation, LabelId, Negated, OutputOwner, OutputStep, Program, ProgramRelation, RelationRef};
 use arclog::registry::Registry;
 use arclog::relations::RowSet;
 use arclog::resolver::registry_columns::component;
@@ -296,8 +296,8 @@ pub fn step_tables(decoder: &Decoder<'_>, points: Points, earlier: &[&Table]) ->
 pub(crate) fn body_point(decoder: &Decoder<'_>, state: &State) -> Option<Point> {
     let (program, open) = state.partial()?;
     let open = open?;
-    let (last, _) = program.value().forms.split_last().expect("a partial program with an open node holds its partial form");
-    let OpenClause { clause, kept, open_at, .. } = open_clause(last, &open, decoder.registry())?;
+    // The point counts conjuncts and sites, which the keyword of an `INIT` form's clause leaves as they are.
+    let OpenClause { clause, kept, open_at, .. } = decoder.open_clause_in(state, &program, &open, || Some(ClauseKeyword::Rule))?;
     let sites = match open_at.and_then(|at| clause.body.value().conjuncts.get(at)) {
         Some(Conjunct::Atom(atom)) => atom.value().sites.len(),
         _ => 0,
