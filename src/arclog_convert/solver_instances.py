@@ -48,7 +48,8 @@ from arclog_convert.forms import (
 )
 from arclog_convert.implied import ELEM
 from arclog_convert.leaves import Written
-from arclog_convert.lib import ALGEBRA_MODES, COPIED_INPUTS, FROM_KEY, domain_proposer, field_names, field_sites, pascal
+from arclog_convert.lib import (ALGEBRA_MODES, COPIED_INPUTS, FROM_KEY, NEEDED_INPUTS, domain_proposer, field_names,
+                                field_sites, pascal)
 from arclog_convert.terms import ctor_names, subst_terms
 
 LABEL = re.compile(r"(?<![(:\w&.])[*^]?([A-Z]\w*)")
@@ -59,6 +60,18 @@ def set_name(amp: str) -> str:
     """The relation that holds the set an open parameter's Souffle determination
     derives, whose `(ONE)` pick the parameter's own name holds."""
     return amp + "_set"
+
+
+def leaves_a_need(component: str, us: list[Unit]) -> bool:
+    """Whether the input clauses `us` of an instance of `component` hold no
+    clause of an input that the registry marks `required`, or of any input of
+    its `one-of` group: the component then gives no output, so the instance
+    holds no row."""
+    renamed = libmap.COMP.get(component)
+    required, one_of = NEEDED_INPUTS.get(renamed.name if renamed else component, (frozenset(), frozenset()))
+    written = {renamed.parts.get(u.head.relation.name, u.head.relation.name) if renamed else u.head.relation.name
+               for u in us}
+    return bool(required - written) or (bool(one_of) and not one_of & written)
 
 
 READ = re.compile(r"\((&\w+)(?=[\s)]|$)")
@@ -507,6 +520,10 @@ class InstancesMixin:
                     for l in u.body if isinstance(l, AtomLiteral) and not l.negated) for u in live):
                 return []
             us = live
+        # an instance with no clause of an input its component requires, or of
+        # any input of its one-of group, holds no row
+        if leaves_a_need(inst.component, us):
+            return []
         if (inst.scope.components, inst.name) in c.demo_insts and any(
                 u.head.relation.name == "prediction" for u in us):
             return self.demonstrated_form(inst, us, side)

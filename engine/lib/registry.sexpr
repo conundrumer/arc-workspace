@@ -180,7 +180,7 @@
 ;;; - `equal`: the two sets have the same members.
 ;;; - A pair of sets that share no member has no row.
 (component Inclusion construction (type-parameters Key Pat Member)
-  (inputs (pattern (pattern Pat) (m Member))
+  (inputs (pattern (pattern Pat) (m Member) required)
     (observed (observed Key) (m Member) required))
   (outputs (superset (observed Key) (pattern Pat)
       (copies (observed (observed observed)) (pattern (pattern pattern))))
@@ -274,8 +274,8 @@
 (component Distance construction (type-parameters Key Node)
   (inputs (edge (key Key) (a Node) (b Node))
     (weight (key Key) (a Node) (b Node) (W Int))
-    (source (key Key) (n Node) from-key)
-    (source_distance (key Key) (n Node) (K Int)))
+    (source (key Key) (n Node) from-key one-of)
+    (source_distance (key Key) (n Node) (K Int) one-of))
   (outputs (distance (key Key) (n Node) (K Int)
       (copies (either (source (n n)) (source_distance (n n)) (edge (b n)) (weight (b n)))))
     (predecessor (key Key) (b Node) (a Node)
@@ -291,7 +291,7 @@
 ;;; - `exposed`: no cell of the set lies one step from P toward D. Off the grid counts as no cell.
 ;;; - `boundary`: P is exposed toward some direction.
 (component Boundary construction (type-parameters Key)
-  (inputs (cell (key Key) (P Position))
+  (inputs (cell (key Key) (P Position) required)
     (dir (D Dir8) (default (DIR_T) (DIR_B) (DIR_L) (DIR_R))))
   (outputs (boundary (key Key) (P Position)
       (copies (cell (P P))))
@@ -322,7 +322,7 @@
 ;;; - `cell`: P is the cell P_inner of the copy at P_outer.
 (component Tiling construction (type-parameters Key)
   (inputs (outer (key Key) (P Position) required)
-    (inner (key Key) (P Position))
+    (inner (key Key) (P Position) required)
     (gap (key Key) (A Axis) (G Int)))
   (outputs (cell (key Key) (P_outer Position) (P_inner Position) (P Position)
     (copies (outer (P P_outer)) (inner (P P_inner)))
@@ -416,7 +416,7 @@
 ;;; - A source outside `node` reaches nothing.
 (component Flood construction (type-parameters Key)
   (inputs (node (key Key) (P Position) required)
-    (source (key Key) (P Position) from-key)
+    (source (key Key) (P Position) from-key required)
     (step (Delta Offset) (default (grid
         (_ 1 _)
         (1 @_ 1)
@@ -457,9 +457,9 @@
 ;;; - `ray`: P is K steps from Origin toward D. Each source is on its own path at K = 0.
 ;;; - `end`: the path's last cell.
 (component Ray construction (type-parameters Key (Point Box))
-  (inputs (source (key Key) (P Point))
+  (inputs (source (key Key) (P Point) required)
     (node (key Key) (P Point))
-    (dir (key Key) (D Dir8) from-key))
+    (dir (key Key) (D Dir8) from-key required))
   (outputs (ray (key Key) (P Point) (D Dir8) (K Nat) (Origin Point)
       (copies (dir (D D)) (source (P Origin))))
     (end (key Key) (P Point) (D Dir8) (K Nat) (Origin Point)

@@ -79,10 +79,34 @@ def from_key_inputs() -> dict[str, set[str]]:
     those the engine fills from the key where an instance writes no clause
     for them."""
     out: dict[str, set[str]] = {}
-    for m in re.finditer(r"^\(component (\w+) .*?(?=^\(component |^;;|\Z)", REGISTRY.read_text(), re.M | re.S):
-        marked = re.findall(r"\((\w+)(?: \(\w+ \w+\))+ from-key\)", m.group(0))
+    for name, inputs in component_inputs().items():
+        marked = {i[0] for i in inputs if "from-key" in i[1:]}
         if marked:
-            out[m.group(1)] = set(marked)
+            out[name] = marked
+    return out
+
+
+def needed_inputs() -> dict[str, tuple[frozenset[str], frozenset[str]]]:
+    """The inputs engine/lib/registry.sexpr marks `required`, and those it
+    marks `one-of`, by component: the component gives no output while a
+    required input holds no row, or while no input of its `one-of` group
+    holds one."""
+    out: dict[str, tuple[frozenset[str], frozenset[str]]] = {}
+    for name, inputs in component_inputs().items():
+        required = frozenset(i[0] for i in inputs if "required" in i[1:])
+        one_of = frozenset(i[0] for i in inputs if "one-of" in i[1:])
+        if required or one_of:
+            out[name] = (required, one_of)
+    return out
+
+
+def component_inputs() -> dict[str, list]:
+    """The input forms of each `(component ...)` form of
+    engine/lib/registry.sexpr, by component, each a nested list of words:
+    the input's name, its columns, then its marks."""
+    out: dict[str, list] = {}
+    for m in re.finditer(r"^\(component (\w+) .*?(?=^\(component |^;;|\Z)", REGISTRY.read_text(), re.M | re.S):
+        out[m.group(1)] = next((x[1:] for x in sexpr(m.group(0)) if isinstance(x, list) and x[0] == "inputs"), [])
     return out
 
 
@@ -118,6 +142,7 @@ def copied_inputs() -> dict[str, set[str]]:
 
 
 FROM_KEY = from_key_inputs()   # the inputs the engine fills from the key, by component
+NEEDED_INPUTS = needed_inputs()   # the required inputs and the one-of group, by component
 COPIED_INPUTS = copied_inputs()   # the inputs that the outputs copy, by component
 PROPOSER_COLS = proposer_columns()   # each proposer's columns
 DOMAIN_PROPOSERS = registry_columns("proposer", r"native domain")   # the type-domain proposers, which give one value per row
