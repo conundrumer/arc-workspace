@@ -55,6 +55,35 @@ pub trait Tables {
     fn table(&self, name: &str) -> Option<TableSchema>;
 }
 
+/// The name that `type_of_name` reads back to `ty`, none for a type that a table's description does not name (a Pose or a Record).
+pub fn name_of_type(ty: &ValueType) -> Option<String> {
+    use arclog::types::IdentSource;
+    Some(match ty {
+        ValueType::Int => "Int".to_string(),
+        ValueType::Nat => "Nat".to_string(),
+        ValueType::Color => "Color".to_string(),
+        ValueType::Example => "Example".to_string(),
+        ValueType::Unit => "Unit".to_string(),
+        ValueType::LibName => "LibName".to_string(),
+        ValueType::Box => "Box".to_string(),
+        ValueType::Position => "Position".to_string(),
+        ValueType::Offset => "Offset".to_string(),
+        ValueType::Ident(IdentSource::Open) => "Ident".to_string(),
+        ValueType::Ident(IdentSource::Form(source)) => format!("Ident@{:x}", source.0 .0),
+        ValueType::C4 => "C4".to_string(),
+        ValueType::D4 => "D4".to_string(),
+        ValueType::Dir => "Dir".to_string(),
+        ValueType::DiagDir => "DiagDir".to_string(),
+        ValueType::Dir8 => "Dir8".to_string(),
+        ValueType::Axis => "Axis".to_string(),
+        ValueType::DiagAxis => "DiagAxis".to_string(),
+        ValueType::Axis4 => "Axis4".to_string(),
+        ValueType::Sym => "Sym".to_string(),
+        ValueType::Sense => "Sense".to_string(),
+        ValueType::Pose(_) | ValueType::Record(_) => return None,
+    })
+}
+
 /// The value type that a type's name in a table's description gives.
 pub fn type_of_name(name: &str) -> Option<ValueType> {
     // An Ident column of one source, as a tables file writes it.

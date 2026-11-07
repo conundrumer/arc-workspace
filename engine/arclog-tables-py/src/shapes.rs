@@ -23,9 +23,9 @@ use arclog::eval::join::each_row;
 use arclog::task::{Grid, Task};
 use arclog_encoder::generate::{Generators, ShapeList, ShapeMask, Walker, MAX_COLUMNS};
 use arclog_encoder::native::CELL_CAP;
-use arclog_encoder::stored::{Model, Stored};
+use arclog_encoder::stored::{stored_json, Model, Placed, Stored};
 use arclog_encoder::table_vector::{table_vector, table_vector_of_shapes, Grids, TableVector};
-use arclog_tables::shape_rows::{ShapeModel, ShapeRows};
+use arclog_tables::shape_rows::{ShapeExample, ShapeModel, ShapeRows};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 
@@ -118,25 +118,47 @@ impl ShapeRuntime {
         ShapeRuntime { task: task.clone(), grids: OnceLock::new(), examples: task.train.len() + task.test.len(), vectors: Mutex::new(Vectors::default()) }
     }
 
-    /// The table that `rows` holds as the encoder reads it, with each example's TableRows in the place of the example.
-    fn stored(&self, rows: &ShapeRows) -> Stored {
-        let mut per_example: Vec<Vec<Model>> = vec![Vec::new(); self.examples];
-        for example in &rows.examples {
-            // An example with a TableRows too large to write out has no value.
-            let models: Vec<Model> = example.models.iter().filter_map(model_of).collect();
-            let models = if models.len() == example.models.len() { models } else { Vec::new() };
-            let at: Vec<usize> = match example.kind {
-                0 => (0..self.examples).collect(),
-                1 => vec![example.index as usize],
-                _ => vec![rows.train + example.index as usize],
+    /// For each place of the task, the example of `rows` that holds its TableRows: the last one that covers the place.
+    fn owners(&self, rows: &ShapeRows) -> Vec<Option<usize>> {
+        let mut owner = vec![None; self.examples];
+        for (at, example) in rows.examples.iter().enumerate() {
+            let places = match example.kind {
+                0 => 0..self.examples,
+                1 => example.index as usize..example.index as usize + 1,
+                _ => rows.train + example.index as usize..rows.train + example.index as usize + 1,
             };
-            for place in at {
-                if place < self.examples {
-                    per_example[place] = models.clone();
-                }
+            for place in places.filter(|place| *place < self.examples) {
+                owner[place] = Some(at);
             }
         }
-        Stored::of_models(&rows.types, per_example.iter())
+        owner
+    }
+
+    /// The table that `rows` holds as the encoder reads it, with each example's TableRows in the place of the example.
+    fn stored(&self, rows: &ShapeRows) -> Stored {
+        // An example with a TableRows too large to write out has no value.
+        let models: Vec<Vec<Model>> = rows.examples.iter().map(|example| models_of(example).unwrap_or_default()).collect();
+        let per_example: Vec<&Vec<Model>> = self.owners(rows).iter().map(|owner| owner.map_or(&NO_MODELS, |at| &models[at])).collect();
+        Stored::of_models(&rows.types, per_example.into_iter())
+    }
+
+    /// The table that `rows` holds in the stored form of the encoder (`arclog_encoder::stored::stored_json`), none where a type or a cell has no spelling there.
+    fn stored_text(&self, rows: &ShapeRows) -> Option<String> {
+        let models: Vec<Option<Vec<Model>>> = rows.examples.iter().map(models_of).collect();
+        let owner = self.owners(rows);
+        let whole = owner.first().copied().flatten().filter(|at| rows.examples[*at].kind == 0 && owner.iter().all(|other| *other == Some(*at)));
+        let placed: Vec<Placed<'_>> = match whole {
+            Some(at) => vec![Placed { kind: 0, index: 0, models: models[at].as_deref() }],
+            None => owner
+                .iter()
+                .enumerate()
+                .filter_map(|(place, owner)| {
+                    let models = models[(*owner)?].as_deref();
+                    Some(if place < rows.train { Placed { kind: 1, index: place as u32, models } } else { Placed { kind: 2, index: (place - rows.train) as u32, models } })
+                })
+                .collect(),
+        };
+        stored_json(&rows.types, &placed)
     }
 
     /// The vector of the table with TableHash `hash` and rows `rows`, for the shapes of `only` or all of them. None where the table has more columns than the generator's `MAX_COLUMNS`.
@@ -184,6 +206,14 @@ impl ShapeRuntime {
     }
 }
 
+/// The models of an example with no TableRows.
+static NO_MODELS: Vec<Model> = Vec::new();
+
+/// An example's TableRows as the encoder takes them, none where one of them passes `CELL_CAP` cells.
+fn models_of(example: &ShapeExample) -> Option<Vec<Model>> {
+    example.models.iter().map(model_of).collect()
+}
+
 /// A TableRows as the encoder takes it, none where its rows pass `CELL_CAP` cells.
 fn model_of(model: &ShapeModel) -> Option<Model> {
     let arity = usize::from(model.relation.arity());
@@ -225,6 +255,14 @@ impl PyTableShapes {
     #[getter]
     fn columns(&self) -> usize {
         self.rows.types.len()
+    }
+
+    /// The table's rows as UTF-8 JSON in the stored form that `feature-encoder shapes-refresh` and `stored_of` (`atom_lists.rs`) read:
+    /// `[{"types": [name, ..], "at": [{"entries": [[kind, index, model, complete, rows, cells], ..]}]}]`. The reader takes the counts of train and test
+    /// examples from the task. The bytes depend on the table alone: the same table gives the same bytes in every run. `None` where a column's
+    /// type has no name in that form (a Pose or a Record).
+    fn rows<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
+        self.runtime.stored_text(&self.rows).map(|text| PyBytes::new(py, text.as_bytes()))
     }
 
     #[pyo3(signature = (only=None))]

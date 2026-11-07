@@ -57,6 +57,7 @@ pub mod refine;
 pub mod refine_parts;
 pub mod run;
 pub mod schema;
+pub mod shapes_refresh;
 pub mod state_features;
 pub mod stored;
 pub mod table_stream;

@@ -17,6 +17,7 @@
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
 //!   feature-encoder refine-check TABLES_FILE [--size D]
 //!   feature-encoder time-heads TABLES_FILE... [--size D]
+//!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N]
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
 //!   feature-encoder family-names TYPE,TYPE,... [--size D]
 //!   feature-encoder refine-explain CALL ARITY KEY_BITS
@@ -408,6 +409,11 @@ fn names_of(store: &arclog_encoder::generate::NameStore) -> std::collections::Ha
 /// The shapes of a file, one per line. A line whose first field, up to a tab, is up to 16 hex digits with or
 /// without `0x` gives a hash, as the names file writes them. Any other line is a shape's text.
 fn read_shape_list(path: &std::path::Path) -> Result<arclog_encoder::generate::ShapeList, String> {
+    Ok(arclog_encoder::generate::ShapeList::new(read_shape_hashes(path)?))
+}
+
+/// The hashes of a file's shapes, in the file's order (see [`read_shape_list`]).
+fn read_shape_hashes(path: &std::path::Path) -> Result<Vec<u64>, String> {
     use arclog_encoder::generate::ShapeList;
     let text = arclog_encoder::zio::read_text(path)?;
     let mut hashes = Vec::new();
@@ -420,7 +426,7 @@ fn read_shape_list(path: &std::path::Path) -> Result<arclog_encoder::generate::S
         let hash = if digits.len() <= 16 { u64::from_str_radix(digits, 16).ok() } else { None };
         hashes.push(hash.unwrap_or_else(|| ShapeList::hash_of_text(line.trim())));
     }
-    Ok(ShapeList::new(hashes))
+    Ok(hashes)
 }
 
 /// The CPU seconds that this thread has used.
@@ -1342,6 +1348,19 @@ fn run_atom_lists(arguments: &Arguments, input: &str, out: &str) -> Result<(), S
     arclog_encoder::atom_lists::run(std::path::Path::new(input), std::path::Path::new(out), &arguments.tasks, &families, arguments.size.max(1), &orders, &orient, arguments.threads, idle)
 }
 
+/// The `shapes` records of a task's tables from their stored rows: `shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N]`. ROWS_FILE holds a line `{"hash": HEX, "table": T}` for each table, with `T` as `stored_of`
+/// reads it. With `--shapes`, the records hold the listed shapes alone, in the file's order. It prints a line of counts.
+fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) -> Result<(), String> {
+    let only = match &arguments.shapes {
+        Some(path) => Some(read_shape_hashes(path)?),
+        None => None,
+    };
+    let families = arclog_encoder::generate::Generators::default();
+    let summary = arclog_encoder::shapes_refresh::run(std::path::Path::new(rows), std::path::Path::new(out), &arguments.tasks, task, only.as_deref(), arguments.threads, &families)?;
+    eprintln!("{summary}");
+    Ok(())
+}
+
 /// Where a walk's time goes, over tables of stored files: `time-heads FILE... --size D`. Each schema has one walker, as a run has. It prints each term head's terms, evaluations, those that
 /// gave rows, and time, and each table's time. With TIME_TABLES, at most that many tables of a file. With TIME_SHAPES naming a file of `gain<TAB>shape` lines, it then times only those
 /// shapes and the terms they read, with a new walker per table, and prints each shape's gain and its share of that time.
@@ -2097,6 +2116,7 @@ fn main() {
         ("refine-check", [file]) => run_refine_check(&arguments, file),
         ("time-heads", files) => run_time_heads(&arguments, files),
         ("atom-lists", [input, out]) => run_atom_lists(&arguments, input, out),
+        ("shapes-refresh", [rows, task, out]) => run_shapes_refresh(&arguments, rows, task, out),
         ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
         ("grid-values", [grids]) => run_grid_values(&arguments, grids),
