@@ -1932,8 +1932,10 @@ impl Generated {
         let mut out = self.key_options(columns, not);
         if self.one_group {
             let group: Vec<u16> = columns.iter().enumerate().filter(|(at, column)| !not.contains(at) && (matches!(column.ty, ValueType::Color | ValueType::Ident(_)) || self.key_columns.contains(&column.name))).map(|(at, _)| at as u16).collect();
-            if let [only] = group[..] {
-                out.push((vec![only].into_boxed_slice(), format!("(T*:{})", columns[usize::from(only)].name)));
+            // Where the table has two or more group columns, the first pass's family gives the shapes over its groups, so this pass gives none.
+            let whole = columns.iter().filter(|column| matches!(column.ty, ValueType::Color | ValueType::Ident(_)) || self.key_columns.contains(&column.name)).count();
+            if let ([only], true) = (&group[..], whole < 2) {
+                out.push((vec![*only].into_boxed_slice(), format!("(T*:{})", columns[usize::from(*only)].name)));
             }
         }
         out
