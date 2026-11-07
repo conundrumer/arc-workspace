@@ -981,22 +981,70 @@ fn image_margins(which: usize, m: [i32; 4]) -> [i32; 4] {
     }
 }
 
+/// A colored pattern with its top-left corner at (0, 0): (row, column, color) sorted by row, then column, then color.
+type Shape = Vec<(i32, i32, Cell)>;
+
+/// Where the corner of each shape lies on a grid, for each shape that `moves_of` has met on that grid.
+#[derive(Default)]
+struct Placements(FastMap<Shape, Vec<(i32, i32)>>);
+
 /// The offsets that move a colored pattern onto a grid's cells: each `P` where `compose` of a pattern
 /// cell and `P` is a grid cell of the cell's color, for every cell of the pattern.
-fn moves_of(pattern: &[([i32; 4], Cell)], grid: &GridView) -> Vec<Cell> {
-    // A move takes every pattern cell to a cell of its color, so the cells of the pattern's rarest color give every move.
-    let cells_of = |color: &Cell| grid.of_color.get(color).map_or(&[][..], Vec::as_slice);
-    let Some((anchor, color)) = pattern.iter().min_by_key(|(_, color)| cells_of(color).len()) else { return Vec::new() };
+/// Patterns that differ only by a shift share one search, through `known`.
+fn moves_of(pattern: &[([i32; 4], Cell)], grid: &GridView, known: &mut Placements) -> Vec<Cell> {
+    let Some(((first, _), rest)) = pattern.split_first() else { return Vec::new() };
+    // A move puts each cell of the pattern on a grid cell, so all of them lie in one frame of the grid's size.
+    let (frame_rows, frame_cols) = (first[0] + first[1], first[2] + first[3]);
+    if rest.iter().any(|(m, _)| m[0] + m[1] != frame_rows || m[2] + m[3] != frame_cols) {
+        return Vec::new();
+    }
+    let (top, left) = pattern.iter().fold((i32::MAX, i32::MAX), |(t, l), (m, _)| (t.min(m[0]), l.min(m[2])));
+    let mut shape: Shape = pattern.iter().map(|(m, color)| (m[0] - top, m[2] - left, *color)).collect();
+    shape.sort_unstable();
+    // Two colors on one cell of the pattern leave no move.
+    if shape.windows(2).any(|pair| pair[0].0 == pair[1].0 && pair[0].1 == pair[1].1) {
+        return Vec::new();
+    }
+    let places = match known.0.get(&shape) {
+        Some(places) => places,
+        None => {
+            let places = placements(&shape, grid);
+            known.0.entry(shape).or_insert(places)
+        }
+    };
+    places.iter().map(|&(r, c)| {
+        let (dr, dc) = (r - top, c - left);
+        box_bits(dr, grid.h - 1 - frame_rows - dr, dc, grid.w - 1 - frame_cols - dc)
+    }).collect()
+}
+
+/// Each place of a shape's corner where every cell of the shape is a grid cell of its color.
+fn placements(shape: &Shape, grid: &GridView) -> Vec<(i32, i32)> {
+    let (height, width) = shape.iter().fold((0, 0), |(h, w), (r, c, _)| (h.max(r + 1), w.max(c + 1)));
+    if height > grid.h || width > grid.w {
+        return Vec::new();
+    }
+    let count = |color: &Cell| grid.of_color.get(color).map_or(0, Vec::len);
+    // A move takes every cell to a cell of its color, so a color that the grid holds fewer times than the shape does leaves no move.
+    let mut by_color: Vec<Cell> = shape.iter().map(|(_, _, color)| *color).collect();
+    by_color.sort_unstable();
+    for run in by_color.chunk_by(|a, b| a == b) {
+        if count(&run[0]) < run.len() {
+            return Vec::new();
+        }
+    }
+    // The cells of the shape's rarest color give every move. Rarer colors are tried first when a place is checked.
+    let mut order: Vec<(i32, i32, Cell)> = shape.clone();
+    order.sort_by_key(|(_, _, color)| (count(color), *color));
+    let (anchor_row, anchor_col, color) = order[0];
     let mut out = Vec::new();
-    for &(r, c) in cells_of(color) {
-        {
-            let delta = [r - anchor[0], grid.h - 1 - r - anchor[1], c - anchor[2], grid.w - 1 - c - anchor[3]];
-            if pattern.iter().all(|(m, held)| {
-                let (y, b, z, e) = (m[0] + delta[0], m[1] + delta[1], m[2] + delta[2], m[3] + delta[3]);
-                y >= 0 && z >= 0 && b >= 0 && e >= 0 && y < grid.h && z < grid.w && y + b == grid.h - 1 && z + e == grid.w - 1 && grid.colors[(y * grid.w + z) as usize] == *held
-            }) {
-                out.push(box_bits(delta[0], delta[1], delta[2], delta[3]));
-            }
+    for &(r, c) in &grid.of_color[&color] {
+        let (r0, c0) = (r - anchor_row, c - anchor_col);
+        if r0 < 0 || c0 < 0 || r0 + height > grid.h || c0 + width > grid.w {
+            continue;
+        }
+        if order.iter().all(|&(y, z, held)| grid.colors[((r0 + y) * grid.w + c0 + z) as usize] == held) {
+            out.push((r0, c0));
         }
     }
     out
@@ -1924,24 +1972,18 @@ impl PartStep {
                 let grid = grid_of(children[1])?;
                 let (grouping, first) = key_ids(t, keys);
                 let ids = &grouping.0;
-                if first.len() > 60 {
-                    return None;
-                }
                 let mut patterns: Vec<Vec<([i32; 4], Cell)>> = vec![Vec::new(); first.len()];
                 for (row, id) in t.rows().zip(ids) {
                     patterns[*id as usize].push((margins_of(row[usize::from(*p)]), row[usize::from(*v)]));
                 }
+                let mut known = Placements::default();
                 let mut out = Vec::new();
                 for (pattern, head) in patterns.iter_mut().zip(&first) {
                     pattern.sort_unstable();
                     pattern.dedup();
-                    if pattern.len() > 900 {
-                        crate::bounds::mark(crate::bounds::Bound::OccursPattern);
-                        return None;
-                    }
                     for which in 0..if *turned { 8 } else { 1 } {
                         let image: Vec<([i32; 4], Cell)> = pattern.iter().map(|(m, color)| (image_margins(which, *m), *color)).collect();
-                        for moved in moves_of(&image, &grid) {
+                        for moved in moves_of(&image, &grid, &mut known) {
                             push_key(&mut out, head, keys);
                             out.push(moved);
                         }
