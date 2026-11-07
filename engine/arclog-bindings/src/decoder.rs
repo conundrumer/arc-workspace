@@ -200,6 +200,21 @@ impl PyDecoder {
         self.step_result(result)
     }
 
+    /// A fork of the decode advanced by the token with id `id`, and what `step`
+    /// gives for it: the fork and the result of `fork()`, then `step(id)` on
+    /// the fork. Where `admissible` has computed the mask at this state and the
+    /// mask admits the token, the fork's state comes from the mask, and no
+    /// check of the token runs again. Raises `Refusal` for a token outside the
+    /// mask, and leaves the decode as it was.
+    fn fork_step(&self, id: u32) -> PyResult<(PyDecoder, StepResult)> {
+        let _timed = stats::span(Phase::PyStep);
+        let token = self.token(id)?;
+        let (decoder, result) = self.decoder().fork_step(token);
+        let child = PyDecoder { decoder: Some(decoder), data: Arc::clone(&self.data) };
+        let result = child.step_result(result)?;
+        Ok((child, result))
+    }
+
     /// The ids of the tokens the engine emits after the token with id `id`,
     /// as `step` gives them, with no consistency test, and leaves the decode
     /// as it was. Where `admissible` has computed the mask at this state,

@@ -469,6 +469,25 @@ impl<'a> Decoder<'a> {
         self.apply(advanced)
     }
 
+    /// A fork of this decode that [`Decoder::step`] advanced by `token`, and
+    /// what that step gives: those of [`Decoder::fork`], then `step` on the
+    /// fork. Where this decode holds the mask of its state and the mask admits
+    /// `token`, the fork's state after `token` comes from the mask, and no
+    /// check of the token runs again. The step's consistency tests run on the
+    /// fork, as `step` runs them. This decode stays as it was.
+    pub fn fork_step(&self, token: Token) -> (Decoder<'a>, StepResult) {
+        let kept = self.held.0.get().and_then(|held| held.steps.get(&self.context.vocabulary.id(&token)?).cloned());
+        let mut next = self.fork();
+        let result = match kept {
+            Some((state, forced)) => {
+                let advanced = next.advanced(&token, state, forced, true);
+                next.apply(Ok(advanced))
+            }
+            None => next.step(token),
+        };
+        (next, result)
+    }
+
     /// [`Decoder::step`] with no consistency test of an `OUT` form and no
     /// rule test: the step gives `None` as its `consistency` and as its
     /// `rule_test`, so the decode ends at no `OUT` form and takes no
@@ -524,6 +543,12 @@ impl<'a> Decoder<'a> {
     /// runs no consistency test.
     fn advance(&self, token: &Token, tested: bool) -> Result<Advanced, Refusal> {
         let (state, forced) = self.next_state(token)?;
+        Ok(self.advanced(token, state, forced, tested))
+    }
+
+    /// [`Decoder::advance`] to `state`, the state after `token`, with the tokens
+    /// `forced` that the engine emits after it.
+    fn advanced(&self, token: &Token, state: state::State, forced: Vec<Token>, tested: bool) -> Advanced {
         let consistency = if tested { self.consistency(&self.state, &state, Tested::Out) } else { None };
         let rule_test = if tested && self.context.settings.rule_tests { self.consistency(&self.state, &state, Tested::Rule) } else { None };
         let counted = |tested: Option<(Consistency, u64)>| match tested {
@@ -531,7 +556,7 @@ impl<'a> Decoder<'a> {
             None => (None, 0),
         };
         let ((consistency, capped_sets), (rule_test, rule_capped_sets)) = (counted(consistency), counted(rule_test));
-        Ok(Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, rule_test, capped_sets, rule_capped_sets } })
+        Advanced { token: token.clone(), state, step: Step { forced: forced.into(), consistency, rule_test, capped_sets, rule_capped_sets } }
     }
 
     fn apply(&mut self, advanced: Result<Advanced, Refusal>) -> StepResult {
