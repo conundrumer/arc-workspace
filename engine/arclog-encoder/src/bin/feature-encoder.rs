@@ -804,7 +804,7 @@ struct EngineRows {
 
 /// What a run of the check has found, by head: agree, differ, refused, no value, types differ.
 struct CheckTally {
-    counts: std::collections::BTreeMap<String, [u64; 5]>,
+    counts: std::collections::BTreeMap<String, [u64; 6]>,
     shown: std::collections::BTreeMap<String, u32>,
     started: std::time::Instant,
     budget: f64,
@@ -826,7 +826,7 @@ impl CheckTally {
 
     fn print(&self) {
         for (head, counts) in &self.counts {
-            println!("{head}\tagree {}\tdiffer {}\trefused {}\tno value {}\ttypes {}", counts[0], counts[1], counts[2], counts[3], counts[4]);
+            println!("{head}\tagree {}\tdiffer {}\trefused {}\tno value {}\ttypes {}\twith rows {}", counts[0], counts[1], counts[2], counts[3], counts[4], counts[5]);
         }
     }
 }
@@ -888,6 +888,7 @@ fn check_family(family: &arclog_encoder::generate::Generated, leaves: &[Vec<arcl
         }
         let is_ident: Vec<bool> = columns.iter().map(|(_, ty)| matches!(ty, arclog::types::ValueType::Ident(_))).collect();
         let mut outcome = 0;
+        let mut rows_seen = false;
         let mut detail = String::new();
         for pair in 0..train {
             let native = &values[pair];
@@ -905,6 +906,7 @@ fn check_family(family: &arclog_encoder::generate::Generated, leaves: &[Vec<arcl
                 Some(table) => table.rows().map(<[u32]>::to_vec).collect(),
                 None => Vec::new(),
             };
+            rows_seen |= !native_rows.is_empty();
             let (a, b) = (canonical_rows(&native_rows, &is_ident), canonical_rows(&engine_rows, &is_ident));
             if a != b {
                 outcome = 1;
@@ -914,6 +916,9 @@ fn check_family(family: &arclog_encoder::generate::Generated, leaves: &[Vec<arcl
             }
         }
         counts[outcome] += 1;
+        if outcome == 0 && rows_seen {
+            counts[5] += 1;
+        }
         if outcome == 1 {
             show("differ", detail);
         }
