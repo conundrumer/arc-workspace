@@ -871,14 +871,27 @@ fn check_family(family: &arclog_encoder::generate::Generated, leaves: &[Vec<arcl
                 continue;
             }
         };
-        let native_names: BTreeSet<&str> = columns.iter().map(|(name, _)| name.as_str()).collect();
+        // The engine labels each column by its name with the first letter in upper case, and a label that an earlier column took gets a suffix.
+        let mut taken: Vec<String> = Vec::new();
+        let labels: Vec<String> = columns.iter().map(|(name, _)| {
+            let base = arclog_encoder::schema::label_name(name);
+            let mut held = base.clone();
+            let mut suffix = 2;
+            while taken.contains(&held) {
+                held = format!("{base}_{suffix}");
+                suffix += 1;
+            }
+            taken.push(held.clone());
+            held
+        }).collect();
+        let native_names: BTreeSet<&str> = labels.iter().map(String::as_str).collect();
         let engine_names: BTreeSet<&str> = found.names.iter().map(String::as_str).collect();
         if native_names != engine_names {
             counts[1] += 1;
             show("differ", format!("columns: native {native_names:?}, engine {engine_names:?}"));
             continue;
         }
-        let places: Vec<usize> = columns.iter().filter_map(|(name, _)| found.names.iter().position(|own| own == name)).collect();
+        let places: Vec<usize> = labels.iter().filter_map(|label| found.names.iter().position(|own| own == label)).collect();
         let plain = |ty: &arclog::types::ValueType| format!("{:?}", ty.without_source());
         // The engine can narrow a column's type where a label meets a narrower one.
         let unlike: Vec<String> = columns.iter().zip(&places).filter(|((_, ty), place)| found.types.get(**place).is_some_and(|other| plain(ty) != plain(other) && !other.without_source().is_below(&ty.without_source()) && !ty.without_source().is_below(&other.without_source()))).map(|((name, ty), place)| format!("{name}: native {}, engine {}", plain(ty), plain(&found.types[*place]))).collect();
