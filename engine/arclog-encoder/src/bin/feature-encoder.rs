@@ -1135,6 +1135,28 @@ fn rows_over(rows: &[Vec<u32>], columns: &[String], names: &[String]) -> Option<
 /// Each rule's claim against evaluation, at each table of a tables file: a term a rule rejects is evaluated
 /// and compared with what the rule claims, and each kept term's keys, bounds and subset relations with its
 /// rows. Train pairs alone are read. It prints a counterexample for the first failures of a rule.
+/// The lists of a study of whole atoms, from the files of tables under INPUT: `atom-lists INPUT OUT --size D --threads N --families DIR [--names ORDERS]`. ATOM_ORIENT names a file of each orientation's
+/// code and name, and ATOM_IDLE the seconds without a new file after which it ends. A family's root names go to a file of the process's own under `--families`, beside the saved families.
+fn run_atom_lists(arguments: &Arguments, input: &str, out: &str) -> Result<(), String> {
+    use arclog_encoder::generate::{Generators, NameStore};
+    let orders: std::collections::BTreeMap<String, Option<Vec<usize>>> = match &arguments.names {
+        Some(path) => serde_json::from_str(&arclog_encoder::zio::read_text(path)?).map_err(|error| error.to_string())?,
+        None => Default::default(),
+    };
+    let orient: std::collections::HashMap<i64, String> = {
+        let text = arclog_encoder::zio::read_text(&std::env::var("ATOM_ORIENT").map_err(|_| "`atom-lists` reads ATOM_ORIENT".to_string())?)?;
+        let held: std::collections::HashMap<String, String> = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+        held.into_iter().filter_map(|(key, value)| Some((key.parse().ok()?, value))).collect()
+    };
+    let mut families = Generators::default();
+    let saved = arguments.families.clone().ok_or("`atom-lists` reads --families")?;
+    std::fs::create_dir_all(&saved).map_err(|error| error.to_string())?;
+    families.names = NameStore::to_file(&saved.join(format!("names-{}.tsv.zst", std::process::id())).to_string_lossy())?;
+    families.saved = Some(saved);
+    let idle: u64 = std::env::var("ATOM_IDLE").ok().and_then(|text| text.parse().ok()).unwrap_or(1800);
+    arclog_encoder::atom_lists::run(std::path::Path::new(input), std::path::Path::new(out), &arguments.tasks, &families, arguments.size.max(1), &orders, &orient, arguments.threads, idle)
+}
+
 /// Where a walk's time goes, over tables of stored files: `time-heads FILE... --size D`. Each schema has one walker, as a run has. It prints each term head's terms, evaluations, those that
 /// gave rows, and time, and each table's time. With TIME_TABLES, at most that many tables of a file. With TIME_SHAPES naming a file of `gain<TAB>shape` lines, it then times only those
 /// shapes and the terms they read, with a new walker per table, and prints each shape's gain and its share of that time.
@@ -1892,6 +1914,7 @@ fn main() {
         ("shape-count", files) if !files.is_empty() => run_shape_count(&arguments, files),
         ("refine-check", [file]) => run_refine_check(&arguments, file),
         ("time-heads", files) => run_time_heads(&arguments, files),
+        ("atom-lists", [input, out]) => run_atom_lists(&arguments, input, out),
         ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
         ("grid-values", [grids]) => run_grid_values(&arguments, grids),
