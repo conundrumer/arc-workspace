@@ -32,7 +32,7 @@ use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::program::ConstraintOp;
 use crate::registry::{LibName, Registry};
-use crate::relations::{ColumnIndex, ColumnOrder, Index, IndexNode, Relation, RelationPart, Row, RowSet};
+use crate::relations::{ColumnIndex, ColumnOrder, Index, IndexNode, Relation, RelationPart, RowSet};
 use crate::session::{Counts, TaskSession};
 use crate::terms::{Term, TermId};
 use crate::types::ValueType;
@@ -650,7 +650,7 @@ fn union_rows(
             Err(bound) => return Some(Err(bound)),
         };
         for row in found.rows() {
-            if rows.insert(row.into()) {
+            if rows.insert_slice(row) {
                 if let Err(bound) = budget.charge_rows(1) {
                     return Some(Err(bound));
                 }
@@ -711,7 +711,7 @@ pub fn union(mut relations: Vec<Arc<Relation>>) -> Arc<Relation> {
     let mut rows = RowSet::empty(arity);
     for relation in &relations {
         each_row(relation, &mut |row| {
-            rows.insert(row.into());
+            rows.insert_slice(row);
         });
     }
     Arc::new(one_part(rows))
@@ -1110,6 +1110,9 @@ struct Search<'c> {
     plan: &'c Plan,
     memo: &'c SearchMemo,
     binding: Vec<Option<TermId>>,
+    /// The projected row of the binding at a leaf of the search, which
+    /// `step` fills and adds to the rows, so a row takes no allocation.
+    row: Vec<TermId>,
     tried: Batch,
 }
 
@@ -1127,7 +1130,7 @@ impl<'c> Search<'c> {
         for &(variable, value) in bound {
             binding[usize::from(variable.0)] = Some(value);
         }
-        Search { clause, registry, inputs, plan, memo, binding, tried: Batch::default() }
+        Search { clause, registry, inputs, plan, memo, binding, row: Vec::new(), tried: Batch::default() }
     }
 
     /// The rows of `projected` over each binding that passes every node.
@@ -1177,8 +1180,9 @@ impl<'c> Search<'c> {
         budget: &mut Budget<'_>,
     ) -> Result<bool, ReachedBound> {
         let Some(&variable) = self.plan.order.get(rank) else {
-            let row: Row = projected.iter().map(|v| self.binding[usize::from(v.0)].expect("a bound column")).collect();
-            if rows.insert(row) {
+            self.row.clear();
+            self.row.extend(projected.iter().map(|v| self.binding[usize::from(v.0)].expect("a bound column")));
+            if rows.insert_slice(&self.row) {
                 budget.charge_rows(1)?;
             }
             return Ok(true);
