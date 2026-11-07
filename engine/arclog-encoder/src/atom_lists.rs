@@ -383,12 +383,14 @@ pub fn run(input: &Path, out: &Path, task_dir: &Path, generators: &Generators, d
                 *last_new.lock().expect("no panic") = std::time::Instant::now();
                 let target = out.join(&folder);
                 let _ = std::fs::create_dir_all(&target);
-                match lists_of_file(&path, &target, task_dir, generators, d, order_of, orient) {
-                    Ok(summary) => {
+                let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lists_of_file(&path, &target, task_dir, generators, d, order_of, orient)));
+                match written {
+                    Ok(Ok(summary)) => {
                         let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                         eprintln!("{done} files, {:.2} files/min; {folder}/{summary}", done as f64 * 60.0 / begun.elapsed().as_secs_f64());
                     }
-                    Err(message) => eprintln!("{folder}/{}: {message}", path.display()),
+                    Ok(Err(message)) => eprintln!("{folder}/{}: {message}", path.display()),
+                    Err(_) => eprintln!("{folder}/{}: a panic", path.display()),
                 }
             });
         }

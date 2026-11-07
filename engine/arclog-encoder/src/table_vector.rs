@@ -169,18 +169,30 @@ fn mean_over_models(held: &[&Slot]) -> Slot {
         return Slot::default();
     }
     let total = |read: &dyn Fn(&Slot) -> Number| -> Number {
-        let (mut top, bottom) = (0i64, held.len() as i64);
-        let mut denominator = 1i64;
+        // The fraction stays reduced, since the denominators of many tables multiply past any word.
+        fn shared(mut a: i128, mut b: i128) -> i128 {
+            while b != 0 {
+                (a, b) = (b, a % b);
+            }
+            a.abs().max(1)
+        }
+        let (mut top, mut denominator) = (0i128, 1i128);
         for slot in held {
             let value = read(slot);
-            let down = i64::from(value.bottom.max(1));
-            top = top * down + i64::from(value.top) * denominator;
-            denominator *= down;
+            let down = i128::from(value.bottom.max(1));
+            let common = shared(denominator, down);
+            top = top * (down / common) + i128::from(value.top) * (denominator / common);
+            denominator = denominator / common * down;
+            let common = shared(top, denominator);
+            top /= common;
+            denominator /= common;
         }
+        let bottom = denominator * held.len() as i128;
         if top < 0 {
-            return Number::whole(top / (denominator * bottom));
+            return Number::whole((top / bottom) as i64);
         }
-        Number::fraction(top as u64, (denominator * bottom) as u64)
+        let shift = (128 - bottom.leading_zeros()).saturating_sub(64);
+        Number::fraction((top >> shift) as u64, (bottom >> shift) as u64)
     };
     let digest = held.iter().fold(0u64, |sum, slot| sum.wrapping_add(slot.digest));
     Slot { greatest: total(&|slot| slot.greatest), second: total(&|slot| slot.second), digest, state: SLOT_VALUE }
