@@ -8,7 +8,7 @@ use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refus
 use crate::safety::body_labels;
 use crate::program::path::{NodePath, NodeRef};
 use crate::program::{Instance, InstanceInput, InstancePart, KeyBody, KeyClausePart, PortName};
-use crate::registry::{binding_sites, is_key, unbound, Column, ColumnType, InputPort, TypeParameter};
+use crate::registry::{binding_sites, is_key, unbound, Column, ColumnType, InputPort, LibName, TypeParameter};
 use crate::resolver::ResolvedProgram;
 use crate::types::{each_site_label, use_label};
 
@@ -27,9 +27,12 @@ impl Check for InstanceInputsCheck {
     /// Refuses, in each `INIT` form of the form, each input that its
     /// component does not declare, each input written after another clause of
     /// the same input, each input that stands before an input of its
-    /// group that the component declares before it, and each input that
+    /// group that the component declares before it, each input that
     /// writes no head site on a column of its port other than `key`, other
-    /// than a column of an unbounded type parameter that no place of the form binds, as
+    /// than a column of an unbounded type parameter that no place of the form binds,
+    /// and each input whose rows its component counts, a `Cardinality`
+    /// instance's `member` input or an `Excess` instance's `plus` or `minus`
+    /// input, whose head holds no site, as
     /// `docs/arclog/arclog.md#instance` gives. In a keyed instance, it
     /// refuses as well each input that stands in a group other than its
     /// own: an input after the key clause that reads an output of its
@@ -65,13 +68,14 @@ impl Check for InstanceInputsCheck {
                     Some(_) => None,
                 };
                 let headless = index.and_then(|index| headless_column(&component.inputs[index], written_input, &unit));
+                let counted_head = empty_counted_head(&instance.component, written_input).map(str::to_owned);
                 latest = latest.max(index);
                 written.push(name);
                 let input_at = at.join(&path);
                 let within = reads.iter().filter(|read| read.form == instance_at && read.at.0.starts_with(&input_at.0));
                 let group = instance.key.as_ref().and_then(|key| group_fault(program, input.path, keyed, written_input, &key.value().key, within));
                 let group = group.map(str::to_owned);
-                for message in [message, headless, group].into_iter().flatten() {
+                for message in [message, headless, counted_head, group].into_iter().flatten() {
                     refusals.push((message, input_at.clone()));
                 }
             }
@@ -101,6 +105,21 @@ fn headless_column(port: &InputPort, written: &InstanceInput, unit: &[&TypeParam
     let binds_nothing = |column: &Column| matches!(&column.ty, ColumnType::Parameter(parameter) if parameter.bound.is_none() && unit.contains(&parameter));
     let column = port.port.columns.iter().find(|column| !is_key(column) && !binds_nothing(column) && !written.head.iter().any(|site| site.column == column.name))?;
     Some(format!("the input writes no head site on column {:?}", column.name))
+}
+
+/// The inputs whose rows their component counts, each by its component and
+/// its name.
+const COUNTED_INPUTS: [(&str, &str); 3] = [("Cardinality", "member"), ("Excess", "plus"), ("Excess", "minus")];
+
+/// Why `written`, an input of an instance of `component`, is refused, where
+/// it is an input of [`COUNTED_INPUTS`] whose head holds no site: such an
+/// input holds at most one row at each key, so the count of its rows is 0
+/// or 1 (`docs/arclog/arclog.md#instance`).
+fn empty_counted_head(component: &LibName, written: &InstanceInput) -> Option<&'static str> {
+    let counted = COUNTED_INPUTS.iter().any(|(name, port)| *name == &*component.0 && *port == &*written.name.0);
+    (counted && written.head.is_empty()).then_some(
+        "the head of a `Cardinality` instance's `member` input, or of an `Excess` instance's `plus` or `minus` input, holds a site, since such an input of no column holds at most one row at each key, so the count of its rows is 0 or 1",
+    )
 }
 
 /// Why `written`, an input of an instance whose key is `key`, stands in the
