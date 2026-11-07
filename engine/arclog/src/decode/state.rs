@@ -207,9 +207,9 @@ impl SharedChecks {
     /// A copy of the cache, or of the cache it starts from where no check
     /// has used it; an empty cache where a check holds it.
     fn copy(&self) -> CheckCache {
-        let Ok(held) = self.cache.try_lock() else { return CheckCache::default() };
-        match &*held {
-            Some(cache) => cache.clone(),
+        let Ok(mut held) = self.cache.try_lock() else { return CheckCache::default() };
+        match &mut *held {
+            Some(cache) => cache.fork(),
             None => {
                 let from = self.from.lock().ok().and_then(|from| from.clone());
                 drop(held);

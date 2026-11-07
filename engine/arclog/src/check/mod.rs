@@ -432,9 +432,40 @@ pub struct CheckCache {
     types: crate::hash::StableHashMap<CheckCacheKey, std::sync::Arc<types::ScopeTypes>>,
 }
 
+/// The most bases under a [`CheckCache`] that [`CheckCache::fork`] leaves.
+const CACHE_LAYERS: usize = 8;
+
 impl CheckCache {
     pub(crate) fn over(base: Arc<Self>) -> Self {
         Self { base: Some(base), ..Self::default() }
+    }
+
+    /// A cache that holds what this one holds. Both read it from one shared
+    /// base, so the call copies no entry, other than each [`CACHE_LAYERS`]
+    /// forks, which put the bases of this cache together.
+    pub(crate) fn fork(&mut self) -> Self {
+        if self.entries.is_empty() && self.types.is_empty() {
+            return Self { base: self.base.clone(), ..Self::default() };
+        }
+        if self.layers() >= CACHE_LAYERS {
+            *self = self.flat();
+        }
+        let held = Arc::new(std::mem::take(self));
+        *self = Self::over(Arc::clone(&held));
+        Self::over(held)
+    }
+
+    /// The count of bases under this cache.
+    fn layers(&self) -> usize {
+        self.base.as_ref().map_or(0, |base| 1 + base.layers())
+    }
+
+    /// A cache with no base that holds what this one holds.
+    fn flat(&self) -> Self {
+        let mut flat = self.base.as_ref().map_or_else(Self::default, |base| base.flat());
+        flat.entries.extend(self.entries.iter().map(|(key, result)| (key.clone(), result.clone())));
+        flat.types.extend(self.types.iter().map(|(key, types)| (key.clone(), Arc::clone(types))));
+        flat
     }
 
     /// The result cached under `key`, if any.
