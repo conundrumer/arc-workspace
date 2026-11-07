@@ -1,31 +1,33 @@
 """break_points.py RUN ARM OUT [--tasks T,T|@FILE] [--seed N] [--shard K/N] [--limit N] [--summary-only]
 
 For each gold table of the union graph that a finished job of RUN and ARM did not reach, the class of where its path broke
-(read-rule.md of the gold-break-points run, "Classes"):
+(read-rule.md of the gold-break-points run, "Classes"). The output lines give each class by its code:
   1  inputs not reached (a gold table it reads was not reached; counted at the earlier depth)
   2  OUT not found (the goal table, every gold table of its program reached)
-  3  writer rank: at the first state that held its inputs, the bits b of its canonical path under the served tree exceed log2 of the job's draws
-  4  budget: b is within log2 of the job's draws but above log2 of the draws made from that state on
-  5  not drawn by chance: the rest
-  x  not scored (no gold text, a state or a path the engine cannot step; the reason is in the row)
+  3  writer rank: at the first state that held its inputs, the bits b of its canonical path under the served learned model exceed log2 of the job's sampled queries
+  4  budget: b is within log2 of the job's sampled queries but above log2 of the queries sampled from that state on
+  5  not sampled by chance: the rest
+  x  not scored (no gold text, a state or a path the engine cannot step; the reason is in the job's output line)
   0  reached
-Classes 3 to 5 also get the gold token of lowest rank on the path (the largest rank number), its rank, and the point's kind and phase.
+Classes 3 to 5 also get the gold token of lowest rank on the path (the largest rank number), its rank, and the writing point's kind and phase.
+The summary gives each class by its name.
 
-A job is finished where RUN/results.jsonl names it for ARM and its draw record file exists. One line per job streams to OUT (a zstd stream, OUT.zst),
+A job is finished where RUN/results.jsonl names it for ARM and its file of sampled queries exists. One line per job streams to OUT (a zstd stream, OUT.zst),
 and a job whose line is there is skipped, so a rerun takes the jobs that landed since. With --shard K/N the file is OUT-shardKofN.
 The summary (always printed at the end; alone with --summary-only) reads OUT and every OUT-shard* file.
 
 Run with the study runtime python:  PY -I break_points.py RUN ARM OUT
-The code, site, tree, models, plan and the arm's extra env come from the last line of RUN/runs.jsonl. Override: --code --site --tree --models.
-The bits need WRITER_TOKEN_ID_NO_TABLE=1 (and WRITER_NO_AUTHORED=1 where the run's tree wants it): --env NAME=VALUE, repeatable; both default to the values below.
+The code, the engine build, the learned model, the models folder, the plan and the experimental condition's extra env come from the last line of RUN/runs.jsonl.
+Override: --code --site --tree --models.
+The bits need WRITER_TOKEN_ID_NO_TABLE=1 (and WRITER_NO_AUTHORED=1 where the run's learned model wants it): --env NAME=VALUE, repeatable; both default to the values below.
 
 Definitions that the rule leaves open:
-- Inputs of a gold table: its union tables' forms each read union keys (union-dev.jsonl `reads`); a read of key k is reached where any graph table of k is reached; the table's inputs are reached where some form has every read reached.
+- Inputs of a gold table: each query of its union tables reads union keys (union-dev.jsonl `reads`); a read of key k is reached where any graph table of k is reached; the table's inputs are reached where some such query has every read reached.
 - Goal table: graph-tables `goal`. The report's kind OUT is the goal table.
-- The state of a draw is its steps less the drawn query. The first state that held the inputs of a production is the first draw whose state's tables include the production's input tables (read from the skeleton's `inputs`).
-  d is that draw's number, the draws from that state on are D - d + 1.
-- A table can have several productions (skeleton queries that give it). Up to --max-productions of them are walked, in the order of d and then text length; the table takes the class of the most favourable (5 over 4 over 3), and its lowest b.
-- Chances are writer.options' ids and writer.probabilities, as serving takes them, without the search's repeat filter. A point with one id costs 0 bits. A gold token that is no id, or a point with no id left, is b = inf.
+- The state of a sampled query is its steps less that query. The first state that held the inputs of a production is the first sampled query whose state's tables include the production's input tables (read from the skeleton's `inputs`).
+  d is that sampled query's number, and the queries sampled from that state on are D - d + 1.
+- A table can have several productions (skeleton queries that give it). Up to --max-productions of them are scored, in the order of d and then text length; the table takes the class of the most favourable (5 over 4 over 3), and its lowest b.
+- Chances are writer.options' ids and writer.probabilities, as serving takes them, without the search's repeat filter. A writing point with one id costs 0 bits. A gold token that is no id, or a writing point with no id left, is b = inf.
 - Ident-column tables (--flags) are counted apart: the summary's main tables leave them out.
 """
 import argparse
@@ -52,6 +54,8 @@ SKELETON = REPO / 'work/lm/data-study/samples/dev/skeleton'
 DEFAULT_ENV = ['WRITER_TOKEN_ID_NO_TABLE=1']
 BANDS = ('0', '1', '2-3', '4+')
 CLASSES = ('0', '1', '2', '3', '4', '5', 'x')
+CLASS_NAMES = {'1': 'inputs not reached', '2': 'OUT not found', '3': 'writer rank', '4': 'budget', '5': 'not sampled by chance', 'x': 'not scored'}
+CLASS_COLUMNS = ('1', '2', '3', '4', '5', 'x')
 NAME = re.compile(r'&f(\d+)')
 OWN = re.compile(r'^\((\w+) &f(\d+)')
 
@@ -423,7 +427,7 @@ def classify_job(eng, gold, flags, task, job_dir, result, a):
                 rows[g].update(cls='x', why=rows[g].get('why', 'not scored'))
     for g in todo:
         if rows[g]['cls'] is None:
-            rows[g].update(cls='x', why='the job has no draw')
+            rows[g].update(cls='x', why='the job has no sampled query')
     counts = collections.Counter(r['cls'] for r in rows.values())
     return dict(task=task, seed=result['seed'], job=job_dir.name, arm=result['arm'], draws=D, solved=result.get('solved'), cpu=result.get('cpu'), seconds=round(time.time() - t0, 1),
                 counts=dict(counts), notes=dict(notes), tables=list(rows.values()))
@@ -457,26 +461,26 @@ def summary(out):
     print('\n== break points: %d jobs, %d tasks, %d gold tables (%d with an Ident column, counted apart; %d with no flag are counted as no Ident)' % (
         len(seen), len({j['task'] for j in seen.values()}), len(rows), len(ident), sum(r['ident'] is None for r in rows)))
 
+    def line(k, g):
+        c = collections.Counter(r['cls'] for r in g)
+        print('%-8s %6d %7d %9d | %s' % (k, len(g), c['0'], len(g) - c['0'], ' | '.join('%*d' % (len(CLASS_NAMES[x]), c[x]) for x in CLASS_COLUMNS)))
+
     def table(title, rs, key, keys):
         print('\n%s' % title)
-        print('%-8s %6s %7s %6s | %5s %5s %5s %5s %5s | %4s' % ('', 'gold', 'reached', 'unreach', 'c1*', 'c2', 'c3', 'c4', 'c5', 'x'))
+        print('%-8s %6s %7s %9s | %s' % ('', 'gold', 'reached', 'unreached', ' | '.join(CLASS_NAMES[x] for x in CLASS_COLUMNS)))
         for k in keys:
-            g = [r for r in rs if key(r) == k]
-            c = collections.Counter(r['cls'] for r in g)
-            print('%-8s %6d %7d %6d | %5d %5d %5d %5d %5d | %4d' % (k, len(g), c['0'], len(g) - c['0'], c['1'], c['2'], c['3'], c['4'], c['5'], c['x']))
-        g = rs
-        c = collections.Counter(r['cls'] for r in g)
-        print('%-8s %6d %7d %6d | %5d %5d %5d %5d %5d | %4d' % ('all', len(g), c['0'], len(g) - c['0'], c['1'], c['2'], c['3'], c['4'], c['5'], c['x']))
+            line(k, [r for r in rs if key(r) == k])
+        line('all', rs)
     kind_of = lambda r: 'OUT' if r['goal'] else r['kind']  # noqa: E731
     kinds = ('DET', 'RULE', 'INIT', 'OUT', 'CHOOSE', 'RIGID_DET')
-    print('c1* = inputs not reached: the loss belongs to the earlier depth, where it is counted in its own class; c1 is no class of its own depth.')
+    print('The class inputs not reached is no class of its own depth: the loss belongs to the earlier depth, where it is counted in its own class.')
     table('By dependency depth, tables with no Ident column', main, lambda r: band(r['depth']), BANDS)
     table('By kind (OUT = the goal table), tables with no Ident column', main, kind_of, kinds)
     table('By dependency depth, tables WITH an Ident column (uncounted, apart)', ident, lambda r: band(r['depth']), BANDS)
     table('By kind (OUT = the goal table), tables WITH an Ident column (uncounted, apart)', ident, kind_of, kinds)
     for title, rs in (('no Ident column', main), ('Ident column (apart)', ident)):
         c3 = [r for r in rs if r['cls'] == '3']
-        print('\nClass 3, %s: %d tables' % (title, len(c3)))
+        print('\nWriter rank, %s: %d tables' % (title, len(c3)))
         if not c3:
             continue
         edges = (8, 16, 24, 32, 48, 64)
@@ -486,17 +490,17 @@ def summary(out):
             hist['inf (not an id / no id)' if r.get('b_inf') else next(('<%d' % e for e in edges if b < e), '>=%d' % edges[-1])] += 1
         print('  b bits: ' + ', '.join('%s: %d' % (k, v) for k, v in sorted(hist.items(), key=lambda kv: (kv[0].startswith('inf'), int(re.sub(r'\D', '', kv[0]) or 0)))))
         print('  lowest-ranked gold token, by phase: ' + ', '.join('%s: %d' % kv for kv in collections.Counter(r.get('phase') for r in c3).most_common()))
-        print('  by point kind: ' + ', '.join('%s: %d' % kv for kv in collections.Counter(r.get('point_kind') for r in c3).most_common()))
+        print('  by writing-point kind: ' +', '.join('%s: %d' % kv for kv in collections.Counter(r.get('point_kind') for r in c3).most_common()))
         rk = sorted(r['rank'] for r in c3 if r.get('rank'))
         if rk:
             print('  rank of that token: median %d, 90th %d, max %d' % (rk[len(rk) // 2], rk[int(len(rk) * .9)], rk[-1]))
-    print('\nLargest class by depth, no Ident column (classes 2 to 5):')
+    print('\nLargest class by depth, no Ident column, inputs not reached left out:')
     for b in BANDS:
         c = collections.Counter(r['cls'] for r in main if band(r['depth']) == b and r['cls'] in '2345')
-        print('  depth %-4s %s' % (b, ', '.join('c%s %d' % kv for kv in sorted(c.items(), key=lambda kv: -kv[1])) or 'none'))
+        print('  depth %-4s %s' % (b, ', '.join('%s %d' % (CLASS_NAMES[k], v) for k, v in sorted(c.items(), key=lambda kv: -kv[1])) or 'none'))
     why = collections.Counter(r.get('why', '')[:60] for r in rows if r['cls'] == 'x')
     if why:
-        print('\nNot scored (x): ' + '; '.join('%s: %d' % kv for kv in why.most_common(8)))
+        print('\nNot scored: ' +'; '.join('%s: %d' % kv for kv in why.most_common(8)))
 
 
 # ---------------------------------------------------------------- main
