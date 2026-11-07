@@ -172,7 +172,7 @@ def worker(old_root, pool_dir, new_root, task):
     def with_parents(names):
         for name in names:
             if name in known and name not in prefix:
-                prefix[name] = read_table(gold_tables, name, sources=True, cap=None)[0]
+                prefix[name] = read_table(gold_tables, name, sources=True)[0]
         return [name for name in names if name in known]
 
     for form_at in choices:
@@ -214,7 +214,7 @@ def worker(old_root, pool_dir, new_root, task):
                 counts['no_table'] += 1
                 continue
             table = read_table(tables, drawn_rng.choice(own), sources=True)[0]
-            if table is None or table.get('too_large'):
+            if table is None:
                 counts['no_table'] += 1
             elif not has_rows(table):
                 counts['no_rows'] += 1

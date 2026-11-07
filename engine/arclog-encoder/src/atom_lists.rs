@@ -17,8 +17,6 @@ use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// A table above this many rows at an example has no value there, as in the candidate lists.
-const ROW_CAP: u64 = 2000;
 /// The assignments of a table that a list reads.
 const ASSIGNMENT_CAP: usize = 16;
 /// What a thread's walkers hold at most, and past either bound they start over: their memo entries and values, their cells, and the keys of second relations. A value costs some hundreds of bytes, so these
@@ -144,7 +142,7 @@ fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &Hash
             };
             let count = entry[4].as_u64().unwrap_or(0);
             let cells = entry[5].as_array();
-            if entry[3].as_bool() != Some(true) || count > ROW_CAP || cells.is_none() {
+            if entry[3].as_bool() != Some(true) || cells.is_none() {
                 for example in scope {
                     if example < examples {
                         blocked[example] = true;

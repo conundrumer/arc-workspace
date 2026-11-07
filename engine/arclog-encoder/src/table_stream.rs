@@ -9,7 +9,7 @@
 //! - `P`: a table of the state, whose header's `name` names it, read with all its rows.
 //! - `I`: an item. Its header holds the item's fields, and `mutants`, a list of the fields of each of its
 //!   mutants. It is followed by one `T` frame for its gold table and one for each mutant's table, in order.
-//! - `T`: a candidate's table, read with at most the cap of rows in each TableRows.
+//! - `T`: a candidate's table, read with all its rows.
 //! - `E`: the end of the stream.
 //!
 //! A table's header holds its fields as a tables file writes them, but for `rows` and `models`, and
@@ -18,7 +18,6 @@
 //! (`train/0`, `test/0` or `task`), the row count of each of its TableRows. `orient` names the orientation
 //! constant of each number that an orientation column holds. The body holds, for each key of `layout`,
 //! each TableRows, and each column of it, that column's numbers as 4-byte integers, one cell after another.
-//! A table that is `too_large` has no body.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
@@ -32,16 +31,13 @@ use crate::stored::{Model, Stored};
 
 pub const MAGIC: &[u8; 8] = b"ARCTBL1\n";
 
-/// The most rows a candidate's TableRows may have at an example.
-pub const CANDIDATE_CAP: usize = 2000;
-
 /// The rows of a table as they were read, before the tables of `Stored` are made from them.
 pub enum Rows {
     /// Column arrays in the cell encoding, one list of TableRows per example, or where `repeat` holds a count,
     /// the one list that stands at each of that many examples.
     Models { types: Vec<ValueType>, columns: Value, examples: Vec<Vec<Model>>, repeat: Option<usize> },
     /// A tables file's `types`, `columns`, `rows` and `models`, which `Stored::of_json` reads.
-    Json { value: Value, train: usize, test: usize, cap: usize },
+    Json { value: Value, train: usize, test: usize },
 }
 
 impl Rows {
@@ -56,7 +52,7 @@ impl Rows {
                 stored.set_keys(types, columns);
                 Some(stored)
             }
-            Rows::Json { value, train, test, cap } => Stored::of_json(value, *train, *test, *cap),
+            Rows::Json { value, train, test } => Stored::of_json(value, *train, *test),
         }
     }
 }
@@ -111,7 +107,7 @@ impl TablesIn {
     pub fn from_json(text: &str) -> Result<TablesIn, String> {
         let mut data: Value = serde_json::from_str(text).map_err(|error| error.to_string())?;
         let (train, test) = counts_of(&data)?;
-        let table_of = |mut value: Value, cap: usize| -> TableIn {
+        let table_of = |mut value: Value| -> TableIn {
             let mut held = serde_json::Map::new();
             held.insert("types".to_string(), value["types"].clone());
             held.insert("columns".to_string(), value["columns"].clone());
@@ -122,13 +118,12 @@ impl TablesIn {
                     }
                 }
             }
-            let rows = if value["too_large"].as_bool() == Some(true) { None } else { Some(Rows::Json { value: Value::Object(held), train, test, cap }) };
-            TableIn { meta: value, rows }
+            TableIn { meta: value, rows: Some(Rows::Json { value: Value::Object(held), train, test }) }
         };
         let mut prefix = BTreeMap::new();
         if let Some(tables) = data.get_mut("prefix").and_then(Value::as_object_mut) {
             for (name, value) in std::mem::take(tables) {
-                prefix.insert(name, table_of(value, usize::MAX));
+                prefix.insert(name, table_of(value));
             }
         }
         let mut items = Vec::new();
@@ -137,13 +132,13 @@ impl TablesIn {
             _ => return Err("a file's items".to_string()),
         };
         for mut item in listed {
-            let gold = table_of(take(&mut item, "gold"), CANDIDATE_CAP);
+            let gold = table_of(take(&mut item, "gold"));
             let mutants = match take(&mut item, "mutants") {
                 Value::Array(mutants) => mutants,
                 _ => return Err("an item's mutants".to_string()),
             };
             let mutants = mutants.into_iter().map(|mut mutant| {
-                let table = table_of(take(&mut mutant, "table"), CANDIDATE_CAP);
+                let table = table_of(take(&mut mutant, "table"));
                 MutantIn { meta: mutant, table }
             }).collect();
             items.push(ItemIn { meta: item, gold, mutants });
@@ -212,8 +207,8 @@ fn read_frames<R: Read>(reader: &mut R) -> Result<TablesIn, String> {
     let (train, test) = counts_of(&head.header)?;
     let mut prefix = BTreeMap::new();
     let mut items = Vec::new();
-    let table_of = |frame: Frame, cap: usize| -> TableIn {
-        let rows = if frame.header["too_large"].as_bool() == Some(true) { None } else { decode_table(&frame.header, &frame.body, train, test, cap) };
+    let table_of = |frame: Frame| -> TableIn {
+        let rows = decode_table(&frame.header, &frame.body, train, test);
         TableIn { meta: frame.header, rows }
     };
     loop {
@@ -221,7 +216,7 @@ fn read_frames<R: Read>(reader: &mut R) -> Result<TablesIn, String> {
         match frame.tag {
             b'P' => {
                 let name = frame.header["name"].as_str().ok_or("a prefix table's name")?.to_string();
-                prefix.insert(name, table_of(frame, usize::MAX));
+                prefix.insert(name, table_of(frame));
             }
             b'I' => {
                 let mut meta = frame.header;
@@ -234,7 +229,7 @@ fn read_frames<R: Read>(reader: &mut R) -> Result<TablesIn, String> {
                     if frame.tag != b'T' {
                         return Err("an item's table is missing".to_string());
                     }
-                    Ok(table_of(frame, CANDIDATE_CAP))
+                    Ok(table_of(frame))
                 };
                 let gold = next(&mut reader)?;
                 let mut held = Vec::with_capacity(mutants.len());
@@ -333,9 +328,8 @@ impl Orientations {
 }
 
 /// The rows of a candidate's or a state's table frame, as `Stored::of_json` reads them:
-/// an example whose TableRows has more than `cap` rows has no value, and a cell that does not read leaves
-/// no table.
-fn decode_table(meta: &Value, body: &[u8], train: usize, test: usize, cap: usize) -> Option<Rows> {
+/// a cell that does not read leaves no table.
+fn decode_table(meta: &Value, body: &[u8], train: usize, test: usize) -> Option<Rows> {
     let names = meta["types"].as_array()?;
     let types: Vec<ValueType> = names.iter().map(|name| crate::schema::type_of_name(name.as_str()?)).collect::<Option<_>>()?;
     let kinds: Vec<Kind> = types.iter().map(kind_of).collect();
@@ -361,15 +355,12 @@ fn decode_table(meta: &Value, body: &[u8], train: usize, test: usize, cap: usize
     if at != body.len() {
         return None;
     }
-    // The TableRows at a key, in order, up to the first that is past `cap`, which leaves the key with no value.
+    // The TableRows at a key, in order.
     let mut read_at = |key: &str| -> Option<Vec<Model>> {
         let Some((start, counts)) = places.get(key) else { return Some(Vec::new()) };
         let mut at = *start;
         let mut models = Vec::with_capacity(counts.len());
         for rows in counts {
-            if *rows > cap {
-                return Some(Vec::new());
-            }
             let mut columns = Vec::with_capacity(types.len());
             for (kind, width) in kinds.iter().zip(&widths) {
                 let size = rows * width * 4;

@@ -729,7 +729,7 @@ fn run_term_counts(arguments: &Arguments, pattern: &str, file: &str) -> Result<(
     let families = Generators::default();
     let empty = Vec::new();
     for item in data["items"].as_array().unwrap_or(&empty) {
-        let Some(stored) = Stored::of_json(&item["gold"], train, 0, usize::MAX) else { continue };
+        let Some(stored) = Stored::of_json(&item["gold"], train, 0) else { continue };
         if stored.types.len() > 8 {
             continue;
         }
@@ -977,7 +977,7 @@ fn run_generate_check(arguments: &Arguments, every: usize, file: &str) -> Result
         if tally.out_of_time() {
             break;
         }
-        let Some(stored) = Stored::of_json(item, train, 0, 2000) else { continue };
+        let Some(stored) = Stored::of_json(item, train, 0) else { continue };
         if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
             continue;
         }
@@ -1229,7 +1229,7 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
             if taken >= limit {
                 break;
             }
-            let Some(stored) = Stored::of_json(item, train, 0, 2000) else { continue };
+            let Some(stored) = Stored::of_json(item, train, 0) else { continue };
             if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
                 continue;
             }
@@ -1358,7 +1358,7 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
         if tally_budget.out_of_time() {
             break;
         }
-        let Some(stored) = Stored::of_json(item, train, 0, 2000) else { continue };
+        let Some(stored) = Stored::of_json(item, train, 0) else { continue };
         if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
             continue;
         }
@@ -1536,7 +1536,7 @@ fn run_shape_count(arguments: &Arguments, files: &[String]) -> Result<(), String
         let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
         let mut seen: BTreeSet<u128> = BTreeSet::new();
         for item in data["items"].as_array().unwrap_or(&empty) {
-            let Some(stored) = Stored::of_json(&item["gold"], train, 0, 2000) else { continue };
+            let Some(stored) = Stored::of_json(&item["gold"], train, 0) else { continue };
             if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
                 continue;
             }

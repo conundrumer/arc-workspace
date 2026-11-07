@@ -100,8 +100,6 @@ def models_of(table):
 def table_header_body(table):
     """A table's header, which holds its fields but its rows, and its body, as a list of byte strings."""
     header = {key: value for key, value in table.items() if key not in ('rows', 'models')}
-    if table.get('too_large'):
-        return header, []
     held = models_of(table)
     header['widths'] = widths_of(table['types'])
     header['layout'] = [[key, [len(block) for block in blocks]] for key, blocks in held]

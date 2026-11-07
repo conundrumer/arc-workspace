@@ -6,8 +6,7 @@
 It draws each query's mutants as the first run did, and also draws argument edits whose query has
 gold's structure, marked `extra`. It keeps the mutants and the tables' train rows under ROOT as zstd,
 and prints to stdout the tables with their test rows too, as the framed stream of typed column arrays that tables_columns.py writes. Test rows go nowhere else, so a caller
-reads them from the pipe and keeps none of them. A table in `prefix` has all its rows at any size. A table in `items` has none at an
-example with more than ROW_CAP rows, and a train example of that kind marks it `too_large`. On a fault it prints only the fault's type.
+reads them from the pipe and keeps none of them. A table has all its rows at each example, except where the engine stopped its evaluation: that entry has no rows. On a fault it prints only the fault's type.
 """
 import importlib.util
 import json
@@ -31,7 +30,6 @@ TRIES_EXTRA = 400
 SEED = 'arc-feature-eval-1'
 BUDGET = float(os.environ.get('CANDIDATE_ALL_BUDGET', '120'))
 BUDGET_EXTRA = float(os.environ.get('CANDIDATE_EXTRA_BUDGET', '60'))
-ROW_CAP = 2000
 NAME = re.compile(r'&[A-Za-z0-9_]+')
 
 
@@ -78,11 +76,10 @@ def entries_as_arrays(tb, t):
     return out
 
 
-def read_table(tb, name, prefer=None, sources=False, cap=ROW_CAP):
+def read_table(tb, name, prefer=None, sources=False):
     """A table at one assignment, the preferred one where the table has it and the least otherwise, or a reason it can't be read.
 
-    A table read as a candidate has the default `cap`: an example with more rows than that has none, and a train example of that kind marks the table `too_large`. A table read as a parent of a candidate
-    passes `cap=None` and keeps all its rows. A `rows` or `models` value holds each TableRows as a Block, of `tables_columns.py`.
+    An example keeps all its rows, and an entry that the engine stopped has none. A `rows` or `models` value holds each TableRows as a Block, of `tables_columns.py`.
     """
     from tables_columns import Block, Layout
     if name not in tb.names:
@@ -105,16 +102,10 @@ def read_table(tb, name, prefer=None, sources=False, cap=ROW_CAP):
     layout = Layout(types, tb.orient)
 
     out, models = {}, {}
-    large = False
-    # Each example's count of rows, the greatest over its constraint models, held where the rows themselves are too many to keep.
+    # Each example's count of rows, the greatest over its constraint models.
     counts = {ex: max(len(raw) for raw in held.values()) for ex, held in by_example.items() if held}
     for ex, held in by_example.items():
-        tables = list(held.values())
-        if cap is not None and any(len(raw) > cap for raw in tables):
-            if not ex.startswith('test/'):
-                large = True
-            continue
-        written = [Block(layout, raw.copy()) for raw in tables]
+        written = [Block(layout, raw.copy()) for raw in held.values()]
         if len(written) == 1:
             out[ex] = written[0]
         else:
@@ -123,7 +114,7 @@ def read_table(tb, name, prefer=None, sources=False, cap=ROW_CAP):
     if sources:
         held = tb.T['column_ident_sources'][t]
         types = [f'{ty}@{source}' if ty == 'Ident' and source else ty for ty, source in zip(types, held)]
-    return dict(columns=names, types=types, assignments=len(by_key), distinct_assignments=len(contents), capped=stopped, assignment=chosen, task_level='task' in out or 'task' in models, too_large=large, row_counts=counts, rows=out, models=models), None
+    return dict(columns=names, types=types, assignments=len(by_key), distinct_assignments=len(contents), capped=stopped, assignment=chosen, task_level='task' in out or 'task' in models, row_counts=counts, rows=out, models=models), None
 
 
 def worker(root, task):
@@ -267,7 +258,7 @@ def worker(root, task):
     def with_parents(names):
         for name in names:
             if name not in prefix:
-                table, _ = read(gtb, name, cap=None)
+                table, _ = read(gtb, name)
                 prefix[name] = table
         return [name for name in names if prefix[name] is not None]
 

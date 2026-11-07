@@ -16,7 +16,7 @@ use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, REA
 use crate::native::{hash_words, FastMap};
 use crate::program_relations::{add_table_columns, program_facts, table_numbers, ProgramFacts};
 use crate::stored::Stored;
-use crate::table_stream::{TableIn, TablesIn, CANDIDATE_CAP};
+use crate::table_stream::{TableIn, TablesIn};
 use crate::state_features::{graph_numbers, nodes_of, relations, Relation};
 use crate::table_vector::{base_vectors, pair_vector, table_vector, task_wide_vector, two_tables_vector, Grids, TableVector};
 
@@ -498,7 +498,6 @@ pub fn lists_from(input: &TablesIn, task_dir: &std::path::Path, families: &Gener
     let test = head["test"].as_u64().unwrap_or(0) as usize;
     let last_query = head["last_query"].as_str().unwrap_or("").to_string();
     let (_, grids) = Grids::of_file(task_dir, &task_name, order)?;
-    let cap = CANDIDATE_CAP;
     let mut stored: Vec<Stored> = Vec::new();
     let mut content_at: FastMap<u128, usize> = FastMap::default();
     let mut place = |table: Stored, stored: &mut Vec<Stored>| -> Option<usize> {
@@ -510,37 +509,18 @@ pub fn lists_from(input: &TablesIn, task_dir: &std::path::Path, families: &Gener
             stored.len() - 1
         }))
     };
-    // A candidate's table has no value at an example of more than `cap` rows.
     let candidate_table = |table: &TableIn| -> Option<Stored> { table.stored() };
-    // `prefix` places the tables of the state that a walk reads as T: a table with no train example past `cap`, and no value at its test examples past it.
-    // `as_u` places each table of the state as U, with all its rows. A table with an example past `cap` has a second copy for U, placed after the
-    // tables that a walk reads as T.
+    // `prefix` places each table of the state, with all its rows, as a walk reads it as T and as U.
     let mut prefix: BTreeMap<String, usize> = BTreeMap::new();
-    let mut as_u: BTreeMap<String, usize> = BTreeMap::new();
-    let mut whole_parents: Vec<(String, Stored)> = Vec::new();
     let mut read_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut note_names = |names: &serde_json::Value| {
         read_names.extend(names.as_array().into_iter().flatten().filter_map(|name| name.as_str().map(str::to_string)));
     };
     {
         for (name, table) in &input.prefix {
-            if table.meta["too_large"].as_bool() == Some(true) {
-                continue;
-            }
             let Some(whole) = table.stored() else { continue };
-            let past = whole.examples_past(cap);
-            if past.is_empty() {
-                if let Some(at) = place(whole, &mut stored) {
-                    prefix.insert(name.clone(), at);
-                    as_u.insert(name.clone(), at);
-                }
-            } else if whole.types.len() <= 8 {
-                if past.iter().all(|example| *example >= train) {
-                    if let Some(at) = place(whole.without_examples(&past), &mut stored) {
-                        prefix.insert(name.clone(), at);
-                    }
-                }
-                whole_parents.push((name.clone(), whole));
+            if let Some(at) = place(whole, &mut stored) {
+                prefix.insert(name.clone(), at);
             }
         }
     }
@@ -601,12 +581,9 @@ pub fn lists_from(input: &TablesIn, task_dir: &std::path::Path, families: &Gener
         let mut own_numbers = vec![numbers_of(&item["text"], &read.gold.meta, table_name, form_at)];
         for read_mutant in &read.mutants {
             let mutant = &read_mutant.meta;
-            // A mutant too large to read leaves the item its other mutants.
+            // An item with a mutant that has no table is left out.
             let Some(table) = candidate_table(&read_mutant.table).and_then(|table| place(table, &mut stored)) else {
-                whole &= read_mutant.table.meta["too_large"].as_bool() == Some(true);
-                if whole {
-                    continue;
-                }
+                whole = false;
                 break;
             };
             own_candidates.push((table, strings(&mutant["parents"])));
@@ -621,18 +598,12 @@ pub fn lists_from(input: &TablesIn, task_dir: &std::path::Path, families: &Gener
         query_numbers.push(own_numbers);
         items.push(serde_json::json!({"query": item["query"], "form": item["form"], "table": item["table"], "last": item["query"].as_str() == Some(last_query.as_str()), "gold": gold, "parents": reads(&item["parents"]), "types": read.gold.meta["types"], "task_level": read.gold.meta["task_level"], "assignments": read.gold.meta["assignments"], "mutants": mutants}));
     }
-    // The tables that walks read as T end here, and the copies that only U reads follow.
     let walked_as_t = stored.len();
-    for (name, whole) in whole_parents {
-        if let Some(at) = place(whole, &mut stored) {
-            as_u.insert(name, at);
-        }
-    }
     let header_rest = (head["case"].clone(), head["budget_cut"].clone(), head["left_out"].clone());
-    // The names a candidate reads and the lists have no table for: one too large, or one no item stores.
-    let too_large: Vec<&String> = read_names.iter().filter(|name| !prefix.contains_key(*name) && input.prefix.contains_key(name.as_str())).collect();
+    // The names a candidate reads and the lists have no table for: one past 8 columns, or one no item stores.
+    let wide: Vec<&String> = read_names.iter().filter(|name| !prefix.contains_key(*name) && input.prefix.contains_key(name.as_str())).collect();
     let no_table: Vec<&String> = read_names.iter().filter(|name| !input.prefix.contains_key(name.as_str())).collect();
-    let skipped = serde_json::json!({"too_large": too_large, "no_table": no_table});
+    let skipped = serde_json::json!({"wide": wide, "no_table": no_table});
     let named: Vec<(&String, usize)> = read_names.iter().filter_map(|name| prefix.get(name).map(|at| (name, *at))).collect();
 
     let mut held: Vec<(String, Arc<Generated>)> = Vec::new();
@@ -704,7 +675,7 @@ pub fn lists_from(input: &TablesIn, task_dir: &std::path::Path, families: &Gener
         for (form, members) in &candidates {
             for (table, _) in members {
                 for node in nodes.iter().filter(|node| node.form < *form) {
-                    if let Some(other) = as_u.get(&node.name) {
+                    if let Some(other) = prefix.get(&node.name) {
                         pairs.push((*table, *other));
                     }
                 }
@@ -734,7 +705,7 @@ pub fn lists_from(input: &TablesIn, task_dir: &std::path::Path, families: &Gener
             for (member, (table, parents)) in members.iter().enumerate() {
                 let related = relations(&nodes, *form, parents);
                 for relation in Relation::ALL {
-                    let others: Vec<&PairValues> = related.iter().filter(|(_, own)| *own == relation).filter_map(|(node, _)| as_u.get(&node.name)).filter_map(|other| vectors.get(&(*table, *other))).collect();
+                    let others: Vec<&PairValues> = related.iter().filter(|(_, own)| *own == relation).filter_map(|(node, _)| prefix.get(&node.name)).filter_map(|other| vectors.get(&(*table, *other))).collect();
                     if !others.is_empty() {
                         let owner = format!("{at}/{member}/{}", relation.word());
                         lists.push(if lists_of == ListsOf::StateEach { pooled_each(owner, &others, examples) } else { pooled(owner, &others) });
@@ -756,7 +727,7 @@ pub fn lists_from(input: &TablesIn, task_dir: &std::path::Path, families: &Gener
                 // A later gold query joins two gold tables, so the edges of gold tables are the ones to read.
                 if member == 0 {
                     for (node, _) in &related {
-                        if let Some(other) = as_u.get(&node.name) {
+                        if let Some(other) = prefix.get(&node.name) {
                             if prefix.get(&node.name) != Some(table) {
                                 edges.insert((*table, *other), ());
                             }

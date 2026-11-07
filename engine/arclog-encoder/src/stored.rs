@@ -193,43 +193,31 @@ impl Stored {
 
     /// The table of a tables file's `value`: `rows` holds one TableRows per example under
     /// `train/<i>` and `test/<i>`, or under `task` for a table that the task reads once, and
-    /// `models` holds several under the same keys. An example with more than `cap` rows in a
-    /// TableRows has no value there.
-    pub fn of_json(value: &serde_json::Value, train: usize, test: usize, cap: usize) -> Option<Stored> {
+    /// `models` holds several under the same keys.
+    pub fn of_json(value: &serde_json::Value, train: usize, test: usize) -> Option<Stored> {
         let names = value["types"].as_array()?;
         let types: Vec<ValueType> = names.iter().map(|name| crate::schema::type_of_name(name.as_str()?)).collect::<Option<_>>()?;
-        let read_one = |held: &serde_json::Value| -> Option<Option<Vec<Vec<u32>>>> {
+        let read_one = |held: &serde_json::Value| -> Option<Vec<Vec<u32>>> {
             let list = held.as_array()?;
-            if list.len() > cap {
-                return Some(None);
-            }
             let mut rows = Vec::with_capacity(list.len());
             for row in list {
                 let row = row.as_array()?;
                 let cells: Option<Vec<u32>> = row.iter().zip(&types).map(|(cell, ty)| cell_bits(cell, ty)).collect();
                 rows.push(cells?);
             }
-            Some(Some(rows))
+            Some(rows)
         };
         let read_at = |key: &str| -> Option<Vec<Vec<Vec<u32>>>> {
             if let Some(models) = value["models"].get(key).and_then(serde_json::Value::as_array) {
                 let mut out = Vec::with_capacity(models.len());
                 for model in models {
-                    match read_one(model) {
-                        Some(Some(rows)) => out.push(rows),
-                        Some(None) => return Some(Vec::new()),
-                        None => return None,
-                    }
+                    out.push(read_one(model)?);
                 }
                 return Some(out);
             }
             match value["rows"].get(key) {
                 None | Some(serde_json::Value::Null) => Some(Vec::new()),
-                Some(held) => match read_one(held) {
-                    Some(Some(rows)) => Some(vec![rows]),
-                    Some(None) => Some(Vec::new()),
-                    None => None,
-                },
+                Some(held) => Some(vec![read_one(held)?]),
             }
         };
         let mut rows = Vec::with_capacity(train + test);
@@ -247,20 +235,6 @@ impl Stored {
         let mut stored = Stored::of_rows(&types, rows);
         stored.set_keys(&types, &value["columns"]);
         Some(stored)
-    }
-
-    /// The examples that have a TableRows of more than `cap` rows.
-    pub fn examples_past(&self, cap: usize) -> Vec<usize> {
-        (0..self.rows.len()).filter(|example| self.rows[*example].iter().any(|table| table.len > cap)).collect()
-    }
-
-    /// The table with no value at each of `examples`.
-    pub fn without_examples(&self, examples: &[usize]) -> Stored {
-        let mut out = self.clone();
-        for example in examples {
-            out.rows[*example] = Vec::new();
-        }
-        out
     }
 
     /// The rows of a grid's table as a table of `Col` and `P`, whose columns stand in type order.
