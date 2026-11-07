@@ -2444,11 +2444,11 @@ fn gcd(a: u64, b: u64) -> u64 {
 /// The value of a root at an instance: no value, or a number and the word that hashes it.
 fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Option<(Number, u64)> {
     let share = |top: u32, bottom: u32| -> Option<(Number, u64)> {
-        // A ratio with no rows in its second relation is left out, and stands at its default.
-        if top == NO_COUNT || bottom == NO_COUNT {
+        // A ratio whose denominator counts 0 has no value, 0 over 0 included. A zero numerator over a denominator that counts rows is 0.
+        if top == NO_COUNT || bottom == NO_COUNT || bottom == 0 {
             return None;
         }
-        if bottom == 0 || top == 0 {
+        if top == 0 {
             return Some((Number::whole(0), 0));
         }
         let held = Number::fraction(u64::from(top), u64::from(bottom));
@@ -2465,9 +2465,8 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Opti
             if rows == NO_COUNT {
                 return None;
             }
-            // One member gives a number, and any other set gives no value, which here is the
-            // default of a set with no member.
-            (number > 0).then(|| (Number::whole(number_of_word(number)), WORD_SET | u64::from(number))).or(Some((Number::whole(0), 0)))
+            // One member gives a number. A set with no member, or with several, has no value.
+            (number > 0).then(|| (Number::whole(number_of_word(number)), WORD_SET | u64::from(number)))
         }
     }
 }
