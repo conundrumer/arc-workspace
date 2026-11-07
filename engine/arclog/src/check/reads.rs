@@ -50,18 +50,24 @@ impl Check for PooledAndLiftedReadsCheck {
     /// a label yet. A refusal that rests on the per-input side, a read of
     /// `ex_input` or `ex_output`, a read at a site on such a column, stands
     /// only where `side_is_final` says that side is final, since a later
-    /// token can still make the form task-wide. A refusal that rests on the
+    /// token can still make the form task-wide. It stands as well in an
+    /// `INIT` or a `CHOOSE` form that reads `input`, or another fact that
+    /// only a per-input form reads: a later token that makes the form
+    /// task-wide leaves that read refused, so the form is refused in every
+    /// completion. A refusal that rests on the
     /// task-wide side, a read of `input`, stands whatever the form is: that
     /// read is a per-input read, so the form is task-wide only by what no
     /// later token removes. The refusals stand at their paths in the partial
     /// form.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         let program = prefix.scope.program;
+        let reads = form_reads(prefix.partial, prefix.path);
+        let input_readers: Vec<&NodePath> = reads.iter().filter(|read| reads_input_fact(program, prefix.path, read)).map(|read| &read.form).collect();
         let mut refusals = Vec::new();
-        for read in form_reads(prefix.partial, prefix.path) {
+        for read in &reads {
             let Some((node, false)) = read.node(program, prefix.path) else { continue };
             let Some(side) = program.form_side(&read.form) else { continue };
-            if side == Side::PerInput && !side_is_final(prefix, &read.form) {
+            if side == Side::PerInput && !side_is_final(prefix, &read.form, &input_readers) {
                 continue;
             }
             let refused = refused_read(program, side, node, read.atom);
@@ -120,28 +126,38 @@ fn refused_read(program: &ResolvedProgram, side: Side, node: GraphNodeIndex, ato
     }
 }
 
+/// Whether `read`, a read of the form at `path` in the program, reads a fact
+/// that a task-wide form may not read, as `input`.
+fn reads_input_fact(program: &ResolvedProgram, path: &NodePath, read: &FormRead<'_>) -> bool {
+    read.node(program, path).is_some_and(|(node, own)| !own && matches!(refused_read(program, Side::TaskWide, node, read.atom), Some(Refused::InputFact)))
+}
+
 /// Whether no later token of the prefix can change the side of the form at
-/// `form`, a path in the program: a clause takes the side of its keyword,
+/// `form`, a path in the program, or a change of it leaves the form refused:
+/// a clause takes the side of its keyword,
 /// and every other form, as `Sides::form` of the resolver gives, takes
 /// the side its deciding form gives, which is complete once the prefix does
 /// not hold it open. The deciding form is the form itself, but for the
 /// `&prediction` clause of a `DEMO_RULE`, whose deciding form is the
-/// `DEMONSTRATED` form that holds the rule.
-fn side_is_final(prefix: &Prefix<'_>, form: &NodePath) -> bool {
+/// `DEMONSTRATED` form that holds the rule. An `INIT` or a `CHOOSE` form
+/// among `input_readers`, the forms that read a fact that only a per-input
+/// form reads, is refused in every completion that makes it task-wide.
+fn side_is_final(prefix: &Prefix<'_>, form: &NodePath, input_readers: &[&NodePath]) -> bool {
     let within = NodePath(form.0[prefix.path.0.len()..].into());
-    let deciding = match node_at(NodeRef::from(prefix.partial), &within) {
+    let (deciding, instance_or_choose) = match node_at(NodeRef::from(prefix.partial), &within) {
         Some(NodeRef::Clause(clause)) => {
             let rule = within.0.len().checked_sub(1).and_then(|len| node_at(NodeRef::from(prefix.partial), &NodePath(within.0[..len].into())));
             if relation_of(&clause.derives) == prediction() && matches!(rule, Some(NodeRef::DemoRule(_))) {
-                NodePath(within.0[..within.0.len() - 2].into())
+                (NodePath(within.0[..within.0.len() - 2].into()), false)
             } else {
                 return true;
             }
         }
         Some(NodeRef::RigidDet(_) | NodeRef::Out(_)) => return true,
-        _ => within,
+        Some(NodeRef::Instance(_) | NodeRef::Choose(_)) => (within, true),
+        _ => (within, false),
     };
-    !prefix.is_open(&deciding)
+    !prefix.is_open(&deciding) || (instance_or_choose && input_readers.contains(&&prefix.path.join(&deciding)))
 }
 
 /// Whether a site of `atom` stands on a column of `examples`, at any depth

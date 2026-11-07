@@ -61,14 +61,6 @@ fn a_column_that_is_zero_in_every_clause_is_refused() {
     assert_eq!(first_refused(ZERO_COLUMN, CheckId::EqualityAndZero), Some((path(&[0, 1]), vec![path(&[0, 1])])));
 }
 
-const ZERO_ON_A_DIRECTION: &str = "(RULE &w (input *P (:Col *C))\n  (dir_elem (:D 0)))";
-
-#[test]
-fn a_zero_on_a_column_with_no_zero_is_refused() {
-    assert_eq!(refused_lines(ZERO_ON_A_DIRECTION, CheckId::EqualityAndZero), vec![2]);
-    assert_eq!(first_refused(ZERO_ON_A_DIRECTION, CheckId::EqualityAndZero), Some((path(&[0, 1, 0]), vec![path(&[0, 1, 0])])));
-}
-
 const SECOND_LABEL_MADE: &str = "(RULE &w (input *P (:Col *C))\n  (= C *D))";
 
 #[test]

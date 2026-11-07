@@ -951,9 +951,9 @@ impl State {
     /// Where a head site of an instance input's projection stands on top,
     /// or a body atom's site stands on top after a field's column token, the
     /// tokens the grammar admits there that a completion can use, in the
-    /// order a search tries them. After a body site's field token: `*`, `^`
-    /// where the site stands in a key, `0`, and the labels in scope from the
-    /// last made. At a head site that holds an argument: `END`, the labels
+    /// order a search tries them. After a body site's field token: `*` and,
+    /// where the site stands in a key, `^`, each where the atom is no `NOT`
+    /// atom, `0`, and the labels in scope from the last made. At a head site that holds an argument: `END`, the labels
     /// in scope from the last made, and the column token of the next field;
     /// at one that holds none, the same tokens with `END` last, as `END`
     /// there leaves the column without a site, which the check of the input
@@ -968,8 +968,10 @@ impl State {
         let site = match self.stack.last() {
             Some(Frame::HeadSite(site)) => site,
             Some(Frame::Site(SiteFrame { field: Some(_), .. })) => {
-                let key = self.in_key().then_some(Token::Control(Control::Key));
-                let marks = [Token::Control(Control::Fresh)].into_iter().chain(key).chain([Token::Control(Control::Zero)]);
+                let makes = !self.in_negated_atom();
+                let key = (makes && self.in_key()).then_some(Token::Control(Control::Key));
+                let fresh = makes.then_some(Token::Control(Control::Fresh));
+                let marks = fresh.into_iter().chain(key).chain([Token::Control(Control::Zero)]);
                 return Some(marks.chain(labels(None)).collect());
             }
             _ => return None,
@@ -1081,6 +1083,11 @@ impl State {
         slot
     }
 
+    /// Whether the site on top is a site of a `NOT` atom.
+    fn in_negated_atom(&self) -> bool {
+        matches!(self.stack.iter().rev().nth(1), Some(Frame::Atom(AtomFrame { negated: true, .. })))
+    }
+
     /// Whether the innermost body is a key's body or stands within one.
     fn in_key(&self) -> bool {
         self.stack.iter().rev().find_map(|frame| match frame {
@@ -1117,6 +1124,13 @@ impl State {
             Some(Frame::Clause(_)) => self.offer_clause(token),
             Some(Frame::One(_)) => match token {
                 Token::Label(id) if *id < self.labels => {
+                    // A mark names key columns of its relation (`docs/arclog/constraints.md#one`): the labels that
+                    // the clause's body keeps, which the body, complete before its marks, fixes.
+                    if let Some(Frame::Clause(ClauseFrame { stage: ClauseStage::Marks { body, .. }, .. })) = self.stack.iter().rev().nth(1) {
+                        if !made_labels(body.value()).contains(&LabelId(*id)) {
+                            return Err("a `ONE` mark names only columns of its clause, the labels that its body keeps");
+                        }
+                    }
                     top!(self, Frame::One).push(LabelId(*id));
                     Ok(Offer::Taken)
                 }
@@ -1252,6 +1266,8 @@ impl State {
     fn offer_body(&mut self, context: &Context<'_>, token: &Token) -> Result<Offer, Unexpected> {
         let in_key = self.in_key();
         let in_out = matches!(self.stack.iter().rev().nth(1), Some(Frame::Out));
+        // A `DET` whose body opens names no proposer, so a body of no conjunct gives it no value.
+        let empty_det = matches!(&self.stack[..], [.., Frame::Clause(ClauseFrame { keyword: ClauseKeyword::Det, .. }), Frame::Body(BodyFrame { close: Close::Clause, conjuncts, .. })] if conjuncts.is_empty());
         let body = top!(self, Frame::Body);
         if let Token::Control(control @ (Control::Not | Control::Op(_) | Control::Or | Control::If | Control::All)) = token {
             if in_out {
@@ -1290,6 +1306,7 @@ impl State {
             _ => false,
         };
         match closes && !body.negate {
+            true if empty_det => Err("a `DET` holds a body or names a proposer"),
             true => Ok(Offer::Close { consumed: true }),
             false => Err("a body holds its conjuncts, then its closing token"),
         }
@@ -1728,6 +1745,10 @@ impl State {
     /// then `END`.
     fn offer_site(&mut self, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
         let in_key = self.in_key();
+        // Every site of a `NOT` atom joins (`docs/arclog/arclog.md#negation-and-constraints`).
+        if self.in_negated_atom() && matches!(token, Token::Control(Control::Fresh | Control::Key)) {
+            return Err("a site of a `NOT` atom makes no label: every site of the atom joins");
+        }
         let site = top!(self, Frame::Site);
         let (field, record) = (site.field, site.record);
         // A field's column token as the first token of a site on a parameter not yet bound makes the site a record's,
@@ -1763,6 +1784,11 @@ impl State {
                 if !type_parameter(&site.column) && !site.args.is_empty() {
                     return Err("a column of a fixed type takes one label");
                 }
+                // So does a column of a type parameter that one label binds, where the resolver gives the site no
+                // record (`docs/arclog/arclog.md#instance`). A parameter that no site binds yet waits for its binding.
+                if type_parameter(&site.column) && site.record.is_none() && !site.unbound && !site.args.is_empty() {
+                    return Err("a column of a type parameter that one label binds takes one label");
+                }
                 site.args.push(bare_arg(&site.column, label));
                 Ok(Offer::Taken)
             }
@@ -1772,16 +1798,28 @@ impl State {
     }
 
     fn offer_constraint(&mut self, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
+        let under_not = matches!(self.stack.iter().rev().nth(1), Some(Frame::Body(BodyFrame { close: Close::Not, .. })));
         let label = self.label_token(token, false, forced).ok_or("a constraint holds a label, then a label or `0`")?;
         let constraint = top!(self, Frame::Constraint);
         let Some(first) = constraint.first else {
-            constraint.first = Some(ConstraintLabel::try_from(label).map_err(|_| "a constraint's first operand is a label")?);
+            let first = ConstraintLabel::try_from(label).map_err(|_| "a constraint's first operand is a label")?;
+            // `(NOT (= *X Y))` holds nowhere, so a `=` under a `NOT` makes no label
+            // (`docs/arclog/arclog.md#negation-and-constraints`).
+            if under_not && first.fresh && constraint.op == ConstraintOp::Eq {
+                return Err("`=` under a `NOT` makes no label, since the `NOT` of it holds nowhere");
+            }
+            constraint.first = Some(first);
             return Ok(Offer::Taken);
         };
         let second = match label {
             LabelUse::Zero => Operand::Zero,
             label => Operand::Label(ConstraintLabel::try_from(label).expect("a label")),
         };
+        // `=`, `<=` and `>=` of a label with itself hold wherever the label is bound. `!=`, `<` and `>` of a
+        // label with itself hold nowhere, which leaves a list with no row, as an input that no row fills.
+        if matches!(second, Operand::Label(second) if second.label == first.label) && matches!(constraint.op, ConstraintOp::Eq | ConstraintOp::Le | ConstraintOp::Ge) {
+            return Err("the second label of `=`, `<=` or `>=` is not its first, since the comparison of a label with itself holds wherever the label is bound");
+        }
         let conjunct = Conjunct::Constraint(Constraint { op: constraint.op, first, second });
         self.stack.pop();
         let body = top!(self, Frame::Body);
@@ -1983,10 +2021,14 @@ impl State {
     /// fills, each after the engine's column token.
     fn offer_predict(&mut self, token: &Token, forced: &mut Vec<Token>) -> Result<Offer, Unexpected> {
         let labels = self.labels;
+        let key_columns = self.prediction_key_columns();
         let predict = top!(self, Frame::Predict);
         let label = match token {
             Token::Label(id) if *id < labels => Some(LabelId(*id)),
-            Token::Control(Control::Skip) => None,
+            // The clause has the columns that the `value` head names (`docs/arclog/arclog.md#demonstrated`), and holds
+            // at every key where it makes no key label.
+            Token::Control(Control::Skip) if predict.next < key_columns => None,
+            Token::Control(Control::Skip) => return Err("a `&prediction` clause fills each column of the `value` head, and `SKIP` declines a column of the key alone"),
             _ => return Err("a `&prediction` clause fills each column with a label seen, or `SKIP`"),
         };
         if let Some(label) = label {
@@ -2000,6 +2042,16 @@ impl State {
             return Ok(Offer::Taken);
         }
         Ok(Offer::Close { consumed: true })
+    }
+
+    /// The count of the columns of the key of the `DEMONSTRATED` form in
+    /// progress, the first of the columns that a `&prediction` clause fills.
+    fn prediction_key_columns(&self) -> usize {
+        let key = self.stack.iter().rev().find_map(|frame| match frame {
+            Frame::Demonstrated(demonstrated) => Some(demonstrated.key.as_ref()),
+            _ => None,
+        });
+        key.flatten().map_or(0, |key| key.value().key.columns.len())
     }
 
     /// The columns that a `&prediction` clause of the `DEMONSTRATED` form in

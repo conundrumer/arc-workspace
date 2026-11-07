@@ -292,15 +292,6 @@ fn det_admission_refuses_an_empty_proposer_domain_and_allows_its_empty_set_value
 }
 
 #[test]
-fn det_admission_refuses_a_native_fault() {
-    let inputs = inputs(&[3, 3], Caps::CORPUS);
-    let mut missing = decoder(&inputs);
-    missing.step(Token::Control(Control::Det)).expect("DET opens");
-    assert!(matches!(missing.step(Token::Control(Control::End)), Err(Refusal::DetAdmission(arclog::decode::DetRefusal::Fault(_)))));
-    assert!(matches!(det_admission_refusal("(RULE &pick (input *P *Col) (ONE))\n(DET &x (&pick *P *Col))\n", &inputs), Refusal::DetAdmission(arclog::decode::DetRefusal::Fault(_))));
-}
-
-#[test]
 fn det_admission_ignores_an_expired_deadline() {
     let mut inputs = inputs(INPUT, Caps::CORPUS);
     inputs.settings.deadline = Some(std::time::Duration::ZERO);

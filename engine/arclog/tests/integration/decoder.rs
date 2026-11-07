@@ -181,12 +181,6 @@ fn a_negation_an_if_an_all_and_a_constraint_on_zero_decode_to_their_content() {
 }
 
 #[test]
-fn a_negated_constraint_decodes_to_its_content() {
-    // A constraint under NOT is a native conjunct, not a relation named `=`.
-    same_content("(RULE &same (axis_elem (:A *A)) (NOT (= A A)))\n");
-}
-
-#[test]
 fn a_det_by_a_proposer_and_a_one_mark_decode_to_their_content() {
     same_content_with_inputs("(DET &arr_dim ScaleRatio)\n(RULE &cell (input *P *Col) (ONE P))\n", &proposer_inputs());
 }

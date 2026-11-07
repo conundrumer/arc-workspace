@@ -998,10 +998,11 @@ impl<'a> Decoder<'a> {
     /// checks as a completed constraint does, or, where none does, the
     /// refusal of the last completion tried. The completions are the labels
     /// the grammar admits next, each stepped from `state`: after an
-    /// operator, the first labels, a fresh one for `=` alone; after the first label of `=`, `0`, the
-    /// labels in scope and a fresh label; after the first label of any other
-    /// operator, the first label itself, which passes exactly where some
-    /// second operand does.
+    /// operator, the first labels, a fresh one for `=` alone; after the first
+    /// label of `!=`, `<` or `>`, the first label itself, which passes exactly
+    /// where some second operand does; after the first label of `=`, `<=` or
+    /// `>=`, `0` and each label in scope but the first label, which the
+    /// grammar refuses as the second there, and for `=` a fresh label too.
     fn completes(&self, state: &state::State, checks: &PrefixChecks<'_>, reads_example: state::ReadsExample<'_>, order: &RefCell<Order>) -> Result<(), Refusal> {
         let Some((op, first)) = state.open_constraint() else {
             return self.check_state(state, Candidate::Any, checks);
@@ -1019,8 +1020,12 @@ impl<'a> Decoder<'a> {
         let tokens: Vec<Token> = match first {
             // Only `=` binds a label it makes, so a fresh first label of another operator leaves its label unbound.
             None => std::iter::once(Token::Control(Control::Fresh)).filter(|_| op == ConstraintOp::Eq).chain(labels).collect(),
-            Some(first) if op != ConstraintOp::Eq => vec![Token::Label(first.label.0)],
-            Some(_) => std::iter::once(Token::Control(Control::Zero)).chain(labels).chain([Token::Control(Control::Fresh)]).collect(),
+            Some(first) if matches!(op, ConstraintOp::Ne | ConstraintOp::Lt | ConstraintOp::Gt) => vec![Token::Label(first.label.0)],
+            Some(first) => {
+                let others = labels.filter(|token| *token != Token::Label(first.label.0));
+                let fresh = (op == ConstraintOp::Eq).then_some(Token::Control(Control::Fresh));
+                std::iter::once(Token::Control(Control::Zero)).chain(others).chain(fresh).collect()
+            }
         };
         let mut refusal = Refusal::Grammar("a constraint has no completion");
         for token in tokens {

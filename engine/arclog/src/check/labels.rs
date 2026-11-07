@@ -1,7 +1,7 @@
 //! The check of the labels that `=` makes and that an `OR` or an `IF` exports.
 
 use super::safety::{each_head_use, form_bodies, FormBody};
-use crate::safety::{each_label_use_at, list_of, parts_of};
+use crate::safety::{body_labels, each_label_use_at, list_of, parts_of, site_label_uses};
 use super::types::result;
 use super::{Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
 use crate::hash::StableHashSet;
@@ -34,7 +34,8 @@ impl Check for MadeAndExportedLabelsCheck {
     /// - a `^` label that the key body's own list does not keep, so that no
     ///   atom at the key body's top level binds the key's column;
     /// - a `(= *X Y)` or `(= *X 0)` in a later branch of an `OR`, in the
-    ///   test or the else of an `IF`, or in a list of an `ALL`, and one in
+    ///   test or the else of an `IF`, in a list of an `ALL`, or under a
+    ///   `NOT`, and one in
     ///   the first branch of an `OR` or the then of an `IF` whose label `X`
     ///   the form does not export, as
     ///   `docs/arclog/arclog.md#negation-and-constraints` gives. A union
@@ -47,22 +48,105 @@ impl Check for MadeAndExportedLabelsCheck {
         result(refused.into_iter().map(|refusal| Refusal { at: input.refusal_path(&refusal.at), ..refusal }).collect())
     }
 
-    /// The refusals of each complete body of the partial form, since a node
-    /// written later in an open body may make or export the label it reads;
-    /// and, of the refusals of `=`, each at a node that is complete, since
-    /// a later branch of an `OR` may yet name the label of a `=` in its
-    /// first branch. In an open body of an `INIT` form, a `^` label that a
-    /// form of the body holds and can no longer export is refused as well,
-    /// as [`local_key_labels`] gives.
+    /// The refusals of each complete body of the partial form; and, of the
+    /// refusals of `=`, each at a node that is complete, since a later
+    /// branch of an `OR` may yet name the label of a `=` in its first
+    /// branch. In an open body, a read of a label that the form makes is
+    /// refused where no completion of the body keeps the label in a list
+    /// that holds the read, as [`open_reads`] gives. In an open body of an
+    /// `INIT` form, a `^` label that a form of the body holds and can no
+    /// longer export is refused as well, as [`local_key_labels`] gives.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
-        let mut refused = body_refusals(prefix.partial, &|body| !prefix.is_open(&body.at), &|at| prefix.is_open(at));
-        if let Form::Instance(_) = prefix.partial {
-            for form_body in form_bodies(prefix.partial).iter().filter(|body| prefix.is_open(&body.at)) {
-                refused.extend(local_key_labels(form_body, &|at| prefix.is_open(at)));
+        let open = |at: &NodePath| prefix.is_open(at);
+        let mut refused = body_refusals(prefix.partial, &|body| !prefix.is_open(&body.at), &open);
+        let made = made_in(prefix.partial);
+        for form_body in form_bodies(prefix.partial).iter().filter(|body| prefix.is_open(&body.at)) {
+            refused.extend(open_reads(form_body, &made, &open));
+            if let Form::Instance(_) = prefix.partial {
+                refused.extend(local_key_labels(form_body, &open));
             }
         }
         super::prefix::refused(refused)
     }
+}
+
+const READ_OUTSIDE: &str = "the label is read outside each list that keeps it";
+
+/// The labels that a site or a `=` of `form` makes.
+fn made_in(form: &Form) -> StableHashSet<LabelId> {
+    let mut made = StableHashSet::default();
+    each_label_use_at(NodeRef::from(form), &NodePath::default(), &mut |_, use_| {
+        if let LabelUse::Fresh(label) | LabelUse::Key(label) = use_ {
+            made.insert(label);
+        }
+    });
+    made
+}
+
+/// The refusal of each read, in `form_body`, an open body, of a label of
+/// `made`, which a site or a `=` of the form makes, where no completion of
+/// the body keeps the label in a list that holds the read. `open` holds the
+/// paths of the open nodes. The labels visible at a read are those of
+/// [`refusals`], with [`kept_in`] for the labels a list keeps, which an open
+/// form exports at the most: a completion adds to the body labels it makes,
+/// none of them `made`, and a form that it closes exports fewer of its
+/// labels, so a label invisible here is invisible in every completion. A
+/// label that the form makes nowhere yet is left, since a node written later
+/// in a program's text may make it; in a stream, a label is made before its
+/// first read.
+fn open_reads(form_body: &FormBody<'_>, made: &StableHashSet<LabelId>, open: &dyn Fn(&NodePath) -> bool) -> Vec<Refusal> {
+    let list = list_of(form_body.body.value(), &form_body.at);
+    let mut visible: StableHashSet<LabelId> = form_body.given.iter().chain(&form_body.columns).chain(&form_body.fields).copied().collect();
+    visible.extend(kept_in(&list, open));
+    let mut refused = Vec::new();
+    each_list_in(&list, &visible, &[], open, &mut |list, visible, _| {
+        for (at, conjunct) in list {
+            if let Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_) = conjunct {
+                each_label_use_at(NodeRef::Conjunct(conjunct), at, &mut |at, use_| {
+                    if matches!(use_, LabelUse::Join(label) if made.contains(&label) && !visible.contains(&label)) {
+                        refused.push(Refusal { message: READ_OUTSIDE.into(), at: at.clone() });
+                    }
+                });
+            }
+        }
+    });
+    refused
+}
+
+/// The labels that `list` keeps, as [`kept`] gives them, where an open form,
+/// at a path that `open` holds, exports each label that some completion of
+/// it may export: an open `OR` each label of its first branch that each
+/// complete later branch names, and an open `IF` each label of its then.
+fn kept_in(list: &[(NodePath, &Conjunct)], open: &dyn Fn(&NodePath) -> bool) -> Vec<LabelId> {
+    let mut out: Vec<LabelId> = Vec::new();
+    for (at, conjunct) in list {
+        let exported = |labels: Vec<LabelId>, later: &[StableHashSet<LabelId>], out: &mut Vec<LabelId>| {
+            for label in labels.into_iter().filter(|label| later.iter().all(|named| named.contains(label))) {
+                if !out.contains(&label) {
+                    out.push(label);
+                }
+            }
+        };
+        match conjunct {
+            Conjunct::Atom(_) | Conjunct::Constraint(_) => site_label_uses(conjunct, &mut |use_| {
+                if let LabelUse::Fresh(label) | LabelUse::Key(label) = use_ {
+                    if !out.contains(&label) {
+                        out.push(label);
+                    }
+                }
+            }),
+            Conjunct::Or(branches) => {
+                let later: Vec<StableHashSet<LabelId>> = branches.iter().zip(0u32..).skip(1).filter(|(_, index)| !open(&at.child(*index))).map(|(branch, _)| body_labels(branch.value())).collect();
+                exported(kept_in(&list_of(branches[0].value(), &at.child(0)), open), &later, &mut out);
+            }
+            Conjunct::If { then, otherwise, .. } => {
+                let later: Vec<StableHashSet<LabelId>> = if open(at) { Vec::new() } else { vec![body_labels(otherwise.value())] };
+                exported(kept_in(&list_of(then.value(), &at.child(1)), open), &later, &mut out);
+            }
+            Conjunct::Not(_) | Conjunct::All { .. } => {}
+        }
+    }
+    out
 }
 
 /// The refusal of each `^` label of `form_body`, an open body, that a form
@@ -173,8 +257,8 @@ enum Making {
     /// given, which exports the labels given: a `=` makes only a label of
     /// those.
     Exports(NodePath, Vec<LabelId>),
-    /// A later branch of an `OR`, the test or the else of an `IF`, or a list
-    /// of an `ALL`: a `=` makes no label.
+    /// A later branch of an `OR`, the test or the else of an `IF`, a list of
+    /// an `ALL`, or the form of a `NOT`: a `=` makes no label.
     Nothing,
 }
 
@@ -225,7 +309,7 @@ fn made_in_conjunct(conjunct: &Conjunct, at: &NodePath, making: &Making, refused
             made_by_equality(domain.value(), &at.child(0), &Making::Nothing, refused);
             made_by_equality(body.value(), &at.child(1), &Making::Nothing, refused);
         }
-        Conjunct::Not(Negated::Form(form)) => made_in_conjunct(form, &at.child(0), &Making::Any, refused),
+        Conjunct::Not(Negated::Form(form)) => made_in_conjunct(form, &at.child(0), &Making::Nothing, refused),
         Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)) | Conjunct::Constraint(_) => {}
     }
 }
@@ -266,18 +350,30 @@ pub(super) fn each_list(
     named: &[LabelId],
     visit: &mut dyn FnMut(&[(NodePath, &Conjunct)], &StableHashSet<LabelId>, &[LabelId]),
 ) {
+    each_list_in(list, visible, named, &|_| false, visit);
+}
+
+/// [`each_list`], where each list keeps the labels that [`kept_in`] gives
+/// with the open nodes that `open` holds.
+fn each_list_in(
+    list: &[(NodePath, &Conjunct)],
+    visible: &StableHashSet<LabelId>,
+    named: &[LabelId],
+    open: &dyn Fn(&NodePath) -> bool,
+    visit: &mut dyn FnMut(&[(NodePath, &Conjunct)], &StableHashSet<LabelId>, &[LabelId]),
+) {
     visit(list, visible, named);
     for (at, conjunct) in list {
         let named = match conjunct {
-            Conjunct::Or(branches) => kept(branches[0].value()),
-            Conjunct::If { then, .. } => kept(then.value()),
+            Conjunct::Or(branches) => kept_in(&list_of(branches[0].value(), &at.child(0)), open),
+            Conjunct::If { then, .. } => kept_in(&list_of(then.value(), &at.child(1)), open),
             Conjunct::Atom(_) | Conjunct::Not(_) | Conjunct::Constraint(_) | Conjunct::All { .. } => Vec::new(),
         };
         for part in parts_of(conjunct, at) {
             let mut inner = visible.clone();
             inner.extend(named.iter().copied());
-            part_kept(&part, &mut inner);
-            each_list(&part, &inner, &named, visit);
+            inner.extend(kept_in(&part, open));
+            each_list_in(&part, &inner, &named, open, visit);
         }
     }
 }
@@ -286,13 +382,6 @@ pub(super) fn each_list(
 /// `visible` does not hold it.
 fn read(visible: &StableHashSet<LabelId>, label: LabelId, at: &NodePath, refused: &mut Vec<(&'static str, NodePath)>) {
     if !visible.contains(&label) {
-        refused.push(("the label is read outside each list that keeps it", at.clone()));
+        refused.push((READ_OUTSIDE, at.clone()));
     }
-}
-
-/// Adds to `visible` the labels that the conjuncts of `part` keep, as one
-/// list.
-fn part_kept(part: &[(NodePath, &Conjunct)], visible: &mut StableHashSet<LabelId>) {
-    let body = Body { conjuncts: part.iter().map(|(_, conjunct)| (*conjunct).clone()).collect() };
-    visible.extend(kept(&body));
 }

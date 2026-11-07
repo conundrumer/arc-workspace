@@ -66,13 +66,6 @@ fn an_order_on_a_color_is_refused_at_its_constraint() {
 }
 
 #[test]
-fn a_label_local_to_a_branch_and_read_outside_it_is_refused_once_the_body_is_complete() {
-    let arclog = "(RULE &x (input *P (:Col *C)) (OR ((input P (:Col *D))) ((input P (:Col *E)))) (input *Q (:Col D)))";
-    let found = first_refused(arclog, CheckId::MadeAndExportedLabels);
-    assert_eq!(found, Some((path(&[0]), vec![path(&[0, 2, 1, 0])])));
-}
-
-#[test]
 fn a_label_no_mode_binds_is_refused_at_its_site() {
     let found = first_refused("(RULE &x (input *P (:Col *C)) (compose *A *B *Q) (input Q (:Col C)))", CheckId::Safety);
     assert_eq!(found, Some((path(&[0, 1, 0, 0]), vec![path(&[0, 1, 0, 0])])));

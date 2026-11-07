@@ -4,7 +4,7 @@
 
 use super::types::result;
 use super::{each_node, Check, CheckId, CheckInput, CheckResult, Prefix, PrefixResult, Refusal, CheckCacheKey, KeyInput};
-use crate::program::path::{NodePath, NodeRef, PathStep};
+use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::registry::{LibName, Registry};
 use crate::resolver::registry_columns::{is_domain, proposer_columns};
 use crate::program::{Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, ColumnName, Conjunct, ConstraintOp, LabelId, LabelUse, Operand, RelationRef, Site, SiteArg};
@@ -42,10 +42,13 @@ impl Check for PicksCheck {
     /// mark follows the body of its clause, and the checks of a `CHOOSE`
     /// form are decided at its `END` (`docs/engine/synthesis.md#token-mask`).
     /// A form of a `DEMO_RULE` ends at its own `END`. An atom that reads
-    /// `ONE` is refused once it is written.
+    /// `ONE` is refused once it is written. A clause whose `SET` mark is
+    /// written is refused at that mark, since the mark follows the clause's
+    /// keyword, proposers and body.
     fn check_prefix(&self, prefix: &Prefix<'_>) -> PrefixResult {
         let open = |at: &[PathStep]| prefix.open.is_some_and(|open| open.0.starts_with(at));
-        super::prefix::settled_result(prefix, refusals(&super::prefix::whole(prefix), &|at| !open(at)))
+        let set = |at: &NodePath| matches!(node_at(NodeRef::from(prefix.partial), at), Some(NodeRef::Clause(clause)) if clause.set);
+        super::prefix::standing(prefix, refusals(&super::prefix::whole(prefix), &|at| !open(at)), &|at| !prefix.is_open(at) || set(at))
     }
 }
 
@@ -57,9 +60,7 @@ fn refusals(input: &CheckInput<'_>, ended: &dyn Fn(&[PathStep]) -> bool) -> Chec
     let mut refused: Vec<(NodePath, &str)> = Vec::new();
     each_node(NodeRef::from(form), &NodePath::default(), &mut |node, at| match (node, node.atom()) {
         (NodeRef::Clause(clause), _) if ended(at) && !marks_name_columns(clause) => refused.push((at.into(), "a `ONE` mark names only columns of the clause")),
-        (NodeRef::Clause(clause), _) if ended(at) && !set_mark_fits(clause, registry) => {
-            refused.push((at.into(), "a `SET` mark stands only after proposers of one column each that the registry does not mark `domain`, in a clause with no body"))
-        }
+        (NodeRef::Clause(clause), _) if !set_mark_fits(clause, registry) => refused.push((at.into(), set_mark_refusal(clause))),
         (NodeRef::Choose(choose), _) if ended(at) => choose_refusals(choose, &NodePath::from(at), &mut refused),
         (_, Some(Atom { relation: RelationRef::Lib(name), .. })) if *name.0 == *crate::read::spelling::ONE => {
             refused.push((at.into(), "`ONE` stands at a clause's top level, after its body"));
@@ -78,6 +79,18 @@ fn refusals(input: &CheckInput<'_>, ended: &dyn Fn(&[PathStep]) -> bool) -> Chec
 fn set_mark_fits(clause: &Clause, registry: &Registry) -> bool {
     let one_column = |name: &LibName| !is_domain(registry, name) && proposer_columns(registry, name).is_some_and(|columns| columns.len() == 1);
     !clause.set || (clause.keyword != ClauseKeyword::Rule && clause.body.value().conjuncts.is_empty() && !clause.proposers.is_empty() && clause.proposers.iter().all(one_column))
+}
+
+/// Why the `SET` mark of `clause`, which [`set_mark_fits`] refuses, is
+/// refused (`docs/arclog/arclog.md#open-values`).
+fn set_mark_refusal(clause: &Clause) -> &'static str {
+    if clause.keyword == ClauseKeyword::Rule {
+        "a `SET` mark stands on a `DET`, and on no `RULE`"
+    } else if !clause.body.value().conjuncts.is_empty() || clause.proposers.is_empty() {
+        "a `SET` mark stands only on a clause of no body, after its proposers"
+    } else {
+        "a `SET` mark stands only after proposers of one column each that the registry does not mark `domain`"
+    }
 }
 
 /// Whether each label of each `ONE` mark of `clause` is a column of the
