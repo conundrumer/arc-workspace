@@ -92,6 +92,47 @@ pub struct Structure {
     pub column_symmetries: Vec<String>,
 }
 
+/// The identity of a table of a program that holds no rows, of each of its columns, and the bodies that the evaluator joins for it, as
+/// [`Structure::bodies`] gives them. An atom's `read` names the table of its relation by that table's place in the list `relations`, -1 for
+/// a relation that the list does not hold.
+pub struct RelationBodies {
+    pub identity: String,
+    pub columns: Vec<String>,
+    pub bodies: Vec<Value>,
+    /// The table's contents, with the sources of its columns.
+    pub contents: crate::tables::Contents,
+}
+
+/// For each of `relations`, a graph relation with the form where its table stands and its name, the table's [`RelationBodies`], none where
+/// the relation has no contents.
+pub fn relation_bodies(checked: &CheckedProgram, registry: &Registry, relations: &[(GraphRelation, NodePath, String)]) -> Vec<Option<RelationBodies>> {
+    let mut forms = Forms::new(checked, registry);
+    let mut kept: Vec<usize> = Vec::new();
+    let mut tables: Vec<Table> = Vec::new();
+    for (at, (relation, form, name)) in relations.iter().enumerate() {
+        if let Ok(contents) = crate::identity::relation_contents(checked, registry, relation, form, name) {
+            kept.push(at);
+            tables.push(Table { form: form.clone(), point: Point::Relation, contents: Ok(contents) });
+        }
+    }
+    let mut identities = Identities::default();
+    for table in &tables {
+        let (ident, columns) = crate::identity::table_identity(&mut forms, table);
+        identities.tables.push(ident);
+        identities.columns.push(columns);
+    }
+    let graphs: Vec<Option<GraphRelation>> = kept.iter().map(|at| Some(relations[*at].0.clone())).collect();
+    let shared = Shared { checked, registry, tables: tables.iter().collect(), graphs, identities: &identities, sees_all: true };
+    let bodies: Vec<Vec<Value>> = (0..tables.len()).map(|place| shared.bodies(&mut forms, place)).collect();
+    drop(shared);
+    let mut out: Vec<Option<RelationBodies>> = relations.iter().map(|_| None).collect();
+    for (place, ((at, table), bodies)) in kept.iter().zip(tables).zip(bodies).enumerate() {
+        let Ok(contents) = table.contents else { continue };
+        out[*at] = Some(RelationBodies { identity: identities.tables[place].clone(), columns: identities.columns[place].clone(), bodies, contents });
+    }
+    out
+}
+
 /// What every table's description reads: the case program, the tables with
 /// the graph relation each stands for, and their identities.
 struct Shared<'a> {
@@ -100,6 +141,8 @@ struct Shared<'a> {
     tables: Vec<&'a Table>,
     graphs: Vec<Option<GraphRelation>>,
     identities: &'a Identities,
+    /// Whether an atom reads the table of its relation wherever it stands among the tables, in place of only at or before the table that the body gives.
+    sees_all: bool,
 }
 
 /// The structure of each of `tables`, the evidence tables and then the tables
@@ -112,7 +155,7 @@ pub(crate) fn describe(
     graphs: Vec<Option<GraphRelation>>,
     identities: &Identities,
 ) -> Structure {
-    let shared = Shared { checked, registry, tables, graphs, identities };
+    let shared = Shared { checked, registry, tables, graphs, identities, sees_all: false };
     let mut out = Structure::default();
     for at in 0..shared.tables.len() {
         out.bodies.push(Value::Array(shared.bodies(forms, at)).to_string());
@@ -125,7 +168,8 @@ pub(crate) fn describe(
 impl Shared<'_> {
     /// The latest table at or before `at` that stands for `relation`.
     fn table_of(&self, relation: &GraphRelation, at: usize) -> Option<usize> {
-        (0..=at.min(self.graphs.len().saturating_sub(1))).rev().find(|&other| self.graphs[other].as_ref() == Some(relation))
+        let last = self.graphs.len().saturating_sub(1);
+        (0..=if self.sees_all { last } else { at.min(last) }).rev().find(|&other| self.graphs[other].as_ref() == Some(relation))
     }
 
     /// The evidence table of the fact relation `fact`, `ex_input` for `input`.

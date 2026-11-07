@@ -23,6 +23,7 @@
 //! - [`native`]: the operators over materialized rows, a faster evaluation of
 //!   what those forms compute.
 pub mod atom_lists;
+pub mod body_features;
 pub mod candidate_lists;
 pub mod catalog;
 mod catalog_boxes;

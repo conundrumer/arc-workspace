@@ -14,7 +14,7 @@ use crate::catalog_lists::{named_shapes, reads_output};
 use crate::gen_constants::number_of;
 use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, READS_TABLE, SLOT_DEFAULT, SLOT_NO_VALUE};
 use crate::native::{hash_words, FastMap};
-use crate::program_relations::{program_facts, table_numbers, ProgramFacts};
+use crate::program_relations::{add_table_columns, program_facts, table_numbers, ProgramFacts};
 use crate::stored::Stored;
 use crate::state_features::{graph_numbers, nodes_of, relations, Relation};
 use crate::table_vector::{base_vectors, pair_vector, table_vector, task_wide_vector, two_tables_vector, Grids, TableVector};
@@ -523,14 +523,18 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
     let mut query_numbers: Vec<Vec<Vec<(String, f64)>>> = Vec::new();
     let mut check_cache = arclog::check::CheckCache::default();
     let mut facts_of: FastMap<u128, Option<ProgramFacts>> = FastMap::default();
-    let mut numbers_of = |text: &serde_json::Value, table: &serde_json::Value, name: &str| -> Vec<(String, f64)> {
+    let mut numbers_of = |text: &serde_json::Value, table: &serde_json::Value, name: &str, form: Option<usize>| -> Vec<(String, f64)> {
         if lists_of != ListsOf::Named {
             return Vec::new();
         }
         let Some(text) = text.as_str() else { return Vec::new() };
         let registry = arclog::registry::Registry::get();
-        let facts = facts_of.entry(hash_words(text.bytes().map(u64::from))).or_insert_with(|| arclog::study::StudyProgram::from_sexp_cached(text, registry, &mut check_cache).ok().map(|program| program_facts(program.checked(), registry)));
-        let mut out = facts.as_ref().map_or_else(Vec::new, |facts| table_numbers(facts, name));
+        let facts = facts_of.entry(hash_words(text.bytes().map(u64::from))).or_insert_with(|| arclog::study::StudyProgram::from_sexp_cached(text, registry, &mut check_cache).ok().map(|program| {
+            let mut facts = program_facts(program.checked(), registry);
+            add_table_columns(&mut facts, program.checked(), registry);
+            facts
+        }));
+        let mut out = facts.as_ref().map_or_else(Vec::new, |facts| table_numbers(facts, name, form));
         // The contract's AssignmentVector, as far as one table's rows at each assignment give it.
         let count = table["assignments"].as_f64().unwrap_or(0.0);
         let distinct = table["distinct_assignments"].as_f64().unwrap_or(count);
@@ -555,7 +559,8 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
         let mut whole = true;
         let mut own_candidates = vec![(gold, strings(&item["parents"]))];
         let table_name = item["table"].as_str().unwrap_or("");
-        let mut own_numbers = vec![numbers_of(&item["text"], &item["gold"], table_name)];
+        let form_at = item["form"].as_u64().map(|form| form as usize);
+        let mut own_numbers = vec![numbers_of(&item["text"], &item["gold"], table_name, form_at)];
         for mutant in item["mutants"].as_array().ok_or("an item's mutants")? {
             // A mutant too large to read leaves the item its other mutants.
             let Some(table) = add_table(&mutant["table"], &mut stored) else {
@@ -566,7 +571,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
                 break;
             };
             own_candidates.push((table, strings(&mutant["parents"])));
-            own_numbers.push(numbers_of(&mutant["text"], &mutant["table"], table_name));
+            own_numbers.push(numbers_of(&mutant["text"], &mutant["table"], table_name, form_at));
             mutants.push(serde_json::json!({"mutant": mutant["mutant"], "edit": mutant["edit"], "extra": mutant["extra"], "table": table, "parents": reads(&mutant["parents"]), "types": mutant["table"]["types"], "task_level": mutant["table"]["task_level"], "assignments": mutant["table"]["assignments"]}));
         }
         if !whole {
