@@ -507,10 +507,10 @@ fn run_base_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> {
 }
 
 /// A task's tables, read as the tables command prints them, which the command's name and the task's stem
-/// give. Its output holds test rows, so it reaches this process by a pipe alone, and neither it nor the
-/// command's errors are printed or kept.
+/// give. `TABLES_STREAM=1` asks the command for the framed stream. Its output holds test rows, so it reaches
+/// this process by a pipe alone, and neither it nor the command's errors are printed or kept.
 fn tables_by_command(command: &[String], stem: &str) -> Result<arclog_encoder::table_stream::TablesIn, String> {
-    let mut child = std::process::Command::new(&command[0]).args(&command[1..]).arg(stem).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null()).spawn().map_err(|error| error.to_string())?;
+    let mut child = std::process::Command::new(&command[0]).args(&command[1..]).arg(stem).env("TABLES_STREAM", "1").stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null()).spawn().map_err(|error| error.to_string())?;
     let stdout = child.stdout.take().ok_or("the tables command has no output")?;
     let read = arclog_encoder::table_stream::TablesIn::from_reader(stdout);
     if read.is_err() {

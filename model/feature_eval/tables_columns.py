@@ -8,6 +8,7 @@ tables, and an end. The layout of the stream is in the header of that file.
 import json
 import os
 import struct
+import sys
 
 import numpy as np
 
@@ -129,7 +130,12 @@ def frame(out, tag, header, parts=()):
 
 
 def write_stream(full, out=None):
-    """Prints a task's tables: `full` holds the fields of a tables file, with each table's rows as Blocks."""
+    """Prints a task's tables: `full` holds the fields of a tables file, with each table's rows as Blocks. A reader that sets `TABLES_STREAM=1` takes the framed
+    stream, and any other reader takes the tables as JSON text."""
+    if out is None and os.environ.get('TABLES_STREAM') != '1':
+        json.dump(full, sys.stdout, default=json_default)
+        sys.stdout.flush()
+        return
     own = out is None
     if own:
         out = os.fdopen(1, 'wb', buffering=1 << 20, closefd=False)
