@@ -124,8 +124,8 @@ fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &Hash
     let part = &parts[0];
     let names: Vec<&str> = part["types"].as_array().ok_or("types")?.iter().filter_map(Value::as_str).collect();
     let types: Vec<ValueType> = names.iter().map(|name| type_of_name(name)).collect::<Option<_>>().ok_or("a type")?;
-    if types.len() > 8 {
-        return Err("past 8 columns");
+    if types.len() > crate::generate::MAX_COLUMNS {
+        return Err("past MAX_COLUMNS columns");
     }
     let examples = train + test;
     let mut rows: Vec<Vec<Vec<Vec<u32>>>> = vec![Vec::new(); examples];
