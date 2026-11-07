@@ -81,6 +81,10 @@
 
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
+
+mod names;
+mod stats;
 
 use super::cache::{self, relation_estimate, EntryRequest, Recorded, RecordedKey};
 use super::ir::{ClauseIr, CompiledBody};
@@ -119,13 +123,19 @@ impl Carry {
     /// replays in `session`, counting its work in `work`. The cache of
     /// `session` found no entry of the key's request just before.
     pub(crate) fn replay(&self, session: &TaskSession, work: &TableWork, key: &CarryKey) -> Option<RelationValue> {
+        stats::begin(key);
         for (carried, older) in self.store.carried(key) {
-            if work.fits(carried.charged) && cache::replay_recorded(session, &carried.events) {
+            if !work.fits(carried.charged) {
+                stats::reason(stats::Reason::Work);
+            } else if !cache::replay_recorded(session, &carried.events) {
+                stats::reason(stats::Reason::Lookups);
+            } else {
                 work.charge(carried.charged).expect("a count that stays within the cap");
                 session.record_counts(carried.counts);
                 if older {
                     self.store.promote(key, &carried);
                 }
+                stats::hit(carried.charged);
                 return Some(plain(carried.value.clone()));
             }
         }
@@ -136,16 +146,36 @@ impl Carry {
     /// stores its value in `session`; its computation is kept where it ends
     /// with a value of rows or `undefined`.
     pub(crate) fn capture(&self, session: &TaskSession, work: &TableWork, key: CarryKey, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
+        stats::missed();
+        let note = stats::current();
+        let started = note.map(|_| Instant::now());
         let capture = session.results.begin_capture();
         let before = work.count();
         let found = compute();
         let (events, counts) = session.results.end_capture(capture);
         let charged = work.count().saturating_sub(before);
-        let Ok(value) = &found else { return found };
-        let Some(value) = cache::cached(value).filter(|value| !matches!(value, RelationValue::Stopped(_))) else { return found };
+        let end = |end: stats::End| {
+            if let (Some(note), Some(started)) = (note, started) {
+                stats::captured(note, end, charged, started);
+            }
+        };
+        let Ok(value) = &found else {
+            end(stats::End::Fault);
+            return found;
+        };
+        let Some(value) = cache::cached(value).filter(|value| !matches!(value, RelationValue::Stopped(_))) else {
+            end(stats::End::Stopped);
+            return found;
+        };
         match self.store.keep(key, Carried { events: events.into(), charged, counts, value }) {
-            Some(kept) => Ok(plain(kept)),
-            None => found,
+            Some(kept) => {
+                end(stats::End::Kept);
+                Ok(plain(kept))
+            }
+            None => {
+                end(stats::End::Dropped);
+                found
+            }
         }
     }
 }
@@ -280,11 +310,13 @@ impl CarryStore {
         let mut tiers = self.tiers.write().expect(UNPOISONED);
         let tiers = &mut *tiers;
         if tiers.young.entries.get(&key).is_some_and(|kept| kept.len() >= PER_KEY) {
+            stats::dropped("dropped.full");
             return None;
         }
         let share = self.share / 2;
         let (alone, mut fresh) = tiers.young.bytes_of(&key, &carried);
         if alone > share {
+            stats::dropped("dropped.big");
             return None;
         }
         if tiers.young.bytes + fresh > share {
@@ -376,6 +408,7 @@ pub(crate) fn kept_relation(relations: &mut StableHashMap<StableHash, Vec<Arc<Re
 /// IR is `clause`, in `order`, the variable order of the body, over the
 /// columns `columns` of `clause`.
 pub(super) fn part_shape(clause: &ClauseIr, part: &Part, order: &VariableOrder, columns: &[ColumnIndex]) -> StableHash {
+    stats::offer(|| stats::part_components(clause, part, order, columns));
     let mut hasher = StableHasher::new();
     let mut ranks: Vec<usize> = (0..part.nodes.len()).collect();
     ranks.sort_unstable_by_key(|&at| part.nodes[at]);
@@ -397,6 +430,7 @@ pub(super) fn part_shape(clause: &ClauseIr, part: &Part, order: &VariableOrder, 
 /// The digest of the shape of the evaluation of `body`, the compiled body of
 /// a clause, as a whole.
 pub(super) fn body_shape(body: &CompiledBody) -> StableHash {
+    stats::offer(|| stats::body_components(body));
     let mut hasher = StableHasher::new();
     body.clause.hash(&mut hasher);
     body.conjuncts.hash(&mut hasher);
