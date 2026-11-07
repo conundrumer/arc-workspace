@@ -10,7 +10,7 @@
 import gzip, hashlib, json, os
 from dataclasses import dataclass, field
 
-ROWS = '/Users/davidlu/code/arc-workspace/work/lm/data-study/samples/%s/rows/%s.jsonl.gz'
+ROWS = os.environ.get('ARC_SAMPLE_OUT', '/Users/davidlu/code/arc-workspace/work/lm/data-study/samples') + '/%s/rows/%s.jsonl.gz'  # ARC_SAMPLE_OUT: the samples folder, as split.OUTD
 VERSIONS = os.environ.get('ROWS_VERSION', 'engine@site-exp30').split(',')  # the row store hash_versions accepted, separated by commas
 
 

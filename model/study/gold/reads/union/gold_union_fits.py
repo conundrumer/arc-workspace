@@ -187,7 +187,7 @@ def capped(env, task, text, tasks, task_json):
 def sampler_settings():
     """The decode settings of the sampler: SETTINGS of model/study/sampler/live_try.py, read from its text (importing it loads the sampler)."""
     import ast
-    tree = ast.parse((ROOT / 'model/study/sampler/live_try.py').read_text())
+    tree = ast.parse(Path(os.environ.get('SAMPLER_LIVE_TRY') or ROOT / 'model/study/sampler/live_try.py').read_text())  # SAMPLER_LIVE_TRY: another live_try.py, for one whose SETTINGS is no constant dict(...)
     node = next(n.value for n in tree.body if isinstance(n, ast.Assign) and [t.id for t in n.targets if isinstance(t, ast.Name)] == ['SETTINGS'])
     return eval(compile(ast.Expression(node), 'live_try.py', 'eval'), {'__builtins__': {}, 'dict': dict})  # a dict(...) of constants
 
