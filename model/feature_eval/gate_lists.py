@@ -14,7 +14,8 @@ mutants, trained on train tasks and read on dev tasks, read additively over what
                                                  the score of a fit on each table a `feature-encoder vector`
                                                  file holds, at the assignment it holds first
 
-ROOT is what `candidate-lists` writes: `lists/` on the true outputs and `null/` on deranged ones.
+ROOT is what `candidate-lists` writes: `lists/` on the true outputs and `null/` on deranged ones. A table's named shapes, from
+ROOT/../named, stand beside its generated shapes.
 A shape's reading is one of: T, the table alone; TI, the table and the input; TO, the table and the
 output; TIO, all three. A set is written as terms joined by `+`:
   base0, base   the features with no table content
@@ -36,12 +37,13 @@ output; TIO, all three. A set is written as terms joined by `+`:
                 every row of a task. They read the output, so a set that compares outputs leaves them out
   input, output, pairs
                 what a task holds, the same on every candidate of an example: the base tables' vectors, and
-                the pair family from ROOT/../state. These repeat on every row, so each reads only the shapes
-                that take the most values over the train tasks, up to --family-columns. They read true
-                outputs, so a set that compares outputs leaves out output and pairs
+                the pair family from ROOT/../state. They read true outputs, so a set that compares outputs
+                leaves out output and pairs
   graph         a candidate's place in its state's graph, from ROOT/../state
   relations     the state's other tables against the candidate's: each shape's mean over the tables that the
                 query reads, over their ancestors and over the rest, from ROOT/../state
+  query         what a candidate's query says of its table with no row: where its columns come from, and what the
+                query does with them, from ROOT/../named
   qv            what a candidate's table has against the tables its query reads: a share of its entries
                 that each one has, its rows over theirs, its entries new to them. It reads the shapes
                 that read the output, so a set that compares true and deranged outputs leaves it out
@@ -50,21 +52,15 @@ A set may end in `@K` to read only the shapes that tell gold from a mutant on K 
 A fit reads one column for each set of columns equal on all its train rows, named by its shortest label.
 """
 import argparse
-import gc
 import json
-import os
 import pickle
-import re
 import subprocess
 import sys
-import tempfile
 import time
-from array import array
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-import scipy.sparse as sp
 import zstandard
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -97,43 +93,6 @@ def name_lines(folder):
             yield from open_text(path)
         except zstandard.ZstdError:
             continue
-
-
-class Matrix:
-    """A sparse matrix built one row at a time. Its entries go to two files as they come, so a build holds none of
-    them, and the matrix maps those files."""
-
-    folder = None
-
-    def __init__(self):
-        self.indptr = array('q', [0])
-        self.count = 0
-        handle, self.path = tempfile.mkstemp(dir=Matrix.folder)
-        os.close(handle)
-        self.indices = open(self.path + '.i', 'wb')
-        self.data = open(self.path + '.d', 'wb')
-
-    def add(self, indices, data=None):
-        self.indices.write(np.asarray(indices, dtype=np.int32).tobytes())
-        self.data.write((np.ones(len(indices), dtype=np.float32) if data is None else np.asarray(data, dtype=np.float32)).tobytes())
-        self.count += len(indices)
-        self.indptr.append(self.count)
-
-    def csr(self, width):
-        self.indices.close()
-        self.data.close()
-        indices = np.asarray(np.memmap(self.path + '.i', dtype=np.int32, mode='r', shape=(self.count,))) if self.count else np.zeros(0, dtype=np.int32)
-        data = np.asarray(np.memmap(self.path + '.d', dtype=np.float32, mode='r', shape=(self.count,))) if self.count else np.zeros(0, dtype=np.float32)
-        return sp.csr_matrix((data, indices, np.frombuffer(self.indptr, dtype=np.int64)), shape=(len(self.indptr) - 1, width), copy=False)
-
-    def write(self, width, path):
-        """Pickles the matrix as a csr matrix, reading its entries from their files in order."""
-        matrix = self.csr(width)
-        with open(path, 'wb') as sink:
-            pickle.dump(matrix, sink, protocol=4)
-        del matrix
-        for suffix in ('', '.i', '.d'):
-            os.unlink(self.path + suffix)
 
 
 class Tally:
@@ -181,6 +140,38 @@ def told_apart(gold, mutant):
     return np.concatenate((np.setxor1d(gold[0], mutant[0], assume_unique=True), gold[0][in_gold[differs]]))
 
 
+def with_named(lists, others, folder, name, items):
+    """Adds to a task's lists each table's named shapes from a folder of named lists, where its tables stand at the same places. Gives the lists of the
+    candidates' query numbers."""
+    path = folder / name
+    if not path.exists():
+        return {}
+    head, named_lists, named_others = read_lists(path, graded=True)
+    if [item['gold'] for item in head['items']] != [item['gold'] for item in items]:
+        print('named file out of step', name, flush=True)
+        return {}
+    queries = {}
+    for owner, held in named_lists.items():
+        if not isinstance(owner, int):
+            queries[owner] = held
+            continue
+        if owner not in lists:
+            lists[owner], others[owner] = held, named_others[owner]
+            continue
+        ids = np.concatenate((lists[owner][0], held[0]))
+        order = np.argsort(ids)
+        lists[owner] = (ids[order], np.concatenate((lists[owner][1], held[1]))[order])
+        own, theirs = others[owner], named_others[owner]
+        if not len(theirs[0]):
+            continue
+        ids = np.concatenate((own[0], theirs[0]))
+        order = np.argsort(ids)
+        pairs = theirs[4].shape[1]
+        at_pairs = np.concatenate((own[4].reshape(len(own[0]), pairs), theirs[4]))[order]
+        others[owner] = (ids[order], *(np.concatenate((own[at], theirs[at]))[order] for at in (1, 2, 3)), at_pairs)
+    return queries
+
+
 def wide_lists(folder, name, items):
     """A task's lists of task-wide roots, where its file exists and its tables stand at the places of the per-input file."""
     path = folder / name
@@ -191,10 +182,6 @@ def wide_lists(folder, name, items):
         print('wide file out of step', name, flush=True)
         return {}, {}
     return lists, others
-
-
-def own_numbers(values):
-    return values[0], {'mean': values[1]}
 
 
 def read_names(forms, at):
@@ -272,18 +259,12 @@ def place(ids, table):
     return at, hit
 
 
-def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False):
+def build(root, out):
+    from block_fit import BlockMatrix
     root, out = Path(root), Path(out)
-    out.mkdir(parents=True, exist_ok=True)
-    Matrix.folder = out
-    maker = Matrix
-    if blocks:
-        from block_fit import BlockMatrix
-        (out / 'blocks').mkdir(exist_ok=True)
-        BlockMatrix.folder = out / 'blocks'
-        maker = BlockMatrix
-        all_numbers = True
-        min_tasks = each_tasks = 1
+    (out / 'blocks').mkdir(parents=True, exist_ok=True)
+    BlockMatrix.folder = out / 'blocks'
+    maker = BlockMatrix
     parts = split_of()
     files = sorted((root / 'lists').glob('*.lists.zst'))
     print(len(files), 'task files', flush=True)
@@ -292,6 +273,8 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
     every_shape = Tally()
     wide_root = root.parent / 'wide'
     state_root = root.parent / 'state'
+    named_root = root.parent / 'named'
+    query_seen = []
     told_wide = []
     pair_seen = []
     family_seen = {family: [] for family in FAMILIES}
@@ -306,6 +289,10 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
         head, lists, others = read_lists(path, graded=True)
         null_path = root / 'null' / path.name
         null_lists, null_others = read_lists(null_path, graded=True)[1:] if null_path.exists() else ({}, {})
+        query_lists = with_named(lists, others, named_root / 'lists', path.name, head['items'])
+        with_named(null_lists, null_others, named_root / 'null', path.name, head['items'])
+        if query_lists:
+            query_seen.append(np.unique(np.concatenate([held[0] for held in query_lists.values()])))
         seen = {kind: [] for kind in told}
         for item in head['items']:
             if item['last']:
@@ -321,21 +308,12 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
         for kind, held in seen.items():
             if held:
                 told[kind].add(np.unique(np.concatenate(held)))
-        if blocks:
-            shapes = [entries[0] for tables in (lists, others, null_lists, null_others) for entries in tables.values()]
-            if shapes:
-                every_shape.add(np.unique(np.concatenate(shapes)))
+        shapes = [entries[0] for tables in (lists, others, null_lists, null_others) for entries in tables.values()]
+        if shapes:
+            every_shape.add(np.unique(np.concatenate(shapes)))
         wide, wide_others = wide_lists(wide_root / 'lists', path.name, head['items'])
         wide_null, _ = wide_lists(wide_root / 'null', path.name, head['items'])
-        apart = [entries[0] for held in (wide, wide_null) for entries in held.values()] if blocks else []
-        for item in head['items'] if not blocks else ():
-            if item['last']:
-                continue
-            for mutant in item['mutants']:
-                for held in (wide, wide_null):
-                    a, b = held.get(item['gold']), held.get(mutant['table'])
-                    if a is not None and b is not None:
-                        apart.append(told_apart(own_numbers(a), own_numbers(b)))
+        apart = [entries[0] for held in (wide, wide_null) for entries in held.values()]
         if apart:
             told_wide.append(np.unique(np.concatenate(apart)))
         if 'constant-values' in wide_others:
@@ -354,31 +332,15 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
         done += 1
         if done % 100 == 0:
             print(f'scan {done} {done / (time.time() - started):.1f}/s', flush=True)
-    chosen = {}
-    for kind, held in told.items():
-        if not held.seen:
-            chosen[kind] = np.zeros(0, dtype=np.uint64)
-            continue
-        ids, counts = held.result()
-        chosen[kind] = ids[counts >= min_tasks]
-        print(kind, 'told apart on some task', len(ids), f'on {min_tasks}+ tasks', len(chosen[kind]), flush=True)
-    columns = np.unique(np.concatenate(list(chosen.values()) + ([every_shape.result()[0]] if blocks else [])))
-    def common(held):
-        if not held:
-            return np.zeros(0, dtype=np.uint64)
-        ids, counts = np.unique(np.concatenate(held), return_counts=True)
-        return ids[counts >= min_tasks]
-    wide_columns, pair_columns = common(told_wide), common(pair_seen)
-    train_files = sum(1 for path in files if parts.get(path.name.split('.')[0]) == 'train')
-    each_tasks = max(min_tasks, train_files // 10) if each_tasks is None else each_tasks
-    def common_at(held, at_least):
-        if not held:
-            return np.zeros(0, dtype=np.uint64)
-        ids, counts = np.unique(np.concatenate(held), return_counts=True)
-        return ids[counts >= at_least]
-    family_columns = {family: common_at(held, each_tasks) for family, held in family_seen.items()}
-    graph_columns, relation_columns = common_at(graph_seen, 1), common_at(relation_seen, each_tasks)
-    print('family columns', {family: len(held) for family, held in family_columns.items()}, 'graph', len(graph_columns), 'relations', len(relation_columns), flush=True)
+    columns = np.unique(np.concatenate([every_shape.result()[0]] + [held.result()[0] for held in told.values() if held.seen]))
+
+    def every_id(held):
+        return np.unique(np.concatenate(held)) if held else np.zeros(0, dtype=np.uint64)
+
+    wide_columns, pair_columns = every_id(told_wide), every_id(pair_seen)
+    family_columns = {family: every_id(held) for family, held in family_seen.items()}
+    graph_columns, relation_columns, query_columns = every_id(graph_seen), every_id(relation_seen), every_id(query_seen)
+    print('family columns', {family: len(held) for family, held in family_columns.items()}, 'graph', len(graph_columns), 'relations', len(relation_columns), 'query', len(query_columns), flush=True)
     column_tasks = np.zeros(len(columns), dtype=np.int32)
     for held in told.values():
         if held.seen:
@@ -391,15 +353,16 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
     names, flags, sizes = {}, {}, {}
     rows_key = 0
     wanted = set(columns.tolist())
-    for line in name_lines(root / 'lists'):
-        parts_line = line.rstrip('\n').split('\t')
-        if len(parts_line) != 4:
-            continue
-        key = int(parts_line[0], 16)
-        if key in wanted:
-            names[key], flags[key], sizes[key] = parts_line[1], int(parts_line[2]), int(parts_line[3])
-        if parts_line[1] == '(cardinality T)':
-            rows_key = key
+    for folder in (root / 'lists', named_root / 'lists'):
+        for line in name_lines(folder):
+            parts_line = line.rstrip('\n').split('\t')
+            if len(parts_line) != 4:
+                continue
+            key = int(parts_line[0], 16)
+            if key in wanted:
+                names[key], flags[key], sizes[key] = parts_line[1], int(parts_line[2]), int(parts_line[3])
+            if parts_line[1] == '(cardinality T)':
+                rows_key = key
     print('names found', len(names), 'of', len(wanted), flush=True)
     wanted_family = set(family_columns['input'].tolist()) | set(family_columns['output'].tolist())
     family_names, family_flags = {}, {}
@@ -415,6 +378,11 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
             if len(parts_line) == 4 and int(parts_line[0], 16) in wanted_state:
                 family_names[int(parts_line[0], 16)] = parts_line[1]
                 family_flags[int(parts_line[0], 16)] = int(parts_line[2])
+    wanted_query = set(query_columns.tolist())
+    for line in name_lines(named_root / 'lists'):
+        parts_line = line.rstrip('\n').split('\t')
+        if len(parts_line) == 4 and int(parts_line[0], 16) in wanted_query:
+            family_names[int(parts_line[0], 16)] = parts_line[1]
     wanted_wide = set(wide_columns.tolist()) | set(pair_columns.tolist())
     wide_names, wide_flags = {}, {}
     if wide_root.exists():
@@ -426,13 +394,11 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
     context_vocab = {}
     data = {}
     parents_root = root.parent / 'parents'
-    # A row per example holds only what enough tasks tell apart, since it repeats each entry once per example.
-    each_keep = column_tasks >= each_tasks
-    reads_output = np.array([bool(flags.get(int(key), 0) & 2) for key in columns.tolist()], dtype=bool)
-    print('example rows read shapes told apart on', each_tasks, 'tasks or more:', int(each_keep.sum()), flush=True)
+    # A row per example holds what some task tells apart.
+    each_keep = column_tasks >= 1
     for split in ('train', 'dev'):
         rows = []
-        mats = {name: maker() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most', 'each', 'null_each', 'graph', 'relations')}
+        mats = {name: maker() for name in ('base', 'stable', 'null', 'contingent', 'null_contingent', 'ctx', 'qv', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'wide', 'null_wide', 'pair_least', 'pair_mean', 'pair_most', 'each', 'null_each', 'graph', 'relations', 'query')}
         example_of = []
         example_pair = []
         row_task = []
@@ -450,6 +416,8 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
             head, lists, others = read_lists(path, graded=True)
             null_path = root / 'null' / path.name
             null_lists, null_others = read_lists(null_path, graded=True)[1:] if null_path.exists() else ({}, {})
+            query_lists = with_named(lists, others, named_root / 'lists', path.name, head['items'])
+            with_named(null_lists, null_others, named_root / 'null', path.name, head['items'])
             wide, wide_others = wide_lists(wide_root / 'lists', path.name, head['items'])
             wide_null, _ = wide_lists(wide_root / 'null', path.name, head['items'])
             pair_numbers = wide_others.get('constant-values', (np.zeros(0, dtype=np.uint64),) + (np.zeros(0, dtype=np.float32),) * 3)
@@ -470,7 +438,6 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
                 entries = other[owner]
                 spots, hit = place(held[owner][0], family_columns[family])
                 task_rows[family]['stable'].add(spots[hit], held[owner][1][hit])
-                stable_at, stable_values = spots[hit], held[owner][1][hit]
                 ids, numbers = every_entry(held[owner], entries)
                 spots, hit = place(ids, family_columns[family])
                 task_rows[family]['mean'].add(spots[hit], numbers['mean'][hit])
@@ -479,12 +446,7 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
                     held_here = entries[4].shape[1] > pair
                     values = entries[4][:, pair][graded_hit] if held_here else np.zeros(0, dtype=np.float32)
                     active = values != 0
-                    if blocks:
-                        task_examples[family].add(graded_at[graded_hit][active] if held_here else np.zeros(0, dtype=np.int64), values[active])
-                        continue
-                    at_all = np.concatenate((stable_at, graded_at[graded_hit][active] if held_here else np.zeros(0, dtype=np.int64)))
-                    order = np.argsort(at_all)
-                    task_examples[family].add(at_all[order], np.concatenate((stable_values, values[active]))[order])
+                    task_examples[family].add(graded_at[graded_hit][active] if held_here else np.zeros(0, dtype=np.int64), values[active])
             read_true, read_true_others = parent_lists(parents_root / 'lists', path.name)
             read_null, read_null_others = parent_lists(parents_root / 'null', path.name)
             place_of = {listed['table']: listed['gold'] for listed in head['items']}
@@ -555,12 +517,16 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
                         mats['relations'].add(np.concatenate(relation_at), np.concatenate(relation_values))
                     else:
                         mats['relations'].add([])
+                    held = query_lists.get(f'{at}/{j}/query')
+                    if held is None:
+                        mats['query'].add([])
+                    else:
+                        spots, hit = place(held[0], query_columns)
+                        mats['query'].add(spots[hit], held[1][hit])
                     for kind, held_lists, held_others, held_read, held_read_others in (('stable', lists, others, read_true, read_true_others), ('null', null_lists, null_others, read_null, read_null_others)):
                         held = held_lists.get(table)
                         each_name = 'each' if kind == 'stable' else 'null_each'
-                        channel_of = {'mean': 'mean' if kind == 'stable' else 'null_mean'}
-                        if all_numbers:
-                            channel_of.update({'least': 'least', 'most': 'most'} if kind == 'stable' else {'least': 'null_least', 'most': 'null_most'})
+                        channel_of = {'mean': 'mean', 'least': 'least', 'most': 'most'} if kind == 'stable' else {'mean': 'null_mean', 'least': 'null_least', 'most': 'null_most'}
                         if held is None:
                             for name in channel_of.values():
                                 mats[name].add([])
@@ -580,8 +546,6 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
                         spots, hit = place(ids, columns)
                         for channel, name in channel_of.items():
                             mats[name].add(spots[hit], numbers[channel][hit])
-                        stable_spots, stable_hit = place(held[0], columns)
-                        stable_hit = stable_hit & each_keep[stable_spots]
                         graded_ids, *_, at_pairs = held_others[table]
                         graded_spots, graded_hit = place(graded_ids, columns)
                         graded_hit = graded_hit & each_keep[graded_spots]
@@ -590,14 +554,7 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
                             values = at_pairs[:, pair][graded_hit] if held_here else np.zeros(0, dtype=np.float32)
                             active = values != 0
                             place_at = graded_spots[graded_hit][active] if held_here else np.zeros(0, dtype=np.int64)
-                            if blocks:
-                                mats[each_name].add(place_at, values[active])
-                                continue
-                            # At a test input, a shape that reads the output has no value.
-                            stable_here = stable_hit if pair < head['train'] else stable_hit & ~reads_output[stable_spots]
-                            at_all = np.concatenate((stable_spots[stable_here], place_at))
-                            order = np.argsort(at_all)
-                            mats[each_name].add(at_all[order], np.concatenate((held[1][stable_here], values[active]))[order])
+                            mats[each_name].add(place_at, values[active])
                         # What not every table the query reads has as stable, nor the input.
                         read_tables = [found for found in (named(name, held_lists, held_others, held_read, held_read_others, place_of) for name in reads) if found is not None]
                         base = held_lists.get('input')
@@ -616,53 +573,29 @@ def build(root, out, min_tasks, each_tasks=None, all_numbers=False, blocks=False
             count += 1
             if count % 50 == 0:
                 print(f'{split} {count} {count / (time.time() - started):.1f}/s rows {len(rows)} nnz {mats["stable"].count}', flush=True)
-        widths = {'qv': len(QV_NAMES), 'wide': len(wide_columns), 'null_wide': len(wide_columns), 'pair_least': len(pair_columns), 'pair_mean': len(pair_columns), 'pair_most': len(pair_columns), 'graph': len(graph_columns), 'relations': len(RELATIONS) * len(relation_columns)}
-        # Each matrix leaves memory as soon as its split ends. A vocabulary's width is known only at the end of the train split, so those two stay.
         nnz = {name: mats[name].count for name in mats}
-        if blocks:
-            for name in mats:
-                mats[name].write(out / 'blocks' / f'{split}.{name}.zst')
-            for family in FAMILIES:
-                task_rows[family]['stable'].write(out / 'blocks' / f'{split}.family.{family}.stable.zst')
-                task_rows[family]['mean'].write(out / 'blocks' / f'{split}.family.{family}.mean.zst')
-                task_examples[family].write(out / 'blocks' / f'{split}.family.{family}.each.zst')
-            data[split] = dict(rows=rows, example_of=np.array(example_of, dtype=np.int64), index=dict(example_pair=np.array(example_pair, dtype=np.int64), row_task=np.array(row_task, dtype=np.int64), first_example=np.array(first_example, dtype=np.int64), task_train=np.array(task_train, dtype=np.int64), examples=examples_so_far))
-            print(split, 'rows', len(rows), 'nnz', nnz, flush=True)
-            continue
         for name in mats:
-            if name not in ('base', 'ctx'):
-                mats[name].write(widths.get(name, len(columns)), out / f'{split}.{name}.pkl')
-        data[split] = dict(rows=rows, example_of=np.array(example_of, dtype=np.int64), index=dict(example_pair=np.array(example_pair, dtype=np.int64), row_task=np.array(row_task, dtype=np.int64), first_example=np.array(first_example, dtype=np.int64)), family={family: dict(stable=task_rows[family]['stable'].csr(len(family_columns[family])), mean=task_rows[family]['mean'].csr(len(family_columns[family])), each=task_examples[family].csr(len(family_columns[family]))) for family in FAMILIES}, matrices={name: mats[name].csr({'base': 4096, 'ctx': 8192}[name]) for name in ('base', 'ctx')})
+            mats[name].write(out / 'blocks' / f'{split}.{name}.zst')
+        for family in FAMILIES:
+            task_rows[family]['stable'].write(out / 'blocks' / f'{split}.family.{family}.stable.zst')
+            task_rows[family]['mean'].write(out / 'blocks' / f'{split}.family.{family}.mean.zst')
+            task_examples[family].write(out / 'blocks' / f'{split}.family.{family}.each.zst')
+        data[split] = dict(rows=rows, example_of=np.array(example_of, dtype=np.int64), index=dict(example_pair=np.array(example_pair, dtype=np.int64), row_task=np.array(row_task, dtype=np.int64), first_example=np.array(first_example, dtype=np.int64), task_train=np.array(task_train, dtype=np.int64), examples=examples_so_far))
         print(split, 'rows', len(rows), 'nnz', nnz, flush=True)
-    width_base, width_ctx = len(base_vocab), len(context_vocab)
     for split in data:
-        if not blocks:
-            data[split]['matrices']['base'] = data[split]['matrices']['base'][:, :width_base]
-            data[split]['matrices']['ctx'] = data[split]['matrices']['ctx'][:, :width_ctx]
         with (out / f'{split}.rows.pkl').open('wb') as sink:
             pickle.dump(data[split]['rows'], sink, protocol=4)
         with (out / f'{split}.example_of.pkl').open('wb') as sink:
             pickle.dump(data[split]['example_of'], sink, protocol=4)
         with (out / f'{split}.index.pkl').open('wb') as sink:
             pickle.dump(data[split]['index'], sink, protocol=4)
-        if blocks:
-            continue
-        with (out / f'{split}.family.pkl').open('wb') as sink:
-            pickle.dump(data[split]['family'], sink, protocol=4)
-        for name, matrix in data[split]['matrices'].items():
-            with (out / f'{split}.{name}.pkl').open('wb') as sink:
-                pickle.dump(matrix, sink, protocol=4)
-    meta = dict(columns=columns, column_tasks=column_tasks, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab, wide_columns=wide_columns, pair_columns=pair_columns, wide_names=wide_names, wide_flags=wide_flags, family_columns=family_columns, family_names=family_names, family_flags=family_flags, graph_columns=graph_columns, relation_columns=relation_columns)
-    if blocks:
-        meta['blocks'] = True
-        meta['widths'] = dict({name: len(columns) for name in ('stable', 'null', 'contingent', 'null_contingent', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'each', 'null_each')}, base=len(base_vocab), ctx=len(context_vocab), qv=len(QV_NAMES), wide=len(wide_columns), null_wide=len(wide_columns), pair_least=len(pair_columns), pair_mean=len(pair_columns), pair_most=len(pair_columns), graph=len(graph_columns), relations=len(RELATIONS) * len(relation_columns))
+    meta = dict(columns=columns, column_tasks=column_tasks, names=names, flags=flags, sizes=sizes, base=base_vocab, ctx=context_vocab, wide_columns=wide_columns, pair_columns=pair_columns, wide_names=wide_names, wide_flags=wide_flags, family_columns=family_columns, family_names=family_names, family_flags=family_flags, graph_columns=graph_columns, relation_columns=relation_columns, query_columns=query_columns)
+    meta['blocks'] = True
+    meta['widths'] = dict({name: len(columns) for name in ('stable', 'null', 'contingent', 'null_contingent', 'mean', 'least', 'most', 'null_mean', 'null_least', 'null_most', 'each', 'null_each')}, base=len(base_vocab), ctx=len(context_vocab), qv=len(QV_NAMES), wide=len(wide_columns), null_wide=len(wide_columns), pair_least=len(pair_columns), pair_mean=len(pair_columns), pair_most=len(pair_columns), graph=len(graph_columns), relations=len(RELATIONS) * len(relation_columns), query=len(query_columns))
     with (out / 'meta.pkl').open('wb') as sink:
         pickle.dump(meta, sink, protocol=4)
     code = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, cwd=ROOT_REPO).stdout.strip()
-    (out / 'provenance.json').write_text(json.dumps(dict(lists=str(root), code=code, min_tasks=min_tasks, each_tasks=each_tasks, tasks={split: len({row[0] for row in data[split]['rows']}) for split in data}, columns=len(columns))))
-    del data
-    for path in out.glob('tmp*'):
-        path.unlink()
+    (out / 'provenance.json').write_text(json.dumps(dict(lists=str(root), code=code, tasks={split: len({row[0] for row in data[split]['rows']}) for split in data}, columns=len(columns))))
     print('built', flush=True)
 
 
@@ -733,76 +666,12 @@ def score_items(rows, groups, scores):
     return auc, mrr, first, edits
 
 
-def group_auc(preds, data):
-    total = count = 0.0
-    at = 0
-    labels = data.get_label()
-    for size in data.get_group():
-        size = int(size)
-        here, marks = preds[at:at + size], labels[at:at + size]
-        gold, rest = here[marks > 0][:, None], here[marks == 0]
-        total += float(((gold > rest) + 0.5 * (gold == rest)).mean())
-        count += 1
-        at += size
-    return 'group_auc', total / max(count, 1.0), True
-
-
-def fit_runs(X, rows, groups, seeds, threads=4, fraction=0.5):
-    """One fit per seed. Each seed's held-out tasks stop its boosting, and the fit it keeps reads every group. They share
-    one binned dataset, so X's rows must stand in the order of the groups."""
-    import lightgbm as lgb
-    params = dict(objective='lambdarank', metric='None', label_gain=[0, 1], lambdarank_truncation_level=40, learning_rate=0.05, num_leaves=31, min_data_in_leaf=20, feature_fraction=fraction, feature_pre_filter=True, max_bin=31, num_threads=threads, verbosity=-1, data_random_seed=7)
-    order = [m for g in groups for m in g]
-    assert order == list(range(X.shape[0])), 'rows out of the order of the groups'
-    labels = np.array([1 if rows[m][2] == 0 else 0 for m in order])
-    whole = lgb.Dataset(X, label=labels, group=[len(g) for g in groups], free_raw_data=True, params=params).construct()
-    tasks = sorted({rows[g[0]][0] for g in groups})
-    runs = []
-    for at in range(seeds):
-        seed = 7 + at
-        rng = np.random.default_rng(seed)
-        held = set(rng.choice(tasks, size=max(1, len(tasks) * 15 // 100), replace=False).tolist())
-        inner = [m for g in groups if rows[g[0]][0] not in held for m in g]
-        outer = [m for g in groups if rows[g[0]][0] in held for m in g]
-        seeded = dict(params, feature_fraction_seed=seed, objective_seed=seed)
-        train_set, valid_set = whole.subset(inner), whole.subset(outer)
-        booster = lgb.train(seeded, train_set, num_boost_round=1500, valid_sets=[valid_set], feval=group_auc, callbacks=[lgb.early_stopping(100, verbose=False)])
-        rounds = max(booster.best_iteration, 10)
-        del booster, train_set, valid_set
-        final = lgb.train(seeded, whole, num_boost_round=rounds)
-        final.free_dataset()
-        runs.append((final, rounds))
-    return runs
-
-
 def per_pair(spec):
     return any(raw.split('~')[0].split('^')[0] in ('TIOe', 'TIOe_null') for raw in spec.split('+'))
 
 
 def channel_null(channel):
     return 'null' if channel == 'stable' else f'null_{channel}'
-
-
-def distinct_columns(X, labels):
-    """One column for each set of columns equal on every row of X, and none for a column with no entry.
-    Gives the columns kept and, for each, every column it stands for, its own first."""
-    rng = np.random.default_rng(11)
-    width = X.shape[1]
-    weights = rng.random((2, X.shape[0]))
-    sums = np.zeros((2, width))
-    counts = np.zeros(width, dtype=np.int64)
-    for start in range(0, X.shape[0], 20000):
-        chunk = X[start:start + 20000]
-        row = np.repeat(np.arange(start, start + chunk.shape[0]), np.diff(chunk.indptr))
-        values = np.nan_to_num(chunk.data.astype(np.float64), nan=7.77)
-        for at in range(2):
-            sums[at] += np.bincount(chunk.indices, weights=values * weights[at][row], minlength=width)
-        counts += np.bincount(chunk.indices, minlength=width)
-    groups = defaultdict(list)
-    for j in np.flatnonzero(counts).tolist():
-        groups[(sums[0, j], sums[1, j], counts[j])].append(j)
-    members = sorted(sorted(group, key=lambda j: (len(labels[j]), labels[j])) for group in groups.values())
-    return [group[0] for group in members], members
 
 
 def write_importance(path, gain, splits, labels, members):
@@ -861,294 +730,23 @@ def column_value(label, entries, pair=0):
 
 
 def score(out, spec, name, vectors):
-    import lightgbm as lgb
-    models = Path(out) / 'models'
-    if (models / f'{name}.{spec}.0.jsonl').exists():
-        import block_fit
-        return block_fit.score(models, spec, name, vectors)
-    columns = (models / f'{name}.{spec}.columns.txt').read_text().splitlines()
-    fits = [lgb.Booster(model_file=str(path)) for path in sorted(models.glob(f'{name}.{spec}.[0-9]*.txt'))]
-    for vector in vectors:
-        entries = vector_entries(vector)
-        pairs = max((len(held[4]) for held in entries.values()), default=1) if per_pair(spec.split('@')[0]) else 1
-        row = np.array([[column_value(label, entries, pair) for label in columns] for pair in range(pairs)])
-        at = np.mean([fit.predict(row) for fit in fits], axis=0)
-        print('|'.join(f'{value:+.3f}' for value in at) + f' {sum(1 for v in row[0] if v != 0)} of {len(columns)} columns hold an entry\t{vector}', flush=True)
+    import block_fit
+    return block_fit.score(Path(out) / 'models', spec, name, vectors)
 
 
-def most_varied(held, count):
-    """The columns of a matrix with one row per task that take the most distinct values, in order of place."""
-    columns = held.tocsc()
-    tasks = columns.shape[0]
-    distinct = np.zeros(columns.shape[1], dtype=np.int64)
-    for j in range(columns.shape[1]):
-        start, end = columns.indptr[j], columns.indptr[j + 1]
-        distinct[j] = len(np.unique(columns.data[start:end])) + (end - start < tasks)
-    # A column equal on every task says nothing, and the place breaks ties, which the shape's hash fixes.
-    order = np.argsort(-distinct, kind='stable')[:count]
-    return np.sort(order[distinct[order] > 1])
-
-
-def fit(out, sets, filters, threads, fraction, seeds=5, family_columns=1500):
+def fit(out, sets, filters, threads, fraction, seeds=5):
+    import block_fit
     out = Path(out)
     meta = pickle.load((out / 'meta.pkl').open('rb'))
-    if meta.get('blocks'):
-        import block_fit
-        return block_fit.fit(out, meta, sets, filters, threads, fraction, seeds)
-    needed = {'base'}
-    families_needed = False
-    for spec in sets:
-        for raw in spec.split('@')[0].split('+'):
-            term = re.split(r'[~^]', raw)[0]
-            if term == 'TIO_null':
-                needed |= {'stable', 'null'}
-            elif term in ('T', 'TI', 'TIO'):
-                needed.add('stable')
-            elif term == 'contingent':
-                needed.add(term)
-            elif term == 'contingent_null':
-                needed |= {'contingent', 'null_contingent'}
-            elif term in ('ctx', 'qv', 'wide', 'graph', 'relations'):
-                needed.add(term)
-            elif term in FAMILIES:
-                families_needed = True
-            elif term == 'wide_null':
-                needed |= {'wide', 'null_wide'}
-            elif term == 'TIOe':
-                needed |= {'each', 'stable'}
-            elif term == 'TIOe_null':
-                needed |= {'each', 'stable', 'null_each', 'null'}
-            elif term == 'pair':
-                needed |= {'pair_least', 'pair_mean', 'pair_most'}
-            elif term in CHANNELS:
-                needed |= set(CHANNELS[term])
-            elif term.endswith('_null') and term[:-5] in CHANNELS:
-                needed |= set(CHANNELS[term[:-5]]) | {channel_null(channel) for channel in CHANNELS[term[:-5]]}
-
-    def loaded(split):
-        rows = pickle.load((out / f'{split}.rows.pkl').open('rb'))
-        example_of = pickle.load((out / f'{split}.example_of.pkl').open('rb')) if (out / f'{split}.example_of.pkl').exists() else None
-        index = pickle.load((out / f'{split}.index.pkl').open('rb')) if (out / f'{split}.index.pkl').exists() else None
-        family = pickle.load((out / f'{split}.family.pkl').open('rb')) if families_needed else None
-        return dict(rows=rows, example_of=example_of, index=index, family=family, matrices={name: pickle.load((out / f'{split}.{name}.pkl').open('rb')) for name in needed})
-
-    single = len(sets) == 1 and len(filters) == 1
-    train = loaded('train')
-    dev = None if single else loaded('dev')
-    family_keep = {family: most_varied(train['family'][family]['mean'], family_columns) for family in FAMILIES} if families_needed else {}
-    columns = meta['columns']
-    flags = np.array([meta['flags'].get(int(key), 0) for key in columns])
-    names = [meta['names'].get(int(key), '') for key in columns]
-    base_names = {index: key for key, index in meta['base'].items()}
-    ctx_names = {index: str(key) for key, index in meta['ctx'].items()}
-    print('train rows', len(train['rows']), 'columns', len(columns), 'by reading', Counter(READS.get(int(f), '?') for f in flags), flush=True)
-    base_columns = {
-        'base0': np.array([i for i in range(len(base_names)) if base_names[i] not in LABEL_STRUCTURE]),
-        'base': np.arange(len(base_names)),
-    }
-    wide_labels = [meta['wide_names'].get(int(key), '') for key in meta.get('wide_columns', [])]
-    wide_reads = np.array([meta['wide_flags'].get(int(key), 0) for key in meta.get('wide_columns', [])])
-    masks = {'T': flags == 4, 'TI': (flags == 4) | (flags == 5), 'TIO': flags > 0, 'O': flags >= 6}
-
-    column_tasks = meta.get('column_tasks', np.zeros(len(columns), dtype=np.int32))
-    told_on = {'tasks': 0}
-
-    def word_mask(term, labels):
-        """A term's name filter: `~WORD` leaves out, `^WORD` keeps. It also keeps a set's `@K`."""
-        keep = column_tasks >= told_on['tasks']
-        for sign, word in re.findall(r'([~^])([^~^]+)', term):
-            holds = np.array([word in label for label in labels])
-            keep &= ~holds if sign == '~' else holds
-        return keep
-
-    def grab(split, name):
-        """A matrix to read once. A process with one set to fit drops it, since nothing reads it again."""
-        return split['matrices'].pop(name) if single else split['matrices'][name]
-
-    def matrix(split, spec, groups):
-        """A set's matrix over the rows of `groups` alone, in their order, the candidate of each row, and its labels."""
-        of_all = split['example_of'] if per_pair(spec) else np.arange(len(split['rows']))
-        wanted = np.isin(of_all, np.array(sorted({m for g in groups for m in g}), dtype=np.int64))
-        of = of_all[wanted]
-        parts = []
-        labels = []
-        for raw in spec.split('+'):
-            term = re.split(r'[~^]', raw)[0]
-            if term in base_columns:
-                parts.append(split['matrices']['base'][:, base_columns[term]])
-                labels.extend(base_names[int(i)] for i in base_columns[term])
-            elif term == 'ctx':
-                parts.append(split['matrices']['ctx'])
-                labels.extend(ctx_names[i] for i in range(len(ctx_names)))
-            elif term == 'qv':
-                parts.append(split['matrices']['qv'])
-                labels.extend(f'qv:{name}' for name in QV_NAMES)
-            elif term in FAMILIES:
-                held = split['family'][term]
-                kept = family_keep[term]
-                labels_of = [f"{term}:{meta['family_names'].get(int(meta['family_columns'][term][at]), '')}" for at in kept]
-                index = split['index']
-                if per_pair(spec):
-                    tasks = index['row_task'][split['example_of']]
-                    parts.append(held['each'][:, kept][(index['first_example'][tasks] + index['example_pair'])[wanted]])
-                    labels.extend(f'{label}:each' for label in labels_of)
-                    parts.append(held['stable'][:, kept][tasks[wanted]])
-                    labels.extend(f'{label}:stable' for label in labels_of)
-                else:
-                    parts.append(held['stable'][:, kept][index['row_task']])
-                    labels.extend(f'{label}:stable' for label in labels_of)
-                    parts.append(held['mean'][:, kept][index['row_task']])
-                    labels.extend(f'{label}:mean' for label in labels_of)
-            elif term == 'graph':
-                parts.append(split['matrices']['graph'])
-                labels.extend(f"graph:{meta['family_names'].get(int(key), '')}" for key in meta['graph_columns'])
-            elif term == 'relations':
-                parts.append(split['matrices']['relations'])
-                labels.extend(f"{relation}:{meta['family_names'].get(int(key), '')}" for relation in RELATIONS for key in meta['relation_columns'])
-            elif term == 'wide':
-                parts.append(split['matrices']['wide'])
-                labels.extend(wide_labels)
-            elif term == 'wide_null':
-                keep_true = np.flatnonzero(wide_reads < 6)
-                keep_null = np.flatnonzero(wide_reads >= 6)
-                parts.append(split['matrices']['wide'][:, keep_true])
-                parts.append(split['matrices']['null_wide'][:, keep_null])
-                labels.extend(wide_labels[int(i)] for i in keep_true)
-                labels.extend(wide_labels[int(i)] for i in keep_null)
-            elif term == 'pair':
-                for channel in ('least', 'mean', 'most'):
-                    parts.append(split['matrices'][f'pair_{channel}'])
-                    labels.extend(f"{meta['wide_names'].get(int(key), '')}:{channel}" for key in meta['pair_columns'])
-            elif term in ('T', 'TI', 'TIO'):
-                keep = np.flatnonzero(masks[term] & word_mask(raw, names))
-                parts.append(split['matrices']['stable'][:, keep])
-                labels.extend(names[int(i)] for i in keep)
-            elif term == 'contingent':
-                keep = np.flatnonzero(word_mask(raw, names))
-                parts.append(split['matrices'][term][:, keep])
-                labels.extend(term + ':' + names[int(i)] for i in keep)
-            elif term == 'TIOe':
-                keep = np.flatnonzero((flags > 0) & word_mask(raw, names))
-                parts.append(grab(split, 'each')[:, keep][wanted])
-                labels.extend(f'{names[int(i)]}:each' for i in keep)
-                parts.append(grab(split, 'stable')[:, keep])
-                labels.extend(f'{names[int(i)]}:stable' for i in keep)
-            elif term == 'TIOe_null':
-                keep_true = np.flatnonzero((flags < 6) & (flags > 0) & word_mask(raw, names))
-                keep_null = np.flatnonzero((flags >= 6) & word_mask(raw, names))
-                for channel, null_channel, suffix in (('each', 'null_each', 'each'), ('stable', 'null', 'stable')):
-                    parts.append(grab(split, channel)[:, keep_true][wanted] if channel == 'each' else grab(split, channel)[:, keep_true])
-                    parts.append(grab(split, null_channel)[:, keep_null][wanted] if channel == 'each' else grab(split, null_channel)[:, keep_null])
-                    labels.extend(f'{names[int(i)]}:{suffix}' for i in keep_true)
-                    labels.extend(f'{names[int(i)]}:{suffix}' for i in keep_null)
-            elif term in CHANNELS:
-                keep = np.flatnonzero((flags > 0) & (flags < 6 if term.startswith('TI') and not term.startswith('TIO') else True) & word_mask(raw, names))
-                for channel in CHANNELS[term]:
-                    parts.append(split['matrices'][channel][:, keep])
-                    labels.extend(f'{names[int(i)]}:{channel}' for i in keep)
-            elif term.endswith('_null') and term[:-5] in CHANNELS:
-                keep_true = np.flatnonzero((flags < 6) & (flags > 0) & word_mask(raw, names))
-                keep_null = np.flatnonzero((flags >= 6) & word_mask(raw, names))
-                for channel in CHANNELS[term[:-5]]:
-                    parts.append(split['matrices'][channel][:, keep_true])
-                    parts.append(split['matrices'][channel_null(channel)][:, keep_null])
-                    labels.extend(f'{names[int(i)]}:{channel}' for i in keep_true)
-                    labels.extend(f'{names[int(i)]}:{channel}' for i in keep_null)
-            elif term in ('TIO_null', 'contingent_null'):
-                first, second = ('stable', 'null') if term == 'TIO_null' else ('contingent', 'null_contingent')
-                keep_true = np.flatnonzero((flags < 6) & (flags > 0) & word_mask(raw, names))
-                keep_null = np.flatnonzero((flags >= 6) & word_mask(raw, names))
-                parts.append(split['matrices'][first][:, keep_true])
-                parts.append(split['matrices'][second][:, keep_null])
-                labels.extend(names[int(i)] for i in keep_true)
-                labels.extend(names[int(i)] for i in keep_null)
-            else:
-                raise ValueError(term)
-        # A candidate's own terms repeat on each of its rows.
-        parts = [part.tocsr()[of] if part.shape[0] == len(split['rows']) else part for part in parts]
-        gc.collect()
-        whole = sp.hstack(parts, format='csr') if len(parts) > 1 else parts[0].tocsr()
-        del parts
-        gc.collect()
-        return whole, labels, of
-
-    def per_candidate(of, values, count):
-        """Each candidate's mean over its rows."""
-        return np.bincount(of, weights=values, minlength=count) / np.maximum(np.bincount(of, minlength=count), 1)
-
-    def worst_of(of, values, count):
-        """Each candidate's value at its worst row."""
-        held = np.full(count, np.inf)
-        np.minimum.at(held, of, values)
-        return held
-
-    def fit_rows_of(split, of, groups):
-        """The rows of a fit and its groups, as places among them."""
-        at = defaultdict(list)
-        for row, candidate in enumerate(of.tolist()):
-            at[candidate].append(row)
-        return [split['rows'][candidate] for candidate in of.tolist()], [[row for member in group for row in at[member]] for group in groups]
-
-    sink = (out / 'fits.jsonl').open('a')
-    for name in filters:
-        chosen = FILTERS[name]
-        args = {k: v for k, v in chosen.items() if k != 'label'}
-        train_groups = selected(train['rows'], **args)
-        for spec in sets:
-            started = time.time()
-            written_spec, _, told = spec.partition('@')
-            told_on['tasks'] = int(told or 0)
-            X_train, labels, of_train = matrix(train, written_spec, train_groups)
-            written = X_train.shape[1]
-            kept, members = distinct_columns(X_train, labels)
-            X_train = X_train[:, kept]
-            distinct = X_train.shape[1]
-            gc.collect()
-            fit_rows, fit_groups = fit_rows_of(train, of_train, train_groups)
-            runs = fit_runs(X_train, fit_rows, fit_groups, seeds, threads=threads, fraction=fraction)
-            gain = sum(model.feature_importance(importance_type='gain') for model, _ in runs)
-            splits = sum(model.feature_importance(importance_type='split') for model, _ in runs)
-            write_importance(out / 'importance' / f'{name}.{spec}.tsv.zst', gain, splits, labels, members)
-            kept_labels = [labels[j] for j in kept]
-            for at, (model, _) in enumerate(runs):
-                (out / 'models').mkdir(exist_ok=True)
-                (out / 'models' / f'{name}.{spec}.{at}.txt').write_text(model.model_to_string())
-            (out / 'models' / f'{name}.{spec}.columns.txt').write_text('\n'.join(kept_labels) + '\n')
-            labels = kept_labels
-            train_auc = np.mean(list(score_items(train['rows'], train_groups, per_candidate(of_train, np.mean([model.predict(X_train) for model, _ in runs], axis=0), len(train['rows'])))[0].values()))
-            del X_train
-            gc.collect()
-            if dev is None:
-                dev = loaded('dev')
-            dev_groups = selected(dev['rows'], **args)
-            X_dev, _, of_dev = matrix(dev, written_spec, dev_groups)
-            X_dev = X_dev[:, kept]
-            raw = [model.predict(X_dev) for model, _ in runs]
-            each = [per_candidate(of_dev, values, len(dev['rows'])) for values in raw]
-            each_auc = [float(np.mean(list(score_items(dev['rows'], dev_groups, values)[0].values()))) for values in each]
-            rounds = int(np.median([held for _, held in runs]))
-            scores = np.mean(each, axis=0)
-            auc, mrr, first, edits = score_items(dev['rows'], dev_groups, scores)
-            worst = float(np.mean(list(score_items(dev['rows'], dev_groups, worst_of(of_dev, np.mean(raw, axis=0), len(dev['rows'])))[0].values()))) if per_pair(written_spec) else None
-            values = list(auc.values())
-            low, high = boot(values)
-            pairs = sum(len(g) - 1 for g in dev_groups)
-            top = np.argsort(-gain)[:15]
-            print(f"{name:6} {spec:26} AUC {np.mean(values):.3f} ({low:.3f}, {high:.3f}) worst {worst if worst is None else round(worst, 3)} seeds {np.mean(each_auc):.3f}+-{np.std(each_auc):.3f} first {np.mean(list(first.values())):.3f} rr {np.mean(list(mrr.values())):.3f} tasks {len(values)} pairs {pairs} | train {train_auc:.3f} rounds {rounds} cols {written} distinct {distinct} used {int((gain > 0).sum())} {time.time() - started:.0f}s | " + ' '.join(f'{e} {np.mean(list(h.values())):.3f}' for e, h in sorted(edits.items())), flush=True)
-            sink.write(json.dumps(dict(filter=name, spec=spec, auc=auc, mrr=mrr, first=first, edits={e: h for e, h in edits.items()}, rounds=rounds, worst=worst, seeds=each_auc, columns=written, distinct=distinct, used=int((gain > 0).sum()), top=[(labels[int(i)], float(gain[i])) for i in top if gain[i] > 0])) + '\n')
-            sink.flush()
-    sink.close()
+    if not meta.get('blocks'):
+        raise SystemExit(f'{out} holds a store of an older form: build it again')
+    return block_fit.fit(out, meta, sets, filters, threads, fraction, seeds)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=['build', 'fit', 'compare', 'score'])
     parser.add_argument('paths', nargs='+')
-    parser.add_argument('--min-tasks', type=int, default=3)
-    parser.add_argument('--each-tasks', type=int)
-    parser.add_argument('--all-numbers', action='store_true')
-    parser.add_argument('--flat', action='store_true', help='rows as whole matrices, for a fit by LightGBM; reads --min-tasks, --each-tasks, --all-numbers and --family-columns')
-    parser.add_argument('--family-columns', type=int, default=1500)
     parser.add_argument('--sets', nargs='*', default=[])
     parser.add_argument('--filters', nargs='*', default=['rows', 'same'])
     parser.add_argument('--threads', type=int, default=4)
@@ -1157,13 +755,13 @@ def main():
     parser.add_argument('--filter', default='rows')
     a = parser.parse_args()
     if a.command == 'build':
-        build(a.paths[0], a.paths[1], a.min_tasks, a.each_tasks, a.all_numbers, not a.flat)
+        build(a.paths[0], a.paths[1])
     elif a.command == 'compare':
         compare(a.paths[0], a.paths[1], a.paths[2], a.filter)
     elif a.command == 'score':
         score(a.paths[0], a.paths[1], a.filter, a.paths[2:])
     else:
-        fit(a.paths[0], a.sets, a.filters, a.threads, a.fraction, a.seeds, a.family_columns)
+        fit(a.paths[0], a.sets, a.filters, a.threads, a.fraction, a.seeds)
 
 
 if __name__ == '__main__':
