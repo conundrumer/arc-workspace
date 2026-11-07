@@ -17,7 +17,7 @@ DIR = os.environ.get('WRITER_PARITY_DIR')
 SINK = []
 SEEN = collections.Counter()
 KEPT = collections.Counter()
-PLAN = dict(token=(12, 25, 40), atom=(8, 5, 24))  # (the first points kept, then one in this many, up to this many)
+PLAN = dict(token=(12, 25, 40), atom=(8, 5, 24), full=(6, 5, 12))  # (the first points kept, then one in this many, up to this many)
 
 
 def _b64(x):
@@ -62,6 +62,16 @@ def note_atom(pt, keep, point, tok, struct, defined, av, delta, bits, core):
         _put(dict(record='atom', task=_task(), kind=pt.kind, forms=list(pt.run.current_forms), tokens=[core.names[int(t)] for t in pt.tokens], cands=[[core.names[int(t)] for t in c[0]] for c in keep], point=_b64(point), tok=_b64(tok), struct=_b64(struct), defined=_b64(defined), av=_b64(av), delta=_b64(delta), bits=_b64(bits), n=len(keep), widths=[len(point), tok.shape[1], struct.shape[1], av.shape[1]]))
 
 
+LAST_FULL = [None]
+
+
+def note_full(pt, tokens, M, core):
+    """A worker's rows over a full candidate set, in its model's columns."""
+    LAST_FULL[0] = M
+    if DIR and _due('full', pt):
+        _put(dict(record='full', task=_task(), kind=pt.kind, forms=list(pt.run.current_forms), tokens=[core.names[int(t)] for t in pt.tokens], cands=[[core.names[int(t)] for t in c] for c in tokens], shape=list(M.shape), M=_b64(M)))
+
+
 def records(folder):
     import zstandard
     for path in sorted(glob.glob(os.path.join(folder, 'parity.*.zst'))):
@@ -78,6 +88,7 @@ def differ(a, b):
 
 def check(folder, tree, models, atoms_wanted=True):
     import live, live_try, tree_dist, writer
+    writer.PARITY = sys.modules[__name__]
     live_try.P.REPO = os.environ.get('ARC_ROOT', live_try.P.REPO)
     distribution = tree_dist.load(tree)
     sampler = live.Sampler(models, steers=())
@@ -113,6 +124,21 @@ def check(folder, tree, models, atoms_wanted=True):
                 for c in differ(here, there):
                     bad['token ' + r['columns'][c]] += 1
                     examples.setdefault('token ' + r['columns'][c], (task, r['tokens'][-3:], here[:, c][:4].tolist(), there[:, c][:4].tolist()))
+            elif r['record'] == 'full':
+                import atom_writer as AW
+                points['full'] += 1
+                tokens, probs, costs = AW.full_decide(pt, plan)
+                names = [[core.names[int(t)] for t in c] for c in tokens]
+                if names != r['cands']:
+                    bad['full candidates differ'] += 1
+                    examples.setdefault('full candidates differ', (task, r['tokens'][-3:], len(names), len(r['cands']), names[:3], r['cands'][:3]))
+                    continue
+                here = LAST_FULL[0]
+                there = _array(r['M'], r['shape'])
+                for c in differ(here, there):
+                    label = 'full ' + AW.full_model(run, AW.FULL_S)[3][c]
+                    bad[label] += 1
+                    examples.setdefault(label, (task, r['tokens'][-3:], here[:, c][:4].tolist(), there[:, c][:4].tolist()))
             else:
                 import atom_writer as AW
                 n, (p_w, t_w, s_w, a_w) = r['n'], r['widths']
