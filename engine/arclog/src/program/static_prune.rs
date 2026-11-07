@@ -609,6 +609,30 @@ pub fn makes_earlier_redundant(body: &Body) -> Option<&'static str> {
     }
 }
 
+/// The rule by which the last conjunct of a flat decoder body reads the row
+/// that an earlier atom of its relation reads, where it does: the two are
+/// positive atoms whose sites hold the same values at each column of a key of
+/// the relation, which `keys` gives. The relation has at most one row of each
+/// value of a key, so the two atoms match one row, and one atom with the
+/// sites of both reads it.
+pub fn reads_an_earlier_row(body: &Body, keys: &dyn Fn(&RelationRef) -> Vec<Vec<ColumnName>>) -> Option<&'static str> {
+    let (Conjunct::Atom(last), earlier) = body.conjuncts.split_last()? else { return None };
+    let last = last.value();
+    let later = held(last)?;
+    let keys = keys(&last.relation);
+    let at = |sites: &[(&ColumnName, Held, bool)], column: &ColumnName| sites.iter().find(|(c, _, _)| *c == column).map(|(_, value, _)| *value);
+    earlier.iter().find_map(|prior| {
+        let Conjunct::Atom(prior) = prior else { return None };
+        if prior.value().relation != last.relation {
+            return None;
+        }
+        let prior = held(prior.value())?;
+        keys.iter()
+            .any(|key| !key.is_empty() && key.iter().all(|column| at(&prior, column).is_some_and(|value| at(&later, column) == Some(value))))
+            .then_some("atom.same_row")
+    })
+}
+
 /// The refusal message of the static prune's rule `rule`, for the rules whose
 /// refusal names its rule.
 pub fn rule_message(rule: &str) -> Option<&'static str> {
@@ -622,6 +646,7 @@ pub fn rule_message(rule: &str) -> Option<&'static str> {
         "not.implies_earlier" => "static prune: the completed `NOT` refuses each row an earlier `NOT` of its relation refuses",
         "comparison.implies_earlier" => "static prune: the completed comparison implies an earlier comparison of its two operands",
         "comparison.merges" => "static prune: two comparisons of the same two operands are one comparison",
+        "atom.same_row" => "static prune: by a key of its relation, the completed atom reads the row an earlier atom of the relation reads",
         _ => return None,
     })
 }

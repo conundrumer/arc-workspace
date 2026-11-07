@@ -858,7 +858,10 @@ impl<'a> Decoder<'a> {
         for index in prior..count {
             let prefix = crate::program::Body { conjuncts: body.conjuncts[..=index].into() };
             let Some(found) = crate::program::static_prune::classify_prefix(&prefix, &type_of) else {
-                if let Some(rule) = crate::program::static_prune::makes_earlier_redundant(&prefix) {
+                let keys = |relation: &RelationRef| relation_keys(self.context.registry, relation);
+                let rule = crate::program::static_prune::makes_earlier_redundant(&prefix)
+                    .or_else(|| crate::program::static_prune::reads_an_earlier_row(&prefix, &keys));
+                if let Some(rule) = rule {
                     return Err(Refusal::Grammar(crate::program::static_prune::rule_message(rule).expect("a message of each rule")));
                 }
                 continue;
@@ -946,7 +949,9 @@ impl<'a> Decoder<'a> {
                         Class::Valid => Some(rule_message(found.rule).unwrap_or("static prune: the completed atom repeats an existing test")),
                         Class::Alias | Class::Constant => None,
                     },
-                    None => makes_earlier_redundant(&prefix).and_then(rule_message),
+                    None => makes_earlier_redundant(&prefix)
+                        .or_else(|| crate::program::static_prune::reads_an_earlier_row(&prefix, &|relation| relation_keys(self.context.registry, relation)))
+                        .and_then(rule_message),
                 };
                 if let Some(message) = message {
                     return Err(Refusal::Grammar(message));
@@ -1109,6 +1114,35 @@ struct MaskMemo {
     /// The forms of the state's program with the form in progress, and each
     /// list on the path of the form's open node, as [`open_lists`] gives.
     open_lists: std::cell::OnceCell<Option<(usize, Vec<(NodePath, usize)>)>>,
+}
+
+/// The keys of `relation` that the `(key ...)` items of its lib element's
+/// `refines` form give, each as its columns: those of a fact relation and of
+/// a lib relation. A relation of the program has none here.
+fn relation_keys(registry: &Registry, relation: &RelationRef) -> Vec<Vec<crate::program::ColumnName>> {
+    use crate::program::FactRelation;
+    use crate::read::SExpr;
+    let name: &str = match relation {
+        RelationRef::Fact(FactRelation::Input) => "input",
+        RelationRef::Fact(FactRelation::ExInput) => "ex_input",
+        RelationRef::Fact(FactRelation::ExOutput) => "ex_output",
+        RelationRef::Lib(name) => &name.0,
+        _ => return Vec::new(),
+    };
+    let symbol = |item: &SExpr| match item {
+        SExpr::Symbol { text, .. } => Some(text.clone()),
+        _ => None,
+    };
+    registry
+        .refines(name)
+        .iter()
+        .filter_map(|item| match item {
+            SExpr::List { items, .. } if items.first().and_then(symbol).as_deref() == Some("key") => {
+                items[1..].iter().map(|column| symbol(column).map(|text| crate::program::ColumnName::Written(text))).collect()
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Each list on `open`, the path of the open node of `form`: its path in

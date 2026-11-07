@@ -607,8 +607,9 @@ impl Registry {
     }
 
     /// The items of the `refines` form of a lib element: a relation, a fact, or `Component.output`.
-    /// What the items say is the feature encoder's to read, as
-    /// `docs/feature-spec/feature-spec.md#size-and-the-encoder` gives.
+    /// The feature encoder reads them, as
+    /// `docs/feature-spec/feature-spec.md#size-and-the-encoder` gives, and the
+    /// decoder's static prune reads their `(key ...)` items.
     pub fn refines(&self, name: &str) -> &[crate::read::SExpr] {
         self.refines.get(name).map_or(&[], |items| &items[..])
     }
