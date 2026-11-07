@@ -213,7 +213,7 @@ fn mean_over_models(held: &[&Slot]) -> Slot {
         }
     };
     let digest = held.iter().fold(0u64, |sum, slot| sum.wrapping_add(slot.digest));
-    Slot { greatest: total(&|slot| slot.greatest), second: total(&|slot| slot.second), digest, state: SLOT_VALUE }
+    Slot { greatest: total(&|slot| slot.greatest), second: total(&|slot| slot.second), digest, state: SLOT_VALUE, undefined: 0 }
 }
 
 /// The vector of `table` over the first `examples` examples of `grids`.

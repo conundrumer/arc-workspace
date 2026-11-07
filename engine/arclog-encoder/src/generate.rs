@@ -2309,6 +2309,8 @@ pub struct Slot {
     pub digest: u64,
     /// 0 where every value is the default, 1 where one is not, 2 where a bound stopped one.
     pub state: u8,
+    /// The count of ground expressions that the root's definition leaves out here, as a ratio whose denominator counts 0.
+    pub undefined: u32,
 }
 
 pub const SLOT_DEFAULT: u8 = 0;
@@ -2323,6 +2325,8 @@ pub struct RootTable {
     pub stride: usize,
     /// What each root reads, its size, and which kind of root it is.
     pub meta: Vec<(u8, u8, RootOf)>,
+    /// Per root, the count of terms that give it a value at every instance, and of those that give it one at the train instances alone.
+    bindings: FastMap<u128, (u32, u32)>,
 }
 
 impl RootTable {
@@ -2450,45 +2454,46 @@ fn gcd(a: u64, b: u64) -> u64 {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
-/// The value of a root at an instance: no value, or a number and the word that hashes it.
-fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Option<(Number, u64)> {
-    let share = |top: u32, bottom: u32| -> Option<(Number, u64)> {
-        // A ratio whose denominator counts 0 has no value, 0 over 0 included. A zero numerator over a denominator that counts rows is 0.
-        if top == NO_COUNT || bottom == NO_COUNT || bottom == 0 {
-            return None;
+/// What a root is at an instance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RootNumber {
+    /// A number, and the word that hashes it.
+    Value(Number, u64),
+    /// Unknown: a bound stopped the term, or it reads a relation that has no value. Its true value could change the greatest, the sum or the least of the root's values.
+    Unknown,
+    /// Undefined by the root's definition: a ratio whose denominator counts 0, or a set without exactly one member. It leaves the root's values, and the others stand.
+    Undefined,
+}
+
+/// The value of a root at an instance, from the counts of rows.
+fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> RootNumber {
+    let share = |top: u32, bottom: u32| -> RootNumber {
+        if top == NO_COUNT || bottom == NO_COUNT {
+            return RootNumber::Unknown;
+        }
+        // A ratio whose denominator counts 0 is undefined, 0 over 0 included. A zero numerator over a denominator that counts rows is 0.
+        if bottom == 0 {
+            return RootNumber::Undefined;
         }
         if top == 0 {
-            return Some((Number::whole(0), 0));
+            return RootNumber::Value(Number::whole(0), 0);
         }
         let held = Number::fraction(u64::from(top), u64::from(bottom));
-        Some((held, WORD_SET | (hash_words([u64::from(held.top as u32), u64::from(held.bottom)]) as u64 & PAYLOAD)))
+        RootNumber::Value(held, WORD_SET | (hash_words([u64::from(held.top as u32), u64::from(held.bottom)]) as u64 & PAYLOAD))
     };
     match of {
-        RootOf::Nonempty => (rows != NO_COUNT).then(|| (Number::whole(i64::from(rows > 0)), if rows > 0 { WORD_NONEMPTY | 1 } else { 0 })),
-        RootOf::Cardinality => (rows != NO_COUNT).then(|| (Number::whole(i64::from(rows)), if rows > 0 { WORD_COUNT | u64::from(rows) } else { 0 })),
+        RootOf::Nonempty if rows == NO_COUNT => RootNumber::Unknown,
+        RootOf::Nonempty => RootNumber::Value(Number::whole(i64::from(rows > 0)), if rows > 0 { WORD_NONEMPTY | 1 } else { 0 }),
+        RootOf::Cardinality if rows == NO_COUNT => RootNumber::Unknown,
+        RootOf::Cardinality => RootNumber::Value(Number::whole(i64::from(rows)), if rows > 0 { WORD_COUNT | u64::from(rows) } else { 0 }),
         RootOf::Share => share(rows, left),
         RootOf::Over => share(rows, other),
         RootOf::Under => share(other, rows),
         RootOf::OverExamples => share(rows, other),
-        RootOf::ValueSet => {
-            if rows == NO_COUNT {
-                return None;
-            }
-            // One member gives a number. A set with no member, or with several, has no value.
-            (number > 0).then(|| (Number::whole(number_of_word(number)), WORD_SET | u64::from(number)))
-        }
-    }
-}
-
-/// Whether a root has no value at an instance, though the counts it reads all exist: a ratio whose denominator counts 0, or a set that does not have one member.
-fn no_value_by_count(of: RootOf, rows: u32, left: u32, other: u32) -> bool {
-    let known = |counts: &[u32]| counts.iter().all(|count| *count != NO_COUNT);
-    match of {
-        RootOf::Nonempty | RootOf::Cardinality => false,
-        RootOf::Share => known(&[rows, left]) && left == 0,
-        RootOf::Over | RootOf::OverExamples => known(&[rows, other]) && other == 0,
-        RootOf::Under => known(&[rows, other]) && rows == 0,
-        RootOf::ValueSet => rows != NO_COUNT,
+        RootOf::ValueSet if rows == NO_COUNT => RootNumber::Unknown,
+        // One member gives a number. A set with no member, or with several, is undefined.
+        RootOf::ValueSet if number > 0 => RootNumber::Value(Number::whole(number_of_word(number)), WORD_SET | u64::from(number)),
+        RootOf::ValueSet => RootNumber::Undefined,
     }
 }
 
@@ -2539,9 +2544,12 @@ impl<'a> Walker<'a> {
                 if let Val::Rows(parts) = &value {
                     self.held_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
                 }
-                if let (Val::Joined(joined), true) = (&value, crate::bounds::enabled()) {
-                    crate::bounds::tally("stored", "joined values".to_string(), 1);
-                    crate::bounds::tally("stored", "cells of joined values that held cells leave out".to_string(), joined.held_cells() as u64);
+                if let Val::Joined(joined) = &value {
+                    self.held_cells += joined.held_cells();
+                    if crate::bounds::enabled() {
+                        crate::bounds::tally("stored", "joined values".to_string(), 1);
+                        crate::bounds::tally("stored", "cells of joined values, held".to_string(), joined.held_cells() as u64);
+                    }
                 }
                 self.values.push(value);
                 self.value_index.insert(hash, at);
@@ -2740,6 +2748,7 @@ impl<'a> Walker<'a> {
         }
         let mut table = RootTable { stride: instances, ..RootTable::default() };
         let mut walk_cells = 0usize;
+        let mut left_out = false;
         self.written_cells = 0;
         self.charged.clear();
         self.forced.clear();
@@ -2824,6 +2833,16 @@ impl<'a> Walker<'a> {
                     }
                 }
             } else if wanted && listed != 0 && !term.roots.is_empty() {
+                for (place, (hash, _)) in term.roots.iter().enumerate() {
+                    if listed & (1 << place) != 0 {
+                        let held = table.bindings.entry(*hash).or_insert((0, 0));
+                        if reads_output {
+                            held.1 += 1;
+                        } else {
+                            held.0 += 1;
+                        }
+                    }
+                }
                 for pair in 0..scope {
                     let (id, b) = (first[pair], if term.b == NO_TERM { NO_TERM } else { second[pair] });
                     // An idle term gives what the evaluation gives, with no evaluation.
@@ -2858,12 +2877,17 @@ impl<'a> Walker<'a> {
                         }
                         let value = root_value(*of, rows, left, if *of == RootOf::OverExamples { self.examples } else { other }, number);
                         // Nothing to add at a default value, which is a slot's own state.
-                        if matches!(value, Some((_, 0))) {
+                        if matches!(value, RootNumber::Value(_, 0)) {
                             continue;
                         }
-                        if value.is_none() && crate::bounds::enabled() {
-                            let denominator = no_value_by_count(*of, rows, left, if *of == RootOf::OverExamples { self.examples } else { other });
-                            let cause = if !idle && !denominator { None } else if idle && first_cut { Some("idle: first has no value") } else if idle && rows == NO_COUNT { Some("idle: second has no value") } else if idle { Some("idle: no denominator rows or no single member") } else { Some("full path: no denominator rows or no single member") };
+                        if crate::bounds::enabled() {
+                            let cause = match value {
+                                RootNumber::Undefined if idle => Some("left out: idle term"),
+                                RootNumber::Undefined => Some("left out: full path"),
+                                RootNumber::Unknown if idle && first_cut => Some("no value: idle, first has no value"),
+                                RootNumber::Unknown if idle => Some("no value: idle, second has no value"),
+                                _ => None,
+                            };
                             if let Some(cause) = cause {
                                 crate::bounds::tally(cause, format!("{of:?}"), 1);
                             }
@@ -2871,8 +2895,12 @@ impl<'a> Walker<'a> {
                         let base = table.slots_of(*hash, term.flags, term.size, *of);
                         let slot = &mut table.slots[base + pair];
                         match value {
-                            None => slot.state = SLOT_NO_VALUE,
-                            Some((held, word)) => {
+                            RootNumber::Unknown => slot.state = SLOT_NO_VALUE,
+                            RootNumber::Undefined => {
+                                slot.undefined += 1;
+                                left_out = true;
+                            }
+                            RootNumber::Value(held, word) => {
                                 if slot.state == SLOT_DEFAULT {
                                     slot.state = SLOT_VALUE;
                                     slot.greatest = held;
@@ -2899,6 +2927,20 @@ impl<'a> Walker<'a> {
             }
             ids.push(own);
             stopped.push(is_stopped);
+        }
+        // A root that every one of its bindings leaves out at an instance has no value there.
+        let out_scope = train.min(instances);
+        let RootTable { index, slots, bindings, stride, meta } = &mut table;
+        for (hash, at) in index.iter().filter(|_| left_out) {
+            let (full, out) = bindings.get(hash).copied().unwrap_or((0, 0));
+            for (pair, slot) in slots[*at as usize * *stride..*at as usize * *stride + instances].iter_mut().enumerate() {
+                if slot.undefined > 0 && slot.state == SLOT_DEFAULT && slot.undefined == full + if pair < out_scope { out } else { 0 } {
+                    slot.state = SLOT_NO_VALUE;
+                    if crate::bounds::enabled() {
+                        crate::bounds::tally("no value: every binding left out", format!("{:?}", meta[*at as usize].2), 1);
+                    }
+                }
+            }
         }
         // A task keeps a walker per schema, so one large walk leaves nothing behind.
         self.keep_within_budget();
