@@ -25,6 +25,7 @@ const NONE: u32 = u32::MAX;
 const EPSILON: f64 = 1e-15;
 const ZERO: f64 = 1e-35;
 const MIN_DATA_IN_BIN: f64 = 3.0;
+const HISTOGRAM_BYTES: usize = 3 << 30;
 const SIGMOID_BINS: usize = 1 << 20;
 const SIGMOID_LOW: f64 = -25.0;
 const SIGMOID_FACTOR: f64 = SIGMOID_BINS as f64 / 50.0;
@@ -395,6 +396,19 @@ struct Sample {
     weight: u32,
 }
 
+/// One sample for each value of each column, weighing what they weighed. A column holds few distinct values, so this keeps
+/// a column's whole distribution in far less memory than its entries take.
+fn merge_samples(samples: &mut Vec<Sample>) {
+    samples.par_sort_unstable_by(|a, b| a.column.cmp(&b.column).then(a.value.total_cmp(&b.value)));
+    samples.dedup_by(|later, kept| {
+        let same = later.column == kept.column && later.value == kept.value;
+        if same {
+            kept.weight += later.weight;
+        }
+        same
+    });
+}
+
 /// Bins from a sample of each column's values, at most `sample_cap` of them, so a rare column keeps every value it has.
 fn find_bins(dir: &Path, plan: &Plan, keep: &[i32], kept: usize) {
     let started = Instant::now();
@@ -423,6 +437,7 @@ fn find_bins(dir: &Path, plan: &Plan, keep: &[i32], kept: usize) {
             let rows = &rows_of[u.map];
             let mut random = Random(mix(place as u64 + 1));
             let mut out = Vec::new();
+            let mut limit = 1usize << 26;
             Records::open(&u.file).for_each_row(|block, columns, values| {
                 if rows[block] == 0 {
                     return;
@@ -441,7 +456,12 @@ fn find_bins(dir: &Path, plan: &Plan, keep: &[i32], kept: usize) {
                         out.push(Sample { column: k as u32, value, weight: rows[block] });
                     }
                 }
+                if out.len() >= limit {
+                    merge_samples(&mut out);
+                    limit = limit.max(2 * out.len());
+                }
             });
+            merge_samples(&mut out);
             out
         })
         .reduce(Vec::new, |mut a, mut b| {
@@ -750,6 +770,26 @@ struct Config {
     truncation: usize,
     max_rounds: usize,
     patience: usize,
+    admit: Option<Admit>,
+    /// Where a fit's first run writes each tree as it is made.
+    stream: Option<PathBuf>,
+    /// The least count of tasks on each side of a split, and each row's task. 0 asks for no such test.
+    min_tasks: usize,
+    row_task: Vec<u32>,
+}
+
+/// Which columns a fit starts with, and which columns a split on a column admits.
+struct Admit {
+    first: Vec<u8>,
+    ptr: Vec<u32>,
+    child: Vec<u32>,
+}
+
+impl Admit {
+    fn open(dir: &str) -> Admit {
+        let dir = Path::new(dir);
+        Admit { first: read_all(&dir.join("first.u8")), ptr: read_all(&dir.join("ptr.u32")), child: read_all(&dir.join("child.u32")) }
+    }
 }
 
 #[derive(Default)]
@@ -790,6 +830,7 @@ struct Sums {
 struct Work {
     sums: Vec<Sums>,
     pool: Vec<Vec<Bin>>,
+    seen: Vec<bool>,
     indices: Vec<u32>,
     scratch: Vec<u32>,
     flags: Vec<bool>,
@@ -822,13 +863,25 @@ impl Work {
         if (low as usize) < store.bins {
             ranges.push((low, store.bins as u32));
         }
-        Work { sums, pool: Vec::new(), indices: Vec::new(), scratch: Vec::new(), flags: Vec::new(), ranges }
+        Work { sums, pool: Vec::new(), seen: vec![false; store.bins], indices: Vec::new(), scratch: Vec::new(), flags: Vec::new(), ranges }
     }
 
+    /// A histogram of zeros.
     fn take(&mut self, store: &Store) -> Vec<Bin> {
-        let mut hist = self.pool.pop().unwrap_or_else(|| vec![Bin::default(); store.bins]);
-        hist.par_chunks_mut(1 << 16).for_each(|chunk| chunk.fill(Bin::default()));
-        hist
+        self.pool.pop().unwrap_or_else(|| vec![Bin::default(); store.bins])
+    }
+
+    /// Takes back a histogram and clears it, by the bins it knows it touched, so a small leaf costs what it touched.
+    fn give(&mut self, mut hist: Vec<Bin>, touched: Option<Vec<u32>>) {
+        match touched {
+            Some(list) => {
+                for b in list {
+                    hist[b as usize] = Bin::default();
+                }
+            }
+            None => hist.par_chunks_mut(1 << 16).for_each(|chunk| chunk.fill(Bin::default())),
+        }
+        self.pool.push(hist);
     }
 }
 
@@ -864,22 +917,26 @@ fn clear_blocks(work: &mut Work) {
     }
 }
 
-/// Adds each touched block's sums to the bins of its entries.
-fn fill_histogram(work: &mut Work, store: &Store, rows: std::ops::Range<usize>, grad: &[f32], hess: &[f32], hist: &mut [Bin]) {
+/// Adds each touched block's sums to the bins of its entries. With `track`, gives each bin that holds an entry of these rows, once.
+fn fill_histogram(work: &mut Work, store: &Store, rows: std::ops::Range<usize>, grad: &[f32], hess: &[f32], hist: &mut [Bin], track: bool) -> Vec<u32> {
     add_blocks(work, store, rows, grad, hess);
-    let mut slices: Vec<(u32, u32, &mut [Bin])> = Vec::with_capacity(work.ranges.len());
-    let mut rest = hist;
+    let mut seen = std::mem::take(&mut work.seen);
+    let mut slices: Vec<(u32, u32, &mut [Bin], &mut [bool])> = Vec::with_capacity(work.ranges.len());
+    let (mut rest, mut rest_seen) = (hist, seen.as_mut_slice());
     let mut at = 0u32;
     for &(low, high) in &work.ranges {
         assert_eq!(low, at);
         let (here, after) = rest.split_at_mut((high - low) as usize);
-        slices.push((low, high, here));
+        let (marks, after_marks) = rest_seen.split_at_mut((high - low) as usize);
+        slices.push((low, high, here, marks));
         rest = after;
+        rest_seen = after_marks;
         at = high;
     }
     let sums = &work.sums;
-    slices.par_iter_mut().for_each(|(low, high, slice)| {
+    let lists: Vec<Vec<u32>> = slices.par_iter_mut().map(|(low, high, slice, marks)| {
         let (low, high) = (*low, *high);
+        let mut local = Vec::new();
         for data in &store.uses {
             if data.most < low || data.least >= high {
                 continue;
@@ -898,11 +955,25 @@ fn fill_histogram(work: &mut Work, store: &Store, rows: std::ops::Range<usize>, 
                     let bin = unsafe { slice.get_unchecked_mut((bid - low) as usize) };
                     bin.g += g;
                     bin.h += h;
+                    if track {
+                        let mark = unsafe { marks.get_unchecked_mut((bid - low) as usize) };
+                        if !*mark {
+                            *mark = true;
+                            local.push(bid);
+                        }
+                    }
                 }
             }
         }
-    });
+        local
+    }).collect();
+    let touched = lists.concat();
+    for &b in &touched {
+        seen[b as usize] = false;
+    }
+    work.seen = seen;
     clear_blocks(work);
+    touched
 }
 
 /// The best split of a column, by the leaf's sums: the column's default bin holds what its other bins do not.
@@ -988,38 +1059,64 @@ fn best_in_column(store: &Store, k: usize, hist: &[Bin], total: (f64, f64, f64),
 
 /// A leaf's best split among the columns its parent could split, and the columns that have a split here, which alone stand
 /// for its children, as in LightGBM.
-fn best_split(store: &Store, used: &[u32], hist: &[Bin], total: (f64, f64, f64), config: &Config) -> (Option<Split>, Vec<u32>) {
+fn best_split(store: &Store, used: &[u32], hist: &[Bin], total: (f64, f64, f64), config: &Config, rows: &[u32]) -> (Option<Split>, Vec<u32>) {
     let (g, h, n) = total;
     if n < 2.0 * config.min_data_in_leaf || h < 2.0 * config.min_sum_hessian {
         return (None, Vec::new());
     }
+    let most = if config.min_tasks > 0 { 16 } else { 1 };
     let parent = g * g / (h + EPSILON);
-    used.par_chunks(4096)
+    let (tops, open) = used
+        .par_chunks(4096)
         .map(|chunk| {
-            let mut best: Option<Split> = None;
+            let mut tops: Vec<Split> = Vec::new();
             let mut open = Vec::new();
             for &k in chunk {
                 if let Some(found) = best_in_column(store, k as usize, hist, total, config, parent) {
                     open.push(k);
-                    if best.is_none_or(|b| found.gain > b.gain) {
-                        best = Some(found);
-                    }
+                    keep_top(&mut tops, found, most);
                 }
             }
-            (best, open)
+            (tops, open)
         })
         .reduce(
-            || (None, Vec::new()),
-            |(a, mut open), (b, more)| {
+            || (Vec::new(), Vec::new()),
+            |(mut tops, mut open), (more_tops, more)| {
                 open.extend(more);
-                let best = match (a, b) {
-                    (Some(x), Some(y)) => Some(if y.gain > x.gain || (y.gain == x.gain && y.column < x.column) { y } else { x }),
-                    (x, None) => x,
-                    (None, y) => y,
-                };
-                (best, open)
+                for found in more_tops {
+                    keep_top(&mut tops, found, most);
+                }
+                (tops, open)
             },
-        )
+        );
+    let best = if config.min_tasks == 0 { tops.first().copied() } else { tops.into_iter().find(|split| both_sides_hold_tasks(store, config, rows, split)) };
+    (best, open)
+}
+
+/// The best splits so far, best first, with a lower column first at equal gain.
+fn keep_top(tops: &mut Vec<Split>, found: Split, most: usize) {
+    let at = tops.partition_point(|x| x.gain > found.gain || (x.gain == found.gain && x.column < found.column));
+    if at < most {
+        tops.insert(at, found);
+        tops.truncate(most);
+    }
+}
+
+/// Whether each side of a split holds rows of at least `min_tasks` tasks.
+fn both_sides_hold_tasks(store: &Store, config: &Config, rows: &[u32], split: &Split) -> bool {
+    let (mut left, mut right) = (std::collections::HashSet::new(), std::collections::HashSet::new());
+    for &row in rows {
+        let task = config.row_task[row as usize];
+        if store.left(row, split.column, split.pos, split.default_left) {
+            left.insert(task);
+        } else {
+            right.insert(task);
+        }
+        if left.len() >= config.min_tasks && right.len() >= config.min_tasks {
+            return true;
+        }
+    }
+    false
 }
 
 struct Leaf {
@@ -1028,6 +1125,7 @@ struct Leaf {
     g: f64,
     h: f64,
     hist: Option<Vec<Bin>>,
+    touched: Option<Vec<u32>>,
     best: Option<Split>,
     open: Vec<u32>,
     parent: i32,
@@ -1045,9 +1143,9 @@ fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &
         h += hess[row as usize] as f64;
     }
     let mut hist = work.take(store);
-    fill_histogram(work, store, 0..active.len(), grad, hess, &mut hist);
-    let (best, open) = best_split(store, used, &hist, (g, h, active.len() as f64), config);
-    let mut leaves = vec![Leaf { start: 0, len: active.len(), g, h, hist: Some(hist), best, open, parent: -1, is_left: false }];
+    fill_histogram(work, store, 0..active.len(), grad, hess, &mut hist, false);
+    let (best, open) = best_split(store, used, &hist, (g, h, active.len() as f64), config, active);
+    let mut leaves = vec![Leaf { start: 0, len: active.len(), g, h, hist: Some(hist), touched: None, best, open, parent: -1, is_left: false }];
     let mut tree = Tree::default();
     while leaves.len() < config.num_leaves {
         let mut chosen = None;
@@ -1103,40 +1201,63 @@ fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &
         let (left_g, left_h) = (split.left_g, split.left_h + EPSILON);
         let (right_g, right_h) = (total_g - split.left_g, (total_h - split.left_h).max(EPSILON));
         let right_len = len - left_len;
-        // The smaller child's histogram is read from its rows, and the larger's is what remains of its parent's.
-        let mut larger = leaves[at].hist.take().unwrap();
+        // The smaller child's histogram is read from its rows, and the larger's is what remains of its parent's. Where the
+        // parent's histogram was given up, the larger child's is read from its rows too.
+        let parent_hist = leaves[at].hist.take();
+        let parent_touched = leaves[at].touched.take();
         let mut smaller = work.take(store);
-        let small_rows = if left_len < right_len { start..start + left_len } else { start + left_len..start + len };
-        fill_histogram(work, store, small_rows, grad, hess, &mut smaller);
-        larger.par_chunks_mut(1 << 16).zip(smaller.par_chunks(1 << 16)).for_each(|(a, b)| {
-            for (x, y) in a.iter_mut().zip(b) {
-                x.g -= y.g;
-                x.h -= y.h;
+        let (small_rows, large_rows) = if left_len < right_len { (start..start + left_len, start + left_len..start + len) } else { (start + left_len..start + len, start..start + left_len) };
+        let small_touched = fill_histogram(work, store, small_rows, grad, hess, &mut smaller, true);
+        let (larger, large_touched) = match parent_hist {
+            Some(mut larger) => {
+                for &b in &small_touched {
+                    let y = smaller[b as usize];
+                    let x = &mut larger[b as usize];
+                    x.g -= y.g;
+                    x.h -= y.h;
+                }
+                (larger, parent_touched)
             }
-        });
-        let (left_hist, right_hist) = if left_len < right_len { (smaller, larger) } else { (larger, smaller) };
+            None => {
+                let mut larger = work.take(store);
+                let touched = fill_histogram(work, store, large_rows, grad, hess, &mut larger, true);
+                (larger, Some(touched))
+            }
+        };
+        let (left_hist, left_touched, right_hist, right_touched) = if left_len < right_len { (smaller, Some(small_touched), larger, large_touched) } else { (larger, large_touched, smaller, Some(small_touched)) };
         let open = std::mem::take(&mut leaves[at].open);
-        let (left_best, left_open) = best_split(store, &open, &left_hist, (left_g, left_h, left_len as f64), config);
-        let (right_best, right_open) = best_split(store, &open, &right_hist, (right_g, right_h, right_len as f64), config);
-        leaves[at] = Leaf { start, len: left_len, g: left_g, h: left_h, hist: None, best: left_best, open: left_open, parent: node, is_left: true };
+        let (left_best, left_open) = best_split(store, &open, &left_hist, (left_g, left_h, left_len as f64), config, &work.indices[start..start + left_len]);
+        let (right_best, right_open) = best_split(store, &open, &right_hist, (right_g, right_h, right_len as f64), config, &work.indices[start + left_len..start + len]);
+        leaves[at] = Leaf { start, len: left_len, g: left_g, h: left_h, hist: None, touched: None, best: left_best, open: left_open, parent: node, is_left: true };
         if left_best.is_some() {
             leaves[at].hist = Some(left_hist);
+            leaves[at].touched = left_touched;
         } else {
-            work.pool.push(left_hist);
+            work.give(left_hist, left_touched);
         }
-        let mut right = Leaf { start: start + left_len, len: right_len, g: right_g, h: right_h, hist: None, best: right_best, open: right_open, parent: node, is_left: false };
+        let mut right = Leaf { start: start + left_len, len: right_len, g: right_g, h: right_h, hist: None, touched: None, best: right_best, open: right_open, parent: node, is_left: false };
         if right_best.is_some() {
             right.hist = Some(right_hist);
+            right.touched = right_touched;
         } else {
-            work.pool.push(right_hist);
+            work.give(right_hist, right_touched);
         }
         leaves.push(right);
+        // Past the pool's size, the leaf least likely to split next gives up its histogram.
+        let pool = (HISTOGRAM_BYTES / (store.bins.max(1) * std::mem::size_of::<Bin>())).max(2);
+        while leaves.iter().filter(|leaf| leaf.hist.is_some()).count() > pool {
+            let weakest = leaves.iter().enumerate().filter(|(_, leaf)| leaf.hist.is_some()).min_by(|(_, a), (_, b)| a.best.map_or(0.0, |s| s.gain).total_cmp(&b.best.map_or(0.0, |s| s.gain))).unwrap().0;
+            let hist = leaves[weakest].hist.take().unwrap();
+            let touched = leaves[weakest].touched.take();
+            work.give(hist, touched);
+        }
     }
     let mut places = Vec::with_capacity(leaves.len());
     tree.value = vec![0.0; leaves.len()];
     for (at, leaf) in leaves.iter_mut().enumerate() {
         if let Some(hist) = leaf.hist.take() {
-            work.pool.push(hist);
+            let touched = leaf.touched.take();
+            work.give(hist, touched);
         }
         places.push((leaf.start, leaf.len));
         tree.value[at] = if tree.column.is_empty() { 0.0 } else { -leaf.g / leaf.h * config.learning_rate };
@@ -1150,6 +1271,7 @@ struct Groups {
     label: Vec<u8>,
     inverse_max_dcg: Vec<f64>,
     discount: Vec<f64>,
+    weight: Vec<f32>,
 }
 
 impl Groups {
@@ -1164,7 +1286,7 @@ impl Groups {
                 if best > 0.0 { 1.0 / best } else { 0.0 }
             })
             .collect();
-        Groups { start, label, inverse_max_dcg, discount }
+        Groups { start, label, inverse_max_dcg, discount, weight: Vec::new() }
     }
 
     fn count(&self) -> usize {
@@ -1245,6 +1367,12 @@ fn gradients(groups: &Groups, active: &[bool], score: &[f64], truncation: usize,
     slices.into_par_iter().for_each(|(g, here_g, here_h)| {
         let (a, b) = (groups.start[g] as usize, groups.start[g + 1] as usize);
         group_gradients(&score[a..b], &groups.label[a..b], groups.inverse_max_dcg[g], &groups.discount, truncation, here_g, here_h);
+        if let Some(&weight) = groups.weight.get(g) {
+            for (x, y) in here_g.iter_mut().zip(here_h.iter_mut()) {
+                *x *= weight;
+                *y *= weight;
+            }
+        }
     });
 }
 
@@ -1282,13 +1410,16 @@ fn group_auc(groups: &Groups, held: &[bool], score: &[f64]) -> f64 {
 }
 
 /// Boosts over the active groups. With held groups, it stops once they have not improved for `patience` rounds.
-fn boost(store: &Store, groups: &Groups, active: &[bool], held: Option<&[bool]>, config: &Config, seed: u64, rounds: usize, threads: usize, name: &str) -> (Vec<Tree>, usize, Vec<f64>) {
+fn boost(store: &Store, groups: &Groups, active: &[bool], held: Option<&[bool]>, dev: Option<(&Store, &Groups)>, config: &Config, seed: u64, rounds: usize, threads: usize, name: &str) -> (Vec<Tree>, usize, Vec<f64>) {
     let mut work = Work::new(store, threads);
     let mut score = vec![0.0f64; store.rows];
     let (mut grad, mut hess) = (vec![0.0f32; store.rows], vec![0.0f32; store.rows]);
     let mut random = Random(mix(seed));
-    let mut columns: Vec<u32> = (0..store.kept as u32).collect();
-    let sampled = ((config.fraction * store.kept as f64).round() as usize).clamp(1, store.kept.max(1));
+    let mut columns: Vec<u32> = (0..store.kept as u32).filter(|&k| config.admit.as_ref().is_none_or(|a| a.first[k as usize] != 0)).collect();
+    let mut admitted = vec![false; store.kept];
+    for &k in &columns {
+        admitted[k as usize] = true;
+    }
     let rows_of = |flags: &[bool]| -> Vec<u32> {
         let mut rows = Vec::new();
         for g in 0..groups.count() {
@@ -1303,16 +1434,30 @@ fn boost(store: &Store, groups: &Groups, active: &[bool], held: Option<&[bool]>,
     let mut trees = Vec::new();
     let (mut best_auc, mut best_round) = (f64::NEG_INFINITY, 0usize);
     let started = Instant::now();
+    let mut stream = config.stream.as_ref().filter(|_| held.is_some()).map(|dir| BufWriter::new(File::create(dir.join(format!("inner.{seed}.jsonl"))).unwrap()));
+    let mut dev_score = dev.map_or(Vec::new(), |(dev_store, _)| vec![0.0f64; dev_store.rows]);
+    let dev_every = dev.map_or(Vec::new(), |(_, dev_groups)| vec![true; dev_groups.count()]);
     for round in 1..=rounds {
         gradients(groups, active, &score, config.truncation, &mut grad, &mut hess);
+        let sampled = ((config.fraction * columns.len() as f64).round() as usize).clamp(1, columns.len().max(1));
         for i in 0..sampled {
-            let j = i + random.below(store.kept - i);
+            let j = i + random.below(columns.len() - i);
             columns.swap(i, j);
         }
         let mut used = columns[..sampled].to_vec();
         used.sort_unstable();
         let (tree, places) = grow(&mut work, store, config, &active_rows, &grad, &hess, &used);
         let empty = tree.column.is_empty();
+        if let Some(admit) = &config.admit {
+            for &k in &tree.column {
+                for &c in &admit.child[admit.ptr[k as usize] as usize..admit.ptr[k as usize + 1] as usize] {
+                    if !admitted[c as usize] {
+                        admitted[c as usize] = true;
+                        columns.push(c);
+                    }
+                }
+            }
+        }
         for (leaf, &(start, len)) in places.iter().enumerate() {
             for &row in &work.indices[start..start + len] {
                 score[row as usize] += tree.value[leaf];
@@ -1329,10 +1474,24 @@ fn boost(store: &Store, groups: &Groups, active: &[bool], held: Option<&[bool]>,
                 best_round = round;
             }
         }
+        let mut dev_auc = None;
+        if let Some((dev_store, dev_groups)) = dev {
+            let moves: Vec<f64> = (0..dev_store.rows as u32).into_par_iter().with_min_len(64).map(|row| tree.value[tree.leaf_of(dev_store, row)]).collect();
+            for (value, step) in dev_score.iter_mut().zip(moves) {
+                *value += step;
+            }
+            if round % 10 == 0 {
+                dev_auc = Some(group_auc(dev_groups, &dev_every, &dev_score));
+            }
+        }
+        if let Some(sink) = &mut stream {
+            writeln!(sink, "{}", json!({"round": round, "column": tree.column, "gain": tree.gain, "left": tree.left, "right": tree.right, "dev_auc": dev_auc, "columns": columns.len()})).unwrap();
+            sink.flush().unwrap();
+        }
         trees.push(tree);
         if round % 25 == 0 || empty {
             let rate = round as f64 / started.elapsed().as_secs_f64();
-            println!("{name} round {round} held auc {best_auc:.4} at {best_round} {rate:.2} rounds/s rss {:.2} GiB", resident_gib());
+            println!("{name} round {round} held auc {best_auc:.4} at {best_round} columns {} {rate:.2} rounds/s rss {:.2} GiB", columns.len(), resident_gib());
         }
         if empty || (held.is_some() && round >= best_round + config.patience) {
             break;
@@ -1355,7 +1514,7 @@ fn tree_json(tree: &Tree, bounds: &[f64], bound_start: &[u32], has_nan: &[u8]) -
     let threshold: Vec<Value> = threshold.iter().map(|&x| if x.is_finite() { json!(x) } else { Value::Null }).collect();
     // A column with no NaN in the fit reads a NaN as its default, 0, as `compile` does.
     let nan_seen: Vec<bool> = tree.column.iter().map(|&k| has_nan[k as usize] != 0).collect();
-    json!({"column": tree.column, "threshold": threshold, "default_left": tree.default_left, "nan_seen": nan_seen, "left": tree.left, "right": tree.right, "value": tree.value})
+    json!({"column": tree.column, "threshold": threshold, "default_left": tree.default_left, "nan_seen": nan_seen, "gain": tree.gain, "left": tree.left, "right": tree.right, "value": tree.value})
 }
 
 fn fit(file: &Path) {
@@ -1371,17 +1530,26 @@ fn fit(file: &Path) {
         truncation: v["truncation"].as_u64().unwrap() as usize,
         max_rounds: v["max_rounds"].as_u64().unwrap() as usize,
         patience: v["patience"].as_u64().unwrap() as usize,
+        admit: v["admit"].as_str().map(Admit::open),
+        stream: v["out"].as_str().map(PathBuf::from),
+        min_tasks: v["min_tasks"].as_u64().unwrap_or(0) as usize,
+        row_task: v["row_task"].as_str().map_or(Vec::new(), |path| read_all(Path::new(path))),
     };
     let train_dir = PathBuf::from(v["train"].as_str().unwrap());
     let store = Store::open(&train_dir);
     let out = PathBuf::from(v["out"].as_str().unwrap());
     fs::create_dir_all(&out).unwrap();
-    let groups = Groups::new(read_all(Path::new(v["groups"].as_str().unwrap())), read_all(Path::new(v["labels"].as_str().unwrap())), config.truncation);
+    let mut groups = Groups::new(read_all(Path::new(v["groups"].as_str().unwrap())), read_all(Path::new(v["labels"].as_str().unwrap())), config.truncation);
     assert_eq!(groups.label.len(), store.rows);
     let bounds: Vec<f64> = read_all(&train_dir.join("bounds.f64"));
     let bound_start: Vec<u32> = read_all(&train_dir.join("bound_start.u32"));
     println!("rows {} columns {} bins {} entries {} groups {}", store.rows, store.kept, store.bins, store.col_entries.iter().sum::<u64>(), groups.count());
+    if let Some(path) = v["group_weights"].as_str() {
+        groups.weight = read_all(Path::new(path));
+    }
     let dev_store = v["dev"].as_str().map(|d| Store::open(Path::new(d)));
+    let dev_groups = v["dev_groups"].as_str().map(|path| Groups::new(read_all(Path::new(path)), read_all(Path::new(v["dev_labels"].as_str().unwrap())), config.truncation));
+    let dev_watch = dev_store.as_ref().zip(dev_groups.as_ref());
     for seeded in v["seeds"].as_array().unwrap() {
         let seed = seeded["seed"].as_u64().unwrap();
         let done = out.join(format!("done.{seed}.json"));
@@ -1392,11 +1560,11 @@ fn fit(file: &Path) {
         let held: Vec<u8> = read_all(Path::new(seeded["held"].as_str().unwrap()));
         let held: Vec<bool> = held.iter().map(|&x| x != 0).collect();
         let inner: Vec<bool> = held.iter().map(|&x| !x).collect();
-        let (trees, best_round, _) = boost(&store, &groups, &inner, Some(&held), &config, seed, config.max_rounds, count, &format!("seed {seed} inner"));
+        let (trees, best_round, _) = boost(&store, &groups, &inner, Some(&held), dev_watch, &config, seed, config.max_rounds, count, &format!("seed {seed} inner"));
         drop(trees);
         let rounds = best_round.max(10);
         let every = vec![true; groups.count()];
-        let (trees, _, score) = boost(&store, &groups, &every, None, &config, seed, rounds, count, &format!("seed {seed} final"));
+        let (trees, _, score) = boost(&store, &groups, &every, None, None, &config, seed, rounds, count, &format!("seed {seed} final"));
         let (mut gain, mut splits) = (vec![0.0f64; store.kept], vec![0u32; store.kept]);
         let mut model = BufWriter::new(File::create(out.join(format!("model.{seed}.jsonl"))).unwrap());
         for tree in &trees {
@@ -1490,6 +1658,10 @@ fn softmax(file: &Path) {
         truncation: 0,
         max_rounds: v["max_rounds"].as_u64().unwrap() as usize,
         patience: v["patience"].as_u64().unwrap() as usize,
+        admit: None,
+        stream: None,
+        min_tasks: 0,
+        row_task: Vec::new(),
     };
     let path = |name: &str| PathBuf::from(v[name].as_str().unwrap());
     let (store, dev) = (Store::open(&path("train")), Store::open(&path("dev")));
