@@ -78,6 +78,87 @@ thread_local! {
     static HEAD: Cell<u32> = const { Cell::new(0) };
     /// This thread's counts by head, not yet added to the totals.
     static LOCAL: RefCell<Vec<Counts>> = const { RefCell::new(Vec::new()) };
+    /// The bounds that stopped an evaluation since the term in progress began, one bit each.
+    static EVER: Cell<u32> = const { Cell::new(0) };
+    /// The bounds that stopped each evaluation that a walk kept a value for, by the key of that value.
+    static KEPT: RefCell<HashMap<(u8, u32, u32, u128, u32), u32>> = RefCell::new(HashMap::new());
+    /// The terms of walks, by their place in the family, with the bounds that stopped them.
+    static TERM_HITS: RefCell<Vec<(u32, u32)>> = const { RefCell::new(Vec::new()) };
+    /// The terms of walks, by their place in the family, with the cells that their values add to the walk's count.
+    static TERM_CELLS: RefCell<Vec<(u32, u64)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The bit of a bound in the sets that [`take_term_hits`] gives.
+pub fn bit_of(bound: Bound) -> u32 {
+    1 << bound as u32
+}
+
+/// The name of each bit of a set of bounds.
+pub fn names_of_bits(bits: u32) -> Vec<&'static str> {
+    (0..NAMES.len()).filter(|slot| bits & 1 << slot != 0).map(|slot| NAMES[slot]).collect()
+}
+
+/// Starts a term: the bounds that stopped evaluations so far are forgotten.
+pub fn clear_term() {
+    if enabled() {
+        EVER.with(|held| held.set(0));
+    }
+}
+
+/// Sets aside the bounds that stopped the evaluations of the term so far, before an evaluation whose value a walk keeps.
+pub fn enter() -> u32 {
+    if enabled() { EVER.with(|held| held.replace(0)) } else { 0 }
+}
+
+/// Ends an evaluation that `enter` began: the bounds that stopped it go with the key of its value, and the bounds set aside return.
+pub fn leave(key: (u8, u32, u32, u128, u32), before: u32) {
+    if !enabled() {
+        return;
+    }
+    let own = EVER.with(Cell::get);
+    KEPT.with(|kept| kept.borrow_mut().insert(key, own));
+    EVER.with(|held| held.set(before | own));
+}
+
+/// A walk reads a value that an earlier evaluation kept: the bounds that stopped that evaluation stop this term too.
+pub fn recall(key: (u8, u32, u32, u128, u32)) {
+    if !enabled() {
+        return;
+    }
+    if let Some(bits) = KEPT.with(|kept| kept.borrow().get(&key).copied()) {
+        EVER.with(|held| held.set(held.get() | bits));
+    }
+}
+
+/// A bound stopped the term in progress without an evaluation to mark it.
+pub fn mark_term(bound: Bound) {
+    if enabled() {
+        EVER.with(|held| held.set(held.get() | bit_of(bound)));
+    }
+}
+
+/// Ends a term: where a bound stopped it, the term and the bounds are kept.
+pub fn note_term(term: u32) {
+    if !enabled() {
+        return;
+    }
+    let bits = EVER.with(Cell::get);
+    if bits != 0 {
+        TERM_HITS.with(|hits| hits.borrow_mut().push((term, bits)));
+    }
+}
+
+/// The cells that a term's values add to the walk's count, kept where they pass a threshold.
+pub fn note_cells(term: u32, cells: u64) {
+    if enabled() && cells >= 500_000 {
+        TERM_CELLS.with(|held| held.borrow_mut().push((term, cells)));
+    }
+}
+
+/// The terms that a bound stopped since the last call, and the terms that added most cells. The evaluations kept are forgotten.
+pub fn take_term_hits() -> (Vec<(u32, u32)>, Vec<(u32, u64)>) {
+    KEPT.with(|kept| kept.borrow_mut().clear());
+    (TERM_HITS.with(|hits| std::mem::take(&mut *hits.borrow_mut())), TERM_CELLS.with(|held| std::mem::take(&mut *held.borrow_mut())))
 }
 
 /// Whether the counts run.
@@ -134,6 +215,7 @@ pub fn begin() {
 pub fn mark(bound: Bound) {
     if enabled() {
         MARKS.with(|marks| marks.set(marks.get() | 1 << bound as u32));
+        EVER.with(|held| held.set(held.get() | 1 << bound as u32));
     }
 }
 
@@ -147,6 +229,7 @@ pub fn end(inherited: bool) {
         add(INHERITED, 1);
     }
     let marks = MARKS.with(Cell::get);
+    EVER.with(|held| held.set(held.get() | marks));
     for slot in 0..NAMES.len() {
         if marks & 1 << slot != 0 {
             add(slot, 1);
@@ -157,6 +240,7 @@ pub fn end(inherited: bool) {
 /// `count` evaluations of the term in progress that a walk did not run, as a bound stopped it.
 pub fn skipped(bound: Bound, count: u64) {
     if enabled() && count > 0 {
+        EVER.with(|held| held.set(held.get() | bit_of(bound)));
         add(bound as usize, count);
         add(EVALUATIONS, count);
     }
