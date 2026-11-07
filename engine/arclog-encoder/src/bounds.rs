@@ -17,13 +17,13 @@ use std::sync::{Mutex, OnceLock};
 pub enum Bound {
     /// `inside-boxes` and `boxes-holding`: the rows of the left side times the boxes of the right side pass 4,000,000.
     BoxesGuard,
-    /// A side of a `join`, as a product of parts, passes `CELL_CAP` cells.
+    /// A side of a `join`, as a product of parts, passes `CELL_CAP` cells. No step marks it: a `join` reads the parts of a side in place, or joins them one at a time.
     JoinSide,
     /// The rows of a `join` that an operator reads, written out or as the tuples at the columns it names, pass `CELL_CAP` cells.
     JoinOutput,
-    /// A side of an `antijoin` passes `CELL_CAP` cells.
+    /// The product of the parts of an `antijoin`'s left that hold its paired columns passes `CELL_CAP` cells. One part is read in place at any size.
     AntijoinSide,
-    /// The touched parts of a `select` pass `CELL_CAP` cells as a product.
+    /// The pairs of rows that a `select` keeps from two parts, where it compares a column of one with a column of the other, pass `CELL_CAP` cells.
     SelectSide,
     /// A side or the output of a `union` passes `CELL_CAP` cells.
     Union,
