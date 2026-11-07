@@ -374,7 +374,8 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
         }
     }
     let too_large=TooLarge::default();
-    let hashes=form_memo::TopHashes::new(checked);
+    let source_text=until.is_none().then(||program.sexp(decoder.registry()));
+    let hashes=form_memo::TopHashes::new(checked,source_text.as_deref().map(top_level_forms));
     let (_,session,_)=decoder.evaluation_inputs();
     let mut starts=Vec::new();
     for form in forms.iter().skip(start) {
@@ -388,7 +389,7 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
         tables.extend(held);
     }
     if until.is_none() && start==0 {
-        let source=program.sexp(decoder.registry());
+        let source=source_text.unwrap_or_default();
         cache.held=Some(HeldProgram {
             key:Arc::as_ptr(checked) as usize,
             checked:Arc::clone(checked),

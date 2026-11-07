@@ -850,11 +850,10 @@ impl ResolvedProgram {
         closure.names.part_positions(&closure.program, &last)
     }
 
-    /// The program of the use closure of the finished query at the
-    /// top-level position `position`, resolved as
-    /// [`ResolvedProgram::query_content`] gives, and the path of the query
-    /// in it.
-    fn query_closure(&self, position: usize, registry: &Registry, canonical_kept: bool) -> Option<(ResolvedProgram, NodePath)> {
+    /// For each top-level form, whether it is the form at `position` or a form
+    /// of a node that the form at `position` reads at any depth, at or before
+    /// `position`. `None` where `position` names no form.
+    pub fn use_closure(&self, position: usize) -> Option<Vec<bool>> {
         let forms = &self.program.value().forms;
         let mut keep = vec![false; forms.len()];
         *keep.get_mut(position)? = true;
@@ -875,6 +874,16 @@ impl ResolvedProgram {
                 }
             }
         }
+        Some(keep)
+    }
+
+    /// The program of the use closure of the finished query at the
+    /// top-level position `position`, resolved as
+    /// [`ResolvedProgram::query_content`] gives, and the path of the query
+    /// in it.
+    fn query_closure(&self, position: usize, registry: &Registry, canonical_kept: bool) -> Option<(ResolvedProgram, NodePath)> {
+        let forms = &self.program.value().forms;
+        let keep = self.use_closure(position)?;
         let closure: Vec<_> = forms.iter().zip(&keep).take(position + 1).filter(|(_, keep)| **keep).map(|(form, _)| query_form(form, registry)).collect();
         let last = NodePath::top(closure.len() as u32 - 1);
         let pruned = crate::write::in_text_order(&Node::new(Program { forms: closure.into() }), registry);

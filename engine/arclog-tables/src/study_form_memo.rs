@@ -35,16 +35,50 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::hash::Hasher;
 
-/// The content hash of each top-level form of one program, made on first use.
+/// The content hash of each top-level form of one program, made on first use,
+/// and the hash of the text of the forms that a form's tables read.
+///
+/// The content of a form is free of the order of the conjuncts of its clauses
+/// and of the names of its relations, but the work of its search is not: the
+/// order of the variables of a join follows the clause as written, and with it
+/// the rows and bindings that the join counts. So the key of a walk holds the
+/// text of each form that the walk reads, beside their content.
 pub(super) struct TopHashes<'a> {
     checked:&'a CheckedProgram,
     held:RefCell<Vec<Option<Option<StableHash>>>>,
+    /// The hash of the text of each top-level form, none where the text of
+    /// the program does not split into its forms.
+    texts:Option<Vec<StableHash>>,
+    reads:RefCell<Vec<Option<Option<StableHash>>>>,
 }
 
 impl<'a> TopHashes<'a> {
-    pub(super) fn new(checked:&'a CheckedProgram)->Self {
+    pub(super) fn new(checked:&'a CheckedProgram,texts:Option<Vec<&str>>)->Self {
         let forms=checked.program.program.value().forms.len();
-        Self {checked,held:RefCell::new(vec![None;forms])}
+        let texts=texts.filter(|texts|texts.len()==forms).map(|texts|texts.into_iter().map(|text|{
+            let mut hasher=StableHasher::new();
+            for word in text.split_whitespace() {
+                hasher.write(word.as_bytes());
+                hasher.write_u8(b' ');
+            }
+            hasher.finish128()
+        }).collect());
+        Self {checked,held:RefCell::new(vec![None;forms]),texts,reads:RefCell::new(vec![None;forms])}
+    }
+    /// The hash of the text of the form at `top` and of each form it reads, at any depth.
+    fn text_of(&self,top:usize)->Option<StableHash> {
+        let mut held=self.reads.borrow_mut();
+        let slot=held.get_mut(top)?;
+        *slot.get_or_insert_with(||{
+            let texts=self.texts.as_ref()?;
+            let keep=self.checked.program.use_closure(top)?;
+            let mut hasher=StableHasher::new();
+            hasher.write(b"arclog.gold.form-memo.text");
+            for at in (0..keep.len()).filter(|&at|keep[at]) {
+                hasher.write_u128(texts.get(at)?.0);
+            }
+            Some(hasher.finish128())
+        })
     }
     fn of(&self,top:usize)->Option<StableHash> {
         let mut held=self.held.borrow_mut();
@@ -79,6 +113,7 @@ impl Probe<'_> {
         let mut hasher=StableHasher::new();
         hasher.write(b"arclog.gold.form-memo");
         hasher.write_u128(own.0);
+        hasher.write_u128(self.tops.text_of(step.0 as usize)?.0);
         hasher.write_usize(self.output.len());
         hasher.write(self.output.as_bytes());
         hasher.write_usize(self.ordinal);
