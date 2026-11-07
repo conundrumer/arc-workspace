@@ -366,10 +366,12 @@ fn same_hash(e: &Examples<'_>) -> f32 {
     f32::from(e.train_ex[1..].iter().all(|groups| e.same_rows(groups, &e.train_ex[0])))
 }
 
-/// Whether some test example in the table has the Set of TableRows of the first train example.
+/// Whether some test example in the table has the Set of TableRows of some train example.
 fn test_same(e: &Examples<'_>) -> f32 {
-    let Some(first) = e.train_ex.first().filter(|_| e.n_train > 0) else { return 0.0 };
-    f32::from(e.test_ex.iter().any(|groups| e.same_rows(groups, first)))
+    if e.n_train == 0 {
+        return 0.0;
+    }
+    f32::from(e.test_ex.iter().any(|groups| e.train_ex.iter().any(|train| e.same_rows(groups, train))))
 }
 
 /// Whether some test example in the table has no rows.
