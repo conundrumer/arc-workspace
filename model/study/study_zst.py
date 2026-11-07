@@ -24,7 +24,7 @@ Writing:
 
 A reader can read a `.zst` while its writer writes it: the file is a sequence of independent frames, each of whole writes, and a frame is flushed when `flush()` is called, when `line_buffering` sees a line, and when 1 MiB is pending. A reader sees only complete frames.
 
-  python3 study_zst.py compress [--aside FOLDER] [--min-bytes N] FILE...   makes FILE.zst from each plain FILE of N bytes or more (default 1 MiB), checks that its text has the plain file's sha256, gives it the plain file's modification time, and moves the plain file into FOLDER (default: next to it, in plain-aside/), keeping its path under FOLDER's root as given by --root; a file that changes while it is read is left alone
+  python3 study_zst.py compress [--aside FOLDER] [--root R] [--min-bytes N] [--quiet-seconds S] FILE...   makes FILE.zst from each plain FILE of N bytes or more (default 1 MiB) that has not been modified for S seconds (default 120), checks that its text has the plain file's sha256, gives it the plain file's modification time, and moves the plain file into FOLDER (default: plain-aside/ next to it), at its path under R where --root gives R; a file that changes while it is read is left alone; the exit status is 1 where a file was skipped for any reason other than its size
   python3 study_zst.py check FILE...                                       reads each file and prints its lines and sha256 of its text
   python3 study_zst.py concat OUT SHARD...                                 writes OUT.zst from the text of the shards, in the order given, each plain or `.zst`, through OUT.zst.part
 """
@@ -35,6 +35,7 @@ import io
 import os
 import sys
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -415,7 +416,7 @@ def _main(argv: list[str]) -> int:
                     pass
             print('%s: %d lines, sha256 %s' % (resolve(p), n, sha256(p)))
         return 0
-    aside, min_bytes, root, files = None, 1 << 20, None, []
+    aside, min_bytes, root, quiet, files = None, 1 << 20, None, 120.0, []
     it = iter(args)
     for a in it:
         if a == '--aside':
@@ -424,11 +425,17 @@ def _main(argv: list[str]) -> int:
             min_bytes = int(next(it))
         elif a == '--root':
             root = next(it)
+        elif a == '--quiet-seconds':
+            quiet = float(next(it))
         else:
             files.append(a)
     bad = 0
     for p in files:
         if not os.path.isfile(p) or p.endswith(SUFFIX) or os.path.getsize(p) < min_bytes:
+            continue
+        if time.time() - os.stat(p).st_mtime < quiet:
+            print('SKIPPED %s: modified in the last %g s, so a writer may still write it' % (p, quiet), file=sys.stderr)
+            bad += 1
             continue
         dst = p + SUFFIX
         try:
