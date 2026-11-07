@@ -43,6 +43,8 @@ A store's `contingent` holds about as many entries as its lists, and one group o
 
 `--why PATTERN` judges nothing. For each feature whose name the pattern finds, it prints its nearest single column, the feature's values at each of that column's values, and the first table rows where the two part, by task, item, candidate, ARC example and table.
 
+A missing feature also has `equal share`, the most table rows on which one column equals it, with a table row of no entry at 0, and `equal`, that column's name. A feature of two values holding 0 and 1 reads a column as holding where it has an entry that is not 0, so a count can stand for a flag. One odd table keeps a whole column from `covered`, so these say how near it stands.
+
 Streams one line per distinct feature, with the first version's metadata of the feature (what it reads, its aggregation level and what else it
 reads) and the names that share its values.
 """
@@ -579,6 +581,33 @@ def main():
         best_name = min((name_of.get(int(unique_ids[columns_here[shape_here[place]]]), '?') for place in best), key=len)
         return feature, len(at), off, k, 'covered', len(found), best_name
 
+    def nearest_equal(feature, at):
+        """The most table rows on which one column equals the feature, as a share, and the column's name."""
+        numbers = {here: float(value) for here, value in at.items() if isinstance(value, (bool, int, float))}
+        if not numbers:
+            return '', ''
+        here_rows = np.fromiter(numbers, dtype=np.int64, count=len(numbers))
+        wanted_value = np.zeros(rows, dtype=np.float64)
+        wanted_value[here_rows] = [numbers[here] for here in here_rows.tolist()]
+        here_rows.sort()
+        entries = entries_on(here_rows)
+        if not len(entries):
+            return '', ''
+        wanted_here = wanted_value[row[entries]]
+        zero_rows = int((wanted_value[here_rows] == 0).sum())
+        on_zero = np.bincount(shape[entries], weights=(wanted_here == 0).astype(np.float64), minlength=len(unique_ids))
+        agree = np.bincount(shape[entries], weights=(np.abs(val[entries] - wanted_here) < 1e-3).astype(np.float64), minlength=len(unique_ids)) + zero_rows - on_zero
+        if set(numbers.values()) <= {0.0, 1.0}:
+            flag = np.bincount(shape[entries], weights=(wanted_here == 1).astype(np.float64), minlength=len(unique_ids)) + zero_rows - on_zero
+            agree = np.maximum(agree, flag)
+        allowed = group_of(feature)[1]
+        if allowed is not None:
+            mask = np.zeros(len(unique_ids), dtype=bool)
+            mask[columns_here[allowed]] = True
+            agree = np.where(mask, agree, -1)
+        best = int(np.argmax(agree))
+        return round(float(agree[best]) / len(numbers), 4), name_of.get(int(unique_ids[best]), '?')
+
     def on_candidates(feature, at):
         """The feature's status where a row is a candidate and its value the mean over that candidate's rows, against the columns with one value per candidate."""
         held = collections.defaultdict(list)
@@ -607,7 +636,8 @@ def main():
         whole = on_candidates(feature, at) if real[4] == 'missing' and not args.base else ''
         if args.pairs and real[4] == 'missing':
             pair = by_pairs(feature, at) + (by_pairs(feature, shuffled)[0],)
-        return real + (judged(feature, shuffled)[4], group_of(feature)[0], wider, whole) + pair
+        near = nearest_equal(feature, at) if real[4] == 'missing' else ('', '')
+        return real + (judged(feature, shuffled)[4], group_of(feature)[0], wider, whole) + pair + near
 
     if args.why:
         by_name = {}
@@ -635,8 +665,14 @@ def main():
                 agree = np.bincount(shape[entries], weights=equal.astype(np.float64), minlength=len(unique_ids)) + zero_rows - np.bincount(shape[entries], weights=on_zero.astype(np.float64), minlength=len(unique_ids))
                 best = np.argsort(-agree)[:6]
                 print('  equal on the most table rows:', [(round(float(agree[place]) / len(numbers), 3), name_of.get(int(unique_ids[place]), '?')[:90]) for place in best])
-                # A value by mean, by rows with no entry.
                 print('  feature: rows at 0', zero_rows, 'distinct values', len(set(numbers.values())))
+                own = np.flatnonzero(shape == best[0])
+                column = dict(zip(row[own].tolist(), val[own].tolist()))
+                parted = [(row_info[here], value, column.get(here, 0.0), row_width[here]) for here, value in numbers.items() if abs(column.get(here, 0.0) - value) >= 1e-3]
+                by_task = collections.Counter((held[0][0], held[0][4]) for held in parted)
+                print('  parts on table rows', len(parted), 'by task and table', by_task.most_common(8))
+                for held in parted[:6]:
+                    print('    ', held)
             if key is None:
                 continue
             place = np.searchsorted(unique_ids, key)
@@ -668,7 +704,7 @@ def main():
     begun = time.time()
     tally = collections.Counter()
     with open(args.out, 'w') as sink, mp.get_context('fork').Pool(args.procs) as pool:
-        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tshuffled\tgroup\ton wider tables\ton candidates\ttwo columns\tpair share\tpair\tone share\tone\ttwo columns shuffled\treads\tlevel\tarity\tsame values\n')
+        sink.write('feature\trows\toff\tvalues\tstatus\tcolumns\tshortest\tshuffled\tgroup\ton wider tables\ton candidates\ttwo columns\tpair share\tpair\tone share\tone\ttwo columns shuffled\tequal share\tequal\treads\tlevel\tarity\tsame values\n')
         for done, result in enumerate(pool.imap_unordered(judge, items, chunksize=4), 1):
             coordinate = coordinate_of.get(result[0]) or ['', '', '']
             sink.write('\t'.join(map(str, result)) + '\t' + '\t'.join(coordinate) + '\t' + ' ;; '.join(others_of[result[0]][:6]) + '\n')
