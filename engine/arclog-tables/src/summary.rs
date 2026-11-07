@@ -10,7 +10,9 @@
 //! - the TableHash of the table's Set of TableRows;
 //! - the key of each example: the count of its distinct TableRows, the most rows
 //!   of one of them and the hash of its Set of TableRows;
-//! - the TableVector: the features of `arclog-features` on the Set of TableRows.
+//! - the TableVector: the features of `arclog-features` on the Set of TableRows;
+//! - the key of each column: its type name, its value hash and its tie, which
+//!   order the columns by content ([`ColumnKey`]).
 //!
 //! The summary reads the rows in the table, so a table that the export writes
 //! as Count entries (more rows than the projection cap) still has a hash.
@@ -68,6 +70,9 @@ use arclog::program::RigidDetName;
 use arclog::types::{AssemblyId, ValueType};
 use arclog_features::{Grid as FeatureGrid, Input, Pair, TableRows};
 
+mod column_hash;
+pub use column_hash::{ColumnKey, TIE_EXCHANGEABLE, TIE_NONE, TIE_OPEN};
+
 use crate::columns::{row_width, sorted_rows, sorted_rows_at, type_names};
 use crate::split::{self, Part};
 use crate::tables::{example_axis, Contents, Point, Table, TableDet, TableRelation};
@@ -119,6 +124,9 @@ pub struct AssignmentSummary {
     pub models: Arc<Vec<Vec<Option<(u64, u128)>>>>,
     /// The TableVector: a value for each of `arclog_features::FEATURES`.
     pub features: Arc<Vec<f32>>,
+    /// The key of each column of the table, in the order of the table's columns: its type name, its value hash and its tie ([`ColumnKey`]).
+    /// Empty where the assignment has no TableHash, or the summary is not a full one.
+    pub columns: Arc<Vec<ColumnKey>>,
 }
 
 /// A table at each of its assignments, in the order of the walk, and at least
@@ -146,18 +154,18 @@ impl TableSummary {
     /// the table's examples walk.
     pub fn unhashed(table: &Table, reason: &str) -> Self {
         let Ok(contents) = &table.contents else { return TableSummary::faulted() };
-        let assignments = (0..assignment_count(contents)).map(|_| AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: reason.to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() }).collect();
+        let assignments = (0..assignment_count(contents)).map(|_| AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: reason.to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), columns: Arc::default() }).collect();
         TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: false }
     }
 
     fn faulted() -> Self {
-        TableSummary { assignments: vec![AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "TableFault".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() }], capped: false, name: String::new(), hashes_only: false }
+        TableSummary { assignments: vec![AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "TableFault".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), columns: Arc::default() }], capped: false, name: String::new(), hashes_only: false }
     }
 
     /// The summary of a table that [`summarize_hashes_cached`] leaves out: one
     /// assignment with no TableHash, for the reason `NotComputed`.
     fn not_computed(contents: &Contents) -> Self {
-        let held = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "NotComputed".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() };
+        let held = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "NotComputed".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), columns: Arc::default() };
         TableSummary { assignments: vec![held], capped: capped(contents), name: name_of(contents), hashes_only: true }
     }
 }
@@ -362,7 +370,7 @@ pub fn summarize_hashes_cached(materializer: &Materializer<'_>, table: &Table, t
             if held.assignments.len() == assignment_count(contents) {
                 let mut summary = TableSummary::clone(&held);
                 for assignment in &mut summary.assignments {
-                    *assignment = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: assignment.hash, reason: std::mem::take(&mut assignment.reason), examples: Arc::default(), models: Arc::default(), features: Arc::default() };
+                    *assignment = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: assignment.hash, reason: std::mem::take(&mut assignment.reason), examples: Arc::default(), models: Arc::default(), features: Arc::default(), columns: Arc::default() };
                 }
                 summary.capped = capped(contents);
                 summary.name = name_of(contents);
@@ -703,8 +711,9 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
         hasher.finish128()
     };
     let hash = reason.is_none().then_some(hash);
+    let columns = Arc::new(if with_dets && !hash_only && reason.is_none() { column_hash::column_keys(types, &views, &failed, &fulls.assemblies) } else { Vec::new() });
     if hash_only {
-        return Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default() });
+        return Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), columns: Arc::default() });
     }
     let models: Vec<Vec<Option<(u64, u128)>>> = places
         .iter()
@@ -739,7 +748,7 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
         .zip(hashes)
         .map(|((kind, index, rows), hash)| ExampleKey { kind: *kind, index: *index, distinct: rows.len() as u32, rows: rows.iter().map(|rows| rows.count).max().unwrap_or(0), hash })
         .collect();
-    Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::new(examples), models: Arc::new(models), features: Arc::new(features) })
+    Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::new(examples), models: Arc::new(models), features: Arc::new(features), columns })
 }
 
 /// A hash of the types of a table and of the keys of the TableRows of each of
