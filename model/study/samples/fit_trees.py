@@ -248,8 +248,10 @@ class Layout:
 
 DROP_KINDS: frozenset[str] = frozenset()  # --drop-point-kinds: the point kinds (a point's `kind`, such as KIND) that the fit and the evaluation leave out
 TABLE_CHOICE = False  # --table-choice: only the points where two or more ids name a table (the vector's tokg:table is not 0) are kept
+TABLE_RANKER = False  # --table-ranker: only the points where two or more ids name a table and a positive names one; each keeps its table ids alone, and its positives among them
 WRITERS_ALIKE: frozenset[str] = frozenset()  # --writers-alike: writer_sha values whose point files are equal, as a change of the writer's serving code alone leaves them
 DROP: tuple[str, ...] = ()  # --drop-prefixes: the vector columns whose names start with one of these are left out of the matrix and the model
+DROP_NAMES: frozenset[str] = frozenset()  # --drop-names: the vector columns with exactly these names are left out too
 
 
 def layout_of(fields: dict[str, Any]) -> Layout:
@@ -265,8 +267,8 @@ def layout_of(fields: dict[str, Any]) -> Layout:
             raise FitError('the header\'s vector_point_cols are not distinct columns of the vector')
         empty = np.zeros(0, np.int64)
         ids = np.setdiff1d(np.arange(len(names), dtype=np.int64), point)
-        if DROP:
-            keep = np.array([i for i, n in enumerate(names) if not n.startswith(DROP)], np.int64)
+        if DROP or DROP_NAMES:
+            keep = np.array([i for i, n in enumerate(names) if not (DROP and n.startswith(DROP)) and n not in DROP_NAMES], np.int64)
             return Layout([names[i] for i in keep], empty, empty, empty, point, ids, keep, len(names))
         return Layout(names, empty, empty, empty, point, ids)
     parts = [*fields['option_names'], *fields['table_names'], *fields['point_names']]
@@ -349,9 +351,9 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
     kept: list[tuple[int, int, Kept]] = []  # a heap of (-key, position, point) where per_task > 0
     count: Counter[str] = Counter()
     table_at = None
-    if TABLE_CHOICE:
+    if TABLE_CHOICE or TABLE_RANKER:
         if not is_vector:
-            raise FitError(f'{path}: --table-choice reads the vector column tokg:table, and the file holds no vectors')
+            raise FitError(f'{path}: --table-choice and --table-ranker read the vector column tokg:table, and the file holds no vectors')
         in_point = set(head.get('vector_point_cols') or [])
         table_at = [name for at, name in enumerate(head['vector_names']) if at not in in_point].index('tokg:table')
     for position, rec in enumerate(records_of(path)):
@@ -396,12 +398,30 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int) -> tuple[list[Kept
                 missing = set(rec['table']) - tables.keys()
                 if missing:
                     raise FitError(f'{path}: the point at record {position} uses tables {sorted(missing)[:5]} that no record defines')
+            positive = np.array(rec['positive'], np.int64)
+            vo = None
+            if TABLE_RANKER and is_vector:
+                vo = np.frombuffer(vo_bytes, '<f4').astype(np.float32).reshape(n, n_vo)
+                is_table = vo[:, table_at] != 0
+                if np.count_nonzero(is_table) < 2:
+                    count['points with fewer than two table ids'] += 1
+                    continue
+                if not is_table[positive].any():
+                    count['points where no positive names a table'] += 1
+                    continue
+                sel = np.flatnonzero(is_table)
+                at = {int(j): k for k, j in enumerate(sel)}
+                positive = np.array(sorted(at[int(i)] for i in positive if int(i) in at), np.int64)
+                vo, n = vo[sel], len(sel)
+                drawn = drawn[sel] if drawn is not None else None
             key = choice_key(seed, rec['sample'], position)
             if per_task > 0 and len(kept) >= per_task and -kept[0][0] <= key:
                 continue
             if is_vector:
-                got = Kept(np.zeros((n, 0), np.float32), np.zeros(0, np.int64), np.zeros(0, np.float32), np.array(rec['positive'], np.int64), n,
-                           np.frombuffer(vp_bytes, '<f4').astype(np.float32), np.frombuffer(vo_bytes, '<f4').astype(np.float32).reshape(n, n_vo), drawn)
+                if vo is None:
+                    vo = np.frombuffer(vo_bytes, '<f4').astype(np.float32).reshape(n, n_vo)
+                got = Kept(np.zeros((n, 0), np.float32), np.zeros(0, np.int64), np.zeros(0, np.float32), positive, n,
+                           np.frombuffer(vp_bytes, '<f4').astype(np.float32), vo, drawn)
             else:
                 got = Kept(np.array(rec['option'], np.float32).reshape(n, n_option), np.array(rec['table'], np.int64),
                            np.array(rec['point'], np.float32), np.array(rec['positive'], np.int64), n, drawn=drawn)
@@ -768,6 +788,8 @@ def main() -> int:
     ap.add_argument('--writers-alike', default='', help="S,S: writer_sha values whose point files go in one fit: shas of writers that differ only in code that no feature reads, checked by extracting tasks again under the newer writer and finding the same points")
     ap.add_argument('--drop-point-kinds', default='', help='K,K: leave out the points of these kinds, such as KIND, from the fit and the evaluation')
     ap.add_argument('--table-choice', action='store_true', help='keep only the points where two or more ids name a table (the vector column tokg:table)')
+    ap.add_argument('--drop-names', default='', help='vector columns to leave out by exact name, separated by commas (--drop-prefixes leaves out by prefix)')
+    ap.add_argument('--table-ranker', action='store_true', help='keep only the points where two or more ids name a table and a positive names one, each with its table ids alone: a model of which table, given that the answer is one')
     ap.add_argument('--drop-prefixes', default='', help='P,P: leave out the vector columns whose names start with one of these (an arm of column blocks, such as tok:,state:,task:,pq:body:)')
     ap.add_argument('--task-weights', action='store_true', help="weigh each train point by 1 over its task's points (scaled to a mean of 1), so that each task weighs the same; use with --points-per-task 0")
     ap.add_argument('--alpha', type=float, default=0.0, help='the train loss weighs each id in the softmax denominator by 1 + alpha * drawn (0: no weight)')
@@ -782,11 +804,13 @@ def main() -> int:
     ap.add_argument('--feature-fraction', type=float, default=0.8)
     ap.add_argument('--threads', type=int, default=int(os.environ.get('ARC_HEAVY_CPUS', '1')))
     args = ap.parse_args()
-    global DROP, DROP_KINDS, TABLE_CHOICE, WRITERS_ALIKE
+    global DROP, DROP_NAMES, DROP_KINDS, TABLE_CHOICE, TABLE_RANKER, WRITERS_ALIKE
     WRITERS_ALIKE = frozenset(x for x in args.writers_alike.split(',') if x)
     DROP = tuple(x for x in args.drop_prefixes.split(',') if x)
     DROP_KINDS = frozenset(x for x in args.drop_point_kinds.split(',') if x)
     TABLE_CHOICE = args.table_choice
+    TABLE_RANKER = args.table_ranker
+    DROP_NAMES = frozenset(x for x in args.drop_names.split(',') if x)
     try:
         if args.check:
             return check(args.points[0], args.seed, args.alpha)
