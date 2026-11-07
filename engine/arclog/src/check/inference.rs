@@ -700,9 +700,45 @@ pub(super) struct Inference<'a> {
     /// Whether the labels of a form may stand in any order: a mask reads a
     /// form's types by label, and takes no canonical order for them.
     any_label_order: bool,
+    /// The column types of the relations that this program's forms give,
+    /// read by the inferences of the programs layered over it.
+    relation_columns: RelationColumns,
     /// The grids of the columns of the relations that this program's forms
     /// give, each read once (`check/frames.rs`).
     grids: GridCache,
+}
+
+/// The column types of the declared relations that the forms of one
+/// inference give, which each inference layered over it reads by
+/// [`Inference::clause_relation_type`] and keeps here, so that the
+/// candidates of a mask read each column of a relation once.
+///
+/// A key is the name scope of the relation's node, the relation, the path of
+/// the column and whether the column is read under [`PoseOr::Given`]. The
+/// type that [`Inference::relation_type`] gives a column reads the clauses of
+/// the relation in the scope, the inferences of those clauses, the registry,
+/// and the types' labels through the reading atom. A layered inference keeps
+/// a type here only where
+///
+/// - the scope is the program's, or a `DEMO_RULE` of a form before the last,
+///   and the relation is a declared one, so that the clauses it reads are the
+///   forms of the scope that derive the relation, and no instance output;
+/// - the last form of its program is no clause that derives the relation:
+///   such a clause is read as one of the relation's clauses, and it differs
+///   from one candidate of a mask to the next, so the type that a candidate
+///   reads then is its own. Where the last form derives some other relation,
+///   or is no clause, the clauses that derive the relation are those of the
+///   forms before the last alone, which the inference they share gives the
+///   same types whichever form follows them;
+/// - the reading atom's labels were not asked for: a type that holds a label
+///   names it by the atom's site, which differs between candidates, and the
+///   run that read no label gave the type no atom could change.
+///
+/// An inference holds one list of forms before the last for its life, so a
+/// key stands for one set of clauses.
+#[derive(Default)]
+pub(super) struct RelationColumns {
+    types: RefCell<StableHashMap<(NameScope, ProgramRelation, Box<[ColumnName]>, bool), Option<ValueType>>>,
 }
 
 impl std::fmt::Debug for Inference<'_> {
@@ -719,6 +755,10 @@ pub(super) trait EarlierForms<'a> {
 
     /// The form in progress at the mask's state, where it is held.
     fn held_state(&self) -> Option<&HeldState>;
+
+    /// The column types of relations of these forms that the inferences of
+    /// the programs that follow them share.
+    fn relation_columns(&self) -> &RelationColumns;
 }
 
 impl<'a, 'e: 'a> EarlierForms<'a> for Inference<'e> {
@@ -728,6 +768,10 @@ impl<'a, 'e: 'a> EarlierForms<'a> for Inference<'e> {
 
     fn held_state(&self) -> Option<&HeldState> {
         self.state.get()
+    }
+
+    fn relation_columns(&self) -> &RelationColumns {
+        &self.relation_columns
     }
 }
 
@@ -861,7 +905,7 @@ impl<'a> Inference<'a> {
 
     pub fn new(program: &'a ResolvedProgram, cases: &'a CaseInferences<'a>) -> Self {
         let concept = program.concept().map(|concept| cases.concept(concept));
-        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), ordered: RefCell::default(), signatures: RefCell::default(), shared: None, state: std::cell::OnceCell::new(), splits: true, fast: false, any_label_order: false, grids: GridCache::default() }
+        Inference { program, registry: cases.registry, cases, concept, earlier: None, held: std::cell::OnceCell::new(), forms: RefCell::default(), ordered: RefCell::default(), signatures: RefCell::default(), shared: None, state: std::cell::OnceCell::new(), splits: true, fast: false, any_label_order: false, relation_columns: RelationColumns::default(), grids: GridCache::default() }
     }
 
     /// The inference of `program`, a resolution by [`crate::resolver::resolve_last`]
@@ -1287,9 +1331,7 @@ impl<'a> Inference<'a> {
         };
         match &graph_node.kind {
             DependencyKind::Fact(fact) => declared_type(self.registry.fact_columns(*fact), path, PoseOr::Open),
-            DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => {
-                self.relation_type(&graph_node.scope, relation, path, &reader, pose_or).ok().flatten()
-            }
+            DependencyKind::Clause(relation) | DependencyKind::Parameter(relation) => self.clause_relation_type(&graph_node.scope, relation, path, &reader, pose_or),
             DependencyKind::Chosen(name) => match form_at(self.program.program.value(), form_path)? {
                 Form::Choose(choose) => {
                     let columns: Vec<&RelationColumn> = form_columns::form_columns(NodeRef::Choose(choose.value())).collect();
@@ -1323,6 +1365,44 @@ impl<'a> Inference<'a> {
             DependencyKind::InstanceInput { input, .. } => self.instance_input(form_path, input, path, &key_row),
             DependencyKind::Out(_) => None,
         }
+    }
+
+    /// [`Inference::relation_type`] with its fault read as no type, kept in
+    /// the [`RelationColumns`] of the earlier forms where that type says it
+    /// may be.
+    fn clause_relation_type(
+        &self,
+        scope: &NameScope,
+        relation: &ProgramRelation,
+        path: &[ColumnName],
+        target: &dyn Fn(&ColumnName) -> Option<LabelId>,
+        pose_or: PoseOr,
+    ) -> Option<ValueType> {
+        let program = self.program.program.value();
+        let before_last = |at: &NodePath| self.program.in_earlier_forms(at);
+        let derived_by_last = matches!(program.forms.last(), Some(Form::Clause(clause)) if clause.value().derives == *relation);
+        let own_forms = match scope {
+            NameScope::Program => true,
+            NameScope::DemoRule(rule) => before_last(rule),
+        };
+        let kept = self.earlier.filter(|_| matches!(relation, ProgramRelation::Declared(_)) && own_forms && !derived_by_last).map(|earlier| earlier.relation_columns());
+        let Some(kept) = kept else { return self.relation_type(scope, relation, path, target, pose_or).ok().flatten() };
+        let key = (scope.clone(), relation.clone(), Box::<[ColumnName]>::from(path), pose_or == PoseOr::Given);
+        if let Some(found) = kept.types.borrow().get(&key) {
+            return found.clone();
+        }
+        let asked = Cell::new(false);
+        let found = self
+            .relation_type(scope, relation, path, &|column| {
+                asked.set(true);
+                target(column)
+            }, pose_or)
+            .ok()
+            .flatten();
+        if !asked.get() {
+            kept.types.borrow_mut().insert(key, found.clone());
+        }
+        found
     }
 
     /// The type that the clauses of `relation` in `scope` give its column at
