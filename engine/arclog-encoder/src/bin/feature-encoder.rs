@@ -1361,7 +1361,7 @@ fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) 
     Ok(())
 }
 
-/// Where a walk's time goes, over tables of stored files: `time-heads FILE... --size D`. With TIME_TASK naming a task, each FILE is instead a rows file of that task, as `shapes-refresh` reads it. Each schema has one walker, as a run has. It prints each term head's terms, evaluations, those that
+/// Where a walk's time goes, over tables of stored files: `time-heads FILE... --size D`. It needs GENERATE_KEEP_TEXT=1, since a family drops its terms' text otherwise, and it also prints each table's 20 slowest terms, 30 in all. With TIME_TASK naming a task, each FILE is instead a rows file of that task, as `shapes-refresh` reads it. Each schema has one walker, as a run has. It prints each term head's terms, evaluations, those that
 /// gave rows, and time, and each table's time. With TIME_TABLES, at most that many tables of a file. With TIME_SHAPES naming a file of `gain<TAB>shape` lines, it then times only those
 /// shapes and the terms they read, with a new walker per table, and prints each shape's gain and its share of that time.
 fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String> {
@@ -1384,6 +1384,8 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
     let mut heads: BTreeMap<String, [u64; 4]> = BTreeMap::new();
     let mut table_times: Vec<(f64, usize, usize, usize)> = Vec::new();
     let mut chosen_times: Vec<(f64, usize, usize)> = Vec::new();
+    // The 20 terms of each table that took longest: nanoseconds, evaluations, those that gave rows, and the text.
+    let mut slowest_terms: Vec<(u64, u32, u32, String)> = Vec::new();
     let mut shape_time: Vec<f64> = vec![0.0; wanted.len()];
     let mut shape_seen: Vec<u64> = vec![0; wanted.len()];
     let mut families: HashMap<String, Generated> = HashMap::new();
@@ -1430,7 +1432,13 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
             let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
             let mut walker = Walker::new(family);
             let times = walker.timed_terms(&leaves, train, None);
+            if count > first && family.term_info(first).0.is_empty() {
+                return Err("the family keeps no term text: run `time-heads` with GENERATE_KEEP_TEXT=1".to_string());
+            }
             let mut total = 0;
+            let mut costly: Vec<(u64, usize)> = times.iter().enumerate().take(count).skip(first).map(|(at, time)| (time.0, at)).collect();
+            costly.sort_unstable_by(|a, b| b.cmp(a));
+            slowest_terms.extend(costly.iter().take(20).map(|(nanos, at)| (*nanos, times[*at].1, times[*at].2, family.term_info(*at).0.to_string())));
             for (at, (nanos, evals, gave)) in times.iter().enumerate().take(count).skip(first) {
                 let text = family.term_info(at).0;
                 let head = text.trim_start_matches('(').split(' ').next().unwrap_or("").to_string();
@@ -1495,6 +1503,13 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
     println!("head\tterms\tevaluations\twith rows\tmicroseconds\tshare\tns per evaluation");
     for (head, held) in order {
         println!("{head}\t{}\t{}\t{}\t{:.0}\t{:.3}\t{:.0}", held[0], held[1], held[2], held[3] as f64 / 1000.0, held[3] as f64 / whole.max(1) as f64, held[3] as f64 / held[1].max(1) as f64);
+    }
+    slowest_terms.sort_by(|a, b| b.0.cmp(&a.0));
+    if !slowest_terms.is_empty() {
+        println!("term\tmicroseconds\tshare\tevaluations\twith rows\ttext");
+        for (nanos, evals, gave, text) in slowest_terms.iter().take(30) {
+            println!("term\t{:.0}\t{:.4}\t{evals}\t{gave}\t{text}", *nanos as f64 / 1000.0, *nanos as f64 / whole.max(1) as f64);
+        }
     }
     table_times.sort_by(|a, b| a.0.total_cmp(&b.0));
     if !table_times.is_empty() {
