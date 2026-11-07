@@ -230,7 +230,8 @@ def main():
         """A row's entries from a table's list at a pair."""
         row_of.append(np.full(len(held[0]), row, dtype=np.int32))
         shape_of.append(held[0])
-        value_of.append(held[1])
+        # A copy, since a list's values are a view that would hold its whole file in memory.
+        value_of.append(np.array(held[1], dtype=np.float32))
         if len(other[0]) and other[4].shape[1] > at:
             values = other[4][:, at]
             active = values != 0
@@ -331,7 +332,7 @@ def main():
                         add_rows([by_table(pair) for pair in held['pairs']], name, mutant['table'], candidate_of[(task, item_at, j)], own_types, f'{item_at}/{j}/query')
     row = np.concatenate(row_of)
     ids = np.concatenate(shape_of)
-    val = np.concatenate(value_of).astype(np.float64)
+    val = np.concatenate(value_of)
     del row_of, shape_of, value_of
     val = np.nan_to_num(val, nan=-7.77e7)
     keep = val != 0
@@ -344,6 +345,7 @@ def main():
             for own in at:
                 column.setdefault(own, 0.0)
     unique_ids, shape = np.unique(ids, return_inverse=True)
+    shape = shape.astype(np.int32)
     del ids
     wanted = set(unique_ids.tolist())
     for folder in [args.lists[-1]] + ([args.named] if args.named else []) + ([args.more] if args.more else []) + ([args.state] if args.state else []):
