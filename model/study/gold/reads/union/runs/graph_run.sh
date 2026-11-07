@@ -11,7 +11,7 @@ done
 wait
 for f in tables prods tasks; do
   shards=$(for ((k=0; k<$2; k++)); do echo $G/graph-$f-$1-$k.jsonl; done)
-  cat $shards > $G/graph-$f-$1.jsonl && python3 $U/gold_union_code.py concat $G/graph-$f-$1.jsonl $shards && rm $shards $(for s in $shards; do echo $s.code.json; done)
+  .venv/bin/python model/study/study_zst.py concat $G/graph-$f-$1.jsonl $shards && python3 $U/gold_union_code.py concat $G/graph-$f-$1.jsonl $shards && rm -f $shards $(for s in $shards; do echo $s.zst $s.code.json; done)
 done
-wc -l $G/graph-*-$1.jsonl
+.venv/bin/python model/study/study_zst.py check $G/graph-{tables,prods,tasks}-$1.jsonl
 UNION_SCRATCH=$S timeout 300 .venv/bin/python $U/runs/graph_compare.py $1 2>&1 | grep -v "^split\|^join"

@@ -2,9 +2,10 @@
 
   .venv/bin/python gold_union_cases.py SET      SET: train, dev or held-out
 """
-import hashlib, json, os, sys
+import json, os, sys
 import gold_case_counts as K
 from gold_union_fits import set_of
+import study_zst as Z  # on the path since gold_union_fits is imported
 
 OUT = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union')
 
@@ -13,7 +14,7 @@ def main():
     want = sys.argv[1]
     pubs, ex = K.publications(), K.excluded()
     path = OUT + '/cases-%s.jsonl' % want
-    with open(path + '.part', 'w') as out:
+    with Z.open_text(path, 'w', atomic=True) as out:  # a reader never sees a part-written file
         for t in K.union_tasks(pubs):
             if set_of(t) != want:
                 continue
@@ -24,9 +25,7 @@ def main():
                 for c in res['cases']:
                     out.write(json.dumps(dict(task=t, case=c['case'], concept=bool(c.get('concept')), gold_sexp=c.get('filtered_program') or c.get('original_program') or '',
                                               excluded=c['case'].replace('$', '').replace(' ', '+') in ex[t], source=p.replace(K.G, ''))) + '\n')
-    os.replace(path + '.part', path)  # a reader never sees a part-written file
-    sha = hashlib.sha256(open(path, 'rb').read()).hexdigest()
-    open(path + '.sha256', 'w').write('%s  %s\n' % (sha, os.path.basename(path)))
+    sha = Z.write_sidecar_sha256(path)  # the hash of the text
     print(want, sha)
 
 

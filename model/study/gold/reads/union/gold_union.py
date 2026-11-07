@@ -1,6 +1,6 @@
 """Union gold: the one-case programs of each task's solver and the pinned program, with the union of their tables. design.md in this folder gives the definitions. Rows in union-SET-K.jsonl.
 
-The union stages read their files through model/study/study_zst.py, which reads a plain `union-SET-K.jsonl` and a `union-SET-K.jsonl.zst` alike. Names in this file are the logical names, without `.zst`.
+The union stages write their large files as zstd streams, `union-SET-K.jsonl.zst`, and read them through model/study/study_zst.py, which reads a plain `union-SET-K.jsonl` and a `union-SET-K.jsonl.zst` alike. Names in this file are the logical names, without `.zst`. A frame is flushed as each row is written, so a reader can read a file that is still being written.
 
 A program is kept when its text has a row in fits-SET.jsonl (gold_union_fits.py, on the current engine) with fit and test_ok true: some assignment of its DETs gives every train output, and the fitting assignments give, on each test example, at most two distinct grids and one is the expected output. Queries of equal QueryHash make one union table (query_hash.py, on the engine of gold_union_env.sh; the row keeps `query_hash_version`). A query that the engine refuses keeps its own union table and is listed in the row's `unhashed`. gold_union_graph.py joins union tables by equal maps.
 
@@ -261,7 +261,7 @@ def run(args=()):
     if os.environ.get('UNION_TASKS'):
         left = [t for t in os.environ['UNION_TASKS'].split() if t not in done]
     print(len(left), 'tasks', flush=True)
-    with open(OUT + 'union-%s-%d.jsonl' % (slug(sets), k), 'a', buffering=1) as f:
+    with Z.open_text(OUT + 'union-%s-%d.jsonl' % (slug(sets), k), 'a', line_buffering=True) as f:
         out = Rows(f)
         while left:
             part, left = left[:C.PER_CHILD], left[C.PER_CHILD:]
@@ -292,7 +292,8 @@ def merge(args=()):
         if t in got:
             got[t] = json.dumps(dict(task=t, set=json.loads(got[t]).get('set'), error=why, set_aside=why)) + '\n'
     text = ''.join(got[t] for t in sorted(got))
-    open(OUT + name + '.jsonl', 'w').write(text)
+    with Z.open_text(OUT + name + '.jsonl', 'w', atomic=True) as f:
+        f.write(text)
     open(OUT + name + '.jsonl.sha256', 'w').write(hashlib.sha256(text.encode()).hexdigest() + '\n')
     manifest = OUT + name + '.manifest.json'
     info = json.load(open(manifest)) if os.path.exists(manifest) else dict(file=name + '.jsonl')

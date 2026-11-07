@@ -312,7 +312,7 @@ def sampler_run(set_name, k, n, field='sampler'):
     path = OUT + '%s-%s-%d.jsonl' % (field, set_name, k)
     done = {json.loads(l)['task'] for l in Z.open_text(path) if l.endswith('\n')} if Z.exists(path) else set()
     env, start = engine(), time.time()
-    with open(path, 'a') as f:
+    with Z.open_text(path, 'a') as f:
         for i, r in enumerate(mine, 1):
             if r['task'] in done:
                 continue
@@ -364,7 +364,8 @@ def merge(set_name):
                         x[f] = v
             got[r['task']] = json.dumps(r) + '\n'
     if got:
-        open(OUT + 'fits-%s.jsonl' % set_name, 'w').write(gold_union_code.header() + ''.join(got[t] for t in sorted(got)))
+        with Z.open_text(OUT + 'fits-%s.jsonl' % set_name, 'w', atomic=True) as f:
+            f.write(gold_union_code.header() + ''.join(got[t] for t in sorted(got)))
     print(len(got), 'tasks')
 
 
@@ -376,13 +377,11 @@ def run(set_name, shard=None):
         mine = [t for t in os.environ['FITS_TASKS'].split() if t in todo]
     path = OUT + ('fits-%s-%d.jsonl' % (set_name, k) if shard else 'fits-%s.jsonl' % set_name)
     done = {r['task'] for r in rows_of(path)} if Z.exists(path) else set()
-    if os.path.exists(path):  # a killed run may leave half a line
-        text = open(path).read()
-        open(path, 'w').write(text[:text.rfind('\n') + 1])
+    Z.trim_to_last_newline(path)  # a killed run may leave half a line
     left = [t for t in mine if t not in done]
     env, tasks, reuse = engine(), ROOT / 'data/tasks', reuse_of()
     rest, fit, seen, start = sum(len(todo[t]) for t in left), 0, 0, time.time()
-    with open(path, 'a') as f:
+    with Z.open_text(path, 'a') as f:
         for i, t in enumerate(left, len(mine) - len(left) + 1):
             row, copied = one(env, t, todo[t], tasks, reuse.get(t, {}))
             f.write(json.dumps(row) + '\n')

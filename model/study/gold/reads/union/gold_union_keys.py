@@ -40,12 +40,11 @@ def merge(s):
                 c = json.loads(l)
                 if c['task'] not in aside:
                     got[c['task'], c['case']] = l
-    with open(OUT + 'union-keys-%s.jsonl.part' % s, 'w') as out:
+    with Z.open_text(OUT + 'union-keys-%s.jsonl' % s, 'w', atomic=True) as out:
         for l in Z.open_text(OUT + 'cases-%s.jsonl' % s):
             c = json.loads(l)
             if (c['task'], c['case']) in got:
                 out.write(got.pop((c['task'], c['case'])))
-    os.replace(OUT + 'union-keys-%s.jsonl.part' % s, OUT + 'union-keys-%s.jsonl' % s)
     gold_union_code.write_sidecar(OUT + 'union-keys-%s.jsonl' % s)
     print(len({json.loads(l)['task'] for l in Z.open_text(OUT + 'union-keys-%s.jsonl' % s)}), 'tasks')
 
@@ -61,7 +60,7 @@ def stream(s, k, n):
         c = json.loads(l)
         if c['task'] in keys and c['excluded'] != 'True':
             cases.setdefault(c['task'], []).append(c)
-    with open(OUT + 'union-keys-%s-%d.jsonl' % (s, k), 'a') as out:
+    with Z.open_text(OUT + 'union-keys-%s-%d.jsonl' % (s, k), 'a') as out:
         for i, t in enumerate(keys):
             bar = Bar(t)
             lines = []
@@ -90,7 +89,7 @@ def main():
         keys[u['task']] = {f['ident']: x['key'] for x in u.get('tables') or [] for f in x['forms']}
     n = miss = 0
     bar = None
-    with open(OUT + 'union-keys-%s.jsonl.part' % s, 'w') as out:
+    with Z.open_text(OUT + 'union-keys-%s.jsonl' % s, 'w', atomic=True) as out:
         for l in Z.open_text(OUT + 'cases-%s.jsonl' % s):
             c = json.loads(l)
             if c['task'] not in keys or c['excluded'] == 'True':
@@ -108,7 +107,6 @@ def main():
             n += len(got)
             miss += got.count(None)
             out.write(json.dumps(dict(task=c['task'], case=c['case'], text=text, keys=got)) + '\n')
-    os.replace(OUT + 'union-keys-%s.jsonl.part' % s, OUT + 'union-keys-%s.jsonl' % s)
     gold_union_code.write_sidecar(OUT + 'union-keys-%s.jsonl' % s)
     print(n, 'lines', miss, 'without a key')
 

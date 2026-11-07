@@ -98,10 +98,9 @@ def graph_phase(b, tasks):
             if f == 'tasks':
                 failed = {t for p in set(keep.values()) for l in Z.open_text(p) for r in [json.loads(l)] for t in [r['task']] if keep[t] == p and 'error' in r}
             keep = {t: p for t, p in keep.items() if t not in failed or f == 'tasks'}
-            with open(G + 'graph-%s-%s.jsonl.part' % (f, split), 'w') as out:
+            with Z.open_text(G + 'graph-%s-%s.jsonl' % (f, split), 'w', atomic=True) as out:
                 for p in parts:
                     out.writelines(l for l in Z.open_text(p) if keep.get(json.loads(l)['task']) == p)
-            os.replace(G + 'graph-%s-%s.jsonl.part' % (f, split), G + 'graph-%s-%s.jsonl' % (f, split))
             subprocess.run(['python3', U + 'gold_union_code.py', 'concat', G + 'graph-%s-%s.jsonl' % (f, split)] + parts, check=True)
 
 

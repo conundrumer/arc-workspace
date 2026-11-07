@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Union records for the reach measurement kit from the merged union files (gold/gold-union/union-<set>.jsonl and union-<set>-addendum.jsonl), one task a line, streamed to records-<set>.jsonl next to this script; a restart skips tasks it has. A task whose merged line has no tables is set aside and gets no record. A task with no merged line takes the text-level record of union-identity-<set>.jsonl through build.py's union_record, and gets its merged record on a later run once one exists.
+"""Union records for the reach measurement kit from the merged union files (gold/gold-union/union-<set>.jsonl and union-<set>-addendum.jsonl), one task a line, streamed to records-<set>.jsonl.zst (a zstd stream, a frame for each record, so a reader can read it while it is written; a plain records-<set>.jsonl is read too) next to this script; a restart skips tasks it has. A task whose merged line has no tables is set aside and gets no record. A task with no merged line takes the text-level record of union-identity-<set>.jsonl through build.py's union_record, and gets its merged record on a later run once one exists.
 
   SAMPLER_CODE=<kit>/model/study/sampler PYTHONPATH=<repo>/model/study/gold/cover_forms:<arclog site> <runtime python> build_merged.py [--jobs N] [--merged-only] SET...
 
@@ -71,7 +71,7 @@ def main():
             (t in merged and done.get(t) != merged[t]['src']) or (t not in merged and t not in done and not merged_only))]
         t0, n = time.time(), 0
         print('%s: %d tasks to build, %d jobs' % (want, len(todo), jobs), flush=True)
-        with open(out, 'a') as f, multiprocessing.get_context('spawn').Pool(jobs, initializer=init) as pool:
+        with Z.open_text(out, 'a') as f, multiprocessing.get_context('spawn').Pool(jobs, initializer=init) as pool:
             for r in pool.imap_unordered(one, todo):  # a task's later record, from a changed line, follows its earlier one; build.py takes the last
                 n += 1
                 if 'error' in r:

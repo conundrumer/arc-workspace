@@ -16,7 +16,7 @@ Writing:
   open_text(path, 'w')                     writes `X.jsonl.zst`, a new file, as the stream of frames of whole writes; `.write(str)`, `.flush()`, `.close()`
   open_text(path, 'a')                     appends frames to `X.jsonl.zst`; a torn last frame is cut off first, and a file that is plain on disk is first made `X.jsonl.zst`, the plain file left as it is
   open_text(path, 'w', atomic=True)        writes `X.jsonl.zst.part` and renames it onto `X.jsonl.zst` at a clean close
-  open_part(path), commit(path)            `X.jsonl.zst.part` with no rename at close, and the rename, for outputs that must appear together
+  open_part(path, suffix=''), commit(path, suffix='')   `X.jsonl.zst.part<suffix>` with no rename at close, and the rename, for outputs that must appear together
   trim_to_last_newline(path)               cuts the file after its last complete line
   rewrite(path)                            a context manager: replaces a file by the text written to it, in the form that the file has
   write_sidecar_sha256(path)               `X.jsonl.sha256`: `<sha256 of the text>  <name>`
@@ -26,6 +26,7 @@ A reader can read a `.zst` while its writer writes it: the file is a sequence of
 
   python3 study_zst.py compress [--aside FOLDER] [--min-bytes N] FILE...   makes FILE.zst from each plain FILE of N bytes or more (default 1 MiB), checks that its text has the plain file's sha256, gives it the plain file's modification time, and moves the plain file into FOLDER (default: next to it, in plain-aside/), keeping its path under FOLDER's root as given by --root; a file that changes while it is read is left alone
   python3 study_zst.py check FILE...                                       reads each file and prints its lines and sha256 of its text
+  python3 study_zst.py concat OUT SHARD...                                 writes OUT.zst from the text of the shards, in the order given, each plain or `.zst`, through OUT.zst.part
 """
 import contextlib
 import glob as _glob
@@ -36,6 +37,7 @@ import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 SUFFIX = '.zst'
 FRAME_BYTES = 1 << 20  # pending bytes that make a frame, at the last newline
@@ -95,7 +97,7 @@ def open_bytes(path):
     return _open_zst(p) if p.suffix == SUFFIX else open(p, 'rb')
 
 
-def open_text(path, mode: str = 'r', *, line_buffering: bool = False, atomic: bool = False, level: int = LEVEL, encoding: str = 'utf-8'):
+def open_text(path, mode: str = 'r', *, line_buffering: bool = False, atomic: bool = False, level: int = LEVEL, encoding: str = 'utf-8') -> Any:
     """The file's text. Mode r reads, w writes a new `.zst`, a appends to the `.zst`; see the module docstring."""
     if mode == 'r':
         p = _need(path)
@@ -113,16 +115,16 @@ def open_text(path, mode: str = 'r', *, line_buffering: bool = False, atomic: bo
     return _Writer(target, target, 'wb', level, line_buffering, encoding, commit_on_close=False)
 
 
-def open_part(path, *, line_buffering: bool = False, level: int = LEVEL, encoding: str = 'utf-8'):
-    """Writes `X.zst.part`; `commit(path)` renames it onto `X.zst`."""
+def open_part(path, *, suffix: str = '', line_buffering: bool = False, level: int = LEVEL, encoding: str = 'utf-8'):
+    """Writes `X.zst.part<suffix>`; `commit(path, suffix)` renames it onto `X.zst`. A suffix such as the process id keeps two writers of one file apart."""
     target = logical(path) + SUFFIX
-    return _Writer(target, target + '.part', 'wb', level, line_buffering, encoding, commit_on_close=False)
+    return _Writer(target, target + '.part' + suffix, 'wb', level, line_buffering, encoding, commit_on_close=False)
 
 
-def commit(path) -> None:
-    """Renames `X.zst.part` onto `X.zst`."""
+def commit(path, suffix: str = '') -> None:
+    """Renames `X.zst.part<suffix>` onto `X.zst`."""
     target = logical(path) + SUFFIX
-    os.replace(target + '.part', target)
+    os.replace(target + '.part' + suffix, target)
 
 
 @contextlib.contextmanager
@@ -193,7 +195,7 @@ class _Writer:
         self._size = 0
         self.closed = False
 
-    def write(self, s) -> int:
+    def write(self, s: str | bytes) -> int:
         b = s if isinstance(s, bytes) else s.encode(self._encoding)
         self._pending.append(b)
         self._size += len(b)
@@ -227,6 +229,8 @@ class _Writer:
         if self.closed:
             return
         self.flush()
+        if self._f.tell() == 0:  # a file with no text is one empty frame, which `zstd -t` takes
+            self._f.write(self._comp.compress(b''))
         self._f.close()
         self.closed = True
         if self._commit:
@@ -329,6 +333,8 @@ def _compress_file(src: str, dst: str, level: int = LEVEL) -> None:
         while chunk := f.read(FRAME_BYTES):
             h.update(chunk)
             out.write(comp.compress(chunk))
+        if out.tell() == 0:  # an empty file is one empty frame, which `zstd -t` takes
+            out.write(comp.compress(b''))
     after = os.stat(src)
     if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
         os.unlink(part)
@@ -390,10 +396,17 @@ class LineStore:
 
 
 def _main(argv: list[str]) -> int:
-    if not argv or argv[0] not in ('compress', 'check'):
+    if not argv or argv[0] not in ('compress', 'check', 'concat'):
         print(__doc__)
         return 2
     cmd, args = argv[0], argv[1:]
+    if cmd == 'concat':
+        with open_text(args[0], 'w', atomic=True) as out:
+            for p in args[1:]:
+                with open_bytes(p) as f:
+                    while chunk := f.read(1 << 20):
+                        out.write(chunk)
+        return 0
     if cmd == 'check':
         for p in args:
             n = 0

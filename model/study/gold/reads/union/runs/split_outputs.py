@@ -51,7 +51,8 @@ def lines(kind):
 
 
 def write(path, text):
-    open(path, 'w').write(text)
+    with Z.open_text(path, 'w', atomic=True) as f:
+        f.write(text)
     return hashlib.sha256(text.encode()).hexdigest()
 
 

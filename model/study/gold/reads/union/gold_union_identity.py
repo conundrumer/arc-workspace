@@ -5,6 +5,7 @@
 import gzip, hashlib, json, os, re, sys
 import gold_case_counts as K
 from gold_union_fits import set_of
+import study_zst as Z  # on the path since gold_union_fits is imported
 
 OUT = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union')  # GOLD_UNION_DIR: the folder of the outputs
 D = '/Users/davidlu/code/arc-workspace/work/lm/data-study/'
@@ -33,7 +34,7 @@ def main():
     want = sys.argv[1]
     pubs, ex = K.publications(), K.excluded()
     path = OUT + '/union-identity-%s.jsonl' % want
-    with open(path, 'w') as out:
+    with Z.open_text(path, 'w', atomic=True) as out:
         for t in K.union_tasks(pubs):
             if set_of(t) != want:
                 continue
@@ -54,8 +55,7 @@ def main():
             rows = [dict(key=index[k], kind=tables[k]['kind'], form=tables[k]['form'], reads=[index[r] for r in tables[k]['reads']], depth=tables[k]['depth'],
                          cases=[c for c in tables[k]['cases'] if c != 'pinned'], pinned='pinned' in tables[k]['cases']) for k in order]
             out.write(json.dumps(dict(task=t, set=want, merged='identity', cases=[n for n, _ in progs if n != 'pinned'], tables=rows)) + '\n')
-    sha = hashlib.sha256(open(path, 'rb').read()).hexdigest()
-    open(path + '.sha256', 'w').write('%s  %s\n' % (sha, os.path.basename(path)))
+    sha = Z.write_sidecar_sha256(path)  # the hash of the text
     print(want, sha)
 
 

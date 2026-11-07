@@ -113,10 +113,9 @@ def batch(b, split, tasks):
                 for l in Z.open_text(p):
                     last.setdefault(json.loads(l)['task'], {})[p] = None
             keep = {t: list(ps)[-1] for t, ps in last.items()}
-            with open(G + 'graph-%s-%s.jsonl.part' % (f, split), 'w') as out:
+            with Z.open_text(G + 'graph-%s-%s.jsonl' % (f, split), 'w', atomic=True) as out:
                 for p in parts:
                     out.writelines(l for l in Z.open_text(p) if keep[json.loads(l)['task']] == p)
-            os.replace(G + 'graph-%s-%s.jsonl.part' % (f, split), G + 'graph-%s-%s.jsonl' % (f, split))
             subprocess.run(['python3', U + 'gold_union_code.py', 'concat', G + 'graph-%s-%s.jsonl' % (f, split)] + parts, check=True)
         say(tag, 'done')
 

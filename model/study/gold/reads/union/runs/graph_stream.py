@@ -49,10 +49,9 @@ def concat(split):
             last[json.loads(l)['task']] = batch(p)
     for f in ('tables', 'prods', 'tasks'):
         parts = sorted(Z.glob(O + 'graph-%s-%s-[0-9]*.jsonl' % (f, split)), key=batch)
-        with open(O + 'graph-%s-%s.jsonl.part' % (f, split), 'w') as out:
+        with Z.open_text(O + 'graph-%s-%s.jsonl' % (f, split), 'w', atomic=True) as out:
             for p in parts:
                 out.writelines(l for l in Z.open_text(p) if last.get(json.loads(l)['task']) == batch(p))
-        os.replace(O + 'graph-%s-%s.jsonl.part' % (f, split), O + 'graph-%s-%s.jsonl' % (f, split))
         subprocess.run(['python3', U + 'gold_union_code.py', 'concat', O + 'graph-%s-%s.jsonl' % (f, split)] + parts, check=True)
 
 
