@@ -2673,6 +2673,7 @@ impl<'a> Walker<'a> {
     /// A term's count of rows and, for a number root, its number, with what can be left unbuilt left so.
     fn count_only(&mut self, step: &Step, at: usize, id: u32, b: u32, number: bool, steps: &StepIds) -> (u32, u32) {
         if let Some((found, forced)) = self.memo.get(&(steps.ids[at], id, b)).cloned() {
+            crate::bounds::recall((0, steps.ids[at], id, 0, b));
             self.replay(&forced);
             let value = &self.values[found as usize];
             return (count_of(value), if number { number_word(value) } else { 0 });
@@ -2696,11 +2697,14 @@ impl<'a> Walker<'a> {
                 }
                 let key = (part, written, grouping, b);
                 if let Some((found, forced)) = self.group_counts.get(&key).cloned() {
+                    crate::bounds::recall((2, key.0, key.1, key.2, key.3));
                     self.replay(&forced);
                     return (found, 0);
                 }
                 let mark = self.forced.len();
+                let bounds_before = crate::bounds::enter();
                 let found = count_of(&self.apply(step, written, b));
+                crate::bounds::leave((2, key.0, key.1, key.2, key.3), bounds_before);
                 let forced = self.forced_since(mark);
                 self.group_counts.insert(key, (found, forced));
                 return (found, 0);
@@ -2783,6 +2787,8 @@ impl<'a> Walker<'a> {
                 crate::bounds::set_head(*head);
             }
             let step_id = steps.ids[at];
+            crate::bounds::clear_term();
+            let cells_before = walk_cells + self.written_cells;
             let first = std::mem::take(&mut ids[term.a as usize]);
             let second = if term.b == NO_TERM { Vec::new() } else if term.b == term.a { first.clone() } else { std::mem::take(&mut ids[term.b as usize]) };
             let step = term.step.as_ref().expect("a term has a step");
@@ -2799,6 +2805,15 @@ impl<'a> Walker<'a> {
             let idle = first_empty || first_cut || second_empty;
             // A first relation that a bound cut off, at an instance, leaves the term with no value there: a stop, which spreads to the terms that read it.
             let cut_by_bound = first_cut && first[..scope].iter().any(|id| self.cut_by_cap(step, *id));
+            // A term whose first relation is rows that `step` cannot write has no value, and no evaluation counts it.
+            if idle && scope > 0 && crate::bounds::enabled() {
+                for id in &first[..scope] {
+                    let held = &self.values[*id as usize];
+                    if held.is_lazy() && !held.lazy_reads(step, true) && !held.lazy_fits() {
+                        crate::bounds::mark_term(if matches!(held, Val::Joined(_)) { crate::bounds::Bound::JoinOutput } else { crate::bounds::Bound::InsideCells });
+                    }
+                }
+            }
             let past_bound = extended && walk_cells + self.written_cells > WALK_CELLS;
             let is_stopped = past_bound || cut_by_bound || stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]);
             if extended {
@@ -2815,11 +2830,14 @@ impl<'a> Walker<'a> {
                     let mark = self.forced.len();
                     let id = match self.memo.get(&key).cloned() {
                         Some((found, forced)) => {
+                            crate::bounds::recall((0, key.0, key.1, 0, key.2));
                             self.replay(&forced);
                             found
                         }
                         None => {
+                            let bounds_before = crate::bounds::enter();
                             let value = self.apply(step, first[pair], b);
+                            crate::bounds::leave((0, key.0, key.1, 0, key.2), bounds_before);
                             let id = self.value_id(value);
                             let forced = self.forced_since(mark);
                             self.memo.insert(key, (id, forced));
@@ -2870,11 +2888,14 @@ impl<'a> Walker<'a> {
                         let mark = self.forced.len();
                         let counted = match self.counts.get(&key).cloned() {
                             Some((rows, number, forced)) => {
+                                crate::bounds::recall((1, key.0, key.1, 0, key.2));
                                 self.replay(&forced);
                                 (rows, number)
                             }
                             None => {
+                                let bounds_before = crate::bounds::enter();
                                 let found = self.count_only(step, at, id, b, term.root == RootKind::Number, steps);
+                                crate::bounds::leave((1, key.0, key.1, 0, key.2), bounds_before);
                                 let forced = self.forced_since(mark);
                                 self.counts.insert(key, (found.0, found.1, forced));
                                 found
@@ -2935,6 +2956,8 @@ impl<'a> Walker<'a> {
                     }
                 }
             }
+            crate::bounds::note_term(at as u32);
+            crate::bounds::note_cells(at as u32, (walk_cells + self.written_cells).saturating_sub(cells_before) as u64);
             ids[term.a as usize] = first;
             if term.b != NO_TERM {
                 ids[term.b as usize] = second;
@@ -3103,6 +3126,12 @@ impl Generated {
     /// The value that stands for no term in [`Generated::term_links`].
     pub fn no_term() -> u32 {
         NO_TERM
+    }
+
+    /// A term's shape, with the table and its columns as holes, where the family keeps the terms' text.
+    pub fn term_shape(&self, at: usize, types: &[ValueType]) -> Option<String> {
+        let text = &self.terms.get(at)?.text;
+        (!text.is_empty()).then(|| shape_text(text, "T", types))
     }
 
     pub fn is_pair_term(&self, at: usize) -> bool {
