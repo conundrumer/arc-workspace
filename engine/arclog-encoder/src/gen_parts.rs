@@ -122,6 +122,16 @@ pub enum PartStep {
     SetWord { a: u16, b: u16, cells: bool, word: SetRelation },
     /// How a measure of each of two relations compare: a row where they compare as `word`, which is below 0, 0 or above 0.
     CountWord { left: Measure, right: Measure, word: i8 },
+    /// What the bounding boxes of a column's cells, one per key, say together. A row of a number, or a row where it holds.
+    BoxMeasure { keys: Box<[u16]>, p: u16, measure: BoxMeasureKind },
+    /// What a Box column's boxes say together in a grid's frame. A row of a number, or a row where it holds.
+    BoxSetMeasure { p: u16, measure: BoxMeasureKind },
+    /// The cells of the one bounding box of a column's cells per key, in its frame, where they have one.
+    OneBoxCells { keys: Box<[u16]>, p: u16 },
+    /// The cells of a Box column's one box in a grid's frame, where it has one.
+    OneBoxSetCells { p: u16 },
+    /// Every cell of the frame of a column's cells.
+    FrameCells { p: u16 },
     /// The least distance from a column's cells to another relation's, counted in steps of eight directions.
     LeastDistance { a: u16, b: u16 },
     /// The cells of the first relation that lie on the boundary of another's: each is a cell of it and has one of its four neighbors outside it.
@@ -193,6 +203,8 @@ impl PartStep {
             PartStep::Same => Vec::new(),
             PartStep::SetWord { a, .. } | PartStep::LeastDistance { a, .. } | PartStep::InsideBoxWord { a, .. } | PartStep::SharesValue { a, .. } => vec![*a],
             PartStep::OnBoundary { .. } | PartStep::NeighborsIn { .. } | PartStep::OnBorder { .. } => vec![0],
+            PartStep::BoxMeasure { keys, p, .. } | PartStep::OneBoxCells { keys, p } => with(keys, &[*p]),
+            PartStep::BoxSetMeasure { p, .. } | PartStep::OneBoxSetCells { p } | PartStep::FrameCells { p } => vec![*p],
             PartStep::RayMeets { .. } => vec![0, 1],
             PartStep::TopColorsUnder { p } => vec![*p],
             PartStep::CountWord { left, .. } => match left {
@@ -253,6 +265,11 @@ impl PartStep {
             PartStep::SharedLine { a, b } => format!("(shared-line &r &s {} {})", c(a), second(*b)),
             PartStep::SameValues { a, b } => format!("(same-values &r &s {} {})", c(a), second(*b)),
             PartStep::SetWord { a, b, cells, word } => format!("({} &r &s {} {} {word:?})", if *cells { "cell-word" } else { "set-word" }, c(a), second(*b)),
+            PartStep::BoxMeasure { keys, p, measure } => format!("(box-measure &r ({}) {} {measure:?})", keys.iter().map(c).collect::<Vec<_>>().join(" "), c(p)),
+            PartStep::BoxSetMeasure { p, measure } => format!("(box-set-measure &r {} {grid} {measure:?})", c(p)),
+            PartStep::OneBoxCells { keys, p } => format!("(one-box-cells &r ({}) {})", keys.iter().map(c).collect::<Vec<_>>().join(" "), c(p)),
+            PartStep::OneBoxSetCells { p } => format!("(one-box-set-cells &r {} {grid})", c(p)),
+            PartStep::FrameCells { p } => format!("(frame-cells &r {})", c(p)),
             PartStep::LeastDistance { a, b } => format!("(least-distance &r &s {} {})", c(a), second(*b)),
             PartStep::OnBoundary { b } => format!("(on-boundary &r &s {})", second(*b)),
             PartStep::NeighborsIn { b } => format!("(neighbors-in &r &s {})", second(*b)),
@@ -324,6 +341,7 @@ struct Groups {
     groupings: FastMap<(u64, u128), Arc<Grouping>>,
     cells: FastMap<(u64, u128), Arc<KeyCells>>,
     frames: FastMap<(u64, u128), bool>,
+    boxes: FastMap<(u64, u128), BoxFeatures>,
     held: usize,
 }
 
@@ -795,6 +813,171 @@ fn one_frame_of(own: &[Cell], theirs: &[Cell]) -> bool {
         let here = (m[0] + m[1], m[2] + m[3]);
         *frame.get_or_insert(here) == here
     })
+}
+
+/// A count or a flag that a set of boxes gives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum BoxMeasureKind {
+    Distinct,
+    LeastMargin,
+    EdgesTouchedMax,
+    EdgesTouchedMin,
+    CenteredAxesMax,
+    ShorterSideMin,
+    LongerSideMax,
+    Aligned,
+    OneSize,
+    SomeOverlap,
+    Nested,
+    CoverGrid,
+    EvenlySpaced,
+    EverySquare,
+    MoreThanOneCell,
+    WholeGrid,
+}
+
+/// What a set of boxes says together, by [`BoxMeasureKind`]. A measure that a set does not reach has no value.
+#[derive(Clone, Copy, Default)]
+pub struct BoxFeatures {
+    values: [Option<i32>; 16],
+}
+
+fn measure_value(held: &BoxFeatures, measure: BoxMeasureKind) -> Val {
+    use BoxMeasureKind::*;
+    let Some(value) = held.values[measure as usize] else { return Val::Empty };
+    match measure {
+        Distinct | LeastMargin | EdgesTouchedMax | EdgesTouchedMin | CenteredAxesMax | ShorterSideMin | LongerSideMax => Val::of_table(Table::new(1, vec![number_bits(i64::from(value))])),
+        _ => Val::of_table(Table::unit(value != 0)),
+    }
+}
+
+/// The distinct bounding boxes of a column's cells, one per key, as margins, and the extents of their one frame, where the cells lie in one. A cell off the frame counts as a cell.
+fn bounding_boxes(table: &Table, keys: &[u16], p: u16) -> Option<(Vec<[i32; 4]>, i32, i32)> {
+    let first = margins_of(table.rows().next()?[usize::from(p)]);
+    let (h, w) = (first[0] + first[1] + 1, first[2] + first[3] + 1);
+    let (grouping, heads) = key_ids(table, keys);
+    let mut spans: Vec<Option<[i32; 4]>> = vec![None; heads.len().max(1)];
+    for (row, id) in table.rows().zip(&grouping.0) {
+        let m = margins_of(row[usize::from(p)]);
+        if (m[0] + m[1] + 1, m[2] + m[3] + 1) != (h, w) {
+            return None;
+        }
+        let span = spans[*id as usize].get_or_insert([m[0], m[0], m[2], m[2]]);
+        *span = [span[0].min(m[0]), span[1].max(m[0]), span[2].min(m[2]), span[3].max(m[2])];
+    }
+    let mut out: Vec<[i32; 4]> = spans.into_iter().flatten().map(|s| [s[0], h - 1 - s[1], s[2], w - 1 - s[3]]).collect();
+    out.sort_unstable();
+    out.dedup();
+    Some((out, h, w))
+}
+
+/// The distinct boxes of a Box column, as margins.
+fn box_set(table: &Table, p: u16) -> Vec<[i32; 4]> {
+    let mut out: Vec<[i32; 4]> = sorted_values(table, p).into_iter().map(margins_of).collect();
+    out.sort_unstable();
+    out
+}
+
+/// The cells of a box in a frame, its part off the frame left out.
+fn cells_of_box(held: [i32; 4], h: i32, w: i32) -> Vec<Cell> {
+    let mut out = Vec::new();
+    for r in held[0].max(0)..=(h - 1 - held[1]).min(h - 1) {
+        for c in held[2].max(0)..=(w - 1 - held[3]).min(w - 1) {
+            out.push(box_bits(r, h - 1 - r, c, w - 1 - c));
+        }
+    }
+    out
+}
+
+fn box_features_of(table: &Table, keys: &[u16], p: u16, set: &[[i32; 4]], h: i32, w: i32) -> BoxFeatures {
+    let key = (table.id, places_word(keys, Some(p)));
+    held_box_features(key, || box_features(set, h, w))
+}
+
+fn box_set_features(table: &Table, p: u16, set: &[[i32; 4]], h: i32, w: i32) -> BoxFeatures {
+    let key = (table.id, places_word(&[], Some(p)) ^ (u128::from(h as u32) << 96) ^ (u128::from(w as u32) << 64));
+    held_box_features(key, || box_features(set, h, w))
+}
+
+fn held_box_features(key: (u64, u128), make: impl FnOnce() -> BoxFeatures) -> BoxFeatures {
+    if let Some(found) = GROUPS.with(|groups| groups.borrow().boxes.get(&key).copied()) {
+        return found;
+    }
+    let built = make();
+    GROUPS.with(|groups| {
+        groups.borrow_mut().boxes.insert(key, built);
+    });
+    built
+}
+
+/// What a set of boxes in an H by W frame says together, each box as its margins.
+fn box_features(set: &[[i32; 4]], h: i32, w: i32) -> BoxFeatures {
+    use BoxMeasureKind::*;
+    let mut out = BoxFeatures::default();
+    let mut put = |measure: BoxMeasureKind, value: i32| out.values[measure as usize] = Some(value);
+    put(Distinct, set.len() as i32);
+    let sides: Vec<(i32, i32)> = set.iter().map(|m| (h - m[0] - m[1], w - m[2] - m[3])).filter(|side| side.0 > 0 && side.1 > 0).collect();
+    if !set.is_empty() {
+        let edges = |m: &[i32; 4]| m.iter().filter(|margin| **margin == 0).count() as i32;
+        put(LeastMargin, set.iter().flat_map(|m| m.iter().copied()).min().unwrap_or(0));
+        put(EdgesTouchedMax, set.iter().map(edges).max().unwrap_or(0));
+        put(EdgesTouchedMin, set.iter().map(edges).min().unwrap_or(0));
+        put(CenteredAxesMax, set.iter().map(|m| i32::from(m[0] == m[1]) + i32::from(m[2] == m[3])).max().unwrap_or(0));
+    }
+    if set.len() > 1 {
+        let one_of = |pick: &dyn Fn(&[i32; 4]) -> (i32, i32)| set.iter().all(|m| pick(m) == pick(&set[0]));
+        put(Aligned, i32::from(one_of(&|m| (m[0], m[1])) || one_of(&|m| (m[2], m[3]))));
+        put(OneSize, i32::from(sides.iter().all(|side| *side == sides[0]) && !sides.is_empty()));
+        let spans: Vec<[i32; 4]> = set.iter().map(|m| [m[0], h - 1 - m[1], m[2], w - 1 - m[3]]).filter(|s| s[0] <= s[1] && s[2] <= s[3]).collect();
+        if spans.len() <= 200 {
+            let (mut overlap, mut nested) = (false, false);
+            for (at, x) in spans.iter().enumerate() {
+                for (other, y) in spans.iter().enumerate() {
+                    if at != other {
+                        overlap = overlap || (x[0] <= y[1] && y[0] <= x[1] && x[2] <= y[3] && y[2] <= x[3]);
+                        nested = nested || (y[0] <= x[0] && x[1] <= y[1] && y[2] <= x[2] && x[3] <= y[3]);
+                    }
+                }
+            }
+            put(SomeOverlap, i32::from(overlap));
+            put(Nested, i32::from(nested));
+            if h * w <= 900 && h > 0 && w > 0 {
+                let mut seen = vec![false; (h * w) as usize];
+                for s in &spans {
+                    for r in s[0].max(0)..=s[1].min(h - 1) {
+                        for c in s[2].max(0)..=s[3].min(w - 1) {
+                            seen[(r * w + c) as usize] = true;
+                        }
+                    }
+                }
+                put(CoverGrid, i32::from(seen.iter().all(|held| *held)));
+            }
+        }
+        if spans.len() >= 3 {
+            let mut even = false;
+            for (lo, hi) in [(0, 1), (2, 3)] {
+                let mut lines: Vec<(i32, i32)> = spans.iter().map(|s| (s[lo], s[hi])).collect();
+                lines.sort_unstable();
+                lines.dedup();
+                if lines.len() >= 3 && lines.windows(2).all(|pair| pair[0].1 < pair[1].0) {
+                    let gap = lines[1].0 - lines[0].1;
+                    even = even || lines.windows(2).all(|pair| pair[1].0 - pair[0].1 == gap);
+                }
+            }
+            put(EvenlySpaced, i32::from(even));
+        }
+    }
+    if !sides.is_empty() {
+        put(ShorterSideMin, sides.iter().map(|side| side.0.min(side.1)).min().unwrap_or(0));
+        put(LongerSideMax, sides.iter().map(|side| side.0.max(side.1)).max().unwrap_or(0));
+        put(EverySquare, i32::from(sides.iter().all(|side| side.0 == side.1)));
+    }
+    if let [m] = set {
+        let (along, across) = (h - m[0] - m[1], w - m[2] - m[3]);
+        put(MoreThanOneCell, i32::from(along > 1 && across > 1));
+        put(WholeGrid, i32::from(*m == [0, 0, 0, 0]));
+    }
+    out
 }
 
 /// Whether cells lie where boxes can hold them: each box takes its frame from the cells, so a box's margins may only reach as far as the frame.
@@ -1412,6 +1595,30 @@ impl PartStep {
                     }
                 }
                 Val::of_table(Table::distinct(keys.len() + 1, out))
+            }
+            PartStep::BoxMeasure { keys, p, measure } => {
+                let Some(set) = bounding_boxes(t, keys, *p) else { return Some(Val::Empty) };
+                measure_value(&box_features_of(t, keys, *p, &set.0, set.1, set.2), *measure)
+            }
+            PartStep::BoxSetMeasure { p, measure } => {
+                let grid = grid_of(children[1])?;
+                let set = box_set(t, *p);
+                measure_value(&box_set_features(t, *p, &set, grid.h, grid.w), *measure)
+            }
+            PartStep::OneBoxCells { keys, p } => {
+                let Some((set, h, w)) = bounding_boxes(t, keys, *p) else { return Some(Val::Empty) };
+                let [held] = set[..] else { return Some(Val::Empty) };
+                Val::of_table(Table::new(1, cells_of_box(held, h, w)))
+            }
+            PartStep::OneBoxSetCells { p } => {
+                let grid = grid_of(children[1])?;
+                let set = box_set(t, *p);
+                let [held] = set[..] else { return Some(Val::Empty) };
+                Val::of_table(Table::new(1, cells_of_box(held, grid.h, grid.w)))
+            }
+            PartStep::FrameCells { p } => {
+                let Some((_, h, w)) = bounding_boxes(t, &[], *p) else { return Some(Val::Empty) };
+                Val::of_table(Table::new(1, cells_of_box([0, 0, 0, 0], h, w)))
             }
             PartStep::LeastDistance { a, b } => {
                 let other = flat(children[1])?;

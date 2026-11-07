@@ -371,6 +371,7 @@ impl Generated {
             for at in FIRST_CONSTANT..family.first_term as u32 {
                 family.cells_against(at);
             }
+            family.box_measures(true);
             family.by_size.push(family.terms.len());
             family.name_roots(types, names);
             return family;
@@ -431,6 +432,7 @@ impl Generated {
                 }
             }
         }
+        family.box_measures(false);
         family.by_size.push(family.terms.len());
         family.name_roots(types, names);
         family
@@ -1736,6 +1738,81 @@ impl Generated {
             out.push((group.into_boxed_slice(), format!("(T*:{})", names.join(","))));
         }
         out
+    }
+
+    /// What a set of boxes says together: the bounding box of a column's cells, the bounding boxes of its groups, and a Box column's boxes in a grid's frame.
+    fn box_measures(&mut self, one_group: bool) {
+        use crate::gen_parts::BoxMeasureKind::*;
+        let measures = [
+            (Distinct, "distinct", true),
+            (LeastMargin, "least-margin", true),
+            (EdgesTouchedMax, "edges-touched-max", true),
+            (EdgesTouchedMin, "edges-touched-min", true),
+            (CenteredAxesMax, "centered-axes-max", true),
+            (ShorterSideMin, "shorter-side-min", true),
+            (LongerSideMax, "longer-side-max", true),
+            (Aligned, "aligned", false),
+            (OneSize, "one-size", false),
+            (SomeOverlap, "some-overlap", false),
+            (Nested, "nested", false),
+            (CoverGrid, "cover-grid", false),
+            (EvenlySpaced, "evenly-spaced", false),
+            (EverySquare, "every-square", false),
+            (MoreThanOneCell, "more-than-one-cell", false),
+            (WholeGrid, "whole-grid", false),
+        ];
+        let columns = self.terms[LEAF_TABLE as usize].columns.clone();
+        let number = || vec![Column { name: "N".to_string(), ty: ValueType::Nat, source: 0 }];
+        let cell = || vec![Column { name: "P".to_string(), ty: ValueType::Position, source: 0 }];
+        self.one_group = one_group;
+        let options: Vec<Vec<(Box<[u16]>, String)>> = (0..columns.len()).map(|place| self.keys_of(&columns, &[place])).collect();
+        self.one_group = false;
+        for (place, column) in columns.iter().enumerate() {
+            if !matches!(column.ty, ValueType::Position | ValueType::Box) {
+                continue;
+            }
+            let (p, name) = (place as u16, column.name.clone());
+            let frame_text = format!("(frame-cells T {name})");
+            let mut frame = None;
+            for (keys, key_text) in &options[place] {
+                let grouped = key_text.starts_with("(T*");
+                let one_column = grouped && !key_text.contains(',');
+                if !(keys.is_empty() || grouped) || (one_group && !one_column) {
+                    continue;
+                }
+                for (measure, word, is_number) in measures {
+                    let text = format!("(box-measure T {key_text} {name} {word})");
+                    let step = Step::Part(Box::new(PartStep::BoxMeasure { keys: keys.clone(), p, measure }));
+                    let at = if is_number { self.push_forced(step, LEAF_TABLE, NO_TERM, number(), 1, text, RootKind::Number) } else { self.push_forced(step, LEAF_TABLE, NO_TERM, Vec::new(), 1, text, RootKind::Holds) };
+                    if let (true, Some(at)) = (is_number, at) {
+                        self.refined[at as usize].count_follows = true;
+                    }
+                }
+                let one_text = format!("(one-box-cells T {key_text} {name})");
+                let Some(one) = self.push_forced(Step::Part(Box::new(PartStep::OneBoxCells { keys: keys.clone(), p })), LEAF_TABLE, NO_TERM, cell(), 1, one_text.clone(), RootKind::Rows) else { continue };
+                if frame.is_none() {
+                    frame = self.push_forced(Step::Part(Box::new(PartStep::FrameCells { p })), LEAF_TABLE, NO_TERM, cell(), 1, frame_text.clone(), RootKind::Rows);
+                }
+                if let Some(frame) = frame {
+                    self.push_forced(Step::Part(Box::new(PartStep::Same)), one, frame, Vec::new(), 2, format!("{one_text} {frame_text}"), RootKind::Against);
+                }
+            }
+            if column.ty == ValueType::Box && !one_group {
+                for (grid, label) in [(LEAF_INPUT, "input"), (LEAF_OUTPUT, "output")] {
+                    for (measure, word, is_number) in measures {
+                        let text = format!("(box-set-measure T {name} {label} {word})");
+                        let step = Step::Part(Box::new(PartStep::BoxSetMeasure { p, measure }));
+                        let at = if is_number { self.push_forced(step, LEAF_TABLE, grid, number(), 1, text, RootKind::Number) } else { self.push_forced(step, LEAF_TABLE, grid, Vec::new(), 1, text, RootKind::Holds) };
+                        if let (true, Some(at)) = (is_number, at) {
+                            self.refined[at as usize].count_follows = true;
+                        }
+                    }
+                    let one_text = format!("(one-box-set-cells T {name} {label})");
+                    let Some(one) = self.push_forced(Step::Part(Box::new(PartStep::OneBoxSetCells { p })), LEAF_TABLE, grid, cell(), 1, one_text.clone(), RootKind::Rows) else { continue };
+                    self.push_forced(Step::Part(Box::new(PartStep::Same)), one, grid, Vec::new(), 2, format!("{one_text} {label}"), RootKind::Against);
+                }
+            }
+        }
     }
 
     /// Whether the table is a product of two groups of its columns, for each way to split them. The split stands in no shape's name.
