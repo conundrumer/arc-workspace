@@ -453,7 +453,8 @@ impl<'a> Decoder<'a> {
                 PlanSource::Lib(name.clone())
             }
             Token::Fact(fact) => {
-                if base.task_wide && fact.per_example() {
+                // A body evaluated once for the task reads no fact of one example, and a body of one example no `ex_` fact.
+                if (base.task_wide && fact.per_example()) || (!base.task_wide && matches!(fact, FactRelation::ExInput | FactRelation::ExOutput)) {
                     return None;
                 }
                 PlanSource::Fact(*fact)
