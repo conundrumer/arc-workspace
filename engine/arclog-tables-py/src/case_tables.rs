@@ -65,6 +65,23 @@ use pyo3::sync::PyOnceLock;
 /// A Box value in a frame of extent (V, H) has own size (V - top - bottom, H - left - right), which says
 /// which cells of its frame it covers.
 ///
+/// `tables` gives `column_widths`, one entry per column in the order of `column_names`: the column's width in cells, 4 for a column of
+/// type `Box`, `Position` or `Offset` and 1 for any other, which add up to the table's `width`. In the result of `step_tables` and
+/// `successor_tables` (by assignment), with summaries, `tables` also gives, for each row, one entry per column in the order of
+/// `column_names`, each an empty list where the row's assignment has no `hash`:
+///
+/// - `column_value_hashes`: the column's value hash, a Python int of 128 bits. It depends on the column's content alone: its type, and, for
+///   each example, the Set of the column's cells over the example's rows, so it holds no row order, label name, authored name or order of
+///   a map or a set, and it is the same under any `ARCLOG_MAP_SEED`. Two tables of equal content up to a permutation of their columns
+///   give each column the same hash, so ordering columns by (`column_type_keys`, `column_value_hashes`) gives one order for equal contents
+///   where no column has a `column_ties` of 2. Columns that tie in their type and base hash are told apart by how they relate to the
+///   other columns before the hash is given (the module doc of `arclog_tables::summary::column_hash` has the definition and the argument);
+/// - `column_type_keys`: the column's type name as the TableHash writes it, which equals `column_types` for each type but a Pose type, whose
+///   name holds the QueryHash of its `RIGID_DET` in place of its slots. Order by this, not by `column_types`;
+/// - `column_ties`: 0 where no other column has the column's type key and value hash, 1 where another does and every exchange of those columns
+///   leaves the table as it is, so that any order among them gives the same table, and 2 where another does and that was not shown (the order
+///   among them is open).
+///
 /// `tables` also gives `column_slots` and `column_labels`, one entry per column in the order of
 /// `column_names`: the column's slot in the relation's own column order (-1 where the engine
 /// knows none) and the name of the label that the table's form writes at it (the empty string
@@ -444,6 +461,7 @@ impl PyCaseTables {
             t.list("column_symmetries", &c.column_symmetries)?;
         }
         t.ints("width", &c.width)?;
+        t.list("column_widths", &c.column_widths)?;
         t.list("det_relations", &c.det_relations)?;
         t.list("det_types", &c.det_types)?;
         t.list("det_frames", &c.det_frames)?;
@@ -472,6 +490,9 @@ impl PyCaseTables {
             let bytes = PyBytes::new(py, &c.features.iter().flat_map(|value| value.to_ne_bytes()).collect::<Vec<u8>>());
             t.dict.set_item("features", owned_value(py, bytes.as_any(), &owned)?)?;
             dtypes.set_item("tables.features", "float32")?;
+            t.list("column_value_hashes", &c.column_value_hashes)?;
+            t.list("column_type_keys", &c.column_type_keys)?;
+            t.list("column_ties", &c.column_ties)?;
         }
         let e = Part::new(py, "entries", &dtypes,&owned);
         let c = &columns.entries;

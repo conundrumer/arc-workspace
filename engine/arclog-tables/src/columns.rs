@@ -244,6 +244,9 @@ pub struct TableColumns {
     pub column_symmetries: Vec<String>,
     /// The width in cells of a row.
     pub width: Vec<u32>,
+    /// The width in cells of each column, in the order of `column_names`: 4 for a column of type `Box`, `Position` or `Offset`, and 1 for
+    /// every other. The widths of a table's columns add up to its `width`.
+    pub column_widths: Vec<Vec<u32>>,
     /// The relation of each `DET` the table reads, its columns' types, and
     /// the width of its rows.
     pub det_relations: Vec<Vec<String>>,
@@ -318,6 +321,15 @@ pub struct TableColumns {
     pub capped: Vec<u8>,
     /// The TableVector of each row, `arclog_features::FEATURES.len()` values.
     pub features: Vec<f32>,
+    /// The value hash of each column of each row, in the order of `column_names`, each a `u128`, and empty where the row's assignment has no
+    /// TableHash or the export gives no full summary. The hash depends on the column's content alone ([`crate::summary::ColumnKey`]).
+    pub column_value_hashes: Vec<Vec<u128>>,
+    /// The type name that the TableHash writes for each column of each row, as `column_value_hashes` is given. It differs from `column_types` for a
+    /// Pose type, whose name here holds the QueryHash of its `RIGID_DET` and no slot.
+    pub column_type_keys: Vec<Vec<String>>,
+    /// The tie of each column of each row, as `column_value_hashes` is given: 0 where no other column has its type key and value hash, 1 where another
+    /// does and the columns that have them can be exchanged without changing the table, 2 where another does and that was not shown.
+    pub column_ties: Vec<Vec<u32>>,
 }
 
 /// One row for each entry of a table on an example, in the order of the
@@ -989,7 +1001,7 @@ fn by_assignment(mut columns:CaseColumns,summaries:&[TableSummary],queries:&[Opt
         projections_stop: old.projections_stop.picked(&at),
         ..TableColumns::default()
     }}}
-    let mut tables = pick!(token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_ident_sources,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,fault,depth,keys,output_position,output_color);
+    let mut tables = pick!(token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_ident_sources,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,column_widths,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,fault,depth,keys,output_position,output_color);
     let features = arclog_features::FEATURES.len();
     for (row,&(table,assignment,variant)) in source.iter().enumerate() {
         let summary = &summaries[table];
@@ -1004,6 +1016,9 @@ fn by_assignment(mut columns:CaseColumns,summaries:&[TableSummary],queries:&[Opt
         tables.unhashed_reason.push(held.reason.clone());
         tables.capped.push(u8::from(summary.capped));
         if held.features.len()==features {tables.features.extend(held.features.iter());} else {tables.features.extend(std::iter::repeat_n(0.0,features));}
+        tables.column_value_hashes.push(held.columns.iter().map(|key|key.hash.0).collect());
+        tables.column_type_keys.push(held.columns.iter().map(|key|key.ty.clone()).collect());
+        tables.column_ties.push(held.columns.iter().map(|key|key.tie).collect());
         for (place,(det,primary)) in held.dets.iter().enumerate() {
             let value = if variant==0 {primary} else {&held.more[variant-1][place]};
             columns.assignments.table.push(row);
@@ -1567,6 +1582,7 @@ fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut 
             tables.column_labels.push(Vec::new());
             tables.column_source_labels.push(Vec::new());
             tables.width.push(0);
+            tables.column_widths.push(Vec::new());
             tables.det_relations.push(Vec::new());
             tables.det_types.push(Vec::new());
             tables.det_frames.push(Vec::new());
@@ -1603,6 +1619,7 @@ fn push_table(materializer:&Materializer<'_>,out: &mut CaseColumns, names: &mut 
             tables.column_labels.push(labels_of(contents));
             tables.column_source_labels.push(source_labels_of(&table.form, contents, labels));
             tables.width.push(row_width(&types));
+            tables.column_widths.push(types.iter().map(|ty| row_width(std::slice::from_ref(ty))).collect());
             tables.det_relations.push(contents.dets.iter().map(|det| relation_spelled(&det.relation)).collect());
             tables.det_types.push(contents.dets.iter().map(|det| type_names(&det.types)).collect());
             let places = det_places(names, own.as_ref(), contents);
@@ -2357,7 +2374,7 @@ macro_rules! fields_heap {
     };
 }
 fields_heap!(StopColumns;bound,form);
-fields_heap!(TableColumns;token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_ident_sources,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,projections_stop,fault,depth,keys,output_position,output_color);
+fields_heap!(TableColumns;token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_ident_sources,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,column_widths,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,projections_stop,fault,depth,keys,output_position,output_color);
 fields_heap!(EntryColumns;table,clause_index,example_kind,example_index,model,kind,rows,offset,stop,value_stop,fault,extent_offset,extent_stop,extent_fault,extent_status,assignment);
 fields_heap!(AssignedColumns;entry,det,rows,offset);
 fields_heap!(ProjectionColumns;table,columns,width);
