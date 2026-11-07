@@ -1361,7 +1361,7 @@ fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) 
     Ok(())
 }
 
-/// Where a walk's time goes, over tables of stored files: `time-heads FILE... --size D`. Each schema has one walker, as a run has. It prints each term head's terms, evaluations, those that
+/// Where a walk's time goes, over tables of stored files: `time-heads FILE... --size D`. With TIME_TASK naming a task, each FILE is instead a rows file of that task, as `shapes-refresh` reads it. Each schema has one walker, as a run has. It prints each term head's terms, evaluations, those that
 /// gave rows, and time, and each table's time. With TIME_TABLES, at most that many tables of a file. With TIME_SHAPES naming a file of `gain<TAB>shape` lines, it then times only those
 /// shapes and the terms they read, with a new walker per table, and prints each shape's gain and its share of that time.
 fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String> {
@@ -1387,23 +1387,37 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
     let mut shape_time: Vec<f64> = vec![0.0; wanted.len()];
     let mut shape_seen: Vec<u64> = vec![0; wanted.len()];
     let mut families: HashMap<String, Generated> = HashMap::new();
+    // With TIME_TASK, each file is a rows file of that task (see `shapes-refresh`) in place of a file of items.
+    let rows_task = std::env::var("TIME_TASK").ok();
     for file in files {
-        let data: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(file)?).map_err(|error| error.to_string())?;
-        let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
-        let train = data["train"].as_u64().ok_or("a file's train")? as usize;
-        let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
-        let items: Vec<serde_json::Value> = data["items"].as_array().unwrap_or(&empty).iter().flat_map(|item| {
-            let mut out = vec![item["gold"].clone()];
-            out.extend(item["mutants"].as_array().unwrap_or(&empty).iter().map(|mutant| mutant["table"].clone()));
-            out
-        }).collect();
+        let text = arclog_encoder::zio::read_text(file)?;
+        let (train, grids, mut tables): (usize, Grids, Box<dyn Iterator<Item = Option<Stored>>>) = match &rows_task {
+            Some(task_name) => {
+                let (task, grids) = Grids::of_file(&arguments.tasks, task_name, None)?;
+                let (train, test) = (task.train.len(), task.test.len());
+                let lines: Vec<serde_json::Value> = text.lines().filter(|line| !line.trim().is_empty()).map(|line| serde_json::from_str(line).map_err(|error| error.to_string())).collect::<Result<_, _>>()?;
+                (train, grids, Box::new(lines.into_iter().map(move |line| arclog_encoder::atom_lists::stored_of(&line["table"], train, test, &HashMap::new()).ok().flatten())))
+            }
+            None => {
+                let data: serde_json::Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+                let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
+                let train = data["train"].as_u64().ok_or("a file's train")? as usize;
+                let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
+                let items: Vec<serde_json::Value> = data["items"].as_array().unwrap_or(&empty).iter().flat_map(|item| {
+                    let mut out = vec![item["gold"].clone()];
+                    out.extend(item["mutants"].as_array().unwrap_or(&empty).iter().map(|mutant| mutant["table"].clone()));
+                    out
+                }).collect();
+                (train, grids, Box::new(items.into_iter().map(move |item| Stored::of_json(&item, train, 0))))
+            }
+        };
         let mut seen: HashSet<u128> = HashSet::new();
         let mut taken = 0;
-        for item in &items {
+        for stored in &mut tables {
             if taken >= limit {
                 break;
             }
-            let Some(stored) = Stored::of_json(item, train, 0) else { continue };
+            let Some(stored) = stored else { continue };
             if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
                 continue;
             }

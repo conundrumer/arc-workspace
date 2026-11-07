@@ -39,6 +39,7 @@ fn numbers_of(vector: &TableVector, only: Option<&[u64]>) -> (Vec<u64>, Vec<f32>
 
 /// One table's record, none for a line that holds no table.
 struct Walked {
+    hash: String,
     line: Option<String>,
     seconds: f64,
     shapes: usize,
@@ -49,7 +50,7 @@ struct Walked {
 /// The record of one line of a rows file.
 #[allow(clippy::too_many_arguments)]
 fn record_of(text: &str, train: usize, test: usize, grids: &Grids, generators: &Generators, only: Option<&[u64]>, masks: &mut HashMap<String, ShapeMask>) -> Result<Walked, &'static str> {
-    let none = Walked { line: None, seconds: 0.0, shapes: 0, stopped: false, too_wide: false };
+    let none = Walked { hash: String::new(), line: None, seconds: 0.0, shapes: 0, stopped: false, too_wide: false };
     if text.trim().is_empty() {
         return Ok(none);
     }
@@ -87,7 +88,7 @@ fn record_of(text: &str, train: usize, test: usize, grids: &Grids, generators: &
         base64(&hashes.iter().flat_map(|hash| hash.to_le_bytes()).collect::<Vec<u8>>()),
         base64(&values.iter().flat_map(|value| value.to_le_bytes()).collect::<Vec<u8>>())
     );
-    Ok(Walked { line: Some(line), seconds, shapes, stopped, too_wide })
+    Ok(Walked { hash: hash.to_string(), line: Some(line), seconds, shapes, stopped, too_wide })
 }
 
 /// A rows file's lines.
@@ -152,16 +153,16 @@ pub fn run(input: &Path, out: &Path, task_dir: &Path, task: &str, only: Option<&
         }
         Ok(())
     })?;
-    let mut slowest: Vec<(f64, usize)> = walked.iter().map(|held| (held.seconds, held.shapes)).collect();
+    let mut slowest: Vec<(f64, usize, &str)> = walked.iter().map(|held| (held.seconds, held.shapes, held.hash.as_str())).collect();
     slowest.sort_by(|a, b| b.0.total_cmp(&a.0));
     slowest.truncate(5);
     Ok(format!(
-        "{task}: {} tables, {} stopped, {} too wide, {:.1} s of walks, {:.1} s wall; slowest (s, shapes) {:?}",
+        "{task}: {} tables, {} stopped, {} too wide, {:.1} s of walks, {:.1} s wall; slowest (s, shapes, table) {:?}",
         walked.len(),
         walked.iter().filter(|held| held.stopped && !held.too_wide).count(),
         walked.iter().filter(|held| held.too_wide).count(),
         walked.iter().map(|held| held.seconds).sum::<f64>(),
         begun.elapsed().as_secs_f64(),
-        slowest.iter().map(|(seconds, shapes)| ((seconds * 10.0).round() / 10.0, *shapes)).collect::<Vec<_>>()
+        slowest.iter().map(|(seconds, shapes, hash)| ((seconds * 10.0).round() / 10.0, *shapes, *hash)).collect::<Vec<_>>()
     ))
 }

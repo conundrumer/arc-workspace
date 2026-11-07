@@ -14,6 +14,8 @@ Options:
   --repo DIR            where `data/tasks/<task>.json` stands (default: ARC_ROOT, or the main checkout).
   --work DIR            where the rows file and the records go (default: a new temporary folder).
   --threads N           the encoder's thread count (default 1).
+  --export FILE         instead of the check, write the rows file (zstd JSON lines) of every distinct table of the program, or with --export-hashes H,H,.. of those tables (a TableHash as 32 hex digits
+                        of its bytes), and stop. `feature-encoder shapes-refresh` names each table so.
 It prints counts and seconds only: no row and no value. The exit status is 1 where any table differs. Run it with the runtime python of the engine, which has `arclog`, `numpy` and `zstandard`.
 """
 import argparse
@@ -106,7 +108,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('task')
     ap.add_argument('mutants')
-    ap.add_argument('--encoder', required=True)
+    ap.add_argument('--encoder')
     ap.add_argument('--known')
     ap.add_argument('--tables', type=int)
     ap.add_argument('--stopped', action='store_true')
@@ -114,6 +116,8 @@ def main():
     ap.add_argument('--repo', default=os.environ.get('ARC_ROOT', '/Users/davidlu/code/arc-workspace'))
     ap.add_argument('--work')
     ap.add_argument('--threads', type=int, default=1)
+    ap.add_argument('--export')
+    ap.add_argument('--export-hashes')
     ap.add_argument('--digest-out')
     ap.add_argument('--digest-in')
     a = ap.parse_args()
@@ -134,6 +138,15 @@ def main():
     sized = [item for item in sized if item[0] >= 0]
     sized.sort(key=lambda item: (item[0], item[1]))
 
+    if a.export:
+        wanted = set(a.export_hashes.split(',')) if a.export_hashes else None
+        kept = [(key, ts.rows()) for _, key, ts in sized if wanted is None or key.hex() in wanted]
+        with open(a.export, 'wb') as sink:
+            sink.write(zstandard.ZstdCompressor(level=3).compress(b''.join(b'{"hash":"' + key.hex().encode() + b'","table":' + rows + b'}\n' for key, rows in kept)))
+        print(f'wrote {len(kept)} tables to {a.export}')
+        return
+    if not a.encoder:
+        sys.exit('--encoder is needed for the check')
     chosen, hashes = [], None
     if a.known:
         best, hashes = known_pick([(key, ts) for _, key, ts in sized], json.loads(open(a.known).readline()))
