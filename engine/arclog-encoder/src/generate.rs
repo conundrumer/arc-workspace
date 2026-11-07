@@ -2413,12 +2413,27 @@ pub struct Walker<'a> {
     forced: Vec<(u32, usize)>,
     /// For a lazy value by id, the id of its written rows and their cells.
     written_of: FastMap<u32, (u32, usize)>,
+    /// The stored values that have a copy on disk, by id.
+    spilled: FastMap<u32, Spilled>,
+    /// The folder of those copies, once made.
+    spill_dir: Option<SpillDir>,
+    /// The count of copies made, which names the next.
+    spill_serial: u64,
     /// The count of examples of a task-wide walk.
     pub examples: u32,
     /// The cells and the memo entries it holds at most between walks.
     budget: (usize, usize),
     /// Whether the last walk stopped a term that passed `WALK_CELLS` cells of its own, so that the term, and every term that reads it, have no value.
     pub over_budget: bool,
+}
+
+/// A stored value's copy on disk.
+struct Spilled {
+    path: std::path::PathBuf,
+    /// The cells of the value.
+    cells: usize,
+    /// Whether the value is in memory. If not, its place in `values` holds no value, and a read of it must fetch it first.
+    here: bool,
 }
 
 /// The lazy values that an evaluation forced, by id, with the cells of the rows written out for each.
@@ -2429,6 +2444,8 @@ const HELD_CELLS: usize = 3_000_000;
 const HELD_MEMO: usize = 250_000;
 /// The cells that one term's evaluation can give in a walk, counted at each instance, with the cells of the rows of each lazy value it forces once.
 const WALK_CELLS: usize = 100_000_000;
+/// The cells of stored values that a walk keeps in memory between terms, once it moves the others to disk. `GENERATE_RESIDENT_CELLS` sets it.
+const RESIDENT_CELLS: usize = 50_000_000;
 /// A count past this stands for "no value": a bound stopped the term.
 const NO_COUNT: u32 = u32::MAX;
 
@@ -2506,9 +2523,18 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Root
     }
 }
 
+/// The folder of a walker's copies on disk, which goes when the walker does.
+struct SpillDir(std::path::PathBuf);
+
+impl Drop for SpillDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, charged: FastMap::default(), forced: Vec::new(), written_of: FastMap::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, charged: FastMap::default(), forced: Vec::new(), written_of: FastMap::default(), spilled: FastMap::default(), spill_dir: None, spill_serial: 0, examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
     }
 
     /// A walker that holds more between walks than [`Walker::new`], for many related tables.
@@ -2531,7 +2557,8 @@ impl<'a> Walker<'a> {
 
     /// [`Walker::keep_within_budget`], where `extra` cells beyond the held ones count against the budget.
     fn keep_within_budget_with(&mut self, extra: usize) {
-        if self.held_cells + extra > self.budget.0 || self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len() > self.budget.1 {
+        if self.held_cells + extra > self.budget.0 || self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len() > self.budget.1 || !self.spilled.is_empty() {
+            self.forget_spilled();
             self.values = vec![Val::None, Val::Empty];
             self.value_index = FastMap::default();
             self.memo = FastMap::default();
@@ -2573,6 +2600,19 @@ impl<'a> Walker<'a> {
             crate::bounds::tally("compact", "walks' compactions".to_string(), 1);
             crate::bounds::tally("compact", "cells dropped".to_string(), self.held_cells.saturating_sub(held) as u64);
         }
+        // A copy on disk follows its value's new id, and one whose value is dropped goes.
+        let mut kept: FastMap<u32, Spilled> = FastMap::default();
+        for (old, copy) in std::mem::take(&mut self.spilled) {
+            match renumbered.get(&old) {
+                Some(new) => {
+                    kept.insert(*new, copy);
+                }
+                None => {
+                    let _ = std::fs::remove_file(&copy.path);
+                }
+            }
+        }
+        self.spilled = kept;
         self.values = values;
         self.value_index = index;
         self.held_cells = held;
@@ -2585,11 +2625,138 @@ impl<'a> Walker<'a> {
         clear_views();
     }
 
+    /// Forgets every copy on disk, and deletes its file.
+    fn forget_spilled(&mut self) {
+        for (_, copy) in std::mem::take(&mut self.spilled) {
+            let _ = std::fs::remove_file(&copy.path);
+        }
+    }
+
+    /// The path of the next copy on disk, in a folder that is made on first use: `GENERATE_SPILL_DIR`, or the system's folder for temporary files.
+    fn next_copy_path(&mut self) -> Option<std::path::PathBuf> {
+        if self.spill_dir.is_none() {
+            static FOLDERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let base = std::env::var_os("GENERATE_SPILL_DIR").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
+            let dir = base.join(format!("arclog-spill-{}-{}", std::process::id(), FOLDERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+            std::fs::create_dir_all(&dir).ok()?;
+            self.spill_dir = Some(SpillDir(dir));
+        }
+        self.spill_serial += 1;
+        Some(self.spill_dir.as_ref()?.0.join(self.spill_serial.to_string()))
+    }
+
+    /// Takes the stored value at `id` out of memory, after a copy of it is on disk. Nothing in the walk reads it until [`Walker::fetch`] brings it back, and then it is the same value. It gives false, with the value in memory, where the value is not rows or the copy cannot be written.
+    fn move_to_disk(&mut self, id: u32) -> bool {
+        let cells = held_of(&self.values[id as usize]);
+        if !self.spilled.contains_key(&id) {
+            let Val::Rows(parts) = self.values[id as usize].clone() else { return false };
+            let Some(path) = self.next_copy_path() else { return false };
+            if crate::spill::write(&path, &parts).is_err() {
+                let _ = std::fs::remove_file(&path);
+                return false;
+            }
+            if crate::bounds::enabled() {
+                crate::bounds::tally("spill", "values written to disk".to_string(), 1);
+                crate::bounds::tally("spill", "cells written to disk".to_string(), cells as u64);
+            }
+            self.spilled.insert(id, Spilled { path, cells, here: true });
+        }
+        let Some(copy) = self.spilled.get_mut(&id) else { return false };
+        if !copy.here {
+            return false;
+        }
+        copy.here = false;
+        self.values[id as usize] = Val::None;
+        self.held_cells -= cells;
+        true
+    }
+
+    /// Brings the stored value at `id` back into memory, if it is on disk only.
+    fn fetch(&mut self, id: u32) {
+        let Some(copy) = self.spilled.get_mut(&id) else { return };
+        if copy.here {
+            return;
+        }
+        let value = crate::spill::read(&copy.path).unwrap_or_else(|error| panic!("a stored value's copy on disk, {}, cannot be read: {error}", copy.path.display()));
+        copy.here = true;
+        self.held_cells += copy.cells;
+        self.values[id as usize] = value;
+        if crate::bounds::enabled() {
+            crate::bounds::tally("spill", "values read back".to_string(), 1);
+            crate::bounds::tally("spill", "cells read back".to_string(), copy.cells as u64);
+        }
+    }
+
+    /// Brings back every stored value that a list of ids holds and that is on disk only.
+    fn fetch_all(&mut self, list: &[u32]) {
+        if self.spilled.is_empty() {
+            return;
+        }
+        for id in list {
+            if *id > 1 {
+                self.fetch(*id);
+            }
+        }
+    }
+
+    /// Where the walk holds more than [`RESIDENT_CELLS`] cells of stored values, moves to disk the values that the lists of `ids` hold and that the terms after `at` read last. `readers` has the terms that read each term, in order. The values of the leaves stay, since the caller holds them. A value is the same when it comes back, so no value of the walk changes. Run it after [`Walker::compact`], which leaves in `values` what the lists hold alone.
+    fn spill(&mut self, ids: &[Vec<u32>], readers: &[Vec<usize>], at: usize) {
+        static LIMIT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+        let limit = *LIMIT.get_or_init(|| std::env::var("GENERATE_RESIDENT_CELLS").ok().and_then(|text| text.parse().ok()).unwrap_or(RESIDENT_CELLS));
+        if self.held_cells <= limit {
+            return;
+        }
+        let first_term = self.family.first_term.min(ids.len());
+        let mut leaf_ids: FastMap<u32, ()> = FastMap::default();
+        for list in &ids[..first_term] {
+            for id in list {
+                leaf_ids.insert(*id, ());
+            }
+        }
+        // For each stored value, the first term after `at` that reads a list that holds it.
+        let mut next_read: FastMap<u32, usize> = FastMap::default();
+        for (term, list) in ids.iter().enumerate().skip(first_term) {
+            if list.is_empty() {
+                continue;
+            }
+            let read = readers[term].iter().copied().find(|read| *read > at).unwrap_or(usize::MAX);
+            for id in list {
+                if *id > 1 && !leaf_ids.contains_key(id) {
+                    let entry = next_read.entry(*id).or_insert(usize::MAX);
+                    *entry = (*entry).min(read);
+                }
+            }
+        }
+        let mut candidates: Vec<(usize, usize, u32)> = next_read
+            .iter()
+            .filter_map(|(id, read)| {
+                let value = &self.values[*id as usize];
+                let cells = held_of(value);
+                (matches!(value, Val::Rows(_)) && cells >= crate::spill::MIN_CELLS).then_some((*read, cells, *id))
+            })
+            .collect();
+        // The value read last goes first, and of those the larger.
+        candidates.sort_unstable_by(|a, b| b.cmp(a));
+        let mut moved = false;
+        for (_, _, id) in candidates {
+            if self.held_cells <= limit {
+                break;
+            }
+            moved |= self.move_to_disk(id);
+        }
+        if moved {
+            // The tables those values held are gone.
+            clear_views();
+        }
+    }
+
     /// The sizes of what the walker and its evaluator hold, for a check of the memory of a walk.
     fn footprint(&self) {
         use crate::bounds::tally_max;
         let (histogram_cells, histograms) = self.eval.histograms_held();
         tally_max("held", "cells of stored values", self.held_cells as u64);
+        tally_max("held", "cells of stored joined values", self.values.iter().map(|value| if let Val::Joined(joined) = value { joined.held_cells() } else { 0 }).sum::<usize>() as u64);
+        tally_max("held", "cells of stored values on disk", self.spilled.values().filter(|copy| !copy.here).map(|copy| copy.cells).sum::<usize>() as u64);
         tally_max("held", "cells of written rows held by lazy values", crate::native::lazy_written_cells() as u64);
         tally_max("held", "cells of histograms", histogram_cells as u64);
         tally_max("held", "histograms", histograms as u64);
@@ -2605,8 +2772,12 @@ impl<'a> Walker<'a> {
             Val::Empty => 1,
             Val::Rows(_) | Val::Boxes(_) | Val::Joined(_) => {
                 let hash = value.hash();
-                if let Some(found) = self.value_index.get(&hash) {
-                    return *found;
+                if let Some(found) = self.value_index.get(&hash).copied() {
+                    // The value stored under the hash may be on disk only: it is the value that stands.
+                    if !self.spilled.is_empty() {
+                        self.fetch(found);
+                    }
+                    return found;
                 }
                 let at = self.values.len() as u32;
                 self.held_cells += held_of(&value);
@@ -2814,11 +2985,17 @@ impl<'a> Walker<'a> {
         self.forced.clear();
         // The last term that reads each term, among those the walk walks: its values are dropped after that, where they are the only users of stored values.
         let mut last_read: Vec<Option<usize>> = vec![None; family.terms.len()];
+        // The terms that read each term, among those the walk walks, in order.
+        let mut readers: Vec<Vec<usize>> = vec![Vec::new(); family.terms.len()];
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
             if mask.is_none_or(|mask| mask.needed[at]) {
                 last_read[term.a as usize] = Some(at);
+                readers[term.a as usize].push(at);
                 if term.b != NO_TERM {
                     last_read[term.b as usize] = Some(at);
+                    if term.b != term.a {
+                        readers[term.b as usize].push(at);
+                    }
                 }
             }
         }
@@ -2852,6 +3029,9 @@ impl<'a> Walker<'a> {
             let step_id = steps.ids[at];
             let first = std::mem::take(&mut ids[term.a as usize]);
             let second = if term.b == NO_TERM { Vec::new() } else if term.b == term.a { first.clone() } else { std::mem::take(&mut ids[term.b as usize]) };
+            // A value that the walk moved to disk comes back before the term reads it.
+            self.fetch_all(&first);
+            self.fetch_all(&second);
             let step = term.step.as_ref().expect("a term has a step");
             let reads_output = term.flags & READS_OUTPUT != 0;
             let scope = if reads_output { train.min(instances) } else { instances };
@@ -3045,6 +3225,7 @@ impl<'a> Walker<'a> {
             let lazy = crate::native::lazy_written_cells().saturating_sub(lazy_base);
             if self.held_cells + lazy > self.budget.0.max(2 * floor) || entries > self.budget.1 {
                 self.compact(&mut ids);
+                self.spill(&ids, &readers, at);
                 floor = self.held_cells + crate::native::lazy_written_cells().saturating_sub(lazy_base);
             }
         }

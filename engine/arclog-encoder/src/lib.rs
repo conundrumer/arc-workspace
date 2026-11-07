@@ -28,6 +28,8 @@
 //!   operator needs the rows themselves.
 //! - [`joined`]: the rows of a `join`, as the two sides they come from, written out where an
 //!   operator needs the rows themselves.
+//! - `spill`: stored rows on disk, which a walk moves there and reads back so that its memory stays
+//!   bounded.
 pub mod atom_lists;
 pub mod body_features;
 pub mod bounds;
@@ -60,6 +62,7 @@ pub mod refine;
 pub mod refine_parts;
 pub mod run;
 pub mod schema;
+mod spill;
 pub mod state_features;
 pub mod stored;
 pub mod table_stream;
