@@ -662,9 +662,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
             for (table, _) in members {
                 for node in nodes.iter().filter(|node| node.form < *form) {
                     if let Some(other) = prefix.get(&node.name) {
-                        if other != table {
-                            pairs.push((*table, *other));
-                        }
+                        pairs.push((*table, *other));
                     }
                 }
             }
@@ -693,7 +691,7 @@ pub fn lists_task_to(text: &str, task_dir: &std::path::Path, families: &Generato
             for (member, (table, parents)) in members.iter().enumerate() {
                 let related = relations(&nodes, *form, parents);
                 for relation in Relation::ALL {
-                    let others: Vec<&PairValues> = related.iter().filter(|(_, own)| *own == relation).filter_map(|(node, _)| prefix.get(&node.name)).filter(|other| *other != table).filter_map(|other| vectors.get(&(*table, *other))).collect();
+                    let others: Vec<&PairValues> = related.iter().filter(|(_, own)| *own == relation).filter_map(|(node, _)| prefix.get(&node.name)).filter_map(|other| vectors.get(&(*table, *other))).collect();
                     if !others.is_empty() {
                         let owner = format!("{at}/{member}/{}", relation.word());
                         lists.push(if lists_of == ListsOf::StateEach { pooled_each(owner, &others, examples) } else { pooled(owner, &others) });

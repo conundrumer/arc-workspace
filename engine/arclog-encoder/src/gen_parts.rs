@@ -1,7 +1,7 @@
 //! The parts with holes, as native operators over relations. Each part's rows follow from its
 //! relation and its columns, so no part is written for one feature.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use crate::catalog_facts::{canon, normalized, symmetry_count};
@@ -118,6 +118,14 @@ pub enum PartStep {
     DiffGroupsOff { keys: Box<[u16]>, p: u16, output: bool },
     /// Whether a column of each of two relations holds the same values.
     SameValues { a: u16, b: u16 },
+    /// How a column of each of two relations stand as sets: a row where they stand as `word`. Under `cells`, the columns' cells lie in one frame, and two disjoint sets that fill it are complements.
+    SetWord { a: u16, b: u16, cells: bool, word: SetRelation },
+    /// How a measure of each of two relations compare: a row where they compare as `word`, which is below 0, 0 or above 0.
+    CountWord { left: Measure, right: Measure, word: i8 },
+    /// How the groups of two relations' cells stand as sets, of cell sets or, under `shapes`, of shapes: a row where they stand as `word`.
+    GroupsWord { p: u16, left: Box<[u16]>, q: u16, right: Box<[u16]>, shapes: bool, word: SetRelation },
+    /// Whether two relations give a cell the same colors at the cells they share: a row where they do at `word` of those cells.
+    AgreeWord { p: u16, x: u16, q: u16, y: u16, word: AgreeRelation },
     /// The first relation's rows with a cell inside a box of the second.
     InsideBoxes { a: u16, b: u16 },
     /// The first relation's rows whose box holds a cell of the second.
@@ -142,7 +150,7 @@ impl PartStep {
 
     /// Whether the part's second relation is a relation hole, and no grid.
     pub fn reads_second_relation(&self) -> bool {
-        matches!(self, PartStep::DeterminesFlag { .. } | PartStep::SharedLine { .. } | PartStep::SameValues { .. } | PartStep::InsideBoxes { .. } | PartStep::BoxesHolding { .. } | PartStep::SameShape { .. })
+        matches!(self, PartStep::SetWord { .. } | PartStep::CountWord { .. } | PartStep::GroupsWord { .. } | PartStep::AgreeWord { .. } | PartStep::DeterminesFlag { .. } | PartStep::SharedLine { .. } | PartStep::SameValues { .. } | PartStep::InsideBoxes { .. } | PartStep::BoxesHolding { .. } | PartStep::SameShape { .. })
     }
 
     /// The columns of its first relation that its holes name.
@@ -167,6 +175,14 @@ impl PartStep {
             PartStep::DiffRows { p, .. } | PartStep::DiffCells { p, .. } => vec![*p],
             PartStep::DiffGroupsOff { keys, p, .. } => with(keys, &[*p]),
             PartStep::Same => Vec::new(),
+            PartStep::SetWord { a, .. } => vec![*a],
+            PartStep::CountWord { left, .. } => match left {
+                Measure::Rows => Vec::new(),
+                Measure::Values(at) | Measure::Greatest(at) => vec![*at],
+                Measure::Groups(keys) => keys.to_vec(),
+            },
+            PartStep::GroupsWord { p, left, .. } => with(left, &[*p]),
+            PartStep::AgreeWord { p, x, .. } => vec![*p, *x],
             PartStep::Product { keys } => keys.to_vec(),
             PartStep::SameRows { left, .. } => left.to_vec(),
             PartStep::CommonValues { e, n } => vec![*e, *n],
@@ -217,6 +233,10 @@ impl PartStep {
             PartStep::Occurs { keys, p, v, turned } => format!("({} &r {} {} {} {grid})", if *turned { "occurs-d4" } else { "occurs" }, list(keys), c(p), c(v)),
             PartStep::SharedLine { a, b } => format!("(shared-line &r &s {} {})", c(a), second(*b)),
             PartStep::SameValues { a, b } => format!("(same-values &r &s {} {})", c(a), second(*b)),
+            PartStep::SetWord { a, b, word, .. } => format!("(set-word &r &s {} {} {word:?})", c(a), second(*b)),
+            PartStep::CountWord { left, right, word } => format!("(count-word &r &s {left:?} {right:?} {word})"),
+            PartStep::GroupsWord { p, q, shapes, word, .. } => format!("(groups-word &r &s {} {} {shapes} {word:?})", c(p), second(*q)),
+            PartStep::AgreeWord { p, x, q, y, word } => format!("(agree-word &r &s {} {} {} {} {word:?})", c(p), c(x), second(*q), second(*y)),
             PartStep::InsideBoxes { a, b } => format!("(inside-boxes &r &s {} {})", c(a), second(*b)),
             PartStep::BoxesHolding { a, b } => format!("(boxes-holding &r &s {} {})", c(a), second(*b)),
             PartStep::SameShape { keys, a, others, b, turned } => format!("({} &r &s {} {} ({}) {})", if *turned { "same-shape-d4" } else { "same-shape" }, list(keys), c(a), others.iter().map(|at| second(*at)).collect::<Vec<_>>().join(" "), second(*b)),
@@ -687,6 +707,93 @@ fn moves_of(pattern: &[([i32; 4], Cell)], grid: &GridView) -> Vec<Cell> {
         }
     }
     out
+}
+
+/// How two sets of values stand to each other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SetRelation {
+    Equal,
+    Subset,
+    Superset,
+    Overlap,
+    Disjoint,
+    Complement,
+}
+
+/// At how many of the cells that two relations share they give the same colors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AgreeRelation {
+    EveryOne,
+    None,
+    Some,
+}
+
+/// A count that a relation gives.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Measure {
+    /// Its rows.
+    Rows,
+    /// The distinct values of a column.
+    Values(u16),
+    /// The greatest number of a column.
+    Greatest(u16),
+    /// Its groups by key columns. It has none where it has no key column.
+    Groups(Box<[u16]>),
+}
+
+impl Measure {
+    fn of(&self, table: &Table) -> Option<i64> {
+        match self {
+            Measure::Rows => Some(table.len as i64),
+            Measure::Values(at) => Some(sorted_values(table, *at).len() as i64),
+            Measure::Greatest(at) => table.rows().map(|row| number_of(row[usize::from(*at)])).max(),
+            Measure::Groups(keys) => (!keys.is_empty()).then(|| key_ids(table, keys).1.len() as i64),
+        }
+    }
+}
+
+fn sorted_values(table: &Table, at: u16) -> Vec<Cell> {
+    let mut held: Vec<Cell> = table.rows().map(|row| row[usize::from(at)]).collect();
+    held.sort_unstable();
+    held.dedup();
+    held
+}
+
+/// Whether the cells of two sets all lie in one frame: their margins give one height and one width.
+fn one_frame_of(own: &[Cell], theirs: &[Cell]) -> bool {
+    let mut frame = None;
+    own.iter().chain(theirs).all(|cell| {
+        let m = margins_of(*cell);
+        let here = (m[0] + m[1], m[2] + m[3]);
+        *frame.get_or_insert(here) == here
+    })
+}
+
+/// How two sorted sets stand to each other. With `size`, the count of a frame's cells, two disjoint sets that fill it are complements.
+fn set_relation<K: Ord>(own: &[K], theirs: &[K], size: Option<usize>) -> SetRelation {
+    let (mut at, mut there, mut shared) = (0, 0, 0usize);
+    while at < own.len() && there < theirs.len() {
+        match own[at].cmp(&theirs[there]) {
+            std::cmp::Ordering::Less => at += 1,
+            std::cmp::Ordering::Greater => there += 1,
+            std::cmp::Ordering::Equal => {
+                shared += 1;
+                at += 1;
+                there += 1;
+            }
+        }
+    }
+    if shared == own.len() && shared == theirs.len() {
+        SetRelation::Equal
+    } else if shared == 0 {
+        if size == Some(own.len() + theirs.len()) { SetRelation::Complement } else { SetRelation::Disjoint }
+    } else if shared == own.len() {
+        SetRelation::Subset
+    } else if shared == theirs.len() {
+        SetRelation::Superset
+    } else {
+        SetRelation::Overlap
+    }
 }
 
 impl PartStep {
@@ -1211,6 +1318,74 @@ impl PartStep {
                     }
                 }
                 Val::of_table(Table::distinct(keys.len() + 1, out))
+            }
+            PartStep::SetWord { a, b, cells, word } => {
+                let other = flat(children[1])?;
+                let own = sorted_values(t, *a);
+                let theirs = sorted_values(&other, *b);
+                if *cells && !one_frame_of(&own, &theirs) {
+                    return Some(Val::Empty);
+                }
+                let size = if *cells { own.first().or(theirs.first()).map(|cell| { let m = margins_of(*cell); ((m[0] + m[1] + 1) * (m[2] + m[3] + 1)) as usize }) } else { None };
+                Val::of_table(Table::unit(set_relation(&own, &theirs, size) == *word))
+            }
+            PartStep::CountWord { left, right, word } => {
+                let other = flat(children[1])?;
+                let (Some(mine), Some(theirs)) = (left.of(t), right.of(&other)) else { return Some(Val::Empty) };
+                Val::of_table(Table::unit((mine - theirs).signum() as i8 == *word))
+            }
+            PartStep::GroupsWord { p, left, q, right, shapes, word } => {
+                let other = flat(children[1])?;
+                if left.is_empty() || right.is_empty() || t.len == 0 || other.len == 0 {
+                    return Some(Val::Empty);
+                }
+                let sets = |table: &Table, keys: &[u16], cell: u16| -> Option<Vec<u128>> {
+                    let held = cells_by_key(table, keys, cell);
+                    let mut out: Vec<u128> = held.0.iter().filter(|cells| !cells.is_empty()).map(|cells| if *shapes { u128::from(shape_hash(cells, false)) } else { hash_words(cells.iter().map(|(r, c)| (u64::from(*r) << 8) | u64::from(*c))) }).collect();
+                    out.sort_unstable();
+                    out.dedup();
+                    (!out.is_empty()).then_some(out)
+                };
+                if !*shapes && !one_frame_of(&sorted_values(t, *p), &sorted_values(&other, *q)) {
+                    return Some(Val::Empty);
+                }
+                let (Some(own), Some(theirs)) = (sets(t, left, *p), sets(&other, right, *q)) else { return Some(Val::Empty) };
+                Val::of_table(Table::unit(set_relation(&own, &theirs, None) == *word))
+            }
+            PartStep::AgreeWord { p, x, q, y, word } => {
+                let other = flat(children[1])?;
+                if !one_frame_of(&sorted_values(t, *p), &sorted_values(&other, *q)) {
+                    return Some(Val::Empty);
+                }
+                let colors = |table: &Table, cell: u16, color: u16| -> BTreeMap<Cell, Vec<Cell>> {
+                    let mut held: BTreeMap<Cell, Vec<Cell>> = BTreeMap::new();
+                    for row in table.rows() {
+                        held.entry(row[usize::from(cell)]).or_default().push(row[usize::from(color)]);
+                    }
+                    for values in held.values_mut() {
+                        values.sort_unstable();
+                        values.dedup();
+                    }
+                    held
+                };
+                let (mine, theirs) = (colors(t, *p, *x), colors(&other, *q, *y));
+                let (mut same, mut differ) = (false, false);
+                for (cell, held) in &mine {
+                    if let Some(there) = theirs.get(cell) {
+                        if held == there {
+                            same = true;
+                        } else {
+                            differ = true;
+                        }
+                    }
+                }
+                let found = match (same, differ) {
+                    (false, false) => return Some(Val::Empty),
+                    (true, false) => AgreeRelation::EveryOne,
+                    (false, true) => AgreeRelation::None,
+                    (true, true) => AgreeRelation::Some,
+                };
+                Val::of_table(Table::unit(found == *word))
             }
             PartStep::SameValues { a, b } => {
                 let other = flat(children[1])?;
