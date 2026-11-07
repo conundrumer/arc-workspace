@@ -193,19 +193,17 @@ fn mean_over_models(held: &[&Slot]) -> Slot {
             Some((top / common, bottom / common))
         };
         // A Number holds 31 bits over 32 bits. A fraction past them keeps its value and loses its last digits, since a fraction clamped part by part would read as another number.
+        let signed = |below: bool, held: Number| if below { Number { top: -held.top, bottom: held.bottom } } else { held };
         match exact() {
-            Some((top, bottom)) if top < 0 => Number::whole((top / bottom) as i64),
             Some((top, bottom)) => {
-                let excess = (128 - top.leading_zeros()).saturating_sub(31).max((128 - bottom.leading_zeros()).saturating_sub(32));
-                Number::fraction((top >> excess) as u64, ((bottom >> excess) as u64).max(1))
+                let size = top.abs();
+                let excess = (128 - size.leading_zeros()).saturating_sub(31).max((128 - bottom.leading_zeros()).saturating_sub(32));
+                signed(top < 0, Number::fraction((size >> excess) as u64, ((bottom >> excess) as u64).max(1)))
             }
             None => {
                 let mean = held.iter().map(|slot| read(slot).float()).sum::<f64>() / held.len() as f64;
-                if mean < 0.0 {
-                    return Number::whole(mean as i64);
-                }
-                let scale = (f64::from(i32::MAX) / mean.max(1.0)).floor();
-                Number::fraction((mean * scale) as u64, scale as u64)
+                let scale = (f64::from(i32::MAX) / mean.abs().max(1.0)).floor();
+                signed(mean < 0.0, Number::fraction((mean.abs() * scale) as u64, scale as u64))
             }
         }
     };

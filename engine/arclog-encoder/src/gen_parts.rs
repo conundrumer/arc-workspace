@@ -386,6 +386,11 @@ thread_local! {
     static RIGHT_KEYS: std::cell::RefCell<HashMap<(u128, Box<[u16]>), Arc<Vec<u128>>>> = std::cell::RefCell::new(HashMap::new());
 }
 
+/// The keys of second relations that this thread holds.
+pub fn keys_held() -> usize {
+    RIGHT_KEYS.with(|keys| keys.borrow().values().map(|held| held.len()).sum())
+}
+
 pub fn clear_views() {
     VIEWS.with(|views| views.borrow_mut().clear());
     RIGHT_KEYS.with(|keys| keys.borrow_mut().clear());
