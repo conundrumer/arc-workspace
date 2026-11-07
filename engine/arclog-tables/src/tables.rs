@@ -297,7 +297,7 @@ pub(crate) fn body_point(decoder: &Decoder<'_>, state: &State) -> Option<Point> 
     let (program, open) = state.partial()?;
     let open = open?;
     let (last, _) = program.value().forms.split_last().expect("a partial program with an open node holds its partial form");
-    let OpenClause { clause, kept, open_at } = open_clause(last, &open, decoder.registry())?;
+    let OpenClause { clause, kept, open_at, .. } = open_clause(last, &open, decoder.registry())?;
     let sites = match open_at.and_then(|at| clause.body.value().conjuncts.get(at)) {
         Some(Conjunct::Atom(atom)) => atom.value().sites.len(),
         _ => 0,

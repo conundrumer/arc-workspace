@@ -1371,6 +1371,12 @@ impl State {
                     }
                 }
                 Frame::Input(input) if whole_form => input.position.hash(hasher),
+                Frame::Or(branches) => {
+                    branches.len().hash(hasher);
+                    if whole_form {
+                        format!("{branches:?}").hash(hasher);
+                    }
+                }
                 _ => {}
             }
         }
@@ -1383,21 +1389,35 @@ impl State {
     /// type, whether the body binds it and whether a key marks it, and whether
     /// each label has that shape. A label that stands in anything but an atom
     /// or a `NOT` of an atom of fixed scalar columns, or a head site of a fixed
-    /// scalar column, in a top-level clause body or a body of an `INIT` form, has
-    /// its id for its shape in place of them.
+    /// scalar column, in a top-level clause body or a body of an `INIT` form or
+    /// a branch of an `OR` in one, has its id for its shape in place of them.
     pub(super) fn label_shapes(&self, registry: &Registry, column_type: &impl Fn(&RelationRef, &ColumnName) -> Option<ValueType>) -> (Vec<u64>, bool) {
         use std::hash::{Hash, Hasher};
         let by_id = |label: u32| (1u64 << 60) | u64::from(label);
         let mut shapes: Vec<u64> = (0..self.labels).map(by_id).collect();
         // The conjuncts in scope of the atom, with the conjuncts of the form's other bodies and its inputs, which give their labels types.
-        let (before, body, instance, clause): (&[Conjunct], _, Option<&InstanceFrame>, Option<&KeyClauseFrame>) = match &self.stack[..] {
-            [Frame::Clause(_), Frame::Body(body), Frame::Atom(_)] => (&[], body, None, None),
-            [Frame::Instance(instance), Frame::KeyClause(clause), Frame::Body(body), Frame::Atom(_)] if !instance.demonstrated => (&[], body, Some(instance), Some(clause)),
-            [Frame::Instance(instance), Frame::Input(_), Frame::Body(body), Frame::Atom(_)] if !instance.demonstrated => (&[], body, Some(instance), None),
-            [Frame::Instance(instance), Frame::KeyClause(clause @ KeyClauseFrame { body: Some(key), .. }), Frame::Input(_), Frame::Body(body), Frame::Atom(_)] if !instance.demonstrated => (&key.value().conjuncts[..], body, Some(instance), Some(clause)),
+        let Some((Frame::Atom(_), frames)) = self.stack.split_last() else { return (shapes, false) };
+        let Some(first_body) = frames.iter().position(|frame| matches!(frame, Frame::Body(_))) else { return (shapes, false) };
+        let (around, bodies) = frames.split_at(first_body);
+        let (before, instance, clause): (&[Conjunct], Option<&InstanceFrame>, Option<&KeyClauseFrame>) = match around {
+            [Frame::Clause(_)] => (&[], None, None),
+            [Frame::Instance(instance), Frame::KeyClause(clause)] if !instance.demonstrated => (&[], Some(instance), Some(clause)),
+            [Frame::Instance(instance), Frame::Input(_)] if !instance.demonstrated => (&[], Some(instance), None),
+            [Frame::Instance(instance), Frame::KeyClause(clause @ KeyClauseFrame { body: Some(key), .. }), Frame::Input(_)] if !instance.demonstrated => (&key.value().conjuncts[..], Some(instance), Some(clause)),
             _ => return (shapes, false),
         };
+        let mut in_scope: Vec<&[Conjunct]> = vec![before];
         let mut other_bodies: Vec<&[Conjunct]> = Vec::new();
+        let mut frames_left = bodies.iter();
+        loop {
+            let Some(Frame::Body(body)) = frames_left.next() else { return (shapes, false) };
+            in_scope.push(&body.conjuncts);
+            match frames_left.next() {
+                None => break,
+                Some(Frame::Or(branches)) => other_bodies.extend(branches.iter().map(|branch| &branch.value().conjuncts[..])),
+                Some(_) => return (shapes, false),
+            }
+        }
         let mut inputs: Vec<&Node<InstanceInput>> = Vec::new();
         if let Some(instance) = instance {
             if let Some(key) = instance.key.as_ref().filter(|_| clause.is_none()) {
@@ -1410,6 +1430,23 @@ impl State {
             inputs.extend(clause.inputs.iter());
         }
         other_bodies.extend(inputs.iter().map(|input| &input.value().body.value().conjuncts[..]));
+        // The atoms of a conjunct: a form of a body other than an `OR` gives no shape.
+        fn atoms_of<'c>(conjunct: &'c Conjunct, found: &mut Vec<&'c Node<Atom>>) -> bool {
+            match conjunct {
+                Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => {
+                    found.push(atom);
+                    true
+                }
+                Conjunct::Or(branches) => branches.iter().all(|branch| branch.value().conjuncts.iter().all(|conjunct| atoms_of(conjunct, found))),
+                _ => false,
+            }
+        }
+        let mut atoms: Vec<&Node<Atom>> = Vec::new();
+        for conjunct in in_scope.iter().chain(other_bodies.iter()).flat_map(|body| body.iter()) {
+            if !atoms_of(conjunct, &mut atoms) {
+                return (shapes, false);
+            }
+        }
         let mut types: std::collections::BTreeMap<u32, ValueType> = std::collections::BTreeMap::new();
         let mut keys: Vec<u32> = Vec::new();
         let meet = |types: &mut std::collections::BTreeMap<u32, ValueType>, label: u32, ty: &ValueType| -> bool {
@@ -1427,11 +1464,7 @@ impl State {
                 }
             }
         };
-        for conjunct in before.iter().chain(body.conjuncts.iter()).chain(other_bodies.iter().flat_map(|body| body.iter())) {
-            let prior = match conjunct {
-                Conjunct::Atom(prior) | Conjunct::Not(Negated::Atom(prior)) => prior,
-                _ => return (shapes, false),
-            };
+        for prior in atoms.iter() {
             for site in prior.value().sites.iter() {
                 let Some(ty) = column_type(&prior.value().relation, &site.column) else { return (shapes, false) };
                 for arg in site.value.args.iter() {
@@ -1463,7 +1496,7 @@ impl State {
                 }
             }
         }
-        let list: Vec<&Conjunct> = before.iter().chain(body.conjuncts.iter()).collect();
+        let list: Vec<&Conjunct> = in_scope.iter().flat_map(|body| body.iter()).collect();
         let bound = crate::safety::bound_labels(&list, &Default::default(), &Default::default(), &|atom| crate::eval::ir::atom_modes(registry, atom), &|label| types.get(&label.0).cloned());
         let mut each = true;
         for (at, shape) in shapes.iter_mut().enumerate() {
@@ -1523,9 +1556,9 @@ impl State {
         found
     }
 
-    /// Whether the body on top stands in a form of a body, such as a branch of an `OR`.
-    pub(super) fn in_nested_body(&self) -> bool {
-        self.stack.iter().filter(|frame| matches!(frame, Frame::Body(_))).count() > 1
+    /// Whether the body on top stands in a form of a body other than a branch of an `OR`.
+    pub(super) fn in_other_form(&self) -> bool {
+        self.stack.iter().any(|frame| matches!(frame, Frame::Lists(_) | Frame::Body(BodyFrame { close: Close::Not, .. })))
     }
 
     /// Whether a `NOT` stands before the next conjunct of the body on top.

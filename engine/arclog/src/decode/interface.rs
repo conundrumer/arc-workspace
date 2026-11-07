@@ -404,7 +404,7 @@ impl<'a> Decoder<'a> {
         let (program, open) = self.state.partial()?;
         let open = open?;
         let (last, _) = program.value().forms.split_last()?;
-        let OpenClause { clause, kept, open_at } = open_clause(last, &open, self.context.registry)?;
+        let OpenClause { clause, kept, open_at, .. } = open_clause(last, &open, self.context.registry)?;
         let body = &clause.body;
         let left_out = match open_at.and_then(|at| body.value().conjuncts.get(at)) {
             Some(open) if complete_or_atoms(body, open_at, self.context.registry).len() < body.value().conjuncts.len() => Some(match open {
@@ -418,8 +418,10 @@ impl<'a> Decoder<'a> {
 
     /// The sub-body of the clause in progress with its conjunct in progress
     /// as a complete conjunct: its value is the table of the body once a token
-    /// closes that conjunct. The inner `None` stands for a body of no conjunct,
-    /// and the outer one where no clause is in progress.
+    /// closes that conjunct. Where that conjunct is an `OR` with a branch in
+    /// progress, the branch's conjuncts stand in the place of the `OR`. The inner
+    /// `None` stands for a body of no conjunct, and the outer one where no clause
+    /// is in progress.
     pub fn closed_sub_body(&self) -> Option<Option<Outcome<SubBody>>> {
         let (program, open) = self.state.partial()?;
         let open = open?;
@@ -429,7 +431,7 @@ impl<'a> Decoder<'a> {
             Form::Instance(instance) => Some((instance, self.form_keyword(&program)?)),
             _ => None,
         };
-        let OpenClause { clause, mut kept, open_at } = match view {
+        let OpenClause { clause, mut kept, open_at, below } = match view {
             Some((instance, keyword)) => open_instance_clause(instance.value(), &open, keyword, self.fresh_relation(), registry)?,
             None => open_clause(last, &open, registry)?,
         };
@@ -437,7 +439,13 @@ impl<'a> Decoder<'a> {
             let conjuncts = clause.body.value().conjuncts.get(at);
             // A body keeps its open conjunct only where the conjunct binds what its mode asks.
             if let Some(open) = conjuncts.filter(|_| complete_or_atoms(&clause.body, Some(at), registry).len() < clause.body.value().conjuncts.len()) {
-                kept.push(open.clone());
+                // A branch of an `OR` in progress is a body of its own, around the conjuncts that stand around the `OR`.
+                let mut branch = Vec::new();
+                if branch_conjuncts(open, &below, &mut branch) {
+                    kept.extend(branch);
+                } else {
+                    kept.push(open.clone());
+                }
             }
         }
         if view.is_some() {
@@ -492,7 +500,7 @@ impl<'a> Decoder<'a> {
         let (program, open) = self.state.partial()?;
         let open = open?;
         let (last, finished) = program.value().forms.split_last()?;
-        let OpenClause { clause, mut kept, open_at } = open_clause(last, &open, self.context.registry)?;
+        let OpenClause { clause, mut kept, open_at, .. } = open_clause(last, &open, self.context.registry)?;
         let conjuncts = clause.body.value().conjuncts.len();
         // The open conjunct is the last of its body, and so the last of the sub-body where the sub-body holds it.
         let open_at = open_at.filter(|&at| at + 1 == conjuncts)?;
@@ -826,6 +834,8 @@ pub struct OpenClause {
     pub clause: Clause,
     pub kept: Vec<Conjunct>,
     pub open_at: Option<usize>,
+    /// The path of the innermost open node below the conjunct in progress.
+    pub below: Vec<PathStep>,
 }
 
 /// The clause in progress of `form`, whose innermost open node is at
@@ -838,16 +848,17 @@ pub fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> Option<
     match form {
         Form::Clause(clause) => {
             let clause = clause.value();
-            let open_at = match &*open.0 {
-                [PathStep(0), PathStep(at), ..] => Some(*at as usize),
-                _ => None,
+            let (open_at, below) = match &*open.0 {
+                [PathStep(0), PathStep(at), below @ ..] => (Some(*at as usize), below.to_vec()),
+                _ => (None, Vec::new()),
             };
-            Some(OpenClause { clause: clause.clone(), kept: complete_or_atoms(&clause.body, open_at, registry), open_at })
+            Some(OpenClause { clause: clause.clone(), kept: complete_or_atoms(&clause.body, open_at, registry), open_at, below })
         }
         Form::Choose(choose) => {
             let choose = choose.value();
             let [PathStep(at), within @ ..] = &*open.0 else { return None };
             let open_at = within.first().map(|step| step.0 as usize);
+            let below = within.get(1..).map_or_else(Vec::new, <[PathStep]>::to_vec);
             let (body, before) = open_part(choose, choose.parts().nth(*at as usize)?)?;
             let conjuncts = before.iter().flat_map(|body| body.conjuncts.iter().cloned()).chain(complete_or_atoms(body, open_at, registry)).collect();
             let clause = Clause {
@@ -860,7 +871,7 @@ pub fn open_clause(form: &Form, open: &NodePath, registry: &Registry) -> Option<
                 set: false,
                 columns: Arc::from([]),
             };
-            Some(OpenClause { clause, kept: conjuncts, open_at })
+            Some(OpenClause { clause, kept: conjuncts, open_at, below })
         }
         _ => None,
     }
@@ -892,9 +903,34 @@ fn open_instance_clause(instance: &Instance, open: &NodePath, keyword: ClauseKey
         InstancePart::Input(index) => (None, input_body(instance.inputs.get(index)?, within)?),
     };
     let open_at = within.first().map(|step| step.0 as usize);
+    let below = within.get(1..).map_or_else(Vec::new, <[PathStep]>::to_vec);
     let kept = before.iter().flat_map(|body| body.conjuncts.iter().cloned()).chain(complete_or_atoms(body, open_at, registry)).collect();
     let clause = Clause { keyword, derives, gloss: None, proposers: Arc::from([]), body: body.clone(), ones: Arc::from([]), set: false, columns: Arc::from([]) };
-    Some(OpenClause { clause, kept, open_at })
+    Some(OpenClause { clause, kept, open_at, below })
+}
+
+/// Adds to `found` the conjuncts of the branch in progress of `conjunct`, an `OR`
+/// whose innermost open node is at `below`, with those of each `OR` in that
+/// branch that holds the open node. Gives whether the open node stands in such
+/// branches alone, with no other form of a body around it.
+fn branch_conjuncts(conjunct: &Conjunct, below: &[PathStep], found: &mut Vec<Conjunct>) -> bool {
+    let Conjunct::Or(branches) = conjunct else { return false };
+    let Some((branch, below)) = below.split_first() else { return false };
+    let Some(body) = branches.get(branch.0 as usize) else { return false };
+    let conjuncts = &body.value().conjuncts;
+    let Some((at, below)) = below.split_first() else {
+        found.extend(conjuncts.iter().cloned());
+        return true;
+    };
+    found.extend(conjuncts.iter().take(at.0 as usize).cloned());
+    match conjuncts.get(at.0 as usize) {
+        None => true,
+        Some(open @ (Conjunct::Atom(_) | Conjunct::Not(Negated::Atom(_)))) => {
+            found.push(open.clone());
+            true
+        }
+        Some(open) => branch_conjuncts(open, below, found),
+    }
 }
 
 /// The body of `part` of `choose`, and the `for` body that precedes it

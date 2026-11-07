@@ -38,6 +38,8 @@ pub struct BaseRows {
     examples: Vec<(Option<Example>, Outcome<Assigned<HeldBase>>)>,
     /// Whether the body is evaluated once for the task.
     task_wide: bool,
+    /// The labels that stand in the body at no column, such as in a `NOT`.
+    other_labels: Vec<u32>,
 }
 
 /// The value of a body at one assignment of one example.
@@ -402,7 +404,7 @@ impl<'a> Decoder<'a> {
             let unit = |example: Option<Example>| (example, Ok(Assigned { at: vec![(Vec::new(), HeldBase { value: RelationValue::Rows(Arc::new(Relation::from_parts(0, Box::new([])))), parts: Vec::new() })], stop: None }));
             let task_wide = self.body_is_task_wide();
             let scope = if task_wide { examples::ExampleScope::TaskWide } else { examples::ExampleScope::PerExample };
-            return BaseRows { columns, dets, examples: self.examples_of(scope).into_iter().map(unit).collect(), task_wide };
+            return BaseRows { columns, dets, examples: self.examples_of(scope).into_iter().map(unit).collect(), task_wide, other_labels: Vec::new() };
         };
         let examples = self.examples_of(sub.scope).into_iter().zip(self.values_of(sub, Some(work)).into_vec()).map(|(example, value)| {
             let held = value.map(|assigned| Assigned {
@@ -418,7 +420,13 @@ impl<'a> Decoder<'a> {
             });
             (example, held)
         }).collect();
-        BaseRows { columns, dets, examples, task_wide: sub.scope == examples::ExampleScope::TaskWide }
+        let mut other_labels = Vec::new();
+        if let Some(crate::program::Form::Clause(clause)) = sub.program.program.program.value().forms.last() {
+            for conjunct in clause.value().body.value().conjuncts.iter() {
+                other_labels.extend(crate::safety::conjunct_label_set(conjunct).into_iter().map(|label| label.0).filter(|label| !columns.iter().any(|(held, _)| held.0 == *label)));
+            }
+        }
+        BaseRows { columns, dets, examples, task_wide: sub.scope == examples::ExampleScope::TaskWide, other_labels }
     }
 
     /// What is known of the relation that the token `id` opens, none for a
@@ -488,6 +496,9 @@ impl<'a> Decoder<'a> {
         let mut types: Vec<ValueType> = base.columns.iter().map(|(_, ty)| ty.clone()).collect();
         let mut made: Vec<ValueType> = Vec::new();
         let mut plan: Vec<(ColumnIndex, PlanArgument)> = Vec::new();
+        // The place in `made` of each label that a `*` of this atom makes, and of each label that another part of the form makes.
+        let mut fresh: Vec<u16> = Vec::new();
+        let mut outside: Vec<(u32, u16)> = Vec::new();
         let mut at = sites.iter();
         while let Some(column) = at.next() {
             let Token::Column(position) = token(column) else { return Err(AtomRows::ByProgram) };
@@ -503,22 +514,48 @@ impl<'a> Decoder<'a> {
             };
             match token(at.next().ok_or(AtomRows::ByProgram)?) {
                 Token::Label(label) if *label >= labels => {
-                    let index = (*label - labels) as usize;
-                    let held = made.get_mut(index).ok_or(AtomRows::ByProgram)?;
+                    let index = *fresh.get((*label - labels) as usize).ok_or(AtomRows::ByProgram)?;
+                    let held = &mut made[usize::from(index)];
                     match held.meet(&ty) {
                         crate::types::Meet::Type(met) => *held = met,
                         crate::types::Meet::Empty => return Err(AtomRows::ByProgram),
                     }
-                    plan.push((column, PlanArgument::Made(index as u16)));
+                    plan.push((column, PlanArgument::Made(index)));
                 }
                 Token::Label(label) => {
-                    let place = base.columns.iter().position(|(held, _)| held.0 == *label).ok_or(AtomRows::ByProgram)?;
-                    match types[place].meet(&ty) {
-                        crate::types::Meet::Type(met) if !negated => types[place] = met,
-                        crate::types::Meet::Type(_) => {}
-                        crate::types::Meet::Empty => return Err(AtomRows::ByProgram),
+                    match base.columns.iter().position(|(held, _)| held.0 == *label) {
+                        Some(place) => {
+                            match types[place].meet(&ty) {
+                                crate::types::Meet::Type(met) if !negated => types[place] = met,
+                                crate::types::Meet::Type(_) => {}
+                                crate::types::Meet::Empty => return Err(AtomRows::ByProgram),
+                            }
+                            plan.push((column, PlanArgument::Column(place as u16)));
+                        }
+                        // A label that no conjunct of this body holds: the atom makes it, as a `*` does.
+                        None => {
+                            if negated || base.other_labels.contains(label) {
+                                return Err(AtomRows::ByProgram);
+                            }
+                            let index = match outside.iter().find(|(held, _)| held == label) {
+                                Some(&(_, index)) => {
+                                    let held = &mut made[usize::from(index)];
+                                    match held.meet(&ty) {
+                                        crate::types::Meet::Type(met) => *held = met,
+                                        crate::types::Meet::Empty => return Err(AtomRows::ByProgram),
+                                    }
+                                    index
+                                }
+                                None => {
+                                    let index = made.len() as u16;
+                                    outside.push((*label, index));
+                                    made.push(ty);
+                                    index
+                                }
+                            };
+                            plan.push((column, PlanArgument::Made(index)));
+                        }
                     }
-                    plan.push((column, PlanArgument::Column(place as u16)));
                 }
                 // In a body that a clause reads, a label that a key marks is a label that the body makes.
                 Token::Control(Control::Fresh | Control::Key) => {
@@ -526,6 +563,7 @@ impl<'a> Decoder<'a> {
                     if negated {
                         return Err(AtomRows::NoTable);
                     }
+                    fresh.push(made.len() as u16);
                     plan.push((column, PlanArgument::Made(made.len() as u16)));
                     made.push(ty);
                 }
@@ -588,7 +626,7 @@ impl<'a> Decoder<'a> {
     /// `cap`.
     pub fn each_atom_rows(&self, sub: Option<&SubBody>, base: &BaseRows, labels: u32, atoms: &[Box<[u32]>], cap: u64, visit: &mut dyn FnMut(usize, AtomRows)) {
         // A `NOT` that stands before the atoms reads them in a way that the tokens of an atom do not show, and a body in a form of a body adds its atoms to that form.
-        if self.state.negation_pending() || self.state.in_nested_body() {
+        if self.state.negation_pending() || self.state.in_other_form() {
             (0..atoms.len()).for_each(|at| visit(at, AtomRows::ByProgram));
             return;
         }
