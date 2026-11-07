@@ -122,6 +122,22 @@ pub enum PartStep {
     SetWord { a: u16, b: u16, cells: bool, word: SetRelation },
     /// How a measure of each of two relations compare: a row where they compare as `word`, which is below 0, 0 or above 0.
     CountWord { left: Measure, right: Measure, word: i8 },
+    /// The least distance from a column's cells to another relation's, counted in steps of eight directions.
+    LeastDistance { a: u16, b: u16 },
+    /// The cells of the first relation that lie on the boundary of another's: each is a cell of it and has one of its four neighbors outside it.
+    OnBoundary { b: u16 },
+    /// Each cell of the first relation with each of its eight neighbors that another relation holds.
+    NeighborsIn { b: u16 },
+    /// Whether every cell of a column lies in the one box of another relation or, under `some`, in some box of its two or more.
+    InsideBoxWord { a: u16, b: u16, some: bool },
+    /// The cells of the first relation on the border of the one box of another relation.
+    OnBorder { b: u16 },
+    /// The rows of a first relation of a cell and a direction whose ray from the cell meets a cell of another relation.
+    RayMeets { b: u16 },
+    /// The colors a grid has most often under a column's cells.
+    TopColorsUnder { p: u16 },
+    /// Whether a column of the first relation shares a value with a column of the second.
+    SharesValue { a: u16, b: u16 },
     /// How the groups of two relations' cells stand as sets, of cell sets or, under `shapes`, of shapes: a row where they stand as `word`.
     GroupsWord { p: u16, left: Box<[u16]>, q: u16, right: Box<[u16]>, shapes: bool, word: SetRelation },
     /// Whether two relations give a cell the same colors at the cells they share: a row where they do at `word` of those cells.
@@ -145,12 +161,12 @@ pub enum PartStep {
 impl PartStep {
     /// Whether the part has rows where its first relation has none.
     pub fn gives_rows_on_no_rows(&self) -> bool {
-        matches!(self, PartStep::DiffCells { on: false, .. })
+        matches!(self, PartStep::DiffCells { on: false, .. } | PartStep::SetWord { .. } | PartStep::CountWord { .. } | PartStep::InsideBoxWord { some: false, .. })
     }
 
     /// Whether the part's second relation is a relation hole, and no grid.
     pub fn reads_second_relation(&self) -> bool {
-        matches!(self, PartStep::SetWord { .. } | PartStep::CountWord { .. } | PartStep::GroupsWord { .. } | PartStep::AgreeWord { .. } | PartStep::DeterminesFlag { .. } | PartStep::SharedLine { .. } | PartStep::SameValues { .. } | PartStep::InsideBoxes { .. } | PartStep::BoxesHolding { .. } | PartStep::SameShape { .. })
+        matches!(self, PartStep::SetWord { .. } | PartStep::CountWord { .. } | PartStep::GroupsWord { .. } | PartStep::AgreeWord { .. } | PartStep::LeastDistance { .. } | PartStep::OnBoundary { .. } | PartStep::NeighborsIn { .. } | PartStep::InsideBoxWord { .. } | PartStep::OnBorder { .. } | PartStep::RayMeets { .. } | PartStep::SharesValue { .. } | PartStep::DeterminesFlag { .. } | PartStep::SharedLine { .. } | PartStep::SameValues { .. } | PartStep::InsideBoxes { .. } | PartStep::BoxesHolding { .. } | PartStep::SameShape { .. })
     }
 
     /// The columns of its first relation that its holes name.
@@ -175,7 +191,10 @@ impl PartStep {
             PartStep::DiffRows { p, .. } | PartStep::DiffCells { p, .. } => vec![*p],
             PartStep::DiffGroupsOff { keys, p, .. } => with(keys, &[*p]),
             PartStep::Same => Vec::new(),
-            PartStep::SetWord { a, .. } => vec![*a],
+            PartStep::SetWord { a, .. } | PartStep::LeastDistance { a, .. } | PartStep::InsideBoxWord { a, .. } | PartStep::SharesValue { a, .. } => vec![*a],
+            PartStep::OnBoundary { .. } | PartStep::NeighborsIn { .. } | PartStep::OnBorder { .. } => vec![0],
+            PartStep::RayMeets { .. } => vec![0, 1],
+            PartStep::TopColorsUnder { p } => vec![*p],
             PartStep::CountWord { left, .. } => match left {
                 Measure::Rows => Vec::new(),
                 Measure::Values(at) | Measure::Greatest(at) => vec![*at],
@@ -233,7 +252,15 @@ impl PartStep {
             PartStep::Occurs { keys, p, v, turned } => format!("({} &r {} {} {} {grid})", if *turned { "occurs-d4" } else { "occurs" }, list(keys), c(p), c(v)),
             PartStep::SharedLine { a, b } => format!("(shared-line &r &s {} {})", c(a), second(*b)),
             PartStep::SameValues { a, b } => format!("(same-values &r &s {} {})", c(a), second(*b)),
-            PartStep::SetWord { a, b, word, .. } => format!("(set-word &r &s {} {} {word:?})", c(a), second(*b)),
+            PartStep::SetWord { a, b, cells, word } => format!("({} &r &s {} {} {word:?})", if *cells { "cell-word" } else { "set-word" }, c(a), second(*b)),
+            PartStep::LeastDistance { a, b } => format!("(least-distance &r &s {} {})", c(a), second(*b)),
+            PartStep::OnBoundary { b } => format!("(on-boundary &r &s {})", second(*b)),
+            PartStep::NeighborsIn { b } => format!("(neighbors-in &r &s {})", second(*b)),
+            PartStep::InsideBoxWord { a, b, some } => format!("({} &r &s {} {})", if *some { "inside-some-box" } else { "inside-the-box" }, c(a), second(*b)),
+            PartStep::OnBorder { b } => format!("(on-border &r &s {})", second(*b)),
+            PartStep::RayMeets { b } => format!("(ray-meets &r &s {})", second(*b)),
+            PartStep::TopColorsUnder { p } => format!("(top-colors-under &r {} {grid})", c(p)),
+            PartStep::SharesValue { a, b } => format!("(shares-value &r &s {} {})", c(a), second(*b)),
             PartStep::CountWord { left, right, word } => format!("(count-word &r &s {left:?} {right:?} {word})"),
             PartStep::GroupsWord { p, q, shapes, word, .. } => format!("(groups-word &r &s {} {} {shapes} {word:?})", c(p), second(*q)),
             PartStep::AgreeWord { p, x, q, y, word } => format!("(agree-word &r &s {} {} {} {} {word:?})", c(p), c(x), second(*q), second(*y)),
@@ -747,7 +774,8 @@ impl Measure {
             Measure::Rows => Some(table.len as i64),
             Measure::Values(at) => Some(sorted_values(table, *at).len() as i64),
             Measure::Greatest(at) => table.rows().map(|row| number_of(row[usize::from(*at)])).max(),
-            Measure::Groups(keys) => (!keys.is_empty()).then(|| key_ids(table, keys).1.len() as i64),
+            // A table with no rows has no groups, and so nothing to count.
+            Measure::Groups(keys) => (!keys.is_empty() && table.len > 0).then(|| key_ids(table, keys).1.len() as i64),
         }
     }
 }
@@ -767,6 +795,72 @@ fn one_frame_of(own: &[Cell], theirs: &[Cell]) -> bool {
         let here = (m[0] + m[1], m[2] + m[3]);
         *frame.get_or_insert(here) == here
     })
+}
+
+/// Whether cells lie where boxes can hold them: each box takes its frame from the cells, so a box's margins may only reach as far as the frame.
+fn own_cells_fit(own: &[Cell], boxes: &[Cell]) -> bool {
+    let Some(first) = own.first() else { return true };
+    let m = margins_of(*first);
+    let (h, w) = (m[0] + m[1], m[2] + m[3]);
+    let cells_agree = own.iter().all(|cell| {
+        let m = margins_of(*cell);
+        (m[0] + m[1], m[2] + m[3]) == (h, w)
+    });
+    cells_agree && boxes.iter().all(|held| {
+        let m = margins_of(*held);
+        m[0] + m[1] <= h && m[2] + m[3] <= w
+    })
+}
+
+/// The fewest steps of eight directions from a cell of `own` to a cell of `theirs`, both nonempty and in one frame. Two passes over their bounding box give each place its distance from `theirs`.
+fn least_gap(own: &[Cell], theirs: &[Cell]) -> i64 {
+    let places = |cells: &[Cell]| -> Vec<(i32, i32)> { cells.iter().map(|cell| { let m = margins_of(*cell); (m[0], m[2]) }).collect() };
+    let (mine, others) = (places(own), places(theirs));
+    let both = || mine.iter().chain(&others);
+    let (r0, r1) = (both().map(|at| at.0).min().unwrap_or(0), both().map(|at| at.0).max().unwrap_or(0));
+    let (c0, c1) = (both().map(|at| at.1).min().unwrap_or(0), both().map(|at| at.1).max().unwrap_or(0));
+    let (h, w) = ((r1 - r0 + 1) as usize, (c1 - c0 + 1) as usize);
+    let at = |r: i32, c: i32| (r - r0) as usize * w + (c - c0) as usize;
+    let far = (h + w) as u32 + 1;
+    let mut gap = vec![far; h * w];
+    for (r, c) in &others {
+        gap[at(*r, *c)] = 0;
+    }
+    for here in 0..h * w {
+        let (r, c) = (here / w, here % w);
+        let mut best = gap[here];
+        if c > 0 {
+            best = best.min(gap[here - 1] + 1);
+        }
+        if r > 0 {
+            best = best.min(gap[here - w] + 1);
+            if c > 0 {
+                best = best.min(gap[here - w - 1] + 1);
+            }
+            if c + 1 < w {
+                best = best.min(gap[here - w + 1] + 1);
+            }
+        }
+        gap[here] = best;
+    }
+    for here in (0..h * w).rev() {
+        let (r, c) = (here / w, here % w);
+        let mut best = gap[here];
+        if c + 1 < w {
+            best = best.min(gap[here + 1] + 1);
+        }
+        if r + 1 < h {
+            best = best.min(gap[here + w] + 1);
+            if c + 1 < w {
+                best = best.min(gap[here + w + 1] + 1);
+            }
+            if c > 0 {
+                best = best.min(gap[here + w - 1] + 1);
+            }
+        }
+        gap[here] = best;
+    }
+    i64::from(mine.iter().map(|(r, c)| gap[at(*r, *c)]).min().unwrap_or(0))
 }
 
 /// How two sorted sets stand to each other. With `size`, the count of a frame's cells, two disjoint sets that fill it are complements.
@@ -1318,6 +1412,103 @@ impl PartStep {
                     }
                 }
                 Val::of_table(Table::distinct(keys.len() + 1, out))
+            }
+            PartStep::LeastDistance { a, b } => {
+                let other = flat(children[1])?;
+                let (own, theirs) = (sorted_values(t, *a), sorted_values(&other, *b));
+                if own.is_empty() || theirs.is_empty() || !one_frame_of(&own, &theirs) {
+                    return Some(Val::Empty);
+                }
+                Val::of_table(Table::new(1, vec![number_bits(least_gap(&own, &theirs))]))
+            }
+            PartStep::OnBoundary { b } => {
+                let other = flat(children[1])?;
+                let (own, theirs) = (sorted_values(t, 0), sorted_values(&other, *b));
+                if own.is_empty() || !one_frame_of(&own, &theirs) || own.iter().any(|cell| theirs.binary_search(cell).is_err()) {
+                    return Some(Val::Empty);
+                }
+                let outside = |m: [i32; 4], step: &(i32, i32)| moved(m, step.0, step.1).is_none_or(|next| theirs.binary_search(&next).is_err());
+                Val::of_table(Table::new(1, own.iter().copied().filter(|cell| STEPS[..4].iter().any(|step| outside(margins_of(*cell), step))).collect()))
+            }
+            PartStep::NeighborsIn { b } => {
+                let other = flat(children[1])?;
+                let (own, theirs) = (sorted_values(t, 0), sorted_values(&other, *b));
+                if own.is_empty() || !one_frame_of(&own, &theirs) {
+                    return Some(Val::Empty);
+                }
+                let mut out = Vec::new();
+                for cell in &own {
+                    let m = margins_of(*cell);
+                    for (dr, dc) in STEPS {
+                        if let Some(next) = moved(m, dr, dc).filter(|next| theirs.binary_search(next).is_ok()) {
+                            out.push(*cell);
+                            out.push(next);
+                        }
+                    }
+                }
+                Val::of_table(Table::distinct(2, out))
+            }
+            PartStep::InsideBoxWord { a, b, some } => {
+                let other = flat(children[1])?;
+                let (own, boxes) = (sorted_values(t, *a), sorted_values(&other, *b));
+                if !own_cells_fit(&own, &boxes) || if *some { boxes.len() < 2 || own.is_empty() } else { boxes.len() != 1 } {
+                    return Some(Val::Empty);
+                }
+                let spans: Vec<[i32; 4]> = boxes.iter().map(|held| margins_of(*held)).collect();
+                Val::of_table(Table::unit(own.iter().all(|cell| {
+                    let m = margins_of(*cell);
+                    spans.iter().any(|span| (0..4).all(|at| m[at] >= span[at]))
+                })))
+            }
+            PartStep::OnBorder { b } => {
+                let other = flat(children[1])?;
+                let (own, boxes) = (sorted_values(t, 0), sorted_values(&other, *b));
+                let [held] = boxes[..] else { return Some(Val::Empty) };
+                if own.is_empty() || !own_cells_fit(&own, &boxes) {
+                    return Some(Val::Empty);
+                }
+                let span = margins_of(held);
+                Val::of_table(Table::new(1, own.into_iter().filter(|cell| {
+                    let m = margins_of(*cell);
+                    (0..4).all(|at| m[at] >= span[at]) && (0..4).any(|at| m[at] == span[at])
+                }).collect()))
+            }
+            PartStep::RayMeets { b } => {
+                let other = flat(children[1])?;
+                let theirs = sorted_values(&other, *b);
+                if theirs.is_empty() || !one_frame_of(&sorted_values(t, 0), &theirs) {
+                    return Some(Val::Empty);
+                }
+                let mut out = Vec::new();
+                for row in t.rows() {
+                    let Some(at) = e.dirs.iter().position(|dir| *dir == row[1]) else { continue };
+                    let (dr, dc) = STEPS[at];
+                    let mut m = margins_of(row[0]);
+                    while let Some(next) = moved(m, dr, dc) {
+                        if theirs.binary_search(&next).is_ok() {
+                            out.extend_from_slice(row);
+                            break;
+                        }
+                        m = [m[0] + dr, m[1] - dr, m[2] + dc, m[3] - dc];
+                    }
+                }
+                Val::of_table(Table::new(2, out))
+            }
+            PartStep::TopColorsUnder { p } => {
+                let grid = grid_of(children[1])?;
+                let mut counts: BTreeMap<Cell, u32> = BTreeMap::new();
+                for cell in sorted_values(t, *p) {
+                    if let Some(color) = grid.at.get(&cell) {
+                        *counts.entry(*color).or_insert(0) += 1;
+                    }
+                }
+                let top = counts.values().copied().max().unwrap_or(0);
+                Val::of_table(Table::new(1, counts.into_iter().filter(|held| held.1 == top).map(|held| held.0).collect()))
+            }
+            PartStep::SharesValue { a, b } => {
+                let other = flat(children[1])?;
+                let theirs = sorted_values(&other, *b);
+                Val::of_table(Table::unit(t.rows().any(|row| theirs.binary_search(&row[usize::from(*a)]).is_ok())))
             }
             PartStep::SetWord { a, b, cells, word } => {
                 let other = flat(children[1])?;

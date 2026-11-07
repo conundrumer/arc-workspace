@@ -447,7 +447,7 @@ impl Generated {
         let t_names: Vec<String> = (0..t_types.len()).map(|at| format!("T{at}")).collect();
         let u_names: Vec<String> = (0..u_types.len()).map(|at| format!("T{}", t_types.len() + at)).collect();
         let mut family = Generated::two_tables_with_names(t_types, &t_names, u_types, &u_names, "U", names);
-        family.pair_words(t_keys, u_keys, names);
+        family.pair_words(t_keys, u_keys);
         family
     }
 
@@ -1434,14 +1434,21 @@ impl Generated {
         }
     }
 
-    /// How the table and another stand to each other as words: their columns as sets, their counts, the groups of their cells, and their colors at shared cells.
-    fn pair_words(&mut self, t_keys: &[bool], u_keys: &[bool], names: &NameStore) {
+    /// How the table and another stand to each other as words: their columns as sets, their counts, the groups of their cells, and their colors at shared cells. A column of cells is a Position column, or a Box column whose values are the cells of one frame.
+    fn pair_words(&mut self, t_keys: &[bool], u_keys: &[bool]) {
         use crate::gen_parts::{AgreeRelation, Measure, SetRelation};
-        let before = self.terms.len();
         let u_leaf = self.terms.iter().position(|term| term.flags & READS_SECOND != 0).expect("a second relation") as u32;
         let (own, theirs) = (self.terms[LEAF_TABLE as usize].columns.clone(), self.terms[u_leaf as usize].columns.clone());
         let u_text = self.terms[u_leaf as usize].text.clone();
         let is_number = |ty: &ValueType| matches!(ty, ValueType::Nat | ValueType::Int);
+        let is_cells = |ty: &ValueType| matches!(ty, ValueType::Position | ValueType::Box);
+        let of_types = |columns: &[Column], test: &dyn Fn(&ValueType) -> bool| -> Vec<(u16, String)> {
+            columns.iter().enumerate().filter(|(_, column)| test(&column.ty)).map(|(at, column)| (at as u16, column.name.clone())).collect()
+        };
+        let (own_cells, their_cells) = (of_types(&own, &is_cells), of_types(&theirs, &is_cells));
+        let (own_colors, their_colors) = (of_types(&own, &|ty| *ty == ValueType::Color), of_types(&theirs, &|ty| *ty == ValueType::Color));
+        let their_boxes = of_types(&theirs, &|ty| *ty == ValueType::Box);
+        let own_ways = of_types(&own, &|ty| matches!(ty, ValueType::Dir | ValueType::Dir8 | ValueType::DiagDir));
         let group = |columns: &[Column], flags: &[bool]| -> Vec<u16> {
             (0..columns.len() as u16).filter(|at| matches!(columns[usize::from(*at)].ty, ValueType::Color | ValueType::Ident(_)) || flags.get(usize::from(*at)).copied().unwrap_or(false)).collect()
         };
@@ -1450,25 +1457,31 @@ impl Generated {
             format!("(T*:{})", keys.iter().map(|at| columns[usize::from(*at)].name.as_str()).collect::<Vec<_>>().join(","))
         };
         let words = [(SetRelation::Equal, "equal"), (SetRelation::Subset, "subset"), (SetRelation::Superset, "superset"), (SetRelation::Overlap, "overlap"), (SetRelation::Disjoint, "disjoint")];
+        let cell_words: Vec<(SetRelation, &str)> = words.iter().copied().chain([(SetRelation::Complement, "complement")]).collect();
         for (a, x) in own.iter().enumerate() {
             for (b, y) in theirs.iter().enumerate() {
-                let alike = (x.ty == y.ty && !matches!(x.ty, ValueType::Ident(_) | ValueType::Example)) || (is_number(&x.ty) && is_number(&y.ty));
-                if !alike {
-                    continue;
+                let (a, b) = (a as u16, b as u16);
+                let alike = (x.ty == y.ty && !matches!(x.ty, ValueType::Ident(_) | ValueType::Example | ValueType::Position)) || (is_number(&x.ty) && is_number(&y.ty));
+                if alike {
+                    for (word, name) in words {
+                        self.push_forced(Step::Part(Box::new(PartStep::SetWord { a, b, cells: false, word })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(set-word T {u_text} {} {} {name})", x.name, y.name), RootKind::Holds);
+                    }
                 }
-                let cells = x.ty == ValueType::Position;
-                for (word, name) in words {
-                    self.push_forced(Step::Part(Box::new(PartStep::SetWord { a: a as u16, b: b as u16, cells, word })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(set-word T {u_text} {} {} {name})", x.name, y.name), RootKind::Holds);
-                }
-                if cells {
-                    self.push_forced(Step::Part(Box::new(PartStep::SetWord { a: a as u16, b: b as u16, cells, word: SetRelation::Complement })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(set-word T {u_text} {} {} complement)", x.name, y.name), RootKind::Holds);
+                if is_cells(&x.ty) && is_cells(&y.ty) {
+                    for (word, name) in &cell_words {
+                        self.push_forced(Step::Part(Box::new(PartStep::SetWord { a, b, cells: true, word: *word })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(cell-word T {u_text} {} {} {name})", x.name, y.name), RootKind::Holds);
+                    }
+                    // A Position column against a Position column already has these.
+                    if x.ty == ValueType::Box || y.ty == ValueType::Box {
+                        for (turned, head) in [(false, "same-shape"), (true, "same-shape-d4")] {
+                            self.push_forced(Step::Part(Box::new(PartStep::SameShape { keys: Box::new([]), a, others: Box::new([]), b, turned })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("({head} T {u_text} () {} () {})", x.name, y.name), RootKind::Rows);
+                        }
+                    }
                 }
             }
         }
         let compare = [(-1i8, "<"), (0, "="), (1, ">")];
         let mut counts: Vec<(Measure, Measure, String)> = vec![(Measure::Rows, Measure::Rows, "rows rows".to_string())];
-        let positions = |columns: &[Column]| -> Vec<(u16, String)> { columns.iter().enumerate().filter(|(_, column)| column.ty == ValueType::Position).map(|(at, column)| (at as u16, column.name.clone())).collect() };
-        let (own_cells, their_cells) = (positions(&own), positions(&theirs));
         for (a, x) in &own_cells {
             for (b, y) in &their_cells {
                 counts.push((Measure::Values(*a), Measure::Values(*b), format!("(cells {x}) (cells {y})")));
@@ -1500,19 +1513,47 @@ impl Generated {
                 }
             }
         }
-        let colors = |columns: &[Column]| -> Vec<(u16, String)> { columns.iter().enumerate().filter(|(_, column)| column.ty == ValueType::Color).map(|(at, column)| (at as u16, column.name.clone())).collect() };
         for (p, n) in &own_cells {
-            for (x, c) in colors(&own) {
+            for (x, c) in &own_colors {
                 for (q, m) in &their_cells {
-                    for (y, d) in colors(&theirs) {
+                    for (y, d) in &their_colors {
                         for (word, name) in [(AgreeRelation::EveryOne, "every"), (AgreeRelation::None, "none"), (AgreeRelation::Some, "some")] {
-                            self.push_forced(Step::Part(Box::new(PartStep::AgreeWord { p: *p, x, q: *q, y, word })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(agree-word T {u_text} {n} {c} {m} {d} {name})"), RootKind::Holds);
+                            self.push_forced(Step::Part(Box::new(PartStep::AgreeWord { p: *p, x: *x, q: *q, y: *y, word })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("(agree-word T {u_text} {n} {c} {m} {d} {name})"), RootKind::Holds);
                         }
                     }
                 }
             }
         }
-        // The cells a table derives from the other's, as sets against its own cells.
+        let own_type = |at: u16| own[usize::from(at)].ty.clone();
+        for (a, x) in &own_cells {
+            let own_text = format!("(project T {x})");
+            let found = self.terms.iter().rposition(|term| term.text == own_text).map(|at| at as u32);
+            let Some(values) = found.or_else(|| self.push_forced(Step::Project { columns: vec![*a].into_boxed_slice() }, LEAF_TABLE, NO_TERM, vec![own[usize::from(*a)].clone()], 1, own_text.clone(), RootKind::Rows)) else { continue };
+            let own_column = self.terms[values as usize].columns.clone();
+            for (b, y) in &their_cells {
+                self.push_forced(Step::Part(Box::new(PartStep::LeastDistance { a: *a, b: *b })), LEAF_TABLE, u_leaf, vec![Column { name: "K".to_string(), ty: ValueType::Nat, source: 0 }], 1, format!("(least-distance T {u_text} {x} {y})"), RootKind::Number);
+                self.push_forced(Step::Part(Box::new(PartStep::OnBoundary { b: *b })), values, u_leaf, own_column.clone(), 2, format!("(on-boundary {own_text} {u_text} {y})"), RootKind::Share);
+                let mut neighbor = own_column.clone();
+                neighbor.push(Column { name: "Q".to_string(), ty: own_type(*a), source: 0 });
+                self.push_forced(Step::Part(Box::new(PartStep::NeighborsIn { b: *b })), values, u_leaf, neighbor, 2, format!("(neighbors-in {own_text} {u_text} {y})"), RootKind::Share);
+            }
+            for (b, y) in &their_boxes {
+                for (some, head) in [(false, "inside-the-box"), (true, "inside-some-box")] {
+                    self.push_forced(Step::Part(Box::new(PartStep::InsideBoxWord { a: *a, b: *b, some })), LEAF_TABLE, u_leaf, Vec::new(), 1, format!("({head} T {u_text} {x} {y})"), RootKind::Holds);
+                }
+                self.push_forced(Step::Part(Box::new(PartStep::OnBorder { b: *b })), values, u_leaf, own_column.clone(), 2, format!("(on-border {own_text} {u_text} {y})"), RootKind::Share);
+            }
+            for (w, d) in &own_ways {
+                let pair_text = format!("(project T {x} {d})");
+                let pair_columns = vec![own[usize::from(*a)].clone(), own[usize::from(*w)].clone()];
+                let found = self.terms.iter().rposition(|term| term.text == pair_text).map(|at| at as u32);
+                let Some(pairs) = found.or_else(|| self.push_forced(Step::Project { columns: vec![*a, *w].into_boxed_slice() }, LEAF_TABLE, NO_TERM, pair_columns.clone(), 1, pair_text.clone(), RootKind::Rows)) else { continue };
+                for (b, y) in &their_cells {
+                    self.push_forced(Step::Part(Box::new(PartStep::RayMeets { b: *b })), pairs, u_leaf, pair_columns.clone(), 2, format!("(ray-meets {pair_text} {u_text} {y})"), RootKind::Share);
+                }
+            }
+        }
+        // The cells a table derives from the other's, as sets against its own cells, and the input's colors under them, as sets against its own colors.
         for (b, y) in &their_cells {
             let name = unique("P", &theirs);
             let parts = [("box-cells", PartStep::BoxCells { p: *b, outside: false }), ("hole-cells", PartStep::HoleCells { p: *b })];
@@ -1521,23 +1562,25 @@ impl Generated {
                 let found = self.terms.iter().rposition(|term| term.text == derived_text).map(|at| at as u32);
                 let Some(derived) = found.or_else(|| self.push_forced(Step::Part(Box::new(part)), u_leaf, NO_TERM, vec![Column { name: name.clone(), ty: ValueType::Position, source: 0 }], 2, derived_text.clone(), RootKind::Rows)) else { continue };
                 for (a, x) in &own_cells {
-                    for (relation, relation_name) in words.iter().copied().chain([(SetRelation::Complement, "complement")]) {
-                        self.push_forced(Step::Part(Box::new(PartStep::SetWord { a: *a, b: 0, cells: true, word: relation })), LEAF_TABLE, derived, Vec::new(), 2, format!("(set-word T {derived_text} {x} {name} {relation_name})"), RootKind::Holds);
+                    for (relation, relation_name) in &cell_words {
+                        self.push_forced(Step::Part(Box::new(PartStep::SetWord { a: *a, b: 0, cells: true, word: *relation })), LEAF_TABLE, derived, Vec::new(), 2, format!("(cell-word T {derived_text} {x} {name} {relation_name})"), RootKind::Holds);
                     }
                 }
             }
-            // The input's colors under the other's cells, as a set against the table's colors.
-            let under_text = format!("(colors-under {u_text} {y})");
             let input_leaf = self.terms.iter().position(|term| term.text == "input").expect("the input") as u32;
+            let color = || vec![Column { name: "Col".to_string(), ty: ValueType::Color, source: 0 }];
+            let under_text = format!("(colors-under {u_text} {y})");
             let found = self.terms.iter().rposition(|term| term.text == under_text).map(|at| at as u32);
-            let Some(under) = found.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::ColorsUnder { p: *b })), u_leaf, input_leaf, vec![Column { name: "Col".to_string(), ty: ValueType::Color, source: 0 }], 2, under_text.clone(), RootKind::Rows)) else { continue };
-            for (a, x) in colors(&own) {
+            let Some(under) = found.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::ColorsUnder { p: *b })), u_leaf, input_leaf, color(), 2, under_text.clone(), RootKind::Rows)) else { continue };
+            let top_text = format!("(top-colors-under {u_text} {y})");
+            let Some(top) = self.push_forced(Step::Part(Box::new(PartStep::TopColorsUnder { p: *b })), u_leaf, input_leaf, color(), 2, top_text.clone(), RootKind::Rows) else { continue };
+            for (a, x) in &own_colors {
                 for (relation, relation_name) in words {
-                    self.push_forced(Step::Part(Box::new(PartStep::SetWord { a, b: 0, cells: false, word: relation })), LEAF_TABLE, under, Vec::new(), 2, format!("(set-word T {under_text} {x} Col {relation_name})"), RootKind::Holds);
+                    self.push_forced(Step::Part(Box::new(PartStep::SetWord { a: *a, b: 0, cells: false, word: relation })), LEAF_TABLE, under, Vec::new(), 2, format!("(set-word T {under_text} {x} Col {relation_name})"), RootKind::Holds);
                 }
+                self.push_forced(Step::Part(Box::new(PartStep::SharesValue { a: *a, b: 0 })), LEAF_TABLE, top, Vec::new(), 2, format!("(shares-value T {top_text} {x} Col)"), RootKind::Holds);
             }
         }
-        let _ = (before, names);
     }
 
     /// A table's cells against the cells derived from another relation's: the rest of their frame, their box, the frame outside it, and what they enclose.
