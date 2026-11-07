@@ -130,7 +130,7 @@ pub(super) fn signature(names: &Names, resolution: &Resolution, relation: &Relat
     match resolution {
         Resolution::Node(node) => {
             out.write(&[0]);
-            let content = names.node_content(node.0 as usize).and_then(Option::as_ref).expect("the content of each node");
+            let content = names.node_content(node.0 as usize).flatten().expect("the content of each node");
             out.write(&content.hash.0.to_le_bytes());
             write_output_path(&mut out, relation);
         }

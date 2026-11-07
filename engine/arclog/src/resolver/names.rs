@@ -237,11 +237,13 @@ impl Names {
         self.earlier.as_ref().map_or(0, |earlier| earlier.graph.nodes.len())
     }
 
-    /// The content of `node`, `Some(None)` where it is not yet written.
-    pub(super) fn node_content(&self, node: usize) -> Option<&Option<CanonicalForm>> {
+    /// The content of `node`, `Some(None)` where it is not yet written. A
+    /// node of the earlier layers that left its content unwritten gets it
+    /// here ([`super::ResolvedProgram::node_content`]).
+    pub(super) fn node_content(&self, node: usize) -> Option<Option<&CanonicalForm>> {
         match &self.earlier {
-            Some(earlier) if node < self.first_node() => earlier.names.node_content(node),
-            _ => self.contents.get(node - self.first_node()),
+            Some(earlier) if node < self.first_node() => earlier.written_content(node),
+            _ => self.contents.get(node - self.first_node()).map(Option::as_ref),
         }
     }
 

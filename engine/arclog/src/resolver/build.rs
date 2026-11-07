@@ -252,6 +252,8 @@ impl<'a> Builder<'a> {
 /// `None` where the last form is one this resolution does not handle. A
 /// `DEMONSTRATED` last form is handled where `demonstrated` is true.
 ///
+/// `earlier` may be a layered resolution, up to [`super::MAX_LAYERS`] layers.
+///
 /// The builder holds the entries of the last form's nodes alone, and finds
 /// a node, a side or an Example column of `earlier` by a lookup there; the
 /// result shares the graph of `earlier` ([`ResolvedProgram`] says what each
@@ -261,7 +263,7 @@ impl<'a> Builder<'a> {
 fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry, demonstrated: bool, signed: bool, proposers: bool) -> Option<ResolvedProgram> {
     let scope = SolverScope::default();
     let (last, complete) = program.value().forms.split_last()?;
-    if earlier.concept().is_some() || earlier.names.earlier.is_some() || earlier.program.value().forms.len() != complete.len() {
+    if earlier.concept().is_some() || earlier.layers() >= super::MAX_LAYERS || earlier.program.value().forms.len() != complete.len() {
         return None;
     }
     match last {

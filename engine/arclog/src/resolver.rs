@@ -388,14 +388,18 @@ impl ResolvedContent {
 /// program's last form over the layer of the forms before it, which is the
 /// `earlier` resolution that `resolve_last` took. Each lookup that names a
 /// path or a node of the forms before the last falls through to `earlier`.
-/// The layers hold:
-/// - `earlier`: every entry of its forms, and nothing of the last form. A
-///   resolution that no `resolve_last` made holds every entry of its program
-///   and is the lowest layer.
-/// - the layered resolution itself: the entries of the last form alone, that
-///   is, those keyed by a path in the last form or by a node that the last
-///   form gives, and, in the graph, a reference to the graph of `earlier`.
-///   Its size and its build cost follow the last form, not the program.
+/// `earlier` may be a layered resolution too, so a chain of layers stands over
+/// one lowest layer. The layers hold:
+/// - the lowest layer: every entry of the forms it resolves, as a resolution
+///   that no `resolve_last` made holds every entry of its program.
+/// - each layer over it: the entries of its last form alone, that is, those
+///   keyed by a path in that form or by a node that the form gives, and, in
+///   the graph, a reference to the graph below. Its size and its build cost
+///   follow its last form, not the program.
+///
+/// A layer leaves the content of a node that no read of its last form
+/// resolves to unwritten, and writes it on the first read of the node, from
+/// any layer ([`ResolvedProgram::node_content`]).
 ///
 /// The graph is the one list of every node of the program, as
 /// [`DependencyGraph`] says, whichever layer holds a node.
@@ -536,6 +540,15 @@ impl ResolvedProgram {
         let earlier = self.names.earlier.as_deref()?;
         let top = path.0.first()?;
         ((top.0 as usize) < earlier.program.value().forms.len()).then_some(earlier)
+    }
+
+    /// The count of the layers over the lowest one: 0 for a resolution that no
+    /// `resolve_last` made, and one more than `earlier`'s for a layered
+    /// resolution. A lookup that the layers do not hold falls through one
+    /// layer at a time, so [`resolve_last`] makes a full resolution once the
+    /// count of `earlier` reaches [`MAX_LAYERS`].
+    pub fn layers(&self) -> usize {
+        self.names.earlier.as_deref().map_or(0, |earlier| 1 + earlier.layers())
     }
 
     /// The resolution of the forms before the last, where `node` is one of
@@ -894,15 +907,26 @@ impl ResolvedProgram {
     /// The resolved content of the node `node` of the dependency graph, or
     /// `None` where the program holds none for it.
     pub fn node_content(&self, node: GraphNodeIndex) -> Option<ResolvedContent> {
-        if let Some(earlier) = self.earlier_node(node) {
-            return earlier.node_content(node);
-        }
-        let slot = self.own_index(node);
-        let form = match self.names.contents.get(slot)? {
-            Some(form) => form.clone(),
-            None => self.names.unwritten.get(slot)?.as_ref()?.get_or_init(|| self.unwritten_content(slot)).clone(),
-        };
+        let form = self.written_content(node.0 as usize)??.clone();
         Some(ResolvedContent { form })
+    }
+
+    /// The content of `node`, as the layer of `node` holds it: `None` where
+    /// the program has no node `node`, `Some(None)` where the node has no
+    /// content (a node on a cycle), and otherwise its content, which a layer
+    /// that left it unwritten writes on this first read. A write of a
+    /// content reads the content of each node it reads through this, so the
+    /// nodes of a layer that no read of its last form resolves to, whose
+    /// content a later layer's form may read, have their content then.
+    fn written_content(&self, node: usize) -> Option<Option<&crate::program::canonical::CanonicalForm>> {
+        if let Some(earlier) = self.earlier_node(GraphNodeIndex(node as u32)) {
+            return earlier.written_content(node);
+        }
+        let slot = node.checked_sub(self.names.first_node())?;
+        match self.names.contents.get(slot)? {
+            Some(form) => Some(Some(form)),
+            None => Some(self.names.unwritten.get(slot)?.as_ref().map(|cell| cell.get_or_init(|| self.unwritten_content(slot)))),
+        }
     }
 
     /// The content of the node of the entry `slot` of this resolution's
@@ -1064,6 +1088,11 @@ pub fn rigid_read_name(program: &Node<Program>, read: &str, registry: &Registry)
     crate::program::rigid_output_name(rigid, &path, |part| positions[part]).ok_or_else(unread)
 }
 
+/// The most layers over the lowest that a chain of layered resolutions holds.
+/// A lookup of an entry in a lower layer takes one step for each layer above
+/// it, so the chain is cut at this count by a full resolution.
+pub const MAX_LAYERS: usize = 16;
+
 /// The resolution of `program`, whose forms before its last are the forms of
 /// `earlier`'s program, by the passes of [`resolve`] over the last form
 /// alone: the result holds the entries of the last form and a reference to
@@ -1073,10 +1102,20 @@ pub fn rigid_read_name(program: &Node<Program>, read: &str, registry: &Registry)
 /// parameter that no earlier read names is resolved over `earlier` resolved
 /// again with that column kept, once for each such set of columns
 /// ([`ResolvedProgram::widened`]), and that resolution of the whole program
-/// is the one step whose time follows the program. Where the last form is no clause, `INIT`,
-/// `CHOOSE` or `RIGID_DET` form that declares a relation no earlier form
-/// declares, or `earlier` is itself a layered resolution or was resolved with a
-/// concept program, the result is [`resolve`]'s on `program`.
+/// is the one step whose time follows the program.
+///
+/// `earlier` may be a layered resolution, so each form of a program can be
+/// resolved from the resolution of the forms before it. A layer holds what
+/// the call that made it was asked to hold (a prefix resolution holds no
+/// signature of a read, as [`resolve_prefix`] says), so a lookup of an entry
+/// that a layer left out finds none, as it does for the last form of that
+/// layer's resolution.
+///
+/// Where the last form is no clause, `INIT`, `CHOOSE` or `RIGID_DET` form that
+/// declares a relation no earlier form declares, or `earlier` was resolved with
+/// a concept program or already stands on [`MAX_LAYERS`] layers, the result
+/// is [`resolve`]'s on `program`, which holds one layer. So the chain stays
+/// short, and a full resolution comes once for each `MAX_LAYERS` forms.
 pub fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
     let _timed = crate::stats::span(crate::stats::Phase::ResolveLast);
     crate::stats::units(crate::stats::Phase::ResolveLast, earlier.graph.nodes.len());
