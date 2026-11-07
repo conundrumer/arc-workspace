@@ -412,16 +412,22 @@ impl ProductCells<'_, '_> {
     /// Writes the rows from `level` down. Each part's rows stand in the order of
     /// their cells, so the rows with one value at a level stand next to each other.
     fn write(&mut self, level: usize) -> Result<(), ReachedBound> {
-        let Some(&ProductLevel { part, in_part, in_row, len, last }) = self.levels.get(level) else {
-            if self.written % (1 << 16) == 0 {
-                self.materializer.check()?;
-            }
-            self.written += 1;
-            self.cells.extend_from_slice(&self.row);
-            return Ok(());
-        };
+        let ProductLevel { part, in_part, in_row, len, last } = self.levels[level];
         let (first, end) = self.ranges[part];
         let width = self.parts[part].width;
+        if level + 1 == self.levels.len() {
+            let cells = &self.parts[part].cells;
+            let above = &self.row[..in_row];
+            for at in first..end {
+                if self.written % (1 << 16) == 0 {
+                    self.materializer.check()?;
+                }
+                self.written += 1;
+                self.cells.extend_from_slice(above);
+                self.cells.extend_from_slice(&cells[at * width + in_part..at * width + in_part + len]);
+            }
+            return Ok(());
+        }
         let mut at = first;
         while at < end {
             let start = at * width + in_part;
