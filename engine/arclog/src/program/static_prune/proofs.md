@@ -229,3 +229,20 @@ set. Native whole-program re-resolution/checking, original declared interfaces
 and editor provenance are retained. Therefore deletion cannot drop the only
 binder, change a key header, or silently rebind a later use. This extends the
 existing valid-class normalizer; it is not a second text-cleanup pass.
+
+## Two conjuncts of one conjunction
+
+These rules compare the last conjunct of a flat decoder body with one earlier conjunct of the same body. A row of the body satisfies both. A site matches another where both stand at one column and hold the same label or `0`; `*` and `^` make their label, and a bare label joins it. Only sites of one label take part, and a site on a record's fields matches nothing.
+
+- `atom.implied`: an atom T that makes no label, and an earlier atom A of the same relation that matches each site of T. A row that A matches is a row of the relation with T's values at T's columns, so T holds wherever A holds, and removing T leaves the body's rows. T binds nothing, and A keeps T's relation read, its definedness and, for `ex_output`, the certificate in the same body, as in `atom.repeated`.
+- `not.contradicted`: a positive atom P and a `NOT` N of the same relation, in either order, where P matches each site of N. The row that P matches is one that N refuses, so the body has no row. A relation under `NOT` is derived in each case that reads it, so the body is empty, not undefined.
+- `not.implied`: two `NOT`s of the same relation, the later N2 matching each site of the earlier N1. A row that N2 would refuse matches N1, which refuses it already, so N2 removes no row that N1 leaves.
+- `comparison.implied` and `comparison.contradicted`: two comparisons of the same two operands, in either operand order. Each keeps a set of the outcomes less, equal and greater of one operand against the other, and the two together keep the intersection. An empty intersection holds no row. An intersection equal to the earlier comparison's set leaves the later one nothing to remove.
+
+The decoder also refuses a conjunct that makes an earlier one redundant, by `makes_earlier_redundant`, so that a query that holds a redundant conjunct is refused in each order of its conjuncts, and its legality does not depend on that order. Each such query has a twin with one conjunct fewer, which the same rules admit:
+
+- `atom.implies_earlier`: the later atom matches each site of an earlier atom that makes no label, which the argument of `atom.implied` removes.
+- `not.implies_earlier`: the later `NOT` matches each site of an earlier one, which the argument of `not.implied` removes.
+- `comparison.implies_earlier` and `comparison.merges`: the two comparisons keep fewer outcomes than the earlier one, and more than none. Each set of one or two outcomes is the set of one operator, so the pair equals one comparison of the two operands.
+
+An earlier conjunct that makes a label is never the redundant one. The earlier atom of `atom.implies_earlier` makes no label, and a comparison that makes a label is an equality, whose one outcome a later comparison of its operands either keeps, which makes the later one valid, or drops, which leaves no row.

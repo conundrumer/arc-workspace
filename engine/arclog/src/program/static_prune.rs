@@ -456,12 +456,173 @@ pub fn classify_prefix(
             }
         }
     }
-    classify(last, &|id| bound.get(&id).cloned()).or_else(|| {
-        let Conjunct::Atom(last) = last else { return None; };
-        earlier.iter().find_map(|prior| match prior {
-            Conjunct::Atom(prior) => repeated_atom(prior.value(), last.value()),
+    classify(last, &|id| bound.get(&id).cloned())
+        .or_else(|| {
+            let Conjunct::Atom(last) = last else { return None; };
+            earlier.iter().find_map(|prior| match prior {
+                Conjunct::Atom(prior) => repeated_atom(prior.value(), last.value()),
+                _ => None,
+            })
+        })
+        .or_else(|| against_earlier(last, earlier))
+}
+
+/// The value of a site that holds one label: the label, a fresh one as the
+/// label it makes, or `0`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Held {
+    Label(LabelId),
+    Zero,
+}
+
+/// Each site of `atom` as its column, its value and whether it makes its
+/// label, as `*` and `^` do, where each site holds one label; None where a
+/// site holds a record's fields.
+fn held(atom: &Atom) -> Option<Vec<(&ColumnName, Held, bool)>> {
+    atom.sites
+        .iter()
+        .map(|site| match &site.value.args[..] {
+            [SiteArg::Label(LabelUse::Fresh(id) | LabelUse::Key(id))] => Some((&site.column, Held::Label(*id), true)),
+            [SiteArg::Label(LabelUse::Join(id))] => Some((&site.column, Held::Label(*id), false)),
+            [SiteArg::Label(LabelUse::Zero)] => Some((&site.column, Held::Zero, false)),
             _ => None,
         })
+        .collect()
+}
+
+/// Whether each row that `wider` matches, in one conjunction with `test`,
+/// matches `test` too: the two read one relation, `test` makes no label, and
+/// each site of `test` stands at a column where `wider` holds the same value.
+fn matched_by(test: &Atom, wider: &Atom) -> bool {
+    if test.relation != wider.relation {
+        return false;
+    }
+    let (Some(test), Some(wider)) = (held(test), held(wider)) else { return false };
+    test.iter().all(|(column, value, fresh)| !fresh && wider.iter().any(|(c, v, _)| c == column && v == value))
+}
+
+/// The outcomes of a comparison's first operand against its second that
+/// `op` keeps: less (1), equal (2) and greater (4).
+fn outcomes(op: ConstraintOp) -> u8 {
+    match op {
+        ConstraintOp::Lt => 1,
+        ConstraintOp::Eq => 2,
+        ConstraintOp::Gt => 4,
+        ConstraintOp::Le => 3,
+        ConstraintOp::Ge => 6,
+        ConstraintOp::Ne => 5,
+    }
+}
+
+/// The outcomes that `earlier` and `later` keep, each of `earlier`'s first
+/// operand against its second, where the two compare the same two operands.
+fn pair_outcomes(earlier: &Constraint, later: &Constraint) -> Option<(u8, u8)> {
+    let operands = |c: &Constraint| {
+        let second = match c.second {
+            Operand::Label(label) => Held::Label(label.label),
+            Operand::Zero => Held::Zero,
+        };
+        (Held::Label(c.first.label), second)
+    };
+    let (a, b) = (operands(earlier), operands(later));
+    let swapped = |set: u8| (set & 2) | ((set & 1) << 2) | ((set & 4) >> 2);
+    if a == b {
+        Some((outcomes(earlier.op), outcomes(later.op)))
+    } else if a == (b.1, b.0) {
+        Some((outcomes(earlier.op), swapped(outcomes(later.op))))
+    } else {
+        None
+    }
+}
+
+/// The verdict on `last` that one earlier conjunct of its conjunction gives:
+/// an atom that an earlier atom of its relation matches at each of its
+/// sites, which holds wherever the earlier one holds; a positive atom and a
+/// `NOT` of one relation where the positive one matches the negated one's
+/// sites, which no row satisfies; a `NOT` whose sites an earlier `NOT` of its
+/// relation matches, which refuses no row the earlier one leaves; and a
+/// comparison of the two operands an earlier comparison compares, which the
+/// earlier one implies or contradicts.
+fn against_earlier(last: &Conjunct, earlier: &[Conjunct]) -> Option<Verdict> {
+    match last {
+        Conjunct::Atom(atom) => earlier.iter().find_map(|prior| match prior {
+            Conjunct::Atom(prior) if matched_by(atom.value(), prior.value()) => Some(verdict(Class::Valid, "atom.implied")),
+            Conjunct::Not(Negated::Atom(prior)) if matched_by(prior.value(), atom.value()) => {
+                Some(verdict(Class::Unsatisfiable, "not.contradicted"))
+            }
+            _ => None,
+        }),
+        Conjunct::Not(Negated::Atom(atom)) => earlier.iter().find_map(|prior| match prior {
+            Conjunct::Atom(prior) if matched_by(atom.value(), prior.value()) => Some(verdict(Class::Unsatisfiable, "not.contradicted")),
+            Conjunct::Not(Negated::Atom(prior)) if matched_by(prior.value(), atom.value()) => Some(verdict(Class::Valid, "not.implied")),
+            _ => None,
+        }),
+        Conjunct::Constraint(constraint) => earlier.iter().find_map(|prior| {
+            let Conjunct::Constraint(prior) = prior else { return None };
+            match pair_outcomes(prior, constraint)? {
+                (first, second) if first & second == 0 => Some(verdict(Class::Unsatisfiable, "comparison.contradicted")),
+                (first, second) if first & !second == 0 => Some(verdict(Class::Valid, "comparison.implied")),
+                _ => None,
+            }
+        }),
+        _ => None,
+    }
+}
+
+/// The rule by which the last conjunct of a flat decoder body makes an
+/// earlier conjunct of it redundant, where it does: an atom that matches
+/// each site of an earlier atom of its relation that makes no label; a `NOT`
+/// that refuses each row an earlier `NOT` of its relation refuses; and a
+/// comparison of two operands that an earlier comparison compares, where
+/// the two keep fewer outcomes than the earlier one. The conjunction then
+/// equals one without the earlier conjunct, or with one comparison of the
+/// two operands, so a query that holds both has a twin that holds one, and
+/// refusing it in this order as in the other leaves its legality to the
+/// query, not to the order of its conjuncts. An earlier conjunct that makes
+/// a label is never the redundant one here: an atom that makes a label
+/// matches no later atom's sites, and a comparison that makes one keeps the
+/// outcome equal alone, which a later comparison of its operands keeps or
+/// contradicts.
+pub fn makes_earlier_redundant(body: &Body) -> Option<&'static str> {
+    let (last, earlier) = body.conjuncts.split_last()?;
+    match last {
+        Conjunct::Atom(atom) => earlier.iter().find_map(|prior| match prior {
+            Conjunct::Atom(prior) if matched_by(prior.value(), atom.value()) => Some("atom.implies_earlier"),
+            _ => None,
+        }),
+        Conjunct::Not(Negated::Atom(atom)) => earlier.iter().find_map(|prior| match prior {
+            Conjunct::Not(Negated::Atom(prior)) if matched_by(atom.value(), prior.value()) => Some("not.implies_earlier"),
+            _ => None,
+        }),
+        Conjunct::Constraint(constraint) => earlier.iter().find_map(|prior| {
+            let Conjunct::Constraint(prior) = prior else { return None };
+            let (first, second) = pair_outcomes(prior, constraint)?;
+            if first & second == 0 || first & !second == 0 {
+                None
+            } else if second & !first == 0 {
+                Some("comparison.implies_earlier")
+            } else {
+                Some("comparison.merges")
+            }
+        }),
+        _ => None,
+    }
+}
+
+/// The refusal message of the static prune's rule `rule`, for the rules whose
+/// refusal names its rule.
+pub fn rule_message(rule: &str) -> Option<&'static str> {
+    Some(match rule {
+        "atom.implied" => "static prune: an earlier atom of the relation matches each site of the completed atom",
+        "not.contradicted" => "static prune: a positive atom matches each site of a `NOT` of its relation",
+        "not.implied" => "static prune: an earlier `NOT` of the relation refuses each row the completed `NOT` refuses",
+        "comparison.implied" => "static prune: an earlier comparison of the two operands implies the completed one",
+        "comparison.contradicted" => "static prune: an earlier comparison of the two operands contradicts the completed one",
+        "atom.implies_earlier" => "static prune: the completed atom matches each site of an earlier atom of its relation that makes no label",
+        "not.implies_earlier" => "static prune: the completed `NOT` refuses each row an earlier `NOT` of its relation refuses",
+        "comparison.implies_earlier" => "static prune: the completed comparison implies an earlier comparison of its two operands",
+        "comparison.merges" => "static prune: two comparisons of the same two operands are one comparison",
+        _ => return None,
     })
 }
 
@@ -581,3 +742,4 @@ mod review_regressions {
         assert_eq!(classify(&a, &|_| None).unwrap().class, Class::Constant);
     }
 }
+

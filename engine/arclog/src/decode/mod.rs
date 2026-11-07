@@ -857,7 +857,17 @@ impl<'a> Decoder<'a> {
         let type_of = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
         for index in prior..count {
             let prefix = crate::program::Body { conjuncts: body.conjuncts[..=index].into() };
-            let Some(found) = crate::program::static_prune::classify_prefix(&prefix, &type_of) else { continue };
+            let Some(found) = crate::program::static_prune::classify_prefix(&prefix, &type_of) else {
+                if let Some(rule) = crate::program::static_prune::makes_earlier_redundant(&prefix) {
+                    return Err(Refusal::Grammar(crate::program::static_prune::rule_message(rule).expect("a message of each rule")));
+                }
+                continue;
+            };
+            if let (Some(message), crate::program::static_prune::Class::Unsatisfiable | crate::program::static_prune::Class::Valid) =
+                (crate::program::static_prune::rule_message(found.rule), found.class)
+            {
+                return Err(Refusal::Grammar(message));
+            }
             match found.class {
                 crate::program::static_prune::Class::Unsatisfiable => return Err(Refusal::Grammar("static prune: no row satisfies the completed atom")),
                 // A membership test that an earlier atom's column already implies has a twin that the decoder takes: the
