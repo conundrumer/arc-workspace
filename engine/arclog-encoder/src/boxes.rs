@@ -39,6 +39,12 @@ pub struct Boxes {
     sketches: Mutex<(usize, FastMap<Box<[u16]>, Option<Arc<Table>>>)>,
 }
 
+impl Drop for Boxes {
+    fn drop(&mut self) {
+        crate::native::lazy_dropped(self.written.get());
+    }
+}
+
 impl std::fmt::Debug for Boxes {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(out, "Boxes {{ relation rows: {}, box column: {}, rows: {} }}", self.table.len, self.at, self.rows)
@@ -112,7 +118,11 @@ impl Boxes {
 
     /// The rows of `inside` written out, or no value where they pass `CELL_CAP` cells.
     pub fn written(&self) -> Val {
-        let held = self.written.get_or_init(|| self.write());
+        let held = self.written.get_or_init(|| {
+            let value = self.write();
+            crate::native::lazy_wrote(&value);
+            value
+        });
         if matches!(held, Val::None) {
             crate::bounds::mark(crate::bounds::Bound::InsideCells);
         }

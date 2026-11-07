@@ -545,6 +545,8 @@ pub struct Evaluator<'a> {
     distinct_counts: FastMap<(u128, u64), u64>,
     /// How many rows of a table hold each key, at some places.
     histograms: FastMap<(u128, u64), Arc<Histogram>>,
+    /// The cells that `histograms` holds, which a limit keeps from growing.
+    histogram_cells: usize,
     /// The operators a count answered, and those that built their rows.
     pub counted: u64,
     pub built: u64,
@@ -553,9 +555,42 @@ pub struct Evaluator<'a> {
 /// The most cells of component outputs that an evaluation keeps for a later hit.
 const HELD_OUTPUT_CELLS: usize = 1 << 22;
 
+/// The most cells of histograms that an evaluation keeps for a later hit.
+const HELD_HISTOGRAM_CELLS: usize = 1 << 25;
+
+thread_local! {
+    /// The cells of the written rows that the lazy values made on this thread hold, which no walker's count of held cells sees. A value that drops on another thread takes them off that thread's count, so the count can stand below 0.
+    static LAZY_WRITTEN_CELLS: std::cell::Cell<isize> = const { std::cell::Cell::new(0) };
+}
+
+/// The cells of the written rows that the lazy values of this thread hold now.
+pub fn lazy_written_cells() -> usize {
+    LAZY_WRITTEN_CELLS.with(|held| held.get().max(0) as usize)
+}
+
+/// The cells of the tables of `value`, which a lazy value's written rows hold.
+fn cells_of(value: &Val) -> usize {
+    match value {
+        Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
+        _ => 0,
+    }
+}
+
+/// A lazy value has written its rows, which it holds until it drops.
+pub(crate) fn lazy_wrote(value: &Val) {
+    LAZY_WRITTEN_CELLS.with(|held| held.set(held.get() + cells_of(value) as isize));
+}
+
+/// A lazy value that wrote its rows drops them.
+pub(crate) fn lazy_dropped(written: Option<&Val>) {
+    if let Some(value) = written {
+        LAZY_WRITTEN_CELLS.with(|held| held.set(held.get() - cells_of(value) as isize));
+    }
+}
+
 impl<'a> Evaluator<'a> {
     pub fn new(shapes: &'a [CompShape], instances: &'a [CompInstance], libs: &'a [LibRelation], session: TaskSession) -> Self {
-        Evaluator { shapes, instances, libs, registry: Registry::get(), session, limits: Limits::new(None, Cancellation::default()), lib_rows: FastMap::default(), outputs: FastMap::default(), output_cells: 0, names: FastMap::default(), sums: FastMap::default(), runs: [0; 3], shape_time: FastMap::default(), distinct_counts: FastMap::default(), histograms: FastMap::default(), counted: 0, built: 0 }
+        Evaluator { shapes, instances, libs, registry: Registry::get(), session, limits: Limits::new(None, Cancellation::default()), lib_rows: FastMap::default(), outputs: FastMap::default(), output_cells: 0, names: FastMap::default(), sums: FastMap::default(), runs: [0; 3], shape_time: FastMap::default(), distinct_counts: FastMap::default(), histograms: FastMap::default(), histogram_cells: 0, counted: 0, built: 0 }
     }
 
     /// The value of `step` on `children`.
@@ -768,8 +803,16 @@ impl<'a> Evaluator<'a> {
             keys.dedup();
             keys.len() as u64
         };
+        if self.distinct_counts.len() > 1 << 20 {
+            self.distinct_counts.clear();
+        }
         self.distinct_counts.insert((table.hash(), word), count);
         count
+    }
+
+    /// The cells and the entries that the histograms of this evaluator hold.
+    pub fn histograms_held(&self) -> (usize, usize) {
+        (self.histogram_cells, self.histograms.len())
     }
 
     /// How many rows of `table` hold each key at `places`.
@@ -785,9 +828,12 @@ impl<'a> Evaluator<'a> {
             counts[*id as usize] += 1;
         }
         let counts = Arc::new(Histogram { index, counts });
-        if self.histograms.len() > 1 << 16 {
+        let size = counts.index.cells() + counts.counts.len();
+        if self.histograms.len() > 1 << 16 || self.histogram_cells + size > HELD_HISTOGRAM_CELLS {
             self.histograms.clear();
+            self.histogram_cells = 0;
         }
+        self.histogram_cells += size;
         self.histograms.insert((table.hash(), word), counts.clone());
         counts
     }
@@ -1590,6 +1636,11 @@ impl KeyIndex {
             }
         }
         (index, ids)
+    }
+
+    /// The cells of 32 bits that the slots hold.
+    pub(crate) fn cells(&self) -> usize {
+        self.slots.len() * 2
     }
 
     #[inline]

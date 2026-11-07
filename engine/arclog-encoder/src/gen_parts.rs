@@ -671,6 +671,11 @@ pub fn keys_held() -> usize {
     RIGHT_KEYS.with(|keys| keys.borrow().values().map(|held| held.len()).sum())
 }
 
+/// The cells that the groupings of this thread hold.
+pub fn groups_held() -> usize {
+    GROUPS.with(|groups| groups.borrow().held)
+}
+
 pub fn clear_views() {
     VIEWS.with(|views| views.borrow_mut().clear());
     FLATS.with(|flats| *flats.borrow_mut() = (HashMap::new(), 0));

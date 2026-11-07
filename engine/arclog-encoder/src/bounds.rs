@@ -172,6 +172,23 @@ pub fn tally(group: &'static str, label: String, count: u64) {
     }
 }
 
+/// The greatest value seen under a label of a group, and the value last printed for it.
+static MAXES: OnceLock<Mutex<HashMap<(&'static str, &'static str), (u64, u64)>>> = OnceLock::new();
+
+/// `value` under a label of a group, kept as the greatest seen. It prints a line to the error output when the value is half again the last one printed, so that a run that is stopped leaves its sizes.
+pub fn tally_max(group: &'static str, label: &'static str, value: u64) {
+    if !enabled() {
+        return;
+    }
+    let mut held = MAXES.get_or_init(Default::default).lock().unwrap();
+    let entry = held.entry((group, label)).or_insert((0, 0));
+    entry.0 = entry.0.max(value);
+    if entry.0 > entry.1 + entry.1 / 2 {
+        entry.1 = entry.0;
+        eprintln!("size\t{group}\t{label}\t{value}");
+    }
+}
+
 /// Adds this thread's counts to the totals.
 pub fn flush() {
     if !enabled() {
@@ -206,6 +223,13 @@ pub fn summary() -> String {
         rows.sort();
         for (group, label, count) in rows {
             out.push_str(&format!("bounds\ttally\t{group}\t{label}\t{count}\n"));
+        }
+    }
+    if let Some(maxes) = MAXES.get() {
+        let mut rows: Vec<_> = maxes.lock().unwrap().iter().map(|((group, label), (most, _))| (*group, *label, *most)).collect();
+        rows.sort();
+        for (group, label, most) in rows {
+            out.push_str(&format!("bounds\tmost\t{group}\t{label}\t{most}\n"));
         }
     }
     out.push_str("bounds\thead\tevaluations\tinput had no value\n");

@@ -2526,7 +2526,12 @@ impl<'a> Walker<'a> {
     /// Drops the values and the memos where they pass the budget. A later walk computes again
     /// what it needs.
     fn keep_within_budget(&mut self) {
-        if self.held_cells > self.budget.0 || self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len() > self.budget.1 {
+        self.keep_within_budget_with(0);
+    }
+
+    /// [`Walker::keep_within_budget`], where `extra` cells beyond the held ones count against the budget.
+    fn keep_within_budget_with(&mut self, extra: usize) {
+        if self.held_cells + extra > self.budget.0 || self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len() > self.budget.1 {
             self.values = vec![Val::None, Val::Empty];
             self.value_index = FastMap::default();
             self.memo = FastMap::default();
@@ -2578,6 +2583,20 @@ impl<'a> Walker<'a> {
         self.written_of = FastMap::default();
         // The tables those values held are gone, so an address they had can hold another.
         clear_views();
+    }
+
+    /// The sizes of what the walker and its evaluator hold, for a check of the memory of a walk.
+    fn footprint(&self) {
+        use crate::bounds::tally_max;
+        let (histogram_cells, histograms) = self.eval.histograms_held();
+        tally_max("held", "cells of stored values", self.held_cells as u64);
+        tally_max("held", "cells of written rows held by lazy values", crate::native::lazy_written_cells() as u64);
+        tally_max("held", "cells of histograms", histogram_cells as u64);
+        tally_max("held", "histograms", histograms as u64);
+        tally_max("held", "keys of second relations", crate::gen_parts::keys_held() as u64);
+        tally_max("held", "cells of groupings", crate::gen_parts::groups_held() as u64);
+        tally_max("held", "stored values", self.values.len() as u64);
+        tally_max("held", "memo entries", (self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len()) as u64);
     }
 
     fn value_id(&mut self, value: Val) -> u32 {
@@ -2807,8 +2826,9 @@ impl<'a> Walker<'a> {
         for (read, last) in last_read.iter().enumerate() {
             release[last.unwrap_or(read)].push(read);
         }
-        // The cells held after the last compaction: the next one waits until the walk holds twice as many.
+        // The cells held after the last compaction: the next one waits until the walk holds twice as many. The rows that the lazy values of the walk have written count with the held cells.
         let mut floor = 0usize;
+        let lazy_base = crate::native::lazy_written_cells();
         // Per term, whether the walk's stop left it unevaluated, or it reads a term so left. Such a term has no value, and so has each root over it.
         let mut stopped: Vec<bool> = vec![false; leaves.len()];
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
@@ -2998,9 +3018,13 @@ impl<'a> Walker<'a> {
                 ids[*read] = Vec::new();
             }
             let entries = self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len();
-            if self.held_cells > self.budget.0.max(2 * floor) || entries > self.budget.1 {
+            if crate::bounds::enabled() && at % 32 == 0 {
+                self.footprint();
+            }
+            let lazy = crate::native::lazy_written_cells().saturating_sub(lazy_base);
+            if self.held_cells + lazy > self.budget.0.max(2 * floor) || entries > self.budget.1 {
                 self.compact(&mut ids);
-                floor = self.held_cells;
+                floor = self.held_cells + crate::native::lazy_written_cells().saturating_sub(lazy_base);
             }
         }
         // A root that every one of its bindings leaves out at an instance has no value there.
@@ -3018,7 +3042,7 @@ impl<'a> Walker<'a> {
             }
         }
         // A task keeps a walker per schema, so one large walk leaves nothing behind.
-        self.keep_within_budget();
+        self.keep_within_budget_with(crate::native::lazy_written_cells().saturating_sub(lazy_base));
         crate::bounds::flush();
         table
     }
