@@ -182,6 +182,8 @@ struct SavedFamily {
 
 /// The terms over a table of one schema.
 pub struct Generated {
+    /// The names of the table's key columns, while the family is built.
+    key_columns: Vec<String>,
     step_ids: std::sync::OnceLock<StepIds>,
     terms: Vec<Term>,
     pub first_term: usize,
@@ -311,7 +313,24 @@ impl Generated {
     }
 
     fn with_column_names_of(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore, one_group: bool) -> Generated {
+        Generated::keyed_with_column_names_of(types, &[], column_names, d, names, one_group)
+    }
+
+    /// As [`Generated::of`], where `keys` says which columns are key columns, which group a table's cells beside its Ident and Color columns.
+    pub fn of_keyed(types: &[ValueType], keys: &[bool], d: usize, names: &NameStore) -> Generated {
+        let columns: Vec<String> = (0..types.len()).map(|at| format!("T{at}")).collect();
+        Generated::keyed_with_column_names_of(types, keys, &columns, d, names, false)
+    }
+
+    /// As [`Generated::one_group`], where `keys` says which columns are key columns.
+    pub fn one_group_keyed(types: &[ValueType], keys: &[bool], d: usize, names: &NameStore) -> Generated {
+        let columns: Vec<String> = (0..types.len()).map(|at| format!("T{at}")).collect();
+        Generated::keyed_with_column_names_of(types, keys, &columns, d, names, true)
+    }
+
+    fn keyed_with_column_names_of(types: &[ValueType], keys: &[bool], column_names: &[String], d: usize, names: &NameStore, one_group: bool) -> Generated {
         let mut family = Generated::empty();
+        family.key_columns = column_names.iter().zip(keys).filter(|(_, key)| **key).map(|(name, _)| name.clone()).collect();
         let source_of = |at: usize| -> u16 {
             let first = types.iter().position(|other| *other == types[at] && *other != ValueType::OPEN_IDENT).unwrap_or(at);
             100 + first as u16
@@ -529,8 +548,8 @@ impl Generated {
             let (own_text, their_text) = (family.terms[first as usize].text.clone(), family.terms[other as usize].text.clone());
             for a in places(&own, &cells) {
                 for b in places(&theirs, &cells) {
-                    for (keys, key_text) in Self::key_options(&own, &[usize::from(a)]) {
-                        for (others, other_text) in Self::key_options(&theirs, &[usize::from(b)]) {
+                    for (keys, key_text) in family.key_options(&own, &[usize::from(a)]) {
+                        for (others, other_text) in family.key_options(&theirs, &[usize::from(b)]) {
                             let heads: Vec<Column> = keys.iter().map(|at| own[usize::from(*at)].clone()).collect();
                             let (a_name, b_name) = (&own[usize::from(a)].name, &theirs[usize::from(b)].name);
                             for (turned, word) in [(false, "same-shape"), (true, "same-shape-d4")] {
@@ -986,7 +1005,7 @@ impl Generated {
     }
 
     fn empty() -> Generated {
-        Generated { step_ids: std::sync::OnceLock::new(), one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false }
+        Generated { key_columns: Vec::new(), step_ids: std::sync::OnceLock::new(), one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false }
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
@@ -1657,14 +1676,14 @@ impl Generated {
     }
 
     /// The ways to key a part: no key, each column, and every group column as one hole.
-    fn key_options(columns: &[Column], not: &[usize]) -> Vec<(Box<[u16]>, String)> {
+    fn key_options(&self, columns: &[Column], not: &[usize]) -> Vec<(Box<[u16]>, String)> {
         let mut out: Vec<(Box<[u16]>, String)> = vec![(Box::new([]), "()".to_string())];
         for (at, column) in columns.iter().enumerate() {
             if !not.contains(&at) {
                 out.push((vec![at as u16].into_boxed_slice(), format!("({})", column.name)));
             }
         }
-        let group: Vec<u16> = columns.iter().enumerate().filter(|(at, column)| !not.contains(at) && matches!(column.ty, ValueType::Color | ValueType::Ident(_))).map(|(at, _)| at as u16).collect();
+        let group: Vec<u16> = columns.iter().enumerate().filter(|(at, column)| !not.contains(at) && (matches!(column.ty, ValueType::Color | ValueType::Ident(_)) || self.key_columns.contains(&column.name))).map(|(at, _)| at as u16).collect();
         if group.len() >= 2 {
             let names: Vec<&str> = group.iter().map(|at| columns[usize::from(*at)].name.as_str()).collect();
             out.push((group.into_boxed_slice(), format!("(T*:{})", names.join(","))));
@@ -1690,9 +1709,9 @@ impl Generated {
 
     /// The keys of a term's parts. Under `one_group`, also the one Color or Ident column as a group, which stands under the name of several such columns.
     fn keys_of(&self, columns: &[Column], not: &[usize]) -> Vec<(Box<[u16]>, String)> {
-        let mut out = Self::key_options(columns, not);
+        let mut out = self.key_options(columns, not);
         if self.one_group {
-            let group: Vec<u16> = columns.iter().enumerate().filter(|(at, column)| !not.contains(at) && matches!(column.ty, ValueType::Color | ValueType::Ident(_))).map(|(at, _)| at as u16).collect();
+            let group: Vec<u16> = columns.iter().enumerate().filter(|(at, column)| !not.contains(at) && (matches!(column.ty, ValueType::Color | ValueType::Ident(_)) || self.key_columns.contains(&column.name))).map(|(at, _)| at as u16).collect();
             if let [only] = group[..] {
                 out.push((vec![only].into_boxed_slice(), format!("(T*:{})", columns[usize::from(only)].name)));
             }
@@ -2833,8 +2852,8 @@ impl Generators {
     }
 
     pub fn get(&self, stored: &crate::stored::Stored, d: usize) -> Arc<Generated> {
-        let hash = hash_words(stored.key.bytes().map(u64::from));
-        self.family_of(hash, || if self.one_group { Generated::one_group(&stored.types, d, &self.names) } else { Generated::of(&stored.types, d, &self.names) })
+        let hash = hash_words(format!("{} {:?}", stored.key, stored.keys).bytes().map(u64::from));
+        self.family_of(hash, || if self.one_group { Generated::one_group_keyed(&stored.types, &stored.keys, d, &self.names) } else { Generated::of_keyed(&stored.types, &stored.keys, d, &self.names) })
     }
 }
 

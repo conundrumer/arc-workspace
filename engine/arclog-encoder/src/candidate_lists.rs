@@ -62,7 +62,7 @@ fn stable_of(owner: serde_json::Value, vector: &TableVector) -> Written {
 fn named_of(owner: serde_json::Value, table: &Stored, grids: &Grids, families: &Generators, examples: usize, only_output: bool) -> Written {
     let mut stable: Vec<(u64, f32)> = Vec::new();
     let mut others: Vec<((u64, f32, f32, f32), Vec<f32>)> = Vec::new();
-    for shape in named_shapes(table, &grids.facts, &grids.test_facts) {
+    for shape in named_shapes(table, &grids.facts, &grids.test_facts, &grids.input_facts) {
         let output = reads_output(&shape.name);
         if only_output && !output {
             continue;

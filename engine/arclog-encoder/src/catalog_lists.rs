@@ -84,7 +84,7 @@ pub struct NamedShape {
 
 /// The shapes of a table over its examples: `facts` for each train pair, then `tests` for each test input. Over an example's TableRows, a shape
 /// takes the mean of its value where it has one. A shape that reads the output has values at the train pairs alone.
-pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts]) -> Vec<NamedShape> {
+pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts], inputs: &[PairFacts]) -> Vec<NamedShape> {
     let kinds: Vec<Kind> = table.types.iter().map(kind_of).collect();
     let pairs = facts.len() + tests.len();
     let mut shapes: HashMap<String, Vec<Option<f64>>> = HashMap::new();
@@ -102,6 +102,13 @@ pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts]) ->
             pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, fact, &mut records);
             let mut per = HashMap::new();
             greatest_of(&records, &kinds, &mut per);
+            // A kind that reads the output alone also stands for the input, read as its own output.
+            records.clear();
+            pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, if pair < inputs.len() { &inputs[pair] } else { fact }, &mut records);
+            records.retain(|record| record.kind.contains("output") && !record.kind.contains("input") && !record.kind.contains("change"));
+            let mut mirrored = HashMap::new();
+            greatest_of(&records, &kinds, &mut mirrored);
+            per.extend(mirrored.into_iter().map(|(name, value)| (name.replace("output", "input"), value)));
             for (name, value) in per {
                 let held = sums.entry(name).or_insert((0.0, 0));
                 held.0 += value;
