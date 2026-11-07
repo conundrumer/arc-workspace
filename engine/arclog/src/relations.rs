@@ -76,7 +76,9 @@ impl Rows {
     }
 
     fn grow(&mut self, arity: usize) {
-        self.slots = vec![0; (self.slots.len() * 2).max(8)].into();
+        // Rows that came without a table have a table of their count on the first row added.
+        let least = (((self.count as usize + 1) * SLOTS_USED.1 / SLOTS_USED.0) + 1).next_power_of_two();
+        self.slots = vec![0; (self.slots.len() * 2).max(8).max(least)].into();
         for number in 0..self.count {
             let at = self.slot(self.row(number, arity));
             self.slots[at] = number + 1;
@@ -99,6 +101,18 @@ impl RowSet {
         self.arity
     }
 
+    /// The set of the rows of `values`, row after row, which differ from each
+    /// other. It builds no table over them until a row is added.
+    pub fn of_distinct(arity: u16, values: Vec<TermId>) -> Self {
+        let count = values.len().checked_div(usize::from(arity)).unwrap_or(0);
+        RowSet { arity, rows: std::sync::Arc::new(Rows { values, count: u32::try_from(count).expect("a set of fewer than 2^32 rows"), slots: Box::default() }) }
+    }
+
+    /// The row at `number` in the order of [`RowSet::rows`].
+    pub fn row(&self, number: usize) -> &[TermId] {
+        self.rows.row(number as u32, usize::from(self.arity))
+    }
+
     /// Adds `row`. The row's length is the set's arity.
     pub fn insert(&mut self, row: Row) -> bool {
         assert_eq!(row.len(), usize::from(self.arity), "a row of the set's arity");
@@ -118,7 +132,13 @@ impl RowSet {
 
     /// Whether the set holds `row`.
     pub fn contains(&self, row: &[TermId]) -> bool {
-        !self.rows.slots.is_empty() && row.len() == usize::from(self.arity) && self.rows.slots[self.rows.slot(row)] != 0
+        if row.len() != usize::from(self.arity) {
+            return false;
+        }
+        if self.rows.slots.is_empty() {
+            return self.rows().any(|held| held == row);
+        }
+        self.rows.slots[self.rows.slot(row)] != 0
     }
 
     /// Each row of the set, in the order of their first insertion, which is
@@ -259,6 +279,13 @@ impl Relation {
         let mut parts = parts;
         parts.iter_mut().for_each(|part| part.rows.shrink());
         Relation { arity, parts, indexes: Default::default(), index_bytes: Default::default(), rows_hash: Default::default() }
+    }
+
+    /// The relation that `parts` hold, whose [`Relation::rows_hash`] is `hash`.
+    pub(crate) fn from_parts_hashed(arity: u16, parts: Box<[RelationPart]>, hash: StableHash) -> Self {
+        let relation = Self::from_parts(arity, parts);
+        relation.rows_hash.set(hash).expect("a new relation holds no hash");
+        relation
     }
 
     /// The hash of the relation's rows, which depends on its rows alone: no order

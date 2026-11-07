@@ -8,6 +8,7 @@
 //! table is made until a caller asks for the rows of a table it has not seen.
 //! A table's hash comes from the groups: it needs no rows.
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -124,6 +125,8 @@ struct GroupedValue {
     result: GroupResult,
     /// Whether the atom is negated, so that a row stays where the atom does not hold.
     negated: bool,
+    /// The hashes and the order of the rows of the part.
+    hashes: Rc<PartHashes>,
     /// The columns of the value.
     arity: u16,
     /// The value's rows hash ([`Relation::rows_hash`]).
@@ -182,11 +185,13 @@ struct Groups {
     rows: Vec<u32>,
     /// The sum of the hashes of the rows of each group.
     sums: Vec<u64>,
+    /// The group of each row of the part, made on the first read.
+    of_row: OnceCell<Vec<u32>>,
 }
 
 impl Groups {
     fn of(part: &RelationPart, hashes: &[u64], places: Box<[u16]>) -> Self {
-        let mut groups = Groups { values: Vec::new(), of_values: StableHashMap::default(), rows: Vec::new(), sums: Vec::new(), places };
+        let mut groups = Groups { values: Vec::new(), of_values: StableHashMap::default(), rows: Vec::new(), sums: Vec::new(), of_row: OnceCell::new(), places };
         let mut key: Vec<TermId> = Vec::with_capacity(groups.places.len());
         for (row, &hash) in part.rows.rows().zip(hashes) {
             key.clear();
@@ -217,11 +222,16 @@ impl Groups {
         &self.values[group * width..(group + 1) * width]
     }
 
-    /// The group of `row`, a row of the part.
-    fn group_of(&self, row: &[TermId], key: &mut Vec<TermId>) -> usize {
-        key.clear();
-        key.extend(self.places.iter().map(|&place| row[usize::from(place)]));
-        self.of_values[&key[..]] as usize
+    /// The group of each row of `part`.
+    fn of_row(&self, part: &RelationPart) -> &[u32] {
+        self.of_row.get_or_init(|| {
+            let mut key = Vec::with_capacity(self.places.len());
+            part.rows.rows().map(|row| {
+                key.clear();
+                key.extend(self.places.iter().map(|&place| row[usize::from(place)]));
+                self.of_values[&key[..]]
+            }).collect()
+        })
     }
 }
 
@@ -229,6 +239,24 @@ impl Groups {
 struct PartHashes {
     rows: Vec<u64>,
     sum: u64,
+    /// The rows' numbers in the order of their values, made on the first read.
+    order: OnceCell<Vec<u32>>,
+}
+
+impl PartHashes {
+    /// The numbers of the rows of `part` in the order of their values, as a
+    /// signed cell reads each. A reader that sorts the rows finds them close to
+    /// sorted, and the rows that an atom keeps stay in this order.
+    fn order(&self, part: &RelationPart) -> &[u32] {
+        self.order.get_or_init(|| {
+            let mut order: Vec<u32> = (0..part.rows.len() as u32).collect();
+            order.sort_unstable_by(|&a, &b| {
+                let values = |number: u32| part.rows.row(number as usize).iter().map(|value| value.encoding() as i32);
+                values(a).cmp(values(b))
+            });
+            order
+        })
+    }
 }
 
 /// An atom with no label of its own, over the groups that it reads: its relation,
@@ -307,36 +335,40 @@ impl GroupedValue {
     fn value(&self) -> RelationValue {
         let part = &self.rows.parts()[self.part];
         let mut parts: Vec<RelationPart> = self.rows.parts().iter().enumerate().filter(|(at, _)| *at != self.part).map(|(_, part)| part.clone()).collect();
-        let mut key = Vec::new();
+        let arity = usize::from(part.rows.arity());
         match &self.result {
             GroupResult::Holds(holds) => {
                 let stays = |group: usize| holds.get(group) != self.negated;
                 if (0..self.groups.count()).all(stays) {
                     return RelationValue::Rows(Arc::clone(&self.rows));
                 }
-                let mut rows = RowSet::empty(part.rows.arity());
+                let mut values = Vec::new();
                 if (0..self.groups.count()).any(stays) {
-                    for row in part.rows.rows() {
-                        if stays(self.groups.group_of(row, &mut key)) {
-                            rows.insert(row.into());
+                    let of_row = self.groups.of_row(part);
+                    for &number in self.hashes.order(part) {
+                        if stays(of_row[number as usize] as usize) {
+                            values.extend_from_slice(part.rows.row(number as usize));
                         }
                     }
                 }
-                parts.push(RelationPart { columns: part.columns.clone(), rows });
+                parts.push(RelationPart { columns: part.columns.clone(), rows: RowSet::of_distinct(arity as u16, values) });
             }
             GroupResult::Makes(made) => {
                 let first = self.arity - made.width as u16;
                 let columns = part.columns.iter().copied().chain((0..made.width as u16).map(|index| ColumnIndex(first + index))).collect();
-                let mut rows = RowSet::empty(part.rows.arity() + made.width as u16);
-                for row in part.rows.rows() {
-                    for values in made.at(self.groups.group_of(row, &mut key)).chunks_exact(made.width) {
-                        rows.insert(row.iter().chain(values).copied().collect());
+                let of_row = self.groups.of_row(part);
+                let mut values = Vec::new();
+                for &number in self.hashes.order(part) {
+                    let row = part.rows.row(number as usize);
+                    for added in made.at(of_row[number as usize] as usize).chunks_exact(made.width) {
+                        values.extend_from_slice(row);
+                        values.extend_from_slice(added);
                     }
                 }
-                parts.push(RelationPart { columns, rows });
+                parts.push(RelationPart { columns, rows: RowSet::of_distinct((arity + made.width) as u16, values) });
             }
         }
-        RelationValue::Rows(Arc::new(Relation::from_parts(self.arity, parts.into())))
+        RelationValue::Rows(Arc::new(Relation::from_parts_hashed(self.arity, parts.into(), self.hash)))
     }
 }
 
@@ -658,7 +690,7 @@ impl<'a> Decoder<'a> {
                 let held = &rows.parts()[part];
                 let hashes: Vec<u64> = held.rows.rows().map(|row| row_hash_at(&held.columns, row)).collect();
                 let sum = hashes.iter().fold(0, |sum, hash| hash_plus(sum, *hash));
-                Rc::new(PartHashes { rows: hashes, sum })
+                Rc::new(PartHashes { rows: hashes, sum, order: OnceCell::new() })
             }))
         };
         let own = hashes(memo, part);
@@ -700,7 +732,7 @@ impl<'a> Decoder<'a> {
             budget.charge_work(product)?;
         }
         let arity = (width + plan.made.len()) as u16;
-        Ok(GroupedValue { rows: Arc::clone(rows), part, groups, result, negated: plan.negated, arity, hash: rows_hash_of(arity, hash_times(others, sum)) })
+        Ok(GroupedValue { rows: Arc::clone(rows), part, groups, result, negated: plan.negated, hashes: own, arity, hash: rows_hash_of(arity, hash_times(others, sum)) })
     }
 
     /// Whether the atom of `plan`, which makes no label, holds at each group.

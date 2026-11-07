@@ -132,13 +132,13 @@ impl AtomWalk<'_> {
     }
 
     /// How the atom so far stands to the atoms of its relation in the body:
-    /// for each sign, the same sign and the other, whether it holds the sites
-    /// of one, and whether its sites are the first sites of one.
+    /// for each sign, the same sign and the other, whether one holds each of
+    /// its sites, in any order, and whether one holds those sites alone.
     fn repeats(&self) -> u8 {
         let mut flags = 0;
         for (negated, sites) in &self.priors {
             let bit = if *negated == self.negated { 0 } else { 2 };
-            if sites.starts_with(&self.sites) {
+            if self.sites.iter().all(|site| sites.contains(site)) {
                 flags |= 1 << bit;
                 if sites.len() == self.sites.len() {
                     flags |= 2 << bit;
@@ -218,7 +218,9 @@ impl Decoder<'_> {
         }
         let (shapes, each) = self.with_state_shapes(&state);
         let mut hasher = StableHasher::new();
-        state.atom_context(&mut hasher);
+        // A read of a program's relation can read an output of the form in progress, whose checks read the rest of the form.
+        let reads_program = opening.last().is_some_and(|id| matches!(self.vocabulary().token(*id), Some(Token::Relation(_))));
+        state.atom_context(reads_program, &mut hasher);
         // A rule that reads whether two labels stand in one grid reads what no shape holds.
         let reads_grids = opening.last().and_then(|id| match self.vocabulary().token(*id) {
             Some(Token::Lib(name)) => self.context.registry.algebra_relation(name),

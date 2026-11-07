@@ -1340,8 +1340,10 @@ impl State {
 
     /// Adds to `hasher` what the verdicts of the atom just opened read of the
     /// stack: its frames, and of its body whether a key stands, whether a `NOT`
-    /// stands, how the body closes and whether it holds a conjunct.
-    pub(super) fn atom_context(&self, hasher: &mut impl std::hash::Hasher) {
+    /// stands, how the body closes and whether it holds a conjunct. With
+    /// `whole_form`, the component and the other bodies of an `INIT` form too,
+    /// which the verdicts of an atom of a program's relation read.
+    pub(super) fn atom_context(&self, whole_form: bool, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
         for frame in &self.stack {
             std::mem::discriminant(frame).hash(hasher);
@@ -1353,21 +1355,22 @@ impl State {
                     body.conjuncts.is_empty().hash(hasher);
                 }
                 Frame::Atom(atom) => atom.negated.hash(hasher),
-                // What stands in an `INIT` form outside the body in progress, other than the key body that a keyed input reads.
                 Frame::Instance(instance) => {
-                    instance.component.as_ref().map(|name| &*name.0).hash(hasher);
                     instance.demonstrated.hash(hasher);
-                    let in_key = matches!(self.stack.get(1), Some(Frame::KeyClause(_)));
-                    if !in_key {
+                    instance.key.is_some().hash(hasher);
+                    if whole_form {
+                        instance.component.as_ref().map(|name| &*name.0).hash(hasher);
                         format!("{:?}", instance.key).hash(hasher);
+                        format!("{:?}", instance.inputs).hash(hasher);
                     }
-                    format!("{:?}", instance.inputs).hash(hasher);
                 }
                 Frame::KeyClause(clause) => {
                     clause.body.is_some().hash(hasher);
-                    format!("{:?}", clause.inputs).hash(hasher);
+                    if whole_form {
+                        format!("{:?} {:?}", clause.body, clause.inputs).hash(hasher);
+                    }
                 }
-                Frame::Input(input) => input.position.hash(hasher),
+                Frame::Input(input) if whole_form => input.position.hash(hasher),
                 _ => {}
             }
         }
@@ -1379,23 +1382,52 @@ impl State {
     /// The shape of each label at this state, where an atom just opened: its
     /// type, whether the body binds it and whether a key marks it, and whether
     /// each label has that shape. A label that stands in anything but an atom
-    /// or a `NOT` of an atom of fixed scalar columns, in a top-level clause body
-    /// or a body of an `INIT` form, has its id for its shape in place of them. So
-    /// has a label of a body of an `INIT` form that is out of scope of the body
-    /// in progress, whose form's other bodies [`State::atom_context`] holds.
+    /// or a `NOT` of an atom of fixed scalar columns, or a head site of a fixed
+    /// scalar column, in a top-level clause body or a body of an `INIT` form, has
+    /// its id for its shape in place of them.
     pub(super) fn label_shapes(&self, registry: &Registry, column_type: &impl Fn(&RelationRef, &ColumnName) -> Option<ValueType>) -> (Vec<u64>, bool) {
         use std::hash::{Hash, Hasher};
         let by_id = |label: u32| (1u64 << 60) | u64::from(label);
         let mut shapes: Vec<u64> = (0..self.labels).map(by_id).collect();
-        let (before, body, in_form): (&[Conjunct], _, bool) = match &self.stack[..] {
-            [Frame::Clause(_), Frame::Body(body), Frame::Atom(_)] => (&[], body, false),
-            [Frame::Instance(instance), Frame::KeyClause(_), Frame::Body(body), Frame::Atom(_)] | [Frame::Instance(instance), Frame::Input(_), Frame::Body(body), Frame::Atom(_)] if !instance.demonstrated => (&[], body, true),
-            [Frame::Instance(instance), Frame::KeyClause(KeyClauseFrame { body: Some(key), .. }), Frame::Input(_), Frame::Body(body), Frame::Atom(_)] if !instance.demonstrated => (&key.value().conjuncts[..], body, true),
+        // The conjuncts in scope of the atom, with the conjuncts of the form's other bodies and its inputs, which give their labels types.
+        let (before, body, instance, clause): (&[Conjunct], _, Option<&InstanceFrame>, Option<&KeyClauseFrame>) = match &self.stack[..] {
+            [Frame::Clause(_), Frame::Body(body), Frame::Atom(_)] => (&[], body, None, None),
+            [Frame::Instance(instance), Frame::KeyClause(clause), Frame::Body(body), Frame::Atom(_)] if !instance.demonstrated => (&[], body, Some(instance), Some(clause)),
+            [Frame::Instance(instance), Frame::Input(_), Frame::Body(body), Frame::Atom(_)] if !instance.demonstrated => (&[], body, Some(instance), None),
+            [Frame::Instance(instance), Frame::KeyClause(clause @ KeyClauseFrame { body: Some(key), .. }), Frame::Input(_), Frame::Body(body), Frame::Atom(_)] if !instance.demonstrated => (&key.value().conjuncts[..], body, Some(instance), Some(clause)),
             _ => return (shapes, false),
         };
+        let mut other_bodies: Vec<&[Conjunct]> = Vec::new();
+        let mut inputs: Vec<&Node<InstanceInput>> = Vec::new();
+        if let Some(instance) = instance {
+            if let Some(key) = instance.key.as_ref().filter(|_| clause.is_none()) {
+                other_bodies.push(&key.value().key.body.value().conjuncts);
+                inputs.extend(key.value().inputs.iter());
+            }
+            inputs.extend(instance.inputs.iter());
+        }
+        if let Some(clause) = clause {
+            inputs.extend(clause.inputs.iter());
+        }
+        other_bodies.extend(inputs.iter().map(|input| &input.value().body.value().conjuncts[..]));
         let mut types: std::collections::BTreeMap<u32, ValueType> = std::collections::BTreeMap::new();
         let mut keys: Vec<u32> = Vec::new();
-        for conjunct in before.iter().chain(body.conjuncts.iter()) {
+        let meet = |types: &mut std::collections::BTreeMap<u32, ValueType>, label: u32, ty: &ValueType| -> bool {
+            match types.get(&label) {
+                Some(old) => match old.meet(ty) {
+                    Meet::Type(ty) => {
+                        types.insert(label, ty);
+                        true
+                    }
+                    Meet::Empty => false,
+                },
+                None => {
+                    types.insert(label, ty.clone());
+                    true
+                }
+            }
+        };
+        for conjunct in before.iter().chain(body.conjuncts.iter()).chain(other_bodies.iter().flat_map(|body| body.iter())) {
             let prior = match conjunct {
                 Conjunct::Atom(prior) | Conjunct::Not(Negated::Atom(prior)) => prior,
                 _ => return (shapes, false),
@@ -1410,14 +1442,23 @@ impl State {
                             keys.push(label.0);
                             label
                         }
-                        LabelUse::Zero => return (shapes, false),
+                        LabelUse::Zero => continue,
                     };
-                    match types.get(&label.0) {
-                        Some(old) => match old.meet(&ty) {
-                            Meet::Type(ty) => { types.insert(label.0, ty); }
-                            Meet::Empty => return (shapes, false),
-                        },
-                        None => { types.insert(label.0, ty.clone()); }
+                    if !meet(&mut types, label.0, &ty) {
+                        return (shapes, false);
+                    }
+                }
+            }
+        }
+        for input in &inputs {
+            for site in input.value().head.iter() {
+                let port = self.component_from_input(registry).inputs.iter().find(|declared| declared.port.name == input.value().name).map(|declared| &declared.port);
+                let ty = port.and_then(|port| port.columns.iter().find(|column| column.name == site.column)).and_then(|column| scalar_fixed(&column.ty));
+                let Some(ty) = ty else { return (shapes, false) };
+                for arg in site.value.args.iter() {
+                    let SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label)) = arg else { return (shapes, false) };
+                    if !meet(&mut types, label.0, &ty) {
+                        return (shapes, false);
                     }
                 }
             }
@@ -1434,7 +1475,7 @@ impl State {
                     keys.contains(&(at as u32)).hash(&mut hasher);
                     *shape = (1u64 << 59) | (hasher.finish() >> 8);
                 }
-                None => each &= in_form,
+                None => each = false,
             }
         }
         (shapes, each)
@@ -1442,9 +1483,24 @@ impl State {
 
     /// The conjuncts of the body that are atoms of the relation of the atom just
     /// opened, a `NOT` of one included: for each, whether it is negated, and the
-    /// column position and the label of each of its sites, in order, with
+    /// column position and the label of each value of its sites, in order, with
     /// `u32::MAX` for a value that is no label.
     pub(super) fn prior_atoms(&self) -> Vec<(bool, Vec<(u32, u32)>)> {
+        fn values(column: u32, args: &[SiteArg], found: &mut Vec<(u32, u32)>) {
+            for arg in args {
+                let label = match arg {
+                    SiteArg::Label(label) | SiteArg::NamedLabel { label, .. } => label,
+                    SiteArg::Field(site) => {
+                        values(column, &site.value.args, found);
+                        continue;
+                    }
+                };
+                found.push((column, match label {
+                    LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label) => label.0,
+                    LabelUse::Zero => u32::MAX,
+                }));
+            }
+        }
         let Some(Frame::Atom(open)) = self.stack.last() else { return Vec::new() };
         let Some(Frame::Body(body)) = self.stack.iter().rev().nth(1) else { return Vec::new() };
         let mut found = Vec::new();
@@ -1457,14 +1513,11 @@ impl State {
             if atom.value().relation != open.relation {
                 continue;
             }
-            let sites = atom.value().sites.iter().map(|site| {
+            let mut sites = Vec::new();
+            for site in atom.value().sites.iter() {
                 let column = open.columns.iter().position(|name| *name == site.column).map_or(u32::MAX, |at| at as u32);
-                let label = match site.value.args.first() {
-                    Some(SiteArg::Label(LabelUse::Fresh(label) | LabelUse::Join(label) | LabelUse::Key(label))) => label.0,
-                    _ => u32::MAX,
-                };
-                (column, label)
-            }).collect();
+                values(column, &site.value.args, &mut sites);
+            }
             found.push((negated, sites));
         }
         found
