@@ -25,7 +25,7 @@ pub const READS_TABLE: u8 = 4;
 pub const READS_SECOND: u8 = 8;
 const NO_TERM: u32 = u32::MAX;
 const MAX_PROJECTED: usize = 4;
-const MAX_COLUMNS: usize = 12;
+pub const MAX_COLUMNS: usize = 12;
 const PAYLOAD: u64 = (1 << 62) - 1;
 /// The leaves that stand first among a family's terms.
 const LEAF_TABLE: u32 = 0;

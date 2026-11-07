@@ -501,7 +501,7 @@ pub fn lists_from(input: &TablesIn, task_dir: &std::path::Path, families: &Gener
     let mut stored: Vec<Stored> = Vec::new();
     let mut content_at: FastMap<u128, usize> = FastMap::default();
     let mut place = |table: Stored, stored: &mut Vec<Stored>| -> Option<usize> {
-        if table.types.len() > 8 {
+        if table.types.len() > crate::generate::MAX_COLUMNS {
             return None;
         }
         Some(*content_at.entry(table.content()).or_insert_with(|| {
@@ -600,7 +600,7 @@ pub fn lists_from(input: &TablesIn, task_dir: &std::path::Path, families: &Gener
     }
     let walked_as_t = stored.len();
     let header_rest = (head["case"].clone(), head["budget_cut"].clone(), head["left_out"].clone());
-    // The names a candidate reads and the lists have no table for: one past 8 columns, or one no item stores.
+    // The names a candidate reads and the lists have no table for: one with more columns than a term holds, or one no item stores.
     let wide: Vec<&String> = read_names.iter().filter(|name| !prefix.contains_key(*name) && input.prefix.contains_key(name.as_str())).collect();
     let no_table: Vec<&String> = read_names.iter().filter(|name| !input.prefix.contains_key(name.as_str())).collect();
     let skipped = serde_json::json!({"wide": wide, "no_table": no_table});
