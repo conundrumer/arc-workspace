@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-"""Writes the frozen priors of live.py: every corpus task's gold program counted (less the tasks whose first row in the corpus has `approximated: true`, unless GOLD_APPROXIMATED=1), with no task held out, into
+"""Writes the frozen priors of live.py: every corpus task's gold program counted (less the tasks whose first row in the corpus has `approximated: true`, unless GOLD_APPROXIMATED=1), with no task held out unless --leave-out names them, into
 DATA/sampler/models/live_priors.pkl. The file holds what S reads from disk at a point (the atom priors, the stop hazards,
-the compound counts of RULE bodies and of an INIT's key and port bodies, the registry's columns and types), and the program-level counts that a draw from an empty prefix
+the compound counts of RULE bodies and of an INIT's key and port bodies, the registry's columns and types, and fit_tasks: the tasks it counted), and the program-level counts that a draw from an empty prefix
 needs: the next clause's kind or the stop, by how many clauses of each kind exist, a RULE's or a DET's proposer and marks, and an INIT's
 component, ports and head sites. A clause comes after what it reads and written order counts for nothing: each program is walked in WALK_ORDERS
 random orders that keep its reads, and a count that depends on the order of a body's atoms is its mean over S.BodyOrders.
@@ -433,7 +433,7 @@ def fit(leave_out=()):
     top = max(lengths)
     stop = {n: (lengths[n] + 0.5) / (sum(v for m, v in lengths.items() if m >= n) + 1.0) for n in range(1, top + 1)}  # P(the program stops after n clauses | n clauses)
     empty_keys, empty_heads = empty_keyed(tasks)
-    return dict(tasks=len(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, rule=rule, keyed=keyed,
+    return dict(tasks=len(tasks), fit_tasks=sorted(tasks), stop=stop, kinds=dict(kinds), kinds1=dict(kinds1), walk=walk_counts(tasks), proposers=proposers, comps=comps, det=det, rule=rule, keyed=keyed,
                 ports=ports, heads=heads, head_labels=dict(head_labels), outside=outside, heads_out=heads_out, empty_ports=empty_ports(tasks), empty_keyed=empty_keys, empty_heads=empty_heads, rigid=rigid_counts(tasks), compound=compound, compounds=body_compounds(tasks), nested=nested_counts(tasks), all_forms=all_counts(tasks), single=single_rates(tasks), hand=hand_counts(tasks), head_key=head_key_counts(tasks), key_labels=key_labels(tasks), atoms={k: plain(S.Prior(b)) for k, b in bodies.items()} | dict(RIGID_DET=rigid_atoms),
                 hazard={k: S.kind_hazard(b) for k, b in bodies.items()} | dict(RIGID_DET=rigid_hazard), regcols=regcols, regtypes=regtypes,
                 comp_ports={k: (sorted(v[0]), [(p, [x for x in c.items() if x[0] != 'default']) for p, c in v[1].items()]) for k, v in S.component_ports().items()},
