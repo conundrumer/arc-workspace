@@ -1891,7 +1891,14 @@ impl Generated {
                 let Some(boxes) = found.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::BoxOf { keys: keys.clone(), p })), LEAF_TABLE, NO_TERM, own, 1, boxes_text.clone(), RootKind::Rows)) else { continue };
                 let one = measures(self, boxes, keys.len() as u16, &box_name, &boxes_text, LEAF_TABLE, p, &name, "T");
                 let frame = self.terms.iter().rposition(|term| term.text == frame_text).map(|held| held as u32);
-                let frame = frame.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::FrameCells { p })), LEAF_TABLE, NO_TERM, cell(), 1, frame_text.clone(), RootKind::Rows));
+                let frame = frame.or_else(|| {
+                    let made = self.push_forced(Step::Part(Box::new(PartStep::FrameCells { p })), LEAF_TABLE, NO_TERM, cell(), 1, frame_text.clone(), RootKind::Rows);
+                    // The first pass's family gives the frame's own count.
+                    if let (true, Some(made)) = (one_group, made) {
+                        self.refined[made as usize].count_follows = true;
+                    }
+                    made
+                });
                 if let (Some(one), Some(frame)) = (one, frame) {
                     let one_text = format!("(one-box-cells {boxes_text} {box_name} T {name})");
                     self.push_forced(Step::Part(Box::new(PartStep::Same)), one, frame, Vec::new(), 3, format!("{one_text} {frame_text}"), RootKind::Against);
