@@ -5,7 +5,7 @@
 
 It draws each query's mutants as the first run did, and also draws argument edits whose query has
 gold's structure, marked `extra`. It keeps the mutants and the tables' train rows under ROOT as zstd,
-and prints to stdout the tables with their test rows too. Test rows go nowhere else, so a caller
+and prints to stdout the tables with their test rows too, as the framed stream of typed column arrays that tables_columns.py writes. Test rows go nowhere else, so a caller
 reads them from the pipe and keeps none of them. A table in `prefix` has all its rows at any size. A table in `items` has none at an
 example with more than ROW_CAP rows, and a train example of that kind marks it `too_large`. On a fault it prints only the fault's type.
 """
@@ -44,42 +44,65 @@ def split_of(task):
 
 
 def keep(path, value):
+    """Writes `value` as zstd JSON, with the rows of each Block as lists."""
+    from tables_columns import json_default
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix('.tmp')
-    subprocess.run(['zstd', '-q', '-f', '-o', str(temporary)], input=json.dumps(value).encode(), check=True, stderr=subprocess.DEVNULL)
+    subprocess.run(['zstd', '-q', '-f', '-o', str(temporary)], input=json.dumps(value, default=json_default).encode(), check=True, stderr=subprocess.DEVNULL)
     os.replace(temporary, path)
+
+
+def entries_as_arrays(tb, t):
+    """Each entry of table t as (example name, model, assignment key, rows, stop), with the rows as a numpy array of one line per row, as
+    `tb.entries` gives them as lists. A Position, a Box and an Offset take four numbers."""
+    import numpy as np
+    types = tb.T['column_types'][t]
+    stride = sum(tb.widths(types))
+    kinds = {0: 'task', 1: 'train', 2: 'test'}
+    out = []
+    for e in tb.by_table.get(t, []):
+        kind, idx = int(tb.E['example_kind'][e]), int(tb.E['example_index'][e])
+        ex = 'task' if kind == 0 else '%s/%d' % (kinds[kind], idx)
+        key = tb.entry_key(e, t)
+        stop = None
+        for field in ('fault', 'stop_bound', 'value_stop_bound'):
+            v = tb.E[field][e] if field in tb.E else None
+            if v is not None and not (isinstance(v, (int,)) and v < 0):
+                stop = '%s %s' % (field, v)
+        if not stop and ('kind' not in tb.E or int(tb.E['kind'][e]) == 0):
+            rows, offset = int(tb.E['rows'][e]), int(tb.E['offset'][e])
+            raw = tb.values[offset:offset + rows * stride].reshape(rows, stride)
+        else:
+            raw = np.empty((0, stride), np.int32)
+        out.append((ex, int(tb.E['model'][e]), tuple(key), raw, stop))
+    return out
 
 
 def read_table(tb, name, prefer=None, sources=False, cap=ROW_CAP):
     """A table at one assignment, the preferred one where the table has it and the least otherwise, or a reason it can't be read.
 
     A table read as a candidate has the default `cap`: an example with more rows than that has none, and a train example of that kind marks the table `too_large`. A table read as a parent of a candidate
-    passes `cap=None` and keeps all its rows.
+    passes `cap=None` and keeps all its rows. A `rows` or `models` value holds each TableRows as a Block, of `tables_columns.py`.
     """
+    from tables_columns import Block, Layout
     if name not in tb.names:
         return None, 'no table'
     t = tb.names.index(name)
     by_key = {}
     stopped = False
-    for ex, model, key, raw, stop in tb.entries(t):
+    for ex, model, key, raw, stop in entries_as_arrays(tb, t):
         if stop:
             stopped = True
             continue
         by_key.setdefault(repr(key), {}).setdefault(ex, {}).setdefault(model, raw)
     # The contract's `distinct`: how many assignments give different rows.
-    contents = {hash(repr(sorted((ex, sorted((model, repr(raw)) for model, raw in held.items())) for ex, held in rows.items()))) for rows in by_key.values()} if len(by_key) > 1 else set(by_key)
+    contents = {hash(tuple(sorted((ex, tuple(sorted((model, (len(raw), hash(raw.tobytes()))) for model, raw in held.items()))) for ex, held in rows.items()))) for rows in by_key.values()} if len(by_key) > 1 else set(by_key)
     if not by_key:
         return None, 'stopped' if stopped else 'no rows at any assignment'
     chosen = prefer if prefer in by_key else min(by_key)
     by_example = by_key[chosen]
     types = list(tb.T['column_types'][t])
-
-    def cell(ty, v):
-        if isinstance(v, tuple) or ty in ('Position', 'Box', 'Offset'):
-            return [int(x) for x in v]
-        if ty not in ('Number', 'Nat', 'Int', 'Color', 'Example', 'Ident') and int(v) in tb.orient:
-            return tb.orient[int(v)]
-        return int(v)
+    layout = Layout(types, tb.orient)
 
     out, models = {}, {}
     large = False
@@ -91,7 +114,7 @@ def read_table(tb, name, prefer=None, sources=False, cap=ROW_CAP):
             if not ex.startswith('test/'):
                 large = True
             continue
-        written = [sorted(([cell(ty, v) for ty, v in zip(types, r)] for r in raw), key=repr) for raw in tables]
+        written = [Block(layout, raw.copy()) for raw in tables]
         if len(written) == 1:
             out[ex] = written[0]
         else:
@@ -273,8 +296,8 @@ def worker(root, task):
     head = dict(task=task, case=c.case, train=train, last_query=last, budget_cut=cut, left_out=left_out)
     keep(Path(root) / split / 'candidate-tables' / (task + '.json.zst'), dict(head, items=kept_items))
     # Test rows leave by the pipe alone.
-    json.dump(dict(head, test=test, items=items, prefix={name: table for name, table in prefix.items() if table is not None}), sys.stdout)
-    sys.stdout.flush()
+    from tables_columns import write_stream
+    write_stream(dict(head, test=test, items=items, prefix={name: table for name, table in prefix.items() if table is not None}))
 
 
 if __name__ == '__main__':

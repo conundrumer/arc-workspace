@@ -506,13 +506,32 @@ fn run_base_vectors(arguments: &Arguments, solver: &str) -> Result<(), String> {
     out.flush().map_err(|error| error.to_string())
 }
 
+/// A task's tables, read as the tables command prints them, which the command's name and the task's stem
+/// give. Its output holds test rows, so it reaches this process by a pipe alone, and neither it nor the
+/// command's errors are printed or kept.
+fn tables_by_command(command: &[String], stem: &str) -> Result<arclog_encoder::table_stream::TablesIn, String> {
+    let mut child = std::process::Command::new(&command[0]).args(&command[1..]).arg(stem).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null()).spawn().map_err(|error| error.to_string())?;
+    let stdout = child.stdout.take().ok_or("the tables command has no output")?;
+    let read = arclog_encoder::table_stream::TablesIn::from_reader(stdout);
+    if read.is_err() {
+        let _ = child.kill();
+    }
+    let status = child.wait().map_err(|error| error.to_string())?;
+    match read {
+        Ok(tables) if status.success() => Ok(tables),
+        Ok(_) => Err(format!("the tables command ended with {status}")),
+        Err(message) if status.success() => Err(message),
+        Err(message) => Err(format!("the tables command ended with {status}: {message}")),
+    }
+}
+
 /// Each table's stable roots, one file per task, with a task's tables read from a command that
 /// prints them or from a file. `GENERATE_TABLES_CMD` holds that command, to which the task's name
 /// is added. What it prints holds test rows, so it reaches this process by a pipe alone, and
 /// neither its output nor its errors are printed or kept. `--names` gives a derangement per task,
 /// and then each pair reads another pair's output.
 fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> Result<(), String> {
-    use arclog_encoder::candidate_lists::{lists_task, ListsOf};
+    use arclog_encoder::candidate_lists::{lists_from, ListsOf};
     use arclog_encoder::generate::{Generators, NameStore};
     std::fs::create_dir_all(out).map_err(|error| error.to_string())?;
     let mut families = Generators::default();
@@ -548,19 +567,12 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
                         None => continue,
                     },
                 };
-                let text = match &command {
-                    Some(parts) => {
-                        let run = std::process::Command::new(&parts[0]).args(&parts[1..]).arg(&stem).stderr(std::process::Stdio::null()).output();
-                        match run {
-                            Ok(run) if run.status.success() => String::from_utf8(run.stdout).map_err(|error| error.to_string()),
-                            Ok(run) => Err(format!("the tables command ended with {}", run.status)),
-                            Err(error) => Err(error.to_string()),
-                        }
-                    }
-                    None => arclog_encoder::zio::read_text(source),
+                let tables = match &command {
+                    Some(parts) => tables_by_command(parts, &stem),
+                    None => arclog_encoder::zio::read_text(source).and_then(|text| arclog_encoder::table_stream::TablesIn::from_json(&text)),
                 };
-                let text = match text {
-                    Ok(text) => text,
+                let tables = match tables {
+                    Ok(tables) => tables,
                     Err(message) => {
                         eprintln!("{stem}: {message}");
                         continue;
@@ -575,8 +587,8 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
                 } else {
                     ListsOf::Tables
                 };
-                let result = lists_task(&text, &arguments.tasks, &families, order, d, lists_of);
-                drop(text);
+                let result = lists_from(&tables, &arguments.tasks, &families, order, d, lists_of, None);
+                drop(tables);
                 match result {
                     Ok(found) => {
                         if arclog_encoder::zio::write_bytes(&target, &found.bytes).is_err() {
@@ -604,7 +616,7 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
 /// command that prints the tables, as for `candidate-lists`. A task's file of each kind is written as it ends, a
 /// restart skips the files that exist, and the command runs only for a task that lacks one.
 fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Result<(), String> {
-    use arclog_encoder::candidate_lists::{lists_task_to, ListsOf};
+    use arclog_encoder::candidate_lists::{lists_from, ListsOf};
     use arclog_encoder::generate::{Generators, NameStore};
     let derangements: std::collections::BTreeMap<String, Option<Vec<usize>>> = match &arguments.names {
         Some(path) => serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?,
@@ -664,14 +676,8 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
                     continue;
                 }
                 let started = Instant::now();
-                let run = std::process::Command::new(&command[0]).args(&command[1..]).arg(&stem).stderr(std::process::Stdio::null()).output();
-                let text = match run {
-                    Ok(run) if run.status.success() => String::from_utf8(run.stdout).map_err(|error| error.to_string()),
-                    Ok(run) => Err(format!("the tables command ended with {}", run.status)),
-                    Err(error) => Err(error.to_string()),
-                };
-                let text = match text {
-                    Ok(text) => text,
+                let tables = match tables_by_command(&command, &stem) {
+                    Ok(tables) => tables,
                     Err(message) => {
                         eprintln!("{stem}: {message}");
                         continue;
@@ -685,7 +691,7 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
                         if !wanted(folder, kind) || (kind == "null" && own_order.is_none()) {
                             continue;
                         }
-                        match lists_task_to(&text, &arguments.tasks, families, own_order, d, *lists_of, Some(std::path::Path::new(&target(folder, kind)))) {
+                        match lists_from(&tables, &arguments.tasks, families, own_order, d, *lists_of, Some(std::path::Path::new(&target(folder, kind)))) {
                             Ok(found) => {
                                 walks += found.walks;
                                 left_out = left_out.max(found.left_out);

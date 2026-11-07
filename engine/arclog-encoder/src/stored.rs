@@ -77,6 +77,14 @@ pub fn shape_text(text: &str, table: &str, types: &[ValueType]) -> String {
     out
 }
 
+/// One TableRows as column arrays: `rows` rows, and for each column of the table, in the order of
+/// its types, that column's cell at each row in the cell encoding.
+#[derive(Clone)]
+pub struct Model {
+    pub rows: usize,
+    pub columns: Vec<Vec<u32>>,
+}
+
 /// A table at one assignment: its column types, with its columns ordered by type, and at each
 /// example of the task each of its TableRows. An example with none has no value there, since the
 /// table is undefined or a bound stopped it.
@@ -149,6 +157,40 @@ impl Stored {
         Stored { key: schema_key(&sorted), types: sorted, keys, rows: tables }
     }
 
+    /// The table of `examples`, where each example holds its TableRows as column arrays in the
+    /// order of `types`. It is the table that `of_rows` gives for the same rows.
+    pub fn of_models<'a>(types: &[ValueType], examples: impl Iterator<Item = &'a Vec<Model>>) -> Stored {
+        let order = column_order(types);
+        let sorted: Vec<ValueType> = order.iter().map(|at| types[*at].clone()).collect();
+        let arity = order.len();
+        let tables = examples.map(|models| {
+            let mut held: Vec<Arc<Table>> = models.iter().map(|model| {
+                if arity == 0 {
+                    return Table::unit(model.rows > 0);
+                }
+                let mut cells = vec![0u32; model.rows * arity];
+                for (place, at) in order.iter().enumerate() {
+                    for (row, cell) in model.columns[*at].iter().enumerate() {
+                        cells[row * arity + place] = *cell;
+                    }
+                }
+                Table::distinct(arity, cells)
+            }).collect();
+            held.sort_by_key(|table| table.hash());
+            held.dedup_by_key(|table| table.hash());
+            held
+        }).collect();
+        let keys = vec![false; sorted.len()];
+        Stored { key: schema_key(&sorted), types: sorted, keys, rows: tables }
+    }
+
+    /// Which of a table's columns are key columns, from the names of its columns.
+    pub fn set_keys(&mut self, types: &[ValueType], columns: &serde_json::Value) {
+        if let Some(columns) = columns.as_array() {
+            self.keys = column_order(types).into_iter().map(|at| columns.get(at).and_then(serde_json::Value::as_str).is_some_and(|name| name.starts_with("key."))).collect();
+        }
+    }
+
     /// The table of a tables file's `value`: `rows` holds one TableRows per example under
     /// `train/<i>` and `test/<i>`, or under `task` for a table that the task reads once, and
     /// `models` holds several under the same keys. An example with more than `cap` rows in a
@@ -203,9 +245,7 @@ impl Stored {
             }
         }
         let mut stored = Stored::of_rows(&types, rows);
-        if let Some(columns) = value["columns"].as_array() {
-            stored.keys = column_order(&types).into_iter().map(|at| columns.get(at).and_then(serde_json::Value::as_str).is_some_and(|name| name.starts_with("key."))).collect();
-        }
+        stored.set_keys(&types, &value["columns"]);
         Some(stored)
     }
 
