@@ -18,7 +18,7 @@ The rules for the encoder from tables to features. [Arclog column types](arclog-
 
 Features support the program search and do not replace it. A feature expression has the form of a query, so a ground expression of size d shows the model what a query of that size would compute. An encoder run at a size large enough to reach the output would be the search itself, done by brute force.
 
-The features are a superset of the first version: a model's row must give whatever the first version tells a model. [Coverage of the first version](evaluation-protocol.md#coverage-of-the-first-version) measures this.
+The features are a superset of the first version: a model's row must give whatever the first version tells a model, in the forms of this specification. [Coverage of the first version](evaluation-protocol.md#coverage-of-the-first-version) measures this.
 
 ## Definition
 
