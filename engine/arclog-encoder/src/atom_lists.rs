@@ -21,11 +21,11 @@ use std::sync::{Arc, Mutex};
 const ROW_CAP: u64 = 2000;
 /// The assignments of a table that a list reads.
 const ASSIGNMENT_CAP: usize = 16;
-/// What the walkers of a task hold at most. Past either bound, they start over.
-const HELD_ENTRIES: usize = 4_000_000;
-const HELD_CELLS: usize = 20_000_000;
-/// The keys of second relations that a thread holds at most.
-const HELD_KEYS: usize = 12_000_000;
+/// What a thread's walkers hold at most, and past either bound they start over: their memo entries and values, their cells, and the keys of second relations. A value costs some hundreds of bytes, so these
+/// bounds set the memory of a run at about 400 MiB per thread.
+const HELD_ENTRIES: usize = 2_000_000;
+const HELD_CELLS: usize = 10_000_000;
+const HELD_KEYS: usize = 4_000_000;
 
 fn base64(bytes: &[u8]) -> String {
     const LETTERS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

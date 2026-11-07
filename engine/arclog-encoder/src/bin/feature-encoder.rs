@@ -1153,7 +1153,7 @@ fn run_atom_lists(arguments: &Arguments, input: &str, out: &str) -> Result<(), S
     std::fs::create_dir_all(&saved).map_err(|error| error.to_string())?;
     families.names = NameStore::to_file(&saved.join(format!("names-{}.tsv.zst", std::process::id())).to_string_lossy())?;
     families.saved = Some(saved);
-    families.saved_limit = 6_000_000;
+    families.saved_limit = 2_000_000;
     let idle: u64 = std::env::var("ATOM_IDLE").ok().and_then(|text| text.parse().ok()).unwrap_or(1800);
     arclog_encoder::atom_lists::run(std::path::Path::new(input), std::path::Path::new(out), &arguments.tasks, &families, arguments.size.max(1), &orders, &orient, arguments.threads, idle)
 }
