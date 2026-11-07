@@ -2461,10 +2461,7 @@ impl<'a> Walker<'a> {
             if let [one] = parts.as_slice() {
                 if one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) {
                     let table = one.table.clone();
-                    let (grouping, groups) = *self.groupings.entry((id, keys)).or_insert_with(|| {
-                        let (grouping, first) = crate::gen_parts::key_ids(&table, &steps.keys[keys as usize]);
-                        (hash_words(grouping.0.iter().map(|id| u64::from(*id))), first.len() as u32)
-                    });
+                    let (grouping, groups) = *self.groupings.entry((id, keys)).or_insert_with(|| crate::gen_parts::grouping_signature(&table, &steps.keys[keys as usize]));
                     if part == PROJECT {
                         return (groups, 0);
                     }
