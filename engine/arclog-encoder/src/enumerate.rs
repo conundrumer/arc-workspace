@@ -175,14 +175,14 @@ impl Space<'_> {
             return ControlFlow::Continue(());
         }
         // A relation's count gives whether it has a row, so `nonempty` stands only over a relation
-        // of no columns, whose count says nothing else.
-        if typed.columns.is_empty() && !matches!(typed.rel, Rel::Leaf(Leaf::Table(_))) {
+        // of no columns, which has at most one row, so its count says nothing else.
+        if typed.columns.is_empty() {
             visit(Feature::Nonempty(typed.rel.clone()))?;
         } else {
             visit(Feature::Cardinality(typed.rel.clone()))?;
-        }
-        if let Rel::Semijoin(left, _, _) = &typed.rel {
-            visit(Feature::Ratio(typed.rel.clone(), (**left).clone()))?;
+            if let Rel::Semijoin(left, _, _) = &typed.rel {
+                visit(Feature::Ratio(typed.rel.clone(), (**left).clone()))?;
+            }
         }
         let names: Vec<String> = typed.columns.iter().map(|column| self.reference(column)).collect();
         for columns in subsets(&names) {

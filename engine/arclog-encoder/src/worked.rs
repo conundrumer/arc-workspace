@@ -84,7 +84,6 @@ pub const CASES: &[Case] = &[
     named("25d487eb", text!("(component Cardinality (member ", sizes!(), " (N) (Col)) size)"), &["N", "N_2"], Expect::FirstCells(&["N", "N_2"], &["1 1", "8 1"])),
     named("25d487eb", "(group-sizes (group-sizes &ink Col) N)", &["N", "N_2"], Expect::FirstCells(&["N", "N_2"], &["1 1", "8 1"])),
     rel("25d487eb", order_of!(sizes!()), Expect::FirstCells(&["N"], &["8"])),
-    rel("25d487eb", "(component Cardinality (member (project &ink Col) (Col) ()) size)", Expect::FirstCells(&["Col", "N"], &["c1 1", "c2 1"])),
     rel("25d487eb", "(component Cardinality (member &body_count.size (N) (Col)) size)", Expect::FirstCells(&["N", "N_2"], &["1 1", "8 1"])),
     rel("25d487eb", "(component Cardinality (member &mark (Col) (P)) (domain &ink (Col)) size)", Expect::FirstCells(&["Col", "N"], &["c1 1", "c2 0"])),
     rel("25d487eb", text!("(component Excess (plus &ink () (P Col)) (minus ", marks!(), " () (Origin Col)) excess)"), Expect::Numbers(&[8, 15, 8, 15])),

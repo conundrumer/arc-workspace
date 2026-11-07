@@ -681,7 +681,10 @@ impl Generated {
             let count_follows = follows[at];
             let number_column = term.columns.first().map_or(String::new(), |column| column.name.clone());
             let left_text = texts_of_first[term.a as usize].clone();
-            let mut texts: Vec<(String, RootOf)> = match term.root {
+            // A relation of no column has at most one row, so its count is whether it has a row.
+            let root = if term.columns.is_empty() && matches!(term.root, RootKind::Rows | RootKind::Share) { RootKind::Holds } else { term.root };
+            let mut texts: Vec<(String, RootOf)> = match root {
+                RootKind::Holds if count_follows && term.columns.is_empty() => Vec::new(),
                 RootKind::Holds => vec![(format!("(nonempty {})", term.text), RootOf::Nonempty)],
                 // A count that follows from a smaller term's has no root.
                 RootKind::Rows if count_follows => Vec::new(),
@@ -839,8 +842,9 @@ impl Generated {
         for (keys, key_text) in &keyed {
             let heads: Vec<Column> = keys.iter().map(|key| columns[usize::from(*key)].clone()).collect();
             let with = |extra: Vec<Column>| -> Vec<Column> { heads.iter().cloned().chain(extra).collect() };
-            pushes.push((PartStep::Count { keys: keys.clone() }, with(vec![fresh("N", ValueType::Nat, 0)]), format!("(count {text} {key_text})"), RootKind::Rows));
+            // A key of every column has one row, so its count would be 1 everywhere; the count needs a column outside the key.
             if keys.len() < columns.len() {
+                pushes.push((PartStep::Count { keys: keys.clone() }, with(vec![fresh("N", ValueType::Nat, 0)]), format!("(count {text} {key_text})"), RootKind::Rows));
                 pushes.push((PartStep::ClassOf { keys: keys.clone() }, with(vec![fresh("Id", ValueType::OPEN_IDENT, 902)]), format!("(class-of {text} {key_text})"), RootKind::Rows));
             }
             for (f, field) in columns.iter().enumerate() {
@@ -1518,6 +1522,9 @@ impl Generated {
             found.or_else(|| this.push_forced(Step::Project { columns: vec![at].into_boxed_slice() }, leaf, NO_TERM, vec![column.clone()], 1, own_text, RootKind::Rows))
         };
         let groups_of = |this: &mut Self, leaf: u32, text: &str, keys: &[u16], columns: &[Column], key_text: String| -> Option<u32> {
+            if keys.len() >= columns.len() {
+                return None;
+            }
             let count_text = format!("(count {text} {key_text})");
             let found = this.terms.iter().rposition(|term| term.text == count_text).map(|held| held as u32);
             let mut held: Vec<Column> = keys.iter().map(|at| columns[usize::from(*at)].clone()).collect();

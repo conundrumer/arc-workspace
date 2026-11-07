@@ -292,7 +292,10 @@ impl Expander<'_> {
     /// The count of the rows of `rows`, over all its columns.
     pub(crate) fn cardinality(&mut self, rows: &Rows) -> Result<Rows, String> {
         let (marks, labels) = fresh_marks(rows);
-        let head = if labels.is_empty() { "()".to_string() } else { format!("((:m {}))", labels.join(" ")) };
+        if labels.is_empty() {
+            return Err("a relation of no column has at most one row, so its count is whether it has a row: `nonempty` gives it".to_string());
+        }
+        let head = format!("((:m {}))", labels.join(" "));
         let instance = self.fresh();
         self.forms.push(format!("(INIT {instance} Cardinality\n  (member {head}\n    {}))", rows.atom(&marks)));
         Ok(self.query(&[format!("({instance}.size (:N *N))")], vec![Col::typed("N", Some(ValueType::Nat))]))
