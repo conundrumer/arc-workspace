@@ -603,6 +603,45 @@ fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
     Val::of_table(Table::new(keys.len() + 2, out))
 }
 
+/// The cells of the rows of `t` whose value at `v` is the most frequent of their key, or the greatest count below the top where `second`, and none where the key has one count. Each row counts as `weights` says, or once.
+fn frequent_rows(t: &Table, keys: &[u16], v: u16, second: bool, weights: Option<&[u64]>) -> Vec<Cell> {
+    let (grouping, first) = key_ids(t, keys);
+    let ids = &grouping.0;
+    // The rows at each pair of a key and a value, counted by the pair's own id.
+    let values = t.column_grouping(usize::from(v));
+    let width = values.1.len() as u64;
+    let pairs: Vec<u64> = ids.iter().zip(&values.0).map(|(id, value)| u64::from(*id) * width + u64::from(*value)).collect();
+    let (pair_ids, pair_first) = first_ids(&pairs, 0, first.len() as u64 * width);
+    let mut counts = vec![0u64; pair_first.len()];
+    for (at, id) in pair_ids.iter().enumerate() {
+        counts[*id as usize] += weights.map_or(1, |weights| weights[at]);
+    }
+    let mut best = vec![0u64; first.len()];
+    for (at, count) in pair_first.iter().zip(&counts) {
+        let best = &mut best[ids[*at as usize] as usize];
+        *best = (*best).max(*count);
+    }
+    // The rows kept have the key's top count, or its greatest count below the top: none where the key has one count.
+    let mut kept = best;
+    if second {
+        let mut below = vec![0u64; first.len()];
+        for (at, count) in pair_first.iter().zip(&counts) {
+            let key = ids[*at as usize] as usize;
+            if *count < kept[key] {
+                below[key] = below[key].max(*count);
+            }
+        }
+        kept = below;
+    }
+    let mut out = Vec::new();
+    for ((row, id), pair) in t.rows().zip(ids).zip(&pair_ids) {
+        if counts[*pair as usize] == kept[*id as usize] {
+            out.extend_from_slice(row);
+        }
+    }
+    out
+}
+
 fn push_key(out: &mut Vec<Cell>, row: &[Cell], keys: &[u16]) {
     for at in keys {
         out.push(row[usize::from(*at)]);
@@ -1527,20 +1566,42 @@ impl PartStep {
         self.run(&first, children).unwrap_or(Val::None)
     }
 
-    /// Whether the part reads the rows of `inside` through their first `width` columns alone, which are the relation's, and gives what it gives where a row stands once however many cells its box holds.
+    /// The columns of the part's first relation that it reads, where what it gives depends on the distinct tuples of the rows at those columns alone: the other columns of a row play no part, and a row that repeats makes no difference.
+    pub(crate) fn set_columns(&self) -> Option<Vec<u16>> {
+        let with = |keys: &[u16], more: &[u16]| Some(keys.iter().chain(more).copied().collect());
+        match self {
+            PartStep::Pieces { keys, p, .. } | PartStep::BoxOf { keys, p } | PartStep::RelBox { keys, p } | PartStep::ShapeClass { keys, p, .. } | PartStep::Holes { keys, p } | PartStep::Symmetry { keys, p } | PartStep::TouchesEdge { keys, p } | PartStep::FillsBox { keys, p } | PartStep::BoxSides { keys, p } | PartStep::BoxMargins { keys, p } | PartStep::LineCounts { keys, p } | PartStep::CellCount { keys, p } | PartStep::GroupGap { keys, p } | PartStep::Straight { keys, p } | PartStep::StraightAxis { keys, p } | PartStep::FullLines { keys, p } | PartStep::DiffGroupsOff { keys, p, .. } => with(keys, &[*p]),
+            PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => with(keys, &[*f]),
+            PartStep::Extreme { keys, t, score, .. } => with(keys, &[*t, *score]),
+            PartStep::NumberExtreme { n, .. } => Some(vec![*n]),
+            PartStep::DeterminesFlag { keys, a, .. } => with(keys, &[*a]),
+            PartStep::Occurs { keys, p, v, .. } => with(keys, &[*p, *v]),
+            _ => None,
+        }
+    }
+
+    /// The columns of the part's second relation that it reads, where what it gives depends on the distinct tuples of the rows at those columns alone.
+    pub(crate) fn second_columns(&self) -> Option<Vec<u16>> {
+        match self {
+            PartStep::DeterminesFlag { b, .. } => Some(vec![*b]),
+            _ => None,
+        }
+    }
+
+    /// Whether the part takes what it needs from the rows of `inside` as their boxes, where the relation has `width` columns: it reads the columns of the relation alone and counts a row once for each cell of its box, or it reads `set_columns`.
     pub(crate) fn reads_boxes(&self, width: u16) -> bool {
         match self {
             PartStep::Count { keys } => keys.iter().all(|key| *key < width),
-            PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => *f < width && keys.iter().all(|key| *key < width),
-            _ => false,
+            PartStep::MostFrequentRows { keys, v } | PartStep::SecondFrequentRows { keys, v } => *v < width && keys.iter().all(|key| *key < width),
+            _ => self.set_columns().is_some(),
         }
     }
 
     /// What the part gives over the rows of `inside`, where `reads_boxes` holds of it: a count of rows counts the cells of each box.
     pub(crate) fn read_boxes(&self, boxes: &crate::boxes::Boxes, children: &[&Val]) -> Option<Val> {
-        let t = boxes.support();
         match self {
             PartStep::Count { keys } => {
+                let t = boxes.support();
                 let at = usize::from(boxes.at());
                 let (grouping, first) = key_ids(&t, keys);
                 let mut counts = vec![0u64; first.len()];
@@ -1556,7 +1617,21 @@ impl PartStep {
                 }
                 Some(Val::of_table(Table::new(keys.len() + 1, out)))
             }
-            _ => Some(self.run(&t, children).unwrap_or(Val::None)),
+            PartStep::MostFrequentRows { keys, v } | PartStep::SecondFrequentRows { keys, v } => {
+                // A relation's row stands once for each cell of its box, and the rows that stay are whole relation rows.
+                let t = boxes.support();
+                let at = usize::from(boxes.at());
+                let weights: Vec<u64> = t.rows().map(|row| boxes.area(row[at])).collect();
+                let out = frequent_rows(&t, keys, *v, matches!(self, PartStep::SecondFrequentRows { .. }), Some(&weights));
+                Some(boxes.with_rows(&Table::new(t.arity, out)))
+            }
+            _ => {
+                let columns = self.set_columns()?;
+                Some(match boxes.rows_at(&columns) {
+                    Some(t) => self.run(&t, children).unwrap_or(Val::None),
+                    None => Val::None,
+                })
+            }
         }
     }
 
@@ -1884,42 +1959,7 @@ impl PartStep {
                 Val::of_table(Table::new(width, out))
             }
             PartStep::MostFrequentRows { keys, v } | PartStep::SecondFrequentRows { keys, v } => {
-                let (grouping, first) = key_ids(t, keys);
-                let ids = &grouping.0;
-                // The rows at each pair of a key and a value, counted by the pair's own id.
-                let values = t.column_grouping(usize::from(*v));
-                let width = values.1.len() as u64;
-                let pairs: Vec<u64> = ids.iter().zip(&values.0).map(|(id, value)| u64::from(*id) * width + u64::from(*value)).collect();
-                let (pair_ids, pair_first) = first_ids(&pairs, 0, first.len() as u64 * width);
-                let mut counts = vec![0u32; pair_first.len()];
-                for id in &pair_ids {
-                    counts[*id as usize] += 1;
-                }
-                let mut best = vec![0u32; first.len()];
-                for (at, count) in pair_first.iter().zip(&counts) {
-                    let best = &mut best[ids[*at as usize] as usize];
-                    *best = (*best).max(*count);
-                }
-                // The rows kept have the key's top count, or its greatest count below the top: none where the key has one count.
-                let second = matches!(self, PartStep::SecondFrequentRows { .. });
-                let mut kept = best;
-                if second {
-                    let mut below = vec![0u32; first.len()];
-                    for (at, count) in pair_first.iter().zip(&counts) {
-                        let key = ids[*at as usize] as usize;
-                        if *count < kept[key] {
-                            below[key] = below[key].max(*count);
-                        }
-                    }
-                    kept = below;
-                }
-                let mut out = Vec::new();
-                for ((row, id), pair) in t.rows().zip(ids).zip(&pair_ids) {
-                    if counts[*pair as usize] == kept[*id as usize] {
-                        out.extend_from_slice(row);
-                    }
-                }
-                Val::of_table(Table::new(t.arity, out))
+                Val::of_table(Table::new(t.arity, frequent_rows(t, keys, *v, matches!(self, PartStep::SecondFrequentRows { .. }), None)))
             }
             PartStep::DeterminesFlag { keys, a, b } => {
                 let other = flat(children[1])?;
