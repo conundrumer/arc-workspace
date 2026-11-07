@@ -448,10 +448,7 @@ impl Search<'_> {
         for row in part.rows.rows() {
             projected.clear();
             projected.extend(positions.iter().map(|&position| row[usize::from(position)]));
-            // A repeat of a row takes no allocation.
-            if !projection.contains(&projected) {
-                projection.insert(projected.as_slice().into());
-            }
+            projection.insert_slice(&projected);
         }
         projection
     }

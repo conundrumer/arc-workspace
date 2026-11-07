@@ -2,7 +2,7 @@
 //!
 //! A relation is a set of rows of one arity. A body's relation is held as
 //! its parts, each stored row after row in one array with a hash table of
-//! row numbers over it. An index is a trie over the columns in one order, as
+//! row numbers and hashes over it. An index is a trie over the columns in one order, as
 //! sorted arrays, built on first use in the order that a clause's variable
 //! order asks for, and kept with the relation.
 //!
@@ -38,27 +38,55 @@ pub struct RowSet {
 }
 
 /// The rows of a [`RowSet`] in the order they were first inserted.
+///
+/// The table is a lookup over `values` and no part of the rows' content: the
+/// rows, and their order, are `values` and `count` alone. A row's number is
+/// where `values` puts it, which the first insertion of the row decides, so
+/// no layout of the table changes which rows the set holds or the order that
+/// [`RowSet::rows`] gives them in.
 #[derive(Clone, Debug, Default)]
 struct Rows {
     /// The values of the rows, row after row.
     values: Vec<TermId>,
     count: u32,
-    /// An open-addressing table of 1 + a row's number, 0 in an empty slot.
-    /// Its length is 0 or a power of two.
-    slots: Box<[u32]>,
+    /// An open-addressing table, 0 in an empty slot. A slot in use holds the
+    /// row's [`row_hash`] in its upper 32 bits and 1 + the row's number in its
+    /// lower 32 bits, so a probe of a slot that holds another row ends at the
+    /// compare of two hashes in the table, with no read of `values`, unless
+    /// the hashes are equal. Its length is 0 or a power of two.
+    slots: Box<[u64]>,
 }
 
-/// The largest share of a [`Rows`] table's slots in use, as a fraction. At
-/// half, a row not in the table takes about 2.5 probes, against about 8.5 at
-/// three quarters, and the probes of a join's new rows dominate its inserts.
-const SLOTS_USED: (usize, usize) = (1, 2);
+/// The largest share of a [`Rows`] table's slots in use, as a fraction. A
+/// probe that passes a slot of another row reads one 8-byte slot of a run that
+/// the table holds side by side, so a longer run of probes costs far less than
+/// a read of `values` for each. At three quarters, a row not in the table takes
+/// about 8.5 probes, and the table holds 11 to 21 bytes for each row.
+const SLOTS_USED: (usize, usize) = (3, 4);
 
-fn row_hash(row: &[TermId]) -> usize {
+/// The hash of `row`. Two equal rows have equal hashes.
+fn row_hash(row: &[TermId]) -> u32 {
     let mut hash = 0x9E37_79B9_7F4A_7C15_u64;
     for value in row {
         hash = (hash.rotate_left(5) ^ u64::from(value.encoding())).wrapping_mul(0x517C_C1B7_2722_0A95);
     }
-    (hash ^ (hash >> 32)) as usize
+    (hash ^ (hash >> 32)) as u32
+}
+
+/// The slot entry of the row `number`, whose hash is `hash`.
+fn entry(hash: u32, number: u32) -> u64 {
+    u64::from(hash) << 32 | u64::from(number + 1)
+}
+
+/// Puts `entry` in the first empty slot of its probe, with no check of the
+/// rows the table holds. The table has an empty slot.
+fn place(slots: &mut [u64], entry: u64) {
+    let mask = slots.len() - 1;
+    let mut at = (entry >> 32) as usize & mask;
+    while slots[at] != 0 {
+        at = (at + 1) & mask;
+    }
+    slots[at] = entry;
 }
 
 impl Rows {
@@ -66,29 +94,49 @@ impl Rows {
         &self.values[number as usize * arity..(number as usize + 1) * arity]
     }
 
-    /// The slot that holds `row`, or the empty slot where it would go. The
-    /// table has an empty slot.
-    fn slot(&self, row: &[TermId]) -> usize {
+    /// The slot that holds `row`, whose hash is `hash`, or the empty slot
+    /// where it would go. The table has an empty slot.
+    ///
+    /// A slot of the row has the row's hash, so a slot with another hash holds
+    /// another row, and the probe passes it with no compare of rows. A slot
+    /// with the same hash holds the row or another row of that hash, which the
+    /// compare of rows tells. So the slot found is the one that a probe that
+    /// compares every row finds.
+    fn slot(&self, row: &[TermId], hash: u32) -> usize {
         let mask = self.slots.len() - 1;
-        let mut at = row_hash(row) & mask;
-        while self.slots[at] != 0 && self.row(self.slots[at] - 1, row.len()) != row {
+        let mut at = hash as usize & mask;
+        loop {
+            let slot = self.slots[at];
+            if slot == 0 || ((slot >> 32) as u32 == hash && self.row(slot as u32 - 1, row.len()) == row) {
+                return at;
+            }
             at = (at + 1) & mask;
         }
-        at
     }
 
+    /// Doubles the table, or builds it where the rows came without one. The
+    /// rows are distinct, so each takes the first empty slot of its probe
+    /// with no compare of rows, and a row's slot keeps its hash, so a table
+    /// that has slots reads no row to grow.
     fn grow(&mut self, arity: usize) {
         // Rows that came without a table have a table of their count on the first row added.
         let least = (((self.count as usize + 1) * SLOTS_USED.1 / SLOTS_USED.0) + 1).next_power_of_two();
-        self.slots = vec![0; (self.slots.len() * 2).max(8).max(least)].into();
-        for number in 0..self.count {
-            let at = self.slot(self.row(number, arity));
-            self.slots[at] = number + 1;
+        let old = std::mem::take(&mut self.slots);
+        let mut slots = vec![0; (old.len() * 2).max(8).max(least)].into_boxed_slice();
+        if old.is_empty() {
+            for number in 0..self.count {
+                place(&mut slots, entry(row_hash(self.row(number, arity)), number));
+            }
+        } else {
+            for &held in old.iter().filter(|&&held| held != 0) {
+                place(&mut slots, held);
+            }
         }
+        self.slots = slots;
     }
 
     fn bytes(&self) -> usize {
-        (self.values.capacity() + self.slots.len()) * 4
+        self.values.capacity() * std::mem::size_of::<TermId>() + self.slots.len() * std::mem::size_of::<u64>()
     }
 }
 
@@ -115,20 +163,30 @@ impl RowSet {
         self.rows.row(number as u32, usize::from(self.arity))
     }
 
-    /// Adds `row`. The row's length is the set's arity.
+    /// Adds `row`, and tells whether the set did not hold it. The row's length
+    /// is the set's arity.
     pub fn insert(&mut self, row: Row) -> bool {
+        self.insert_slice(&row)
+    }
+
+    /// As [`RowSet::insert`], from a slice, which takes no allocation for the
+    /// row. The set copies the values of a row it adds into its one array, so
+    /// the rows it holds, and their order, are those that [`RowSet::insert`]
+    /// of a box of the same values gives.
+    pub fn insert_slice(&mut self, row: &[TermId]) -> bool {
         assert_eq!(row.len(), usize::from(self.arity), "a row of the set's arity");
         let rows = std::sync::Arc::make_mut(&mut self.rows);
         if (rows.count as usize + 1) * SLOTS_USED.1 > rows.slots.len() * SLOTS_USED.0 {
             rows.grow(row.len());
         }
-        let at = rows.slot(&row);
+        let hash = row_hash(row);
+        let at = rows.slot(row, hash);
         if rows.slots[at] != 0 {
             return false;
         }
-        rows.values.extend_from_slice(&row);
+        rows.values.extend_from_slice(row);
         rows.count = rows.count.checked_add(1).expect("a set of fewer than 2^32 rows");
-        rows.slots[at] = rows.count;
+        rows.slots[at] = entry(hash, rows.count - 1);
         true
     }
 
@@ -140,7 +198,7 @@ impl RowSet {
         if self.rows.slots.is_empty() {
             return self.rows().any(|held| held == row);
         }
-        self.rows.slots[self.rows.slot(row)] != 0
+        self.rows.slots[self.rows.slot(row, row_hash(row))] != 0
     }
 
     /// Each row of the set, in the order of their first insertion, which is

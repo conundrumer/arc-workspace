@@ -411,7 +411,7 @@ impl<'g> JointWalks<'g> {
             contexts.extend(key.contexts[position].iter().cloned());
             for (joint, part) in rows.iter_mut().zip(&key.found[position]) {
                 for row in part.rows() {
-                    joint.insert(row.into());
+                    joint.insert_slice(row);
                 }
             }
         }
