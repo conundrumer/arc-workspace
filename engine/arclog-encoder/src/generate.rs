@@ -2726,7 +2726,8 @@ impl<'a> Walker<'a> {
                 }
                 own.resize(instances, 0);
             }
-            if wanted && is_stopped && listed != 0 {
+            // A root over a first relation with no value has no value: a default would say that the relation is there and empty.
+            if wanted && (is_stopped || (scope > 0 && first_cut && !second_empty)) && listed != 0 {
                 // A root over a stopped term has no value at any instance, which is not its default.
                 for (place, (hash, of)) in term.roots.iter().enumerate() {
                     if listed & (1 << place) != 0 {
