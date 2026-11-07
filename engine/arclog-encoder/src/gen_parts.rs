@@ -1950,23 +1950,50 @@ impl PartStep {
             }
             PartStep::Inside { b } => {
                 let grid = grid_of(children[1])?;
-                let mut out = Vec::new();
-                if t.len > 200 {
-                    crate::bounds::mark(crate::bounds::Bound::InsideRows);
+                let at = usize::from(*b);
+                // The rows and columns of a box that lie in the grid.
+                let span = |held: Cell| {
+                    let m = margins_of(held);
+                    (m[0].max(0), grid.h - 1 - m[1].max(0), m[2].max(0), grid.w - 1 - m[3].max(0))
+                };
+                let size = |held: Cell| {
+                    let (r0, r1, c0, c1) = span(held);
+                    ((r1 - r0 + 1).max(0) * (c1 - c0 + 1).max(0)) as usize
+                };
+                // The rows are written once each, so the table can be as large as the other tables are allowed to be.
+                let total: usize = t.rows().map(|row| size(row[at])).sum();
+                if total.saturating_mul(t.arity + 2) > crate::native::CELL_CAP {
+                    crate::bounds::mark(crate::bounds::Bound::InsideCells);
                     return None;
                 }
+                // A box's cells with their colors, in the order of their `P`: by column from the last, then by row from the last. Each box is read once.
+                let mut tails: FastMap<Cell, Vec<Cell>> = FastMap::default();
                 for row in t.rows() {
-                    let m = margins_of(row[usize::from(*b)]);
-                    let (r0, r1, c0, c1) = (m[0].max(0), grid.h - 1 - m[1].max(0), m[2].max(0), grid.w - 1 - m[3].max(0));
-                    for r in r0..=r1 {
-                        for c in c0..=c1 {
-                            out.extend_from_slice(row);
-                            out.push(box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c));
-                            out.push(grid.colors[(r * grid.w + c) as usize]);
+                    tails.entry(row[at]).or_insert_with_key(|held| {
+                        let (r0, r1, c0, c1) = span(*held);
+                        let mut tail = Vec::with_capacity(2 * size(*held));
+                        for c in (c0..=c1).rev() {
+                            for r in (r0..=r1).rev() {
+                                tail.push(box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c));
+                                tail.push(grid.colors[(r * grid.w + c) as usize]);
+                            }
                         }
+                        tail
+                    });
+                }
+                let mut out: Vec<Cell> = Vec::with_capacity(total * (t.arity + 2));
+                for row in t.rows() {
+                    for cell in tails[&row[at]].chunks_exact(2) {
+                        out.extend_from_slice(row);
+                        out.extend_from_slice(cell);
                     }
                 }
-                Val::of_table(Table::distinct(t.arity + 2, out))
+                // Where the rows come in order, so do these: no row repeats, and a sort is not needed.
+                if t.rows().is_sorted_by(|a, b| a < b) {
+                    Val::of_table(Table::new(t.arity + 2, out))
+                } else {
+                    Val::of_table(Table::distinct(t.arity + 2, out))
+                }
             }
             PartStep::Occurs { keys, p, v, turned } => {
                 let grid = grid_of(children[1])?;
@@ -2657,23 +2684,19 @@ impl PartStep {
             }
             PartStep::BoxRead { b, kept } => {
                 let (input, output) = grids_of(children[1])?;
-                let mut boxes: Vec<Cell> = t.sorted_column(usize::from(*b)).to_vec();
-                boxes.retain(|held| {
-                    let m = margins_of(*held);
-                    input.h - m[0] - m[1] == output.h && input.w - m[2] - m[3] == output.w
-                });
-                if boxes.len() > 64 {
-                    return None;
-                }
                 let mut out = Vec::new();
-                for held in boxes {
+                for held in t.sorted_column(usize::from(*b)).iter().copied() {
                     let m = margins_of(held);
-                    for r in 0..output.h {
-                        for c in 0..output.w {
+                    // Only a box of the output's extents stands for the output.
+                    if input.h - m[0] - m[1] != output.h || input.w - m[2] - m[3] != output.w {
+                        continue;
+                    }
+                    // The output cells whose input cell lies in the grid.
+                    let (r_first, r_last) = ((-m[0]).max(0), (input.h - m[0]).min(output.h));
+                    let (c_first, c_last) = ((-m[2]).max(0), (input.w - m[2]).min(output.w));
+                    for r in r_first..r_last {
+                        for c in c_first..c_last {
                             let (y, z) = (r + m[0], c + m[2]);
-                            if y < 0 || z < 0 || y >= input.h || z >= input.w {
-                                continue;
-                            }
                             let (from, to) = (input.colors[(y * input.w + z) as usize], output.colors[(r * output.w + c) as usize]);
                             if (from == to) == *kept {
                                 out.extend_from_slice(&[held, box_bits(y, input.h - 1 - y, z, input.w - 1 - z), box_bits(r, output.h - 1 - r, c, output.w - 1 - c), from]);
