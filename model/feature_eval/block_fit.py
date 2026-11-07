@@ -3,7 +3,7 @@
 A build writes each fact once, at the level where it holds: a value at one example in a row of `each`, a value
 every example of a candidate has in a row of `stable`, and what a task holds in a row of its family. A row of a fit points to
 one block of each kind, so a fact that many rows share costs one entry. `engine/block-boost` compiles these blocks for a set
-and boosts over them, with the parameters LightGBM has in `gate_lists.fit_runs`.
+and boosts over them, with the objective, tree growth and parameters of LightGBM's lambdarank.
 """
 import hashlib
 import json
@@ -25,7 +25,8 @@ BINARY = Path(os.environ.get('BLOCK_BOOST', ROOT / 'engine/target/tool/block-boo
 NONE = np.uint32(0xFFFFFFFF)
 PARAMETERS = dict(learning_rate=0.05, num_leaves=31, min_data_in_leaf=20, min_sum_hessian=1e-3, truncation=40, max_rounds=1500, patience=100)
 MAX_BIN = 31
-SAMPLE_CAP = 256
+# The entries of a column that its bins come from. LightGBM bins from up to 200,000 rows.
+SAMPLE_CAP = 200000
 
 
 class BlockMatrix:
@@ -206,6 +207,8 @@ def plan_of(directory, out, split, meta, data, spec, groups, told):
                 plan.add(mean, width, 'task', at, [f'{label}:mean' for label in labels])
         elif term == 'graph':
             plan.add('graph', widths['graph'], 'candidate', np.arange(widths['graph']), [f"graph:{meta['family_names'].get(int(key), '')}" for key in meta['graph_columns']])
+        elif term == 'query':
+            plan.add('query', widths['query'], 'candidate', np.arange(widths['query']), [f"query:{meta['family_names'].get(int(key), '')}" for key in meta['query_columns']])
         elif term == 'relations':
             plan.add('relations', widths['relations'], 'candidate', np.arange(widths['relations']), [f"{relation}:{meta['family_names'].get(int(key), '')}" for relation in RELATIONS for key in meta['relation_columns']])
         elif term == 'wide':
@@ -295,7 +298,10 @@ def fit(out, meta, sets, filters, threads, fraction, seeds):
         for spec in sets:
             started = time.time()
             written_spec, _, told = spec.partition('@')
-            work = out / 'compiled' / hashlib.sha1(f'{name}|{spec}'.encode()).hexdigest()[:16]
+            # A restart goes on from the files of this directory, so its name holds everything those files depend on.
+            settings = json.dumps(dict(PARAMETERS, max_bin=MAX_BIN, sample_cap=SAMPLE_CAP, fraction=fraction, seeds=seeds), sort_keys=True)
+            code = hashlib.sha1(BINARY.read_bytes() + Path(__file__).read_bytes()).hexdigest()
+            work = out / 'compiled' / hashlib.sha1(f'{name}|{spec}|{settings}|{code}'.encode()).hexdigest()[:16]
             plan, of_train = plan_of(work / 'train', out, 'train', meta, train, written_spec, train_groups, int(told or 0))
             labels = plan.labels
             plan.write(threads)
@@ -387,6 +393,8 @@ def score(models, spec, name, vectors):
         node = 0
         while True:
             x = row[tree['column'][node]]
+            if x != x and not tree['nan_seen'][node]:
+                x = 0.0
             bound = tree['threshold'][node]
             goes_left = tree['default_left'][node] if x != x else bound is None or x <= bound
             node = tree['left'][node] if goes_left else tree['right'][node]

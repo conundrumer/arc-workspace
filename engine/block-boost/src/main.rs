@@ -25,6 +25,9 @@ const NONE: u32 = u32::MAX;
 const EPSILON: f64 = 1e-15;
 const ZERO: f64 = 1e-35;
 const MIN_DATA_IN_BIN: f64 = 3.0;
+const SIGMOID_BINS: usize = 1 << 20;
+const SIGMOID_LOW: f64 = -25.0;
+const SIGMOID_FACTOR: f64 = SIGMOID_BINS as f64 / 50.0;
 
 fn bytes_of<T: Copy>(values: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(values.as_ptr() as *const u8, std::mem::size_of_val(values)) }
@@ -903,6 +906,10 @@ fn fill_histogram(work: &mut Work, store: &Store, rows: std::ops::Range<usize>, 
 }
 
 /// The best split of a column, by the leaf's sums: the column's default bin holds what its other bins do not.
+///
+/// It scans as LightGBM does: from the highest place down with NaN on the left, and, where the column has NaN, from the
+/// lowest place up with NaN on the right. A count is estimated from hessians, so the side a scan sums decides how a count
+/// rounds at `min_data_in_leaf`, and the direction decides which of two thresholds of equal gain a split takes.
 fn best_in_column(store: &Store, k: usize, hist: &[Bin], total: (f64, f64, f64), config: &Config, parent: f64) -> Option<Split> {
     let (g, h, n) = total;
     let start = store.col_start[k] as usize;
@@ -910,82 +917,107 @@ fn best_in_column(store: &Store, k: usize, hist: &[Bin], total: (f64, f64, f64),
     if bins.is_empty() {
         return None;
     }
-    let (mut other_g, mut other_h) = (0.0, 0.0);
+    let (mut other_g, mut other_h, mut filled) = (0.0, 0.0, 0.0);
     for bin in bins {
         other_g += bin.g;
         other_h += bin.h;
+        if bin.h > 0.0 {
+            filled += 1.0;
+        }
     }
-    let factor = n / h;
-    if other_h * factor < config.min_data_in_leaf - 0.5 {
+    let sum_h = h + EPSILON;
+    let factor = n / sum_h;
+    // One side of any split holds no default bin. Rounding moves each bin's count by at most 0.5, so this column cannot fill that side.
+    if other_h * factor + 0.5 * (filled + 1.0) < config.min_data_in_leaf {
         return None;
     }
+    let (min_n, min_h) = (config.min_data_in_leaf, config.min_sum_hessian);
     let has_nan = store.has_nan[k] != 0;
     let numeric = bins.len() - has_nan as usize;
     let zero = store.zero_pos[k] as usize;
     let default = Bin { g: g - other_g, h: (h - other_h).max(0.0) };
-    let nan = if has_nan { bins[numeric] } else { Bin::default() };
+    // Places 0..=numeric: the default bin stands at `zero`.
+    let at = |place: usize| {
+        if place == zero {
+            default
+        } else if place < zero {
+            bins[place]
+        } else {
+            bins[place - 1]
+        }
+    };
     let mut best: Option<Split> = None;
-    let mut scan = |nan_left: bool| {
-        let (mut left_g, mut left_h) = if nan_left { (nan.g, nan.h) } else { (0.0, 0.0) };
-        let mut left_n = if nan_left { (nan.h * factor).round() } else { 0.0 };
-        // Places 0..=numeric: the default bin stands at `zero`.
+    let mut consider = |pos: usize, nan_left: bool, left_g: f64, left_h: f64, right_g: f64, right_h: f64| {
+        let gain = left_g * left_g / left_h + right_g * right_g / right_h;
+        if gain > parent && best.is_none_or(|b| gain - parent > b.gain) {
+            best = Some(Split { column: k as u32, pos: pos as u32, default_left: nan_left, gain: gain - parent, left_g, left_h: left_h - EPSILON });
+        }
+    };
+    let (mut right_g, mut right_h, mut right_n) = (0.0, EPSILON, 0.0);
+    for place in (1..=numeric).rev() {
+        let bin = at(place);
+        right_g += bin.g;
+        right_h += bin.h;
+        right_n += (bin.h * factor).round();
+        if right_n < min_n || right_h < min_h {
+            continue;
+        }
+        if n - right_n < min_n || sum_h - right_h < min_h {
+            break;
+        }
+        consider(place - 1, has_nan, g - right_g, sum_h - right_h, right_g, right_h);
+    }
+    if has_nan {
+        let (mut left_g, mut left_h, mut left_n) = (0.0, EPSILON, 0.0);
         for place in 0..=numeric {
-            let bin = if place == zero {
-                default
-            } else if place < zero {
-                bins[place]
-            } else {
-                bins[place - 1]
-            };
+            let bin = at(place);
             left_g += bin.g;
             left_h += bin.h;
             left_n += (bin.h * factor).round();
-            if place == numeric && (nan_left || !has_nan) {
-                break;
-            }
-            let right_h = h - left_h;
-            let right_n = n - left_n;
-            if left_n < config.min_data_in_leaf || left_h < config.min_sum_hessian || right_n < config.min_data_in_leaf || right_h < config.min_sum_hessian {
+            if left_n < min_n || left_h < min_h {
                 continue;
             }
-            let right_g = g - left_g;
-            let gain = left_g * left_g / (left_h + EPSILON) + right_g * right_g / (right_h + EPSILON);
-            if gain > parent && best.is_none_or(|b| gain - parent > b.gain) {
-                best = Some(Split { column: k as u32, pos: place as u32, default_left: nan_left, gain: gain - parent, left_g, left_h });
+            if n - left_n < min_n || sum_h - left_h < min_h {
+                break;
             }
+            consider(place, false, left_g, left_h, g - left_g, sum_h - left_h);
         }
-    };
-    scan(false);
-    if has_nan && nan.h > 0.0 {
-        scan(true);
     }
     best
 }
 
-fn best_split(store: &Store, used: &[u32], hist: &[Bin], total: (f64, f64, f64), config: &Config) -> Option<Split> {
+/// A leaf's best split among the columns its parent could split, and the columns that have a split here, which alone stand
+/// for its children, as in LightGBM.
+fn best_split(store: &Store, used: &[u32], hist: &[Bin], total: (f64, f64, f64), config: &Config) -> (Option<Split>, Vec<u32>) {
     let (g, h, n) = total;
     if n < 2.0 * config.min_data_in_leaf || h < 2.0 * config.min_sum_hessian {
-        return None;
+        return (None, Vec::new());
     }
     let parent = g * g / (h + EPSILON);
     used.par_chunks(4096)
         .map(|chunk| {
             let mut best: Option<Split> = None;
+            let mut open = Vec::new();
             for &k in chunk {
                 if let Some(found) = best_in_column(store, k as usize, hist, total, config, parent) {
+                    open.push(k);
                     if best.is_none_or(|b| found.gain > b.gain) {
                         best = Some(found);
                     }
                 }
             }
-            best
+            (best, open)
         })
         .reduce(
-            || None,
-            |a, b| match (a, b) {
-                (Some(x), Some(y)) => Some(if y.gain > x.gain || (y.gain == x.gain && y.column < x.column) { y } else { x }),
-                (x, None) => x,
-                (None, y) => y,
+            || (None, Vec::new()),
+            |(a, mut open), (b, more)| {
+                open.extend(more);
+                let best = match (a, b) {
+                    (Some(x), Some(y)) => Some(if y.gain > x.gain || (y.gain == x.gain && y.column < x.column) { y } else { x }),
+                    (x, None) => x,
+                    (None, y) => y,
+                };
+                (best, open)
             },
         )
 }
@@ -997,6 +1029,7 @@ struct Leaf {
     h: f64,
     hist: Option<Vec<Bin>>,
     best: Option<Split>,
+    open: Vec<u32>,
     parent: i32,
     is_left: bool,
 }
@@ -1013,8 +1046,8 @@ fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &
     }
     let mut hist = work.take(store);
     fill_histogram(work, store, 0..active.len(), grad, hess, &mut hist);
-    let best = best_split(store, used, &hist, (g, h, active.len() as f64), config);
-    let mut leaves = vec![Leaf { start: 0, len: active.len(), g, h, hist: Some(hist), best, parent: -1, is_left: false }];
+    let (best, open) = best_split(store, used, &hist, (g, h, active.len() as f64), config);
+    let mut leaves = vec![Leaf { start: 0, len: active.len(), g, h, hist: Some(hist), best, open, parent: -1, is_left: false }];
     let mut tree = Tree::default();
     while leaves.len() < config.num_leaves {
         let mut chosen = None;
@@ -1073,7 +1106,7 @@ fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &
         // The smaller child's histogram is read from its rows, and the larger's is what remains of its parent's.
         let mut larger = leaves[at].hist.take().unwrap();
         let mut smaller = work.take(store);
-        let small_rows = if left_len <= right_len { start..start + left_len } else { start + left_len..start + len };
+        let small_rows = if left_len < right_len { start..start + left_len } else { start + left_len..start + len };
         fill_histogram(work, store, small_rows, grad, hess, &mut smaller);
         larger.par_chunks_mut(1 << 16).zip(smaller.par_chunks(1 << 16)).for_each(|(a, b)| {
             for (x, y) in a.iter_mut().zip(b) {
@@ -1081,16 +1114,17 @@ fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &
                 x.h -= y.h;
             }
         });
-        let (left_hist, right_hist) = if left_len <= right_len { (smaller, larger) } else { (larger, smaller) };
-        let left_best = best_split(store, used, &left_hist, (left_g, left_h, left_len as f64), config);
-        let right_best = best_split(store, used, &right_hist, (right_g, right_h, right_len as f64), config);
-        leaves[at] = Leaf { start, len: left_len, g: left_g, h: left_h, hist: None, best: left_best, parent: node, is_left: true };
+        let (left_hist, right_hist) = if left_len < right_len { (smaller, larger) } else { (larger, smaller) };
+        let open = std::mem::take(&mut leaves[at].open);
+        let (left_best, left_open) = best_split(store, &open, &left_hist, (left_g, left_h, left_len as f64), config);
+        let (right_best, right_open) = best_split(store, &open, &right_hist, (right_g, right_h, right_len as f64), config);
+        leaves[at] = Leaf { start, len: left_len, g: left_g, h: left_h, hist: None, best: left_best, open: left_open, parent: node, is_left: true };
         if left_best.is_some() {
             leaves[at].hist = Some(left_hist);
         } else {
             work.pool.push(left_hist);
         }
-        let mut right = Leaf { start: start + left_len, len: right_len, g: right_g, h: right_h, hist: None, best: right_best, parent: node, is_left: false };
+        let mut right = Leaf { start: start + left_len, len: right_len, g: right_g, h: right_h, hist: None, best: right_best, open: right_open, parent: node, is_left: false };
         if right_best.is_some() {
             right.hist = Some(right_hist);
         } else {
@@ -1139,10 +1173,18 @@ impl Groups {
 }
 
 /// LightGBM's lambdarank gradients of one group.
+/// LightGBM's lookup for the sigmoid of a pair's score difference, 2^20 bins from -25 to 25. A bin's value stands for every
+/// difference in that bin, so a fit's trees depend on it.
+fn sigmoid_table() -> &'static [f64] {
+    static TABLE: std::sync::OnceLock<Vec<f64>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| (0..SIGMOID_BINS).map(|i| 1.0 / (1.0 + (i as f64 / SIGMOID_FACTOR + SIGMOID_LOW).exp())).collect())
+}
+
 fn group_gradients(score: &[f64], label: &[u8], inverse_max_dcg: f64, discount: &[f64], truncation: usize, grad: &mut [f32], hess: &mut [f32]) {
     let n = score.len();
     grad.fill(0.0);
     hess.fill(0.0);
+    let sigmoids = sigmoid_table();
     let mut sorted: Vec<u32> = (0..n as u32).collect();
     sorted.sort_by(|&a, &b| score[b as usize].total_cmp(&score[a as usize]));
     let best = score[sorted[0] as usize];
@@ -1160,9 +1202,15 @@ fn group_gradients(score: &[f64], label: &[u8], inverse_max_dcg: f64, discount: 
             let paired = (discount[high_rank] - discount[low_rank]).abs();
             let mut delta_ndcg = gain_gap * paired * inverse_max_dcg;
             if best != worst {
-                delta_ndcg /= 0.01 + delta.abs();
+                delta_ndcg /= 0.01f32 as f64 + delta.abs();
             }
-            let sigmoid = 1.0 / (1.0 + delta.exp());
+            let sigmoid = if delta <= SIGMOID_LOW {
+                sigmoids[0]
+            } else if delta >= -SIGMOID_LOW {
+                sigmoids[SIGMOID_BINS - 1]
+            } else {
+                sigmoids[((delta - SIGMOID_LOW) * SIGMOID_FACTOR) as usize]
+            };
             let p_hessian = sigmoid * (1.0 - sigmoid) * delta_ndcg;
             let p_lambda = -sigmoid * delta_ndcg;
             grad[low] -= p_lambda as f32;
@@ -1296,14 +1344,18 @@ fn boost(store: &Store, groups: &Groups, active: &[bool], held: Option<&[bool]>,
 fn resident_gib() -> f64 {
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
     unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
-    usage.ru_maxrss as f64 / (1u64 << 30) as f64
+    // `ru_maxrss` is in bytes on macOS and in KiB on Linux.
+    let unit = if cfg!(target_os = "macos") { 1u64 << 30 } else { 1u64 << 20 };
+    usage.ru_maxrss as f64 / unit as f64
 }
 
-fn tree_json(tree: &Tree, bounds: &[f64], bound_start: &[u32]) -> Value {
+fn tree_json(tree: &Tree, bounds: &[f64], bound_start: &[u32], has_nan: &[u8]) -> Value {
     let threshold: Vec<f64> = tree.column.iter().zip(&tree.pos).map(|(&k, &pos)| bounds[bound_start[k as usize] as usize + pos as usize]).collect();
     // A threshold of no finite bound sends every number left.
     let threshold: Vec<Value> = threshold.iter().map(|&x| if x.is_finite() { json!(x) } else { Value::Null }).collect();
-    json!({"column": tree.column, "threshold": threshold, "default_left": tree.default_left, "left": tree.left, "right": tree.right, "value": tree.value})
+    // A column with no NaN in the fit reads a NaN as its default, 0, as `compile` does.
+    let nan_seen: Vec<bool> = tree.column.iter().map(|&k| has_nan[k as usize] != 0).collect();
+    json!({"column": tree.column, "threshold": threshold, "default_left": tree.default_left, "nan_seen": nan_seen, "left": tree.left, "right": tree.right, "value": tree.value})
 }
 
 fn fit(file: &Path) {
@@ -1352,7 +1404,7 @@ fn fit(file: &Path) {
                 gain[k as usize] += g;
                 splits[k as usize] += 1;
             }
-            writeln!(model, "{}", tree_json(tree, &bounds, &bound_start)).unwrap();
+            writeln!(model, "{}", tree_json(tree, &bounds, &bound_start, &store.has_nan)).unwrap();
         }
         model.flush().unwrap();
         write_all(&out.join(format!("gain.{seed}.f64")), &gain);
@@ -1403,21 +1455,23 @@ fn softmax_read(start: &[u32], label: &[u8], score: &[f64]) -> (f64, f64) {
         let (a, b) = (start[g] as usize, start[g + 1] as usize);
         let most = score[a..b].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let (mut all, mut positive) = (0.0, 0.0);
-        let mut best = a;
+        let (mut tied, mut tied_positive) = (0.0, 0.0);
         for i in a..b {
             let e = (score[i] - most).exp();
             all += e;
             if label[i] > 0 {
                 positive += e;
             }
-            if score[i] > score[best] {
-                best = i;
+            if score[i] == most {
+                tied += 1.0;
+                if label[i] > 0 {
+                    tied_positive += 1.0;
+                }
             }
         }
         loss += -(positive / all).ln();
-        if label[best] > 0 {
-            top += 1.0;
-        }
+        // Ids tied at the top share the point's credit, as `fit_trees.evaluate` gives.
+        top += tied_positive / tied;
     }
     (loss / groups.max(1) as f64, top / groups.max(1) as f64)
 }
@@ -1512,7 +1566,7 @@ fn softmax(file: &Path) {
             gain[k as usize] += g;
             splits[k as usize] += 1;
         }
-        writeln!(model, "{}", tree_json(&tree, &bounds, &bound_start)).unwrap();
+        writeln!(model, "{}", tree_json(&tree, &bounds, &bound_start, &store.has_nan)).unwrap();
         if round % 25 == 0 || empty {
             println!("round {round} train loss {train_loss:.4} dev loss {loss:.4} top {top:.4} best {best_loss:.4} at {best_round} {:.2} rounds/s rss {:.2} GiB", round as f64 / started.elapsed().as_secs_f64(), resident_gib());
         }
