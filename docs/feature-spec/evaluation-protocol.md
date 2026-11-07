@@ -107,18 +107,18 @@ Whether a model input row gives what the first version tells a learned model. [P
 - **Model input rows:** a parameterized table of a ground truth program or of a mutant at one train pair. For what the first version states of the base tables, a model input row is one train pair. The first version's value and the column read a parameterized table at one assignment.
 - **Form:** a feature that names a column by its place, or another table by its identity, is compared in the form a shape has: its greatest value over the bindings of one type signature, with the other table written as how it stands to the owner. A word is compared as whether some binding gives it.
 - **Superseded:** the first version's forms are not targets. A statement in a form that the specification replaces is judged against the specification's form, and each kind of the first version has a recorded disposition that names that form:
-    - A statement across ARC examples is a shape's `stable`, or a task-wide root.
-    - A statement about another table by its identity is a shape with a parent or ancestor hole, or a pool by how that table stands to the owner.
+    - A statement across ARC examples is a shape's `stable`, its least, mean or greatest over the ARC examples, or a task-wide root.
+    - A statement about another table by its identity is a shape with a parent or ancestor hole, or a pool by how that table stands to the owner. That table stands to the owner as the specification says: a parent is a table that the owner's query reads, and an ancestor is one that the query reaches through other queries. The first version takes every table of an instance as upstream once a query reads one of them, tables that no query reads among them, so its value that names a table the specification puts nowhere upstream is not judged.
     - A statement across assignments is the `AssignmentVector`.
     - A description of a column or a table in text is a shape's name and a hole's lineage root.
     - A statement that the grammar reaches only past the size to run is a part of the feature library.
 - **Covered:** on the model input rows where the feature has a value, its value is a function of one column's value, and that function is monotone or changes few times along the column, so a few splits can read it. A column with an entry on fewer train model input rows than `min_data_in_leaf` stands in no fit, so it covers nothing.
 - **Control:** each feature is judged again with its values shuffled across the model input rows where it has a value. A search over many columns finds chance matches on few model input rows, so a count gives covered and its shuffled rate, per bucket of those model input rows.
-- **Not judged:** a feature with under 5 model input rows off its commonest value (low support), a feature with one value on every model input row (zero variance), and text that describes a column or a table, which has no number.
+- **Not judged:** a feature with under 5 model input rows off its commonest value (low support), a feature with one value on every model input row (zero variance), and text that describes a column or a table, which has no number. A model input row is not judged where its table has a cell off its frame, which the specification gives no value, or where the specification puts upstream of it a table that the first version does not list.
 - **Missing:** any other feature, and a superseded one with no column in the form its disposition names.
 - **Statistic:** the counts of covered and missing items, by the first version's feature metadata: what a feature reads, its aggregation level, and the other tables it reads.
 - **Limit:** a feature that only two columns together give counts as missing. Coverage shows that a learned model can read a value, and not that the value helps it.
-- **Running:** `model/feature_eval/v1_dump.py` writes the first version's values, `model/feature_eval/v1_disposition.tsv` holds the dispositions, and `model/feature_eval/v1_cover.py` gives the result.
+- **Running:** `model/feature_eval/v1_dump.py` writes the first version's values, `model/feature_eval/v1_disposition.tsv` holds the dispositions, and `model/feature_eval/v1_cover.py` gives the result. A feature that one column covers over a set of tasks is covered over each subset of them, so a run over more tasks needs to judge again only the features that are not missing.
 
 ## Counts
 
