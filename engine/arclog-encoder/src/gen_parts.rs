@@ -8,7 +8,7 @@ use crate::catalog_facts::{canon, normalized, symmetry_count};
 use crate::gen_constants::{box_bits, encoding, margins_of, number_bits, number_of};
 use crate::native::{hash_words, Cell, FastMap, Table, Val};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum PartStep {
     /// A relation's cells at a column that lie on a grid: (p).
     CellsOn { p: u16 },
@@ -266,7 +266,7 @@ pub fn flat(value: &Val) -> Option<Arc<Table>> {
 }
 
 /// The dense id of each row's key, and the first row at each key.
-fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Vec<u32>, Vec<&'t [Cell]>) {
+pub fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Vec<u32>, Vec<&'t [Cell]>) {
     let mut ids = Vec::with_capacity(table.len);
     let mut first = Vec::new();
     match keys {
@@ -353,7 +353,7 @@ pub fn keys_of(value: &Val, at: &[u16]) -> Option<Arc<Vec<u128>>> {
     if let Val::Rows(parts) = value {
         if let [one] = parts.as_slice() {
             if one.table.len >= 16 && one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) {
-                let key = (one.table.hash, at.to_vec().into_boxed_slice());
+                let key = (one.table.hash(), at.to_vec().into_boxed_slice());
                 return Some(RIGHT_KEYS.with(|keys| keys.borrow_mut().entry(key).or_insert_with(|| compute(&one.table)).clone()));
             }
         }
@@ -363,7 +363,7 @@ pub fn keys_of(value: &Val, at: &[u16]) -> Option<Arc<Vec<u128>>> {
 }
 
 fn view_of(table: &Arc<Table>) -> Arc<GridView> {
-    let key = table.hash;
+    let key = table.hash();
     VIEWS.with(|views| {
         views.borrow_mut().entry(key).or_insert_with(|| {
             let mut at = FastMap::default();
@@ -612,6 +612,15 @@ fn moves_of(pattern: &[([i32; 4], Cell)], grid: &GridView) -> Vec<Cell> {
 }
 
 impl PartStep {
+    /// The keys of a part whose count of rows reads them only through how they group the rows: its
+    /// output has one distinct head per group, so two keys that group the rows alike give one count.
+    pub fn grouping_keys(&self) -> Option<&[u16]> {
+        match self {
+            PartStep::DiffGroupsOff { keys, .. } | PartStep::Pieces { keys, .. } | PartStep::BoxOf { keys, .. } | PartStep::RelBox { keys, .. } | PartStep::Count { keys } | PartStep::OneValue { keys, .. } | PartStep::Several { keys, .. } | PartStep::Determines { keys, .. } | PartStep::Extreme { keys, .. } | PartStep::ClassOf { keys } | PartStep::MostFrequentRows { keys, .. } | PartStep::DeterminesFlag { keys, .. } | PartStep::ShapeClass { keys, .. } | PartStep::Holes { keys, .. } | PartStep::Symmetry { keys, .. } | PartStep::TouchesEdge { keys, .. } | PartStep::FillsBox { keys, .. } | PartStep::Occurs { keys, .. } | PartStep::SameShape { keys, .. } | PartStep::BoxSides { keys, .. } | PartStep::BoxMargins { keys, .. } | PartStep::LineCounts { keys, .. } | PartStep::CellCount { keys, .. } | PartStep::GroupGap { keys, .. } | PartStep::Straight { keys, .. } | PartStep::FullLines { keys, .. } => Some(keys),
+            _ => None,
+        }
+    }
+
     /// Whether the part is empty where its first relation is.
     pub fn apply(&self, children: &[&Val]) -> Val {
         let Some(first) = flat(children[0]) else { return Val::None };

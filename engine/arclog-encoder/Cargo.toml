@@ -5,6 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+mimalloc = { version = "0.1", default-features = false }
 # The reader, the checker and the evaluator that a feature's forms run through.
 arclog = { path = "../arclog" }
 # The table of the lib's constructions, which an evaluation reads.
@@ -12,6 +13,7 @@ arclog-constructions = { path = "../arclog-constructions" }
 # The sources of each column of a table, which a pool's kind reads.
 arclog-tables = { path = "../arclog-tables" }
 # The grids of an evaluation are read from JSON.
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Generated data is written and read as streamable zstd.
 zstd = "0.13"

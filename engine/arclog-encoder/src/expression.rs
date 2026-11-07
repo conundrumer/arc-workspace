@@ -17,7 +17,7 @@ use crate::library::{Library, MacroKind};
 pub type Column = String;
 
 /// A comparison of a `select`.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum Op {
     Eq,
     Ne,

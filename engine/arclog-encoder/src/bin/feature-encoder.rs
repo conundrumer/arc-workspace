@@ -10,7 +10,7 @@
 //!   feature-encoder query-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder state-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder candidate-lists OUT_DIR (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-only [--wide-size D] | --parents-only | --state-only]
-//!   feature-encoder all-lists ROOT (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-size D]
+//!   feature-encoder all-lists ROOT (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-size D] [--families DIR]
 //!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
 //!   feature-encoder generate-check TABLES_FILE [--size D] [--tables EVERY]
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
@@ -39,6 +39,9 @@
 //! writing a line per table and element, and on a restart skips those the file
 //! holds. With `--program-compare` it compares each table's stored rows with the
 //! table as its program computes it.
+
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::collections::HashSet;
 use std::io::{BufRead, Write};
@@ -69,6 +72,7 @@ struct Arguments {
     names: Option<PathBuf>,
     wide_size: Option<usize>,
     kinds: Option<Vec<String>>,
+    families: Option<PathBuf>,
     wide_only: bool,
     parents_only: bool,
     state_only: bool,
@@ -84,7 +88,7 @@ struct Arguments {
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { kinds: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
+    let mut parsed = Arguments { kinds: None, families: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -93,6 +97,7 @@ fn arguments() -> Arguments {
             "--task-wide" => parsed.task_wide = true,
             "--size" => parsed.size = args.next().and_then(|text| text.parse().ok()).expect("a number after --size"),
             "--wide-size" => parsed.wide_size = Some(args.next().and_then(|text| text.parse().ok()).expect("a number after --wide-size")),
+            "--families" => parsed.families = Some(args.next().expect("a directory after --families").into()),
             "--kinds" => parsed.kinds = Some(args.next().expect("kinds after --kinds").split(',').map(str::to_string).collect()),
             "--wide-only" => parsed.wide_only = true,
             "--parents-only" => parsed.parents_only = true,
@@ -614,6 +619,11 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
         }
         let mut families = Generators::default();
         families.term_limit = term_limit;
+        if let Some(saved) = &arguments.families {
+            let saved = saved.join(format!("{folder}-{d}-{wide}"));
+            std::fs::create_dir_all(&saved).map_err(|error| error.to_string())?;
+            families.saved = Some(saved);
+        }
         families.one_group = folder == "more";
         let names_file = format!("{root}/{folder}/lists/names.tsv.zst");
         let names_file = if std::path::Path::new(&names_file).exists() { format!("{root}/{folder}/lists/names-{}.tsv.zst", std::process::id()) } else { names_file };
@@ -1684,7 +1694,12 @@ fn run_serve_lists(arguments: &Arguments) -> Result<(), String> {
     use arclog_encoder::candidate_lists::{lists_task, ListsOf};
     use arclog_encoder::generate::Generators;
     use std::io::{BufRead, Write};
-    let families = Generators::default();
+    let mut families = Generators::default();
+    if let Some(saved) = &arguments.families {
+        let saved = saved.join(format!("on-{}-serve", arguments.size.max(1)));
+        std::fs::create_dir_all(&saved).map_err(|error| error.to_string())?;
+        families.saved = Some(saved);
+    }
     let stdin = std::io::stdin();
     let mut out = std::io::stdout().lock();
     for line in stdin.lock().lines() {

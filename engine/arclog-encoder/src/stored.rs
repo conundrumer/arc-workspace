@@ -116,7 +116,7 @@ impl Stored {
     pub fn content(&self) -> u128 {
         let mut words: Vec<u64> = self.key.bytes().map(u64::from).collect();
         for tables in &self.rows {
-            let mut hashes: Vec<u128> = tables.iter().map(|table| table.hash).collect();
+            let mut hashes: Vec<u128> = tables.iter().map(|table| table.hash()).collect();
             hashes.sort_unstable();
             hashes.dedup();
             words.push(hashes.len() as u64);
@@ -141,8 +141,8 @@ impl Stored {
                 }
                 Table::distinct(order.len(), cells)
             }).collect();
-            held.sort_by_key(|table| table.hash);
-            held.dedup_by_key(|table| table.hash);
+            held.sort_by_key(|table| table.hash());
+            held.dedup_by_key(|table| table.hash());
             held
         }).collect();
         let keys = vec![false; sorted.len()];

@@ -91,7 +91,8 @@ pub struct Table {
     pub arity: usize,
     pub len: usize,
     pub cells: Box<[Cell]>,
-    pub hash: u128,
+    /// Its hash, once something has read it. A term that counts rows never does.
+    hash: std::sync::OnceLock<u128>,
     /// For each column, a 64-bit filter of its values: two columns whose filters
     /// share no bit share no value.
     masks: std::sync::OnceLock<Box<[u64]>>,
@@ -101,14 +102,20 @@ impl Table {
     /// The table of `cells`, whose rows are distinct.
     pub fn new(arity: usize, cells: Vec<Cell>) -> Arc<Table> {
         let len = cells.len().checked_div(arity).unwrap_or(0);
-        let mut hash = 0u128;
-        if arity > 0 {
-            for row in cells.chunks_exact(arity) {
-                hash = hash.wrapping_add(hash_row(row));
+        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), masks: std::sync::OnceLock::new() })
+    }
+
+    /// A hash of the set of rows, which their order does not change.
+    pub fn hash(&self) -> u128 {
+        *self.hash.get_or_init(|| {
+            let mut hash = 0u128;
+            if self.arity > 0 {
+                for row in self.cells.chunks_exact(self.arity) {
+                    hash = hash.wrapping_add(hash_row(row));
+                }
             }
-        }
-        hash = hash.wrapping_add(hash_words([arity as u64, len as u64]));
-        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash, masks: std::sync::OnceLock::new() })
+            hash.wrapping_add(hash_words([self.arity as u64, self.len as u64]))
+        })
     }
 
     /// The filter of the column at `place`.
@@ -132,7 +139,7 @@ impl Table {
     /// The table of no columns, with one row where `holds`.
     pub fn unit(holds: bool) -> Arc<Table> {
         let len = usize::from(holds);
-        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: hash_words([0, len as u64]), masks: std::sync::OnceLock::new() })
+        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: std::sync::OnceLock::new(), masks: std::sync::OnceLock::new() })
     }
 
     pub fn rows(&self) -> impl Iterator<Item = &[Cell]> {
@@ -225,7 +232,7 @@ impl Val {
                 let mut hash = hash_words([parts.len() as u64 + 3]);
                 for part in parts.iter() {
                     let columns = hash_words(part.columns.iter().map(|column| u64::from(*column)));
-                    hash = hash.wrapping_add(hash_words([part.table.hash as u64, (part.table.hash >> 64) as u64, columns as u64, (columns >> 64) as u64]));
+                    hash = hash.wrapping_add(hash_words([part.table.hash() as u64, (part.table.hash() >> 64) as u64, columns as u64, (columns >> 64) as u64]));
                 }
                 hash
             }
@@ -266,7 +273,7 @@ pub struct LibRelation {
 }
 
 /// An operator over the values of its children, each column by its position.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Step {
     Project { columns: Box<[u16]> },
     Select { at: u16, op: Op, other: Option<u16>, drop: Option<u16> },
@@ -490,6 +497,9 @@ impl<'a> Evaluator<'a> {
                 }
                 let (l, l_rest, l_places) = one_part(left_parts, left)?;
                 let (r, r_rest, r_places) = one_part(right_parts, right)?;
+                if l.table.cells.len() > CELL_CAP || r.table.cells.len() > CELL_CAP {
+                    return None;
+                }
                 if l_places.iter().zip(&r_places).any(|(a, b)| l.table.mask(*a) & r.table.mask(*b) == 0) {
                     return Some(Some(0));
                 }
@@ -499,6 +509,11 @@ impl<'a> Evaluator<'a> {
                     if let Some(count) = histogram.get(&key_word(row, &l_places)) {
                         matched += u64::from(*count);
                     }
+                }
+                // The rows that `join` would build, which past the cap give no value.
+                let width = l.columns.len() + (0..r.columns.len()).filter(|place| !r_places.contains(place)).count();
+                if matched.saturating_mul(width as u64) > CELL_CAP as u64 {
+                    return Some(None);
                 }
                 let rest: Vec<&Part> = l_rest.into_iter().chain(r_rest).collect();
                 Some(Some(matched.saturating_mul(product(&rest))))
@@ -512,6 +527,9 @@ impl<'a> Evaluator<'a> {
                 }
                 let (l, l_rest, l_places) = one_part(left_parts, left)?;
                 let (r, _, r_places) = one_part(right_parts, right)?;
+                if l.table.cells.len() > CELL_CAP || r.table.cells.len() > CELL_CAP {
+                    return None;
+                }
                 if l_places.iter().zip(&r_places).any(|(a, b)| l.table.mask(*a) & r.table.mask(*b) == 0) {
                     return Some(Some(product(&every)));
                 }
@@ -558,21 +576,21 @@ impl<'a> Evaluator<'a> {
             return table.len as u64;
         }
         let word = hash_words(places.iter().map(|place| *place as u64)) as u64;
-        if let Some(found) = self.distinct_counts.get(&(table.hash, word)) {
+        if let Some(found) = self.distinct_counts.get(&(table.hash(), word)) {
             return *found;
         }
         let mut keys: Vec<u64> = table.rows().map(|row| key_word(row, places)).collect();
         keys.sort_unstable();
         keys.dedup();
         let count = keys.len() as u64;
-        self.distinct_counts.insert((table.hash, word), count);
+        self.distinct_counts.insert((table.hash(), word), count);
         count
     }
 
     /// How many rows of `table` hold each key at `places`.
     fn histogram(&mut self, table: &Table, places: &[usize]) -> Arc<FastMap<u64, u32>> {
         let word = hash_words(places.iter().map(|place| *place as u64)) as u64;
-        if let Some(found) = self.histograms.get(&(table.hash, word)) {
+        if let Some(found) = self.histograms.get(&(table.hash(), word)) {
             return found.clone();
         }
         let mut counts: FastMap<u64, u32> = FastMap::default();
@@ -583,7 +601,7 @@ impl<'a> Evaluator<'a> {
         if self.histograms.len() > 1 << 16 {
             self.histograms.clear();
         }
-        self.histograms.insert((table.hash, word), counts.clone());
+        self.histograms.insert((table.hash(), word), counts.clone());
         counts
     }
 
@@ -737,7 +755,7 @@ impl<'a> Evaluator<'a> {
         }
         let mut key = [0u128; 3];
         for (at, table) in tables.iter().enumerate().take(3) {
-            key[at] = table.hash;
+            key[at] = table.hash();
         }
         let shape_id = held.shape;
         if let Some(found) = self.outputs.get(&(shape_id, key)) {
@@ -895,7 +913,7 @@ impl<'a> Evaluator<'a> {
     fn part_sum(&mut self, table: &Table, places: &[(usize, usize, bool)]) -> u64 {
         let key = if table.len > 8 {
             let word = hash_words(places.iter().map(|(place, at, name)| (*place as u64) << 32 | (*at as u64) << 1 | u64::from(*name))) as u64;
-            let key = (table.hash, word);
+            let key = (table.hash(), word);
             if let Some(found) = self.sums.get(&key) {
                 return *found;
             }

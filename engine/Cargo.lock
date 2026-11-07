@@ -44,6 +44,8 @@ dependencies = [
  "arclog",
  "arclog-constructions",
  "arclog-tables",
+ "mimalloc",
+ "serde",
  "serde_json",
  "zstd",
 ]

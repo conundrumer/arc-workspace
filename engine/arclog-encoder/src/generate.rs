@@ -44,7 +44,7 @@ struct Column {
 }
 
 /// Which roots a term has.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 enum RootKind {
     /// `nonempty`, on a relation of no columns.
     Holds,
@@ -59,7 +59,7 @@ enum RootKind {
 }
 
 /// What a root reads of a term at an instance.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum RootOf {
     Nonempty,
     Cardinality,
@@ -152,8 +152,37 @@ enum Partner {
 
 const MARK: &str = "\u{1}";
 
+/// Each term's step as an id, so that terms with one step on equal values compute it once.
+#[derive(Default)]
+struct StepIds {
+    /// Equal where two terms have one step and their roots read the same of its rows.
+    ids: Vec<u32>,
+    /// For a term whose roots read only a count of rows: the id of its step apart from its keys,
+    /// and the id of its keys. A `project` has `PROJECT` as the first, since its count is the groups'.
+    grouped: Vec<Option<(u32, u32)>>,
+    keys: Vec<Box<[u16]>>,
+}
+
+const PROJECT: u32 = u32::MAX;
+
+/// A built family as a file holds it: what a walk reads of each term.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedTerm(Option<Step>, u32, u32, u8, u8, RootKind, Vec<(u64, u64, RootOf)>, bool);
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedFamily {
+    terms: Vec<SavedTerm>,
+    first_term: usize,
+    by_size: Vec<usize>,
+    roots: usize,
+    task_wide: bool,
+    over_grids: bool,
+    two_tables: bool,
+}
+
 /// The terms over a table of one schema.
 pub struct Generated {
+    step_ids: std::sync::OnceLock<StepIds>,
     terms: Vec<Term>,
     pub first_term: usize,
     pub by_size: Vec<usize>,
@@ -949,7 +978,7 @@ impl Generated {
     }
 
     fn empty() -> Generated {
-        Generated { one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false }
+        Generated { step_ids: std::sync::OnceLock::new(), one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false }
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
@@ -1919,6 +1948,10 @@ pub struct Walker<'a> {
     value_index: FastMap<u128, u32>,
     memo: FastMap<(u32, u32, u32), u32>,
     counts: FastMap<(u32, u32, u32), (u32, u32)>,
+    /// How keys group a value's rows: a hash of the grouping, and the count of groups.
+    groupings: FastMap<(u32, u32), (u128, u32)>,
+    /// A part's count of rows at a grouping of its first value, with its second value.
+    group_counts: FastMap<(u32, u32, u128, u32), u32>,
     /// The cells that `values` holds.
     held_cells: usize,
     /// The count of examples of a task-wide walk.
@@ -1986,17 +2019,19 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Opti
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), held_cells: 0, examples: 0 }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, examples: 0 }
     }
 
     /// Drops the values and the memos where they pass the budget. A later walk computes again
     /// what it needs.
     fn keep_within_budget(&mut self) {
-        if self.held_cells > HELD_CELLS || self.memo.len() + self.counts.len() > HELD_MEMO {
+        if self.held_cells > HELD_CELLS || self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len() > HELD_MEMO {
             self.values = vec![Val::None, Val::Empty];
             self.value_index = FastMap::default();
             self.memo = FastMap::default();
             self.counts = FastMap::default();
+            self.groupings = FastMap::default();
+            self.group_counts = FastMap::default();
             self.held_cells = 0;
             // The tables those values held are gone, so an address they had can hold another.
             clear_views();
@@ -2033,12 +2068,52 @@ impl<'a> Walker<'a> {
         }
     }
 
+    /// A term's count of rows and, for a number root, its number, with what can be left unbuilt left so.
+    fn count_only(&mut self, step: &Step, at: usize, id: u32, b: u32, number: bool, steps: &StepIds) -> (u32, u32) {
+        if let Some(found) = self.memo.get(&(steps.ids[at], id, b)) {
+            let value = &self.values[*found as usize];
+            return (count_of(value), if number { number_word(value) } else { 0 });
+        }
+        if let (Some((part, keys)), Val::Rows(parts)) = (steps.grouped[at], &self.values[id as usize]) {
+            // Keys that group the rows alike give one count, so a part runs once per grouping.
+            if let [one] = parts.as_slice() {
+                if one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) {
+                    let table = one.table.clone();
+                    let (grouping, groups) = *self.groupings.entry((id, keys)).or_insert_with(|| {
+                        let (ids, first) = crate::gen_parts::key_ids(&table, &steps.keys[keys as usize]);
+                        (hash_words(ids.iter().map(|id| u64::from(*id))), first.len() as u32)
+                    });
+                    if part == PROJECT {
+                        return (groups, 0);
+                    }
+                    let key = (part, id, grouping, b);
+                    if let Some(found) = self.group_counts.get(&key) {
+                        return (*found, 0);
+                    }
+                    let found = count_of(&self.apply(step, id, b));
+                    self.group_counts.insert(key, found);
+                    return (found, 0);
+                }
+            }
+        }
+        if !number && matches!(step, Step::Join { .. } | Step::Antijoin { .. }) {
+            let first = self.values[id as usize].clone();
+            let second = self.values[b as usize].clone();
+            if let Some(found) = self.eval.count(step, &[&first, &second]) {
+                return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
+            }
+        }
+        let value = self.apply(step, id, b);
+        (count_of(&value), if number { number_word(&value) } else { 0 })
+    }
+
     /// Each root's numbers at each instance of `leaves`. The first `train` instances have an
     /// output: a root that reads the output has a value at those alone, and any other root at
     /// every instance. With `only_output`, only the roots that read the output enter.
     pub fn walk(&mut self, leaves: &[Vec<Val>], train: usize, only_output: bool) -> RootTable {
         self.keep_within_budget();
         let family = self.family;
+        let steps = family.step_ids();
         let instances = leaves[0].len();
         let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
         for leaf in leaves {
@@ -2048,7 +2123,7 @@ impl<'a> Walker<'a> {
         let mut table = RootTable { stride: instances, ..RootTable::default() };
         let mut walk_cells = 0usize;
         for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
-            let at = at as u32;
+            let step_id = steps.ids[at];
             let first = std::mem::take(&mut ids[term.a as usize]);
             let second = if term.b == NO_TERM { Vec::new() } else if term.b == term.a { first.clone() } else { std::mem::take(&mut ids[term.b as usize]) };
             let step = term.step.as_ref().expect("a term has a step");
@@ -2064,7 +2139,7 @@ impl<'a> Walker<'a> {
                 // Past the bound, what a term gives has no value, so a walk's memory stays bounded.
                 for pair in 0..if walk_cells > WALK_CELLS { 0 } else { scope } {
                     let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
-                    let key = (at, first[pair], b);
+                    let key = (step_id, first[pair], b);
                     let id = match self.memo.get(&key) {
                         Some(found) => *found,
                         None => {
@@ -2088,12 +2163,11 @@ impl<'a> Walker<'a> {
                         let value = &self.values[own[pair] as usize];
                         (count_of(value), if term.root == RootKind::Number { number_word(value) } else { 0 })
                     } else {
-                        let key = (at, id, b);
+                        let key = (step_id, id, b);
                         match self.counts.get(&key) {
                             Some(found) => *found,
                             None => {
-                                let value = self.apply(step, id, b);
-                                let found = (count_of(&value), if term.root == RootKind::Number { number_word(&value) } else { 0 });
+                                let found = self.count_only(step, at, id, b, term.root == RootKind::Number, steps);
                                 self.counts.insert(key, found);
                                 found
                             }
@@ -2177,6 +2251,49 @@ impl<'a> Walker<'a> {
 }
 
 impl Generated {
+    fn step_ids(&self) -> &StepIds {
+        self.step_ids.get_or_init(|| {
+            let mut steps: FastMap<u128, u32> = FastMap::default();
+            let mut rests: FastMap<u128, u32> = FastMap::default();
+            let mut keys: FastMap<u128, u32> = FastMap::default();
+            let mut out = StepIds::default();
+            for term in &self.terms {
+                let Some(step) = term.step.as_ref() else {
+                    out.ids.push(0);
+                    out.grouped.push(None);
+                    continue;
+                };
+                let number = term.root == RootKind::Number;
+                let text = format!("{step:?}");
+                let next = steps.len() as u32;
+                out.ids.push(*steps.entry(hash_words(text.bytes().map(u64::from).chain([u64::from(number)]))).or_insert(next));
+                let grouping = match step {
+                    _ if number || term.used => None,
+                    Step::Project { columns } => Some((PROJECT, &columns[..])),
+                    Step::Part(part) => part.grouping_keys().map(|held| (0, held)),
+                    _ => None,
+                };
+                out.grouped.push(grouping.map(|(kind, held)| {
+                    let next = keys.len() as u32;
+                    let keys_id = *keys.entry(hash_words(held.iter().map(|column| u64::from(*column)))).or_insert_with(|| {
+                        out.keys.push(held.to_vec().into_boxed_slice());
+                        next
+                    });
+                    if kind == PROJECT {
+                        return (PROJECT, keys_id);
+                    }
+                    // The step's text with its keys left out.
+                    let start = text.find("keys: [").expect("a part with keys");
+                    let end = start + text[start..].find(']').expect("the end of the keys");
+                    let rest = format!("{}{}", &text[..start], &text[end + 1..]);
+                    let next = rests.len() as u32;
+                    (*rests.entry(hash_words(rest.bytes().map(u64::from))).or_insert(next), keys_id)
+                }));
+            }
+            out
+        })
+    }
+
     /// The count of terms, and of the leaves that stand before them.
     pub fn counts(&self) -> (usize, usize) {
         (self.terms.len(), self.first_term)
@@ -2393,6 +2510,9 @@ const CACHED_TERMS: usize = 3_000_000;
 pub struct Generators {
     held: Mutex<(FastMap<u128, (Arc<Generated>, u64)>, u64)>,
     pub names: NameStore,
+    /// Where built families stand as files, so that a family the cache let go, or an earlier run built, is read and not built again. Its names stand
+    /// in the names files of that folder's run, so it belongs to one run's root and one version of the code.
+    pub saved: Option<std::path::PathBuf>,
     /// The terms that the cache holds at most, where it is not 0, in place of [`CACHED_TERMS`].
     pub term_limit: usize,
     /// Whether [`Generators::get`] gives [`Generated::one_group`].
@@ -2411,7 +2531,11 @@ impl Generators {
                 return found.0.clone();
             }
         }
-        let family = Arc::new(build());
+        let family = Arc::new(self.read_saved(hash).unwrap_or_else(|| {
+            let built = build();
+            self.save(hash, &built);
+            built
+        }));
         let limit = if self.term_limit == 0 { CACHED_TERMS } else { self.term_limit };
         let mut held = self.held.lock().expect("no panic");
         let (cache, clock) = &mut *held;
@@ -2425,6 +2549,54 @@ impl Generators {
             }
         }
         family
+    }
+
+    fn saved_path(&self, hash: u128) -> Option<std::path::PathBuf> {
+        self.saved.as_ref().map(|folder| folder.join(format!("{hash:032x}.json.zst")))
+    }
+
+    fn read_saved(&self, hash: u128) -> Option<Generated> {
+        let packed = std::fs::read(self.saved_path(hash)?).ok()?;
+        let held: SavedFamily = serde_json::from_slice(&zstd::stream::decode_all(&packed[..]).ok()?).ok()?;
+        let mut family = Generated::empty();
+        family.terms = held.terms.into_iter().map(|SavedTerm(step, a, b, flags, size, root, roots, used)| Term {
+            step, a, b, columns: Vec::new(), flags, size, root,
+            roots: roots.into_iter().map(|(low, high, of)| (u128::from(high) << 64 | u128::from(low), of)).collect(),
+            text: String::new(), used, plan: None,
+        }).collect();
+        family.first_term = held.first_term;
+        family.by_size = held.by_size;
+        family.roots = held.roots;
+        family.task_wide = held.task_wide;
+        family.over_grids = held.over_grids;
+        family.two_tables = held.two_tables;
+        Some(family)
+    }
+
+    fn save(&self, hash: u128, family: &Generated) {
+        let Some(path) = self.saved_path(hash) else { return };
+        if family.keep_text {
+            return;
+        }
+        // Its roots' names reach their file before the family that no later run would name them for.
+        self.names.flush();
+        let held = SavedFamily {
+            terms: family.terms.iter().map(|term| SavedTerm(term.step.clone(), term.a, term.b, term.flags, term.size, term.root, term.roots.iter().map(|(hash, of)| (*hash as u64, (*hash >> 64) as u64, *of)).collect(), term.used)).collect(),
+            first_term: family.first_term,
+            by_size: family.by_size.clone(),
+            roots: family.roots,
+            task_wide: family.task_wide,
+            over_grids: family.over_grids,
+            two_tables: family.two_tables,
+        };
+        let Ok(text) = serde_json::to_vec(&held) else { return };
+        let Ok(packed) = zstd::stream::encode_all(&text[..], 3) else { return };
+        // Two threads can build one family, so each writes a file of its own and the rename decides.
+        let mut temporary = path.as_os_str().to_os_string();
+        temporary.push(format!(".{}.{:?}.tmp", std::process::id(), std::thread::current().id()));
+        if std::fs::write(&temporary, packed).is_ok() {
+            let _ = std::fs::rename(&temporary, &path);
+        }
     }
 
     /// The task-wide family of a table's schema.
