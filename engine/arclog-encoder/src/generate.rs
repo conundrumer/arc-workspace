@@ -433,6 +433,7 @@ impl Generated {
             }
         }
         family.box_measures(false);
+        family.column_measures();
         family.by_size.push(family.terms.len());
         family.name_roots(types, names);
         family
@@ -1738,6 +1739,67 @@ impl Generated {
             out.push((group.into_boxed_slice(), format!("(T*:{})", names.join(","))));
         }
         out
+    }
+
+    /// What one column says as a whole: its cells as a set, its values as a list, and how its two most frequent values, or its two greatest numbers, stand to each other.
+    fn column_measures(&mut self) {
+        use crate::gen_parts::{CellMeasureKind::*, ColumnMeasureKind::*};
+        let cell_measures = [
+            (Components, "components"), (Components4, "components-4"), (FullLines, "full-lines"), (PerLineMax, "per-line-max"), (Symmetry, "symmetry"), (Enclosed, "enclosed"),
+            (SpacingMin, "spacing-min"), (SpacingMax, "spacing-max"), (Cells, "cells"), (Covers, "covers"), (OnOneLine, "on-one-line"), (TouchesEdge, "touches-edge"),
+            (ComplementConnected, "complement-connected"), (EveryStraight, "every-straight"), (Fills, "fills"), (Outline, "outline"),
+        ];
+        let columns = self.terms[LEAF_TABLE as usize].columns.clone();
+        let number = || vec![Column { name: "N".to_string(), ty: ValueType::Nat, source: 0 }];
+        for (place, column) in columns.iter().enumerate() {
+            let (at, name) = (place as u16, column.name.clone());
+            let holds = |this: &mut Self, measure, word: &str| {
+                this.push_forced(Step::Part(Box::new(PartStep::ColumnMeasure { a: at, measure })), LEAF_TABLE, NO_TERM, Vec::new(), 1, format!("(column-measure T {name} {word})"), RootKind::Holds);
+            };
+            match column.ty {
+                ValueType::Position | ValueType::Box => {
+                    for (measure, word) in cell_measures {
+                        let text = format!("(cell-measure T {name} {word})");
+                        let step = Step::Part(Box::new(PartStep::CellMeasure { p: at, measure }));
+                        if measure.counts() {
+                            if let Some(term) = self.push_forced(step, LEAF_TABLE, NO_TERM, number(), 1, text, RootKind::Number) {
+                                self.refined[term as usize].count_follows = true;
+                            }
+                        } else {
+                            self.push_forced(step, LEAF_TABLE, NO_TERM, Vec::new(), 1, text, RootKind::Holds);
+                        }
+                    }
+                    if let Some(term) = self.push_forced(Step::Part(Box::new(PartStep::ColumnMeasure { a: at, measure: ExtentsDistinct })), LEAF_TABLE, NO_TERM, number(), 1, format!("(column-measure T {name} extents-distinct)"), RootKind::Number) {
+                        self.refined[term as usize].count_follows = true;
+                    }
+                }
+                ValueType::Nat | ValueType::Int => {
+                    holds(self, Consecutive, "consecutive");
+                    holds(self, Arithmetic, "arithmetic");
+                    let numbers = || vec![Column { name: "K".to_string(), ty: ValueType::Int, source: 0 }];
+                    let (top_text, next_text) = (format!("(counted-by-value T {name} first)"), format!("(counted-by-value T {name} second)"));
+                    let top = self.push_forced(Step::Part(Box::new(PartStep::CountedByValue { a: at, second: false })), LEAF_TABLE, NO_TERM, numbers(), 1, top_text.clone(), RootKind::Rows);
+                    let next = self.push_forced(Step::Part(Box::new(PartStep::CountedByValue { a: at, second: true })), LEAF_TABLE, NO_TERM, numbers(), 1, next_text.clone(), RootKind::Rows);
+                    if let (Some(top), Some(next)) = (top, next) {
+                        self.push_forced(Step::Part(Box::new(PartStep::Same)), top, next, Vec::new(), 2, format!("{top_text} {next_text}"), RootKind::Against);
+                    }
+                }
+                ValueType::Dir | ValueType::Dir8 | ValueType::DiagDir => {
+                    holds(self, OnOneAxis, "on-one-axis");
+                    holds(self, OppositePair, "opposite-pair");
+                }
+                ValueType::Offset => holds(self, OneLength, "one-length"),
+                ValueType::Color => {
+                    let (top_text, next_text) = (format!("(frequent-value-rows T {name} first)"), format!("(frequent-value-rows T {name} second)"));
+                    let top = self.push_forced(Step::Part(Box::new(PartStep::FrequentValueRows { a: at, second: false })), LEAF_TABLE, NO_TERM, columns.clone(), 1, top_text.clone(), RootKind::Rows);
+                    let next = self.push_forced(Step::Part(Box::new(PartStep::FrequentValueRows { a: at, second: true })), LEAF_TABLE, NO_TERM, columns.clone(), 1, next_text.clone(), RootKind::Rows);
+                    if let (Some(top), Some(next)) = (top, next) {
+                        self.push_forced(Step::Part(Box::new(PartStep::Same)), top, next, Vec::new(), 2, format!("{top_text} {next_text}"), RootKind::Against);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// What a set of boxes says together: the bounding box of a column's cells, the bounding boxes of its groups, and a Box column's boxes in a grid's frame.
