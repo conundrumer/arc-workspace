@@ -374,6 +374,8 @@ pub struct GridView {
     pub w: i32,
     pub colors: Vec<Cell>,
     pub at: FastMap<Cell, Cell>,
+    /// The places of each color's cells, as (row, column).
+    pub of_color: FastMap<Cell, Vec<(i32, i32)>>,
 }
 
 thread_local! {
@@ -417,8 +419,10 @@ fn view_of(table: &Arc<Table>) -> Arc<GridView> {
             let mut at = FastMap::default();
             let (mut h, mut w) = (0, 0);
             let mut colors = Vec::new();
+            let mut of_color: FastMap<Cell, Vec<(i32, i32)>> = FastMap::default();
             for row in table.rows() {
                 let m = margins_of(row[0]);
+                of_color.entry(row[1]).or_default().push((m[0], m[2]));
                 h = m[0] + m[1] + 1;
                 w = m[2] + m[3] + 1;
                 at.insert(row[0], row[1]);
@@ -430,7 +434,7 @@ fn view_of(table: &Arc<Table>) -> Arc<GridView> {
                     colors[(m[0] * w + m[2]) as usize] = row[1];
                 }
             }
-            Arc::new(GridView { h, w, colors, at })
+            Arc::new(GridView { h, w, colors, at, of_color })
         }).clone()
     })
 }
@@ -662,13 +666,12 @@ fn image_margins(which: usize, m: [i32; 4]) -> [i32; 4] {
 /// The offsets that move a colored pattern onto a grid's cells: each `P` where `compose` of a pattern
 /// cell and `P` is a grid cell of the cell's color, for every cell of the pattern.
 fn moves_of(pattern: &[([i32; 4], Cell)], grid: &GridView) -> Vec<Cell> {
-    let Some((anchor, color)) = pattern.first() else { return Vec::new() };
+    // A move takes every pattern cell to a cell of its color, so the cells of the pattern's rarest color give every move.
+    let cells_of = |color: &Cell| grid.of_color.get(color).map_or(&[][..], Vec::as_slice);
+    let Some((anchor, color)) = pattern.iter().min_by_key(|(_, color)| cells_of(color).len()) else { return Vec::new() };
     let mut out = Vec::new();
-    for r in 0..grid.h {
-        for c in 0..grid.w {
-            if grid.colors[(r * grid.w + c) as usize] != *color {
-                continue;
-            }
+    for &(r, c) in cells_of(color) {
+        {
             let delta = [r - anchor[0], grid.h - 1 - r - anchor[1], c - anchor[2], grid.w - 1 - c - anchor[3]];
             if pattern.iter().all(|(m, held)| {
                 let (y, b, z, e) = (m[0] + delta[0], m[1] + delta[1], m[2] + delta[2], m[3] + delta[3]);
