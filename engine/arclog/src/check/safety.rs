@@ -435,15 +435,23 @@ struct Prefixes<'l, 'c> {
     /// The labels that the parts of the forms of the prefix hold.
     parts: StableHashSet<LabelId>,
     orientation: StableHashSet<LabelId>,
+    /// `orientation`, sorted, while it holds as many labels as it did then:
+    /// the set only grows.
+    orientation_sorted: Vec<LabelId>,
+    /// The labels given to the list, sorted: every key of one list holds the
+    /// same ones.
+    given_sorted: Option<Vec<LabelId>>,
 }
 
 impl<'l, 'c> Prefixes<'l, 'c> {
     fn new(list: &'l [(NodePath, &'c Conjunct)], sets: &'l [StableHashSet<LabelId>]) -> Self {
-        Prefixes { list, sets, len: 0, alike: true, parts: StableHashSet::default(), orientation: StableHashSet::default() }
+        Prefixes { list, sets, len: 0, alike: true, parts: StableHashSet::default(), orientation: StableHashSet::default(), orientation_sorted: Vec::new(), given_sorted: None }
     }
 
     /// The key of the prefix of `end` conjuncts, where it is the state's.
-    fn key(&mut self, walk: &Walk<'_>, memo: BoundMemo<'_>, end: usize, given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>) -> Option<BoundKey> {
+    /// `outside` gives the labels that stand outside the prefix, read only
+    /// where the prefix holds a form with parts.
+    fn key(&mut self, walk: &Walk<'_>, memo: BoundMemo<'_>, end: usize, given: &StableHashSet<LabelId>, outside: &dyn Fn() -> StableHashSet<LabelId>) -> Option<BoundKey> {
         while self.alike && self.len < end {
             let (at, conjunct) = &self.list[self.len];
             self.alike = matches!(node_at(NodeRef::from(memo.state), at), Some(NodeRef::Conjunct(state)) if same_conjunct(state, conjunct));
@@ -456,13 +464,15 @@ impl<'l, 'c> Prefixes<'l, 'c> {
             self.len += 1;
         }
         let served = self.alike && end > 0 && end == self.len;
-        served.then(|| BoundKey {
-            last: self.list[end - 1].0.clone(),
-            len: end,
-            given: sorted(given.iter().copied()),
-            outside: sorted(outside.iter().copied().filter(|label| self.parts.contains(label))),
-            orientation: sorted(self.orientation.iter().copied()),
-        })
+        if !served {
+            return None;
+        }
+        if self.orientation_sorted.len() != self.orientation.len() {
+            self.orientation_sorted = sorted(self.orientation.iter().copied());
+        }
+        let given = self.given_sorted.get_or_insert_with(|| sorted(given.iter().copied())).clone();
+        let outside = if self.parts.is_empty() { Vec::new() } else { sorted(outside().into_iter().filter(|label| self.parts.contains(label))) };
+        Some(BoundKey { last: self.list[end - 1].0.clone(), len: end, given, outside, orientation: self.orientation_sorted.clone() })
     }
 }
 
@@ -515,12 +525,12 @@ impl Walk<'_> {
         let given: StableHashSet<LabelId> = reading.given.iter().copied().collect();
         let conjuncts: Vec<&Conjunct> = reading.list.iter().map(|(_, conjunct)| *conjunct).collect();
         let mut found = Vec::new();
-        self.ordered(&reading.list, &given, &reading.outside, &mut found);
+        let sets: Vec<StableHashSet<LabelId>> = conjuncts.iter().map(|conjunct| conjunct_label_set(conjunct)).collect();
+        self.ordered_over(&reading.list, &conjuncts, &sets, &given, &reading.outside, &mut found);
         // The labels the whole list binds, from the memo where each of its
         // conjuncts is the state's, as in a body of the form that the
         // candidate leaves as it was.
-        let sets: Vec<StableHashSet<LabelId>> = conjuncts.iter().map(|conjunct| conjunct_label_set(conjunct)).collect();
-        let bound = self.bind_before(&mut Prefixes::new(&reading.list, &sets), &conjuncts, conjuncts.len(), &given, &reading.outside);
+        let bound = self.bind_before(&mut Prefixes::new(&reading.list, &sets), &conjuncts, conjuncts.len(), &given, &|| reading.outside.clone());
         let mut check_use = |at: &[PathStep], use_: LabelUse| {
             if let Some(label) = use_label(use_).filter(|label| !bound.contains(label)) {
                 found.push(Found { label: Some(label), fault: Fault::Unbound { body: reading.at.clone() }, at: at.into() });
@@ -532,7 +542,7 @@ impl Walk<'_> {
         if let Some((input, at)) = reading.head {
             each_head_use(input, at, &mut |at, use_| check_use(&at.0, use_));
         }
-        let held = list_labels(conjuncts);
+        let held: StableHashSet<LabelId> = sets.iter().flatten().copied().collect();
         for &label in reading.columns.iter().filter(|label| !bound.contains(label) && !held.contains(label)) {
             found.push(Found { label: Some(label), fault: Fault::ColumnUnbound { body: reading.at.clone() }, at: reading.at.clone() });
         }
@@ -550,12 +560,12 @@ impl Walk<'_> {
     /// order, bind from `given`, with `outside` the labels that stand
     /// outside them: [`Walk::bind`], kept in the memo where each of them
     /// is the state's.
-    fn bind_before(&self, prefixes: &mut Prefixes<'_, '_>, conjuncts: &[&Conjunct], end: usize, given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>) -> StableHashSet<LabelId> {
-        let Some((memo, key)) = self.memo.and_then(|memo| Some((memo, prefixes.key(self, memo, end, given, outside)?))) else { return self.bind(&conjuncts[..end], given, outside) };
+    fn bind_before(&self, prefixes: &mut Prefixes<'_, '_>, conjuncts: &[&Conjunct], end: usize, given: &StableHashSet<LabelId>, outside: &dyn Fn() -> StableHashSet<LabelId>) -> StableHashSet<LabelId> {
+        let Some((memo, key)) = self.memo.and_then(|memo| Some((memo, prefixes.key(self, memo, end, given, outside)?))) else { return self.bind(&conjuncts[..end], given, &outside()) };
         if let Some(found) = memo.cache.bound.borrow().get(&key) {
             return found.clone();
         }
-        let bound = self.bind(&conjuncts[..end], given, outside);
+        let bound = self.bind(&conjuncts[..end], given, &outside());
         memo.cache.bound.borrow_mut().insert(key, bound.clone());
         bound
     }
@@ -567,13 +577,22 @@ impl Walk<'_> {
     fn ordered(&self, list: &[(NodePath, &Conjunct)], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>, found: &mut Vec<Found>) {
         let conjuncts: Vec<&Conjunct> = list.iter().map(|(_, conjunct)| *conjunct).collect();
         let sets: Vec<StableHashSet<LabelId>> = conjuncts.iter().map(|conjunct| conjunct_label_set(conjunct)).collect();
-        let total = LabelCounts::of(&sets);
-        let mut suffix = LabelCounts::of(&sets);
-        let mut prefixes = Prefixes::new(list, &sets);
+        self.ordered_over(list, &conjuncts, &sets, given, outside, found);
+    }
+
+    /// [`Walk::ordered`] for `list` whose conjuncts are `conjuncts`, and
+    /// whose labels, conjunct by conjunct, are `sets`. A set of labels that
+    /// only some conjuncts read, those that stand outside a conjunct, the
+    /// ones around it and the ones outside the prefix before it, is made
+    /// where a conjunct reads it, and not for every conjunct.
+    fn ordered_over(&self, list: &[(NodePath, &Conjunct)], conjuncts: &[&Conjunct], sets: &[StableHashSet<LabelId>], given: &StableHashSet<LabelId>, outside: &StableHashSet<LabelId>, found: &mut Vec<Found>) {
+        let total = LabelCounts::of(sets);
+        let mut suffix = LabelCounts::of(sets);
+        let mut prefixes = Prefixes::new(list, sets);
         for (i, (at, conjunct)) in list.iter().enumerate() {
-            let from = suffix.around(outside, None);
-            let before = self.bind_before(&mut prefixes, &conjuncts, i, given, &from);
-            let around = total.around(outside, Some(&sets[i]));
+            let before = self.bind_before(&mut prefixes, conjuncts, i, given, &|| suffix.around(outside, None));
+            let parts = parts_of(conjunct, at);
+            let around = || total.around(outside, Some(&sets[i]));
             let moded = match conjunct {
                 Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => Some(atom).filter(|atom| !atom_modes(self.registry, atom.value()).is_empty()),
                 _ => None,
@@ -590,8 +609,7 @@ impl Walk<'_> {
             }
             match (conjunct, &written) {
                 (Conjunct::Atom(atom), Some(written)) => {
-                    let after_outside = suffix.around(outside, Some(&sets[i]));
-                    let after = self.bind_before(&mut prefixes, &conjuncts, i + 1, given, &after_outside);
+                    let after = self.bind_before(&mut prefixes, conjuncts, i + 1, given, &|| suffix.around(outside, Some(&sets[i])));
                     each_label_use_on(NodeRef::Conjunct(conjunct), &mut at.0.to_vec(), &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| !after.contains(label)) {
                             let completes = mode_may_hold(atom.value(), written, atom_modes(self.registry, atom.value()));
@@ -600,6 +618,7 @@ impl Walk<'_> {
                     });
                 }
                 (Conjunct::Not(_) | Conjunct::All { .. }, _) => {
+                    let around = around();
                     each_label_use_on(NodeRef::Conjunct(conjunct), &mut at.0.to_vec(), &mut |path, use_| {
                         if let Some(label) = use_label(use_).filter(|label| around.contains(label) && !before.contains(label)) {
                             found.push(Found { label: Some(label), fault: Fault::Misordered, at: path.into() });
@@ -609,7 +628,10 @@ impl Walk<'_> {
                 _ => {}
             }
             suffix.remove(&sets[i]);
-            let parts = parts_of(conjunct, at);
+            if parts.is_empty() {
+                continue;
+            }
+            let around = around();
             for (j, part) in parts.iter().enumerate() {
                 let mut part_outside = around.clone();
                 part_outside.extend(list_labels(parts.iter().enumerate().filter(|&(k, _)| k != j).flat_map(|(_, other)| other.iter().map(|(_, conjunct)| *conjunct))));
