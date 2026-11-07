@@ -30,8 +30,10 @@ impl Check for RigidPartsAndProposersCheck {
     /// letter and then letters and digits, a `DET` or `RULE` that names
     /// a proposer and holds a body, and a `DET` or `RULE` that names more
     /// than one proposer (`docs/arclog/arclog.md#program`), at the body of a
-    /// `DET` that the file writes with no proposer and no conjunct, which gives no
-    /// value, at the second of two parts of a `RIGID_DET` form whose outputs
+    /// `DET` that a solver's file writes with no proposer and no conjunct,
+    /// which gives no value (a program that the decoder builds for a clause in
+    /// progress, as its sub-body, has no file, and the rule is not asked of
+    /// it), at the second of two parts of a `RIGID_DET` form whose outputs
     /// begin with one name (`docs/arclog/rigid.md#form`), at a `&prediction`
     /// clause of a `DEMONSTRATED` form that makes no label named as a column
     /// of the `value` head (`docs/arclog/arclog.md#demonstrated`), and,
@@ -41,7 +43,7 @@ impl Check for RigidPartsAndProposersCheck {
     /// the case program does not hold is the resolver's: the case is
     /// undefined where it reads it.
     fn check(&self, input: &CheckInput<'_>) -> CheckResult {
-        self.refusals(input, true)
+        self.refusals(input, true, input.scope.files.is_some_and(|files| files.writes(input.path)))
     }
 
     /// A clause's proposers stand before its body, and a read names a form
@@ -61,18 +63,17 @@ impl Check for RigidPartsAndProposersCheck {
             Some(NodeRef::Clause(clause)) => relation_of(&clause.derives) == prediction() && prefix.open.is_some(),
             _ => false,
         };
-        super::prefix::standing(prefix, self.refusals(&super::prefix::whole(prefix), false), &|at| !unsettled(at))
+        super::prefix::standing(prefix, self.refusals(&super::prefix::whole(prefix), false, true), &|at| !unsettled(at))
     }
 }
 
 impl RigidPartsAndProposersCheck {
     /// The refusals of [`Check::check`] of the form of `input`; with `parts`,
     /// those at a part of a `RIGID_DET` form whose output begins as an
-    /// earlier part's does.
-    fn refusals(&self, input: &CheckInput<'_>, parts: bool) -> CheckResult {
+    /// earlier part's does; with `written`, those at the body of a `DET` that
+    /// holds no conjunct and names no proposer.
+    fn refusals(&self, input: &CheckInput<'_>, parts: bool, written: bool) -> CheckResult {
         let program = input.scope.program;
-        // A case's reading of a line makes `DET` clauses that the file does not write.
-        let written = input.scope.files.map_or(true, |files| files.writes(input.path));
         let mut refused: Vec<(NodePath, &str)> = Vec::new();
         each_node(NodeRef::from(input.form), &NodePath::default(), &mut |node, at| {
             if let NodeRef::Clause(clause) = node {
