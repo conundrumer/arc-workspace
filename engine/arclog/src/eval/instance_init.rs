@@ -116,7 +116,10 @@ pub fn evaluate_instance<'a>(
                 if !wanted {
                     continue;
                 }
-                for values in values.rows() {
+                // In the order of encodings, so the rows' order does not follow a construction's hash maps.
+                let mut found: Vec<&[TermId]> = values.rows().collect();
+                found.sort_unstable_by(|a, b| crate::relations::encoding_order(a, b));
+                for values in found {
                     rows.insert(laid_out(widths, key, values));
                 }
             }

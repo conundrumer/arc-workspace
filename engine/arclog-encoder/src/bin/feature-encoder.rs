@@ -5,7 +5,8 @@
 //!   feature-encoder worked [--corpus DIR] [--tasks DIR]
 //!   feature-encoder encode SOLVER TABLE... [--size D] [--out FILE] [--work-cap N] [--limit N] [--max-inputs N] [--program-relations]
 //!   feature-encoder names [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
-//!   feature-encoder vector SOLVER TABLE [--size D] [--wide-size D] --out FILE
+//!   feature-encoder vector SOLVER TABLE [--size D] [--wide-size D] [--shapes FILE] --out FILE
+//!   feature-encoder shape-check SOLVER... --sample N [--seed S] [--max-tables K] [--size D] [--out FILE]
 //!   feature-encoder base-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder query-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder state-vectors SOLVER [--size D] --out FILE
@@ -31,7 +32,10 @@
 //! checks the worked expansions of the specification. `encode` writes one JSON
 //! line for each ground expression up to a size, small sizes first; on a restart
 //! with the same `--out` it skips the expressions the file holds. `names` writes
-//! the vector entries at a size, and `vector` their numbers on a table. `count`
+//! the vector entries at a size, and `vector` their numbers on a table; with `--shapes` it walks only the
+//! terms that the listed shapes need, and writes the listed shapes' lines. `shape-check` draws a list of
+//! `--sample` shapes from the full vector of each table of each solver, and for each assignment compares the
+//! list walk's slots with the full walk's and gives the CPU seconds of both. `count`
 //! prints the terms at each size, by operator, with no evaluation. `grid-values`
 //! writes the value of each closed root at each grid of a file: a list of grids
 //! for Scene recognition, of pairs of grids for Rule recognition. A line holds the
@@ -86,10 +90,15 @@ struct Arguments {
     passes: usize,
     /// Whether the top size holds relational operators alone.
     relational: bool,
+    /// A file of shape hashes or shape texts, one per line.
+    shapes: Option<PathBuf>,
+    sample: usize,
+    seed: u64,
+    max_tables: usize,
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { kinds: None, families: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false };
+    let mut parsed = Arguments { kinds: None, families: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false, shapes: None, sample: 0, seed: 1, max_tables: usize::MAX };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -113,6 +122,10 @@ fn arguments() -> Arguments {
             "--program-compare" => parsed.program_compare = true,
             "--rule" => parsed.rule = true,
             "--relational" => parsed.relational = true,
+            "--shapes" => parsed.shapes = Some(args.next().expect("a file after --shapes").into()),
+            "--sample" => parsed.sample = args.next().and_then(|text| text.parse().ok()).expect("a number after --sample"),
+            "--seed" => parsed.seed = args.next().and_then(|text| text.parse().ok()).expect("a number after --seed"),
+            "--max-tables" => parsed.max_tables = args.next().and_then(|text| text.parse().ok()).expect("a number after --max-tables"),
             "--passes" => parsed.passes = args.next().and_then(|text| text.parse().ok()).expect("a number after --passes"),
             "--max-columns" => parsed.max_columns = args.next().and_then(|text| text.parse().ok()),
             "--threads" => parsed.threads = args.next().and_then(|text| text.parse().ok()).expect("a number after --threads"),
@@ -392,12 +405,145 @@ fn names_of(store: &arclog_encoder::generate::NameStore) -> std::collections::Ha
     store.all().into_iter().map(|(hash, name)| (hash as u64, name)).collect()
 }
 
+/// The shapes of a file, one per line. A line whose first field, up to a tab, is up to 16 hex digits with or
+/// without `0x` gives a hash, as the names file writes them. Any other line is a shape's text.
+fn read_shape_list(path: &std::path::Path) -> Result<arclog_encoder::generate::ShapeList, String> {
+    use arclog_encoder::generate::ShapeList;
+    let text = arclog_encoder::zio::read_text(path)?;
+    let mut hashes = Vec::new();
+    for line in text.lines() {
+        let field = line.split('\t').next().unwrap_or_default().trim();
+        if field.is_empty() {
+            continue;
+        }
+        let digits = field.strip_prefix("0x").unwrap_or(field);
+        let hash = if digits.len() <= 16 { u64::from_str_radix(digits, 16).ok() } else { None };
+        hashes.push(hash.unwrap_or_else(|| ShapeList::hash_of_text(line.trim())));
+    }
+    Ok(ShapeList::new(hashes))
+}
+
+/// The CPU seconds that this thread has used.
+fn thread_cpu_seconds() -> f64 {
+    #[repr(C)]
+    struct Timespec {
+        seconds: i64,
+        nanoseconds: i64,
+    }
+    unsafe extern "C" {
+        fn clock_gettime(clock: u32, now: *mut Timespec) -> i32;
+    }
+    #[cfg(target_os = "macos")]
+    const THREAD_CPU: u32 = 16;
+    #[cfg(not(target_os = "macos"))]
+    const THREAD_CPU: u32 = 3;
+    let mut now = Timespec { seconds: 0, nanoseconds: 0 };
+    // SAFETY: `now` is a valid timespec for the call to fill.
+    unsafe { clock_gettime(THREAD_CPU, &mut now) };
+    now.seconds as f64 + now.nanoseconds as f64 * 1e-9
+}
+
+/// For each table of each solver and each assignment of it: a list of `--sample` shapes drawn from the shapes of
+/// the full vectors over the table's assignments, the list walk against the full walk, and the CPU seconds of
+/// each. A line holds counts and seconds, and no value. A slot is the same where its state, greatest, second and
+/// digest are, at every example.
+fn run_shape_check(arguments: &Arguments, solvers: &[String]) -> Result<(), String> {
+    use arclog_encoder::generate::{Generators, ShapeList, Slot, Walker};
+    use arclog_encoder::table_vector::{table_vector, table_vector_of_shapes, Grids};
+    if arguments.sample == 0 {
+        return Err("`shape-check` takes --sample N".to_string());
+    }
+    let mut out: Box<dyn Write + Send> = match &arguments.out {
+        Some(path) => arclog_encoder::zio::writer(path, false)?,
+        None => Box::new(std::io::stdout()),
+    };
+    let same = |a: &Slot, b: &Slot| a.state == b.state && a.digest == b.digest && a.greatest == b.greatest && a.second == b.second;
+    let size = arguments.size.max(1);
+    for solver in solvers {
+        let prepared = host(arguments, solver).and_then(|host| Grids::of_file(&arguments.tasks, solver, None).map(|(_, grids)| (host, grids)));
+        let (host, grids) = match prepared {
+            Ok(held) => held,
+            Err(message) => {
+                eprintln!("{solver}: {message}");
+                continue;
+            }
+        };
+        let examples = grids.inputs.len();
+        let families = Generators::default();
+        for (identity, spelled) in host.program_facts().table_names.iter().take(arguments.max_tables) {
+            let Ok(tables) = arclog_encoder::run::stored_tables(&host, spelled) else { continue };
+            let mut fulls = Vec::with_capacity(tables.at.len());
+            for (_, stored) in &tables.at {
+                let family = families.get(stored, size);
+                arclog_encoder::gen_parts::clear_views();
+                let (vector, seconds) = {
+                    let mut walker = Walker::new(&family);
+                    let begun = thread_cpu_seconds();
+                    let vector = table_vector(&mut walker, stored, &grids, examples, false);
+                    (vector, thread_cpu_seconds() - begun)
+                };
+                fulls.push((family, vector, seconds));
+            }
+            let mut union: Vec<u64> = fulls.iter().flat_map(|(_, vector, _)| vector.shapes.iter().copied()).collect();
+            union.sort_unstable();
+            union.dedup();
+            // A partial shuffle, from a generator that the seed and the table's name fix.
+            let mut state = (arguments.seed ^ ShapeList::hash_of_text(&format!("{solver} {identity}"))) | 1;
+            for place in 0..arguments.sample.min(union.len()) {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                let other = place + (state % (union.len() - place) as u64) as usize;
+                union.swap(place, other);
+            }
+            union.truncate(arguments.sample);
+            let list = ShapeList::new(union.iter().copied());
+            for (at, (family, full, full_seconds)) in fulls.iter().enumerate() {
+                let mask = family.shape_mask(&list);
+                arclog_encoder::gen_parts::clear_views();
+                let mut walker = Walker::new(family);
+                let begun = thread_cpu_seconds();
+                let got = table_vector_of_shapes(&mut walker, &tables.at[at].1, &grids, examples, false, &mask);
+                let list_seconds = thread_cpu_seconds() - begun;
+                let (mut listed, mut missing, mut different) = (0usize, 0usize, 0usize);
+                for (place, shape) in full.shapes.iter().enumerate() {
+                    if !list.contains(*shape) {
+                        continue;
+                    }
+                    listed += 1;
+                    match got.shapes.binary_search(shape) {
+                        Err(_) => missing += 1,
+                        Ok(found) => {
+                            let slots_differ = full.at(place).iter().zip(got.at(found)).any(|(a, b)| !same(a, b));
+                            if slots_differ || full.meta[place] != got.meta[found] {
+                                different += 1;
+                            }
+                        }
+                    }
+                }
+                let extra = got.shapes.iter().filter(|shape| full.shapes.binary_search(shape).is_err()).count();
+                let (walked, roots) = mask.counts();
+                let line = serde_json::json!({
+                    "task": solver, "table": identity, "assignment": at, "asked": union.len(), "terms": family.counts().0, "walked_terms": walked, "listed_roots": roots,
+                    "full_shapes": full.shapes.len(), "listed_in_full": listed, "listed_in_list_walk": got.shapes.len(), "missing": missing, "extra": extra, "different": different,
+                    "table_rows_same": full.table_rows == got.table_rows, "full_s": full_seconds, "list_s": list_seconds, "over_full": full.over_budget, "over_list": got.over_budget,
+                });
+                writeln!(out, "{line}").map_err(|error| error.to_string())?;
+            }
+            out.flush().map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 /// A table's vector at each of its assignments, and its `AssignmentVector`, to a file, since the
-/// values at a test input read that input.
+/// values at a test input read that input. With `--shapes`, the walk covers the terms that the listed shapes need,
+/// and the file holds the listed shapes alone.
 fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), String> {
     use arclog_encoder::generate::{Generators, Walker};
-    use arclog_encoder::table_vector::{assignment_vector, table_vector, Grids};
+    use arclog_encoder::table_vector::{assignment_vector, table_vector, table_vector_of_shapes, Grids};
     let path = arguments.out.clone().ok_or("`vector` writes to --out")?;
+    let list = arguments.shapes.as_ref().map(|path| read_shape_list(path)).transpose()?;
     let host = host(arguments, solver)?;
     let (_, grids) = Grids::of_file(&arguments.tasks, solver, None)?;
     let tables = arclog_encoder::run::stored_tables(&host, table)?;
@@ -408,7 +554,14 @@ fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), St
     for (_, stored) in &tables.at {
         let family = families.get(stored, arguments.size.max(1));
         let mut walker = Walker::new(&family);
-        vectors.push((stored.content(), table_vector(&mut walker, stored, &grids, examples, false)));
+        let vector = match &list {
+            Some(list) => table_vector_of_shapes(&mut walker, stored, &grids, examples, false, &family.shape_mask(list)),
+            None => table_vector(&mut walker, stored, &grids, examples, false),
+        };
+        vectors.push((stored.content(), vector));
+    }
+    if list.is_some() {
+        eprintln!("{} of {} tables passed the walk's bound on cells", vectors.iter().filter(|(_, vector)| vector.over_budget).count(), vectors.len());
     }
     let names = names_of(&families.names);
     for ((assignment, _), (_, vector)) in tables.at.iter().zip(&vectors) {
@@ -417,8 +570,10 @@ fn run_vector(arguments: &Arguments, solver: &str, table: &str) -> Result<(), St
     for (assignment, stored) in &tables.at {
         let Some(wide) = arclog_encoder::table_vector::task_wide_vector(stored, &grids, &families, arguments.wide_size.unwrap_or(arguments.size.max(1)), false) else { continue };
         let names = names_of(&families.names);
-        writeln!(out, "{}", serde_json::json!({"task_wide": table, "assignment": format!("{assignment:?}"), "entries": wide.shapes.len()})).map_err(|error| error.to_string())?;
-        for (at, shape) in wide.shapes.iter().enumerate() {
+        let held: Vec<usize> = (0..wide.shapes.len()).filter(|at| list.as_ref().is_none_or(|list| list.contains(wide.shapes[*at]))).collect();
+        writeln!(out, "{}", serde_json::json!({"task_wide": table, "assignment": format!("{assignment:?}"), "entries": held.len()})).map_err(|error| error.to_string())?;
+        for at in held {
+            let shape = &wide.shapes[at];
             writeln!(out, "{}", serde_json::json!({"shape": names.get(shape), "reads": wide.meta[at].0, "value": slot_json(&wide.slots[at])})).map_err(|error| error.to_string())?;
         }
     }
@@ -1910,10 +2065,6 @@ fn run_serve_lists(arguments: &Arguments) -> Result<(), String> {
 }
 
 fn main() {
-    // The specification takes sources as on, and the engine's default is off.
-    if std::env::var_os("ARCLOG_IDENT_SOURCE").is_none() {
-        unsafe { std::env::set_var("ARCLOG_IDENT_SOURCE", "type") };
-    }
     let arguments = arguments();
     let command = arguments.positional.first().map(String::as_str).unwrap_or_default();
     let result = match (command, &arguments.positional[1.min(arguments.positional.len())..]) {
@@ -1927,6 +2078,7 @@ fn main() {
         ("encode", [solver, tables @ ..]) if !tables.is_empty() => run_encode(&arguments, solver, tables),
         ("names", []) => run_names(&arguments),
         ("vector", [solver, table]) => run_vector(&arguments, solver, table),
+        ("shape-check", solvers) if !solvers.is_empty() => run_shape_check(&arguments, solvers),
         ("base-vectors", [solver]) => run_base_vectors(&arguments, solver),
         ("query-vectors", [solver]) => run_query_vectors(&arguments, solver),
         ("state-vectors", [solver]) => run_state_vectors(&arguments, solver),

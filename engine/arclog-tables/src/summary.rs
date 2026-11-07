@@ -19,7 +19,7 @@
 //! assignment:
 //!
 //! 1. Each row is encoded as export cells ([`sorted_rows`]). An Ident cell is
-//!    the first 32 bits of its member digest under `ARCLOG_IDENT_SOURCE=value`.
+//!    the first 32 bits of its member digest.
 //! 2. For each column of a type that another column has, hash the type and
 //!    the set of its cell runs on each example. A column of a type that no other
 //!    column has cannot tie, and its hash is 0.
@@ -32,11 +32,9 @@
 //! 5. The TableHash is the hash of the sorted type names and the body hash.
 //!
 //! A type name in the TableHash is the name that the export writes
-//! ([`type_names`]), and, for each Ident in the type that has a source, the
-//! identity of that source ([`hashed_names`]). So two tables are equal only
-//! where their Types, Ident sources included, and their TableRows are equal.
-//! A type with no Ident source, as every type is while `ARCLOG_IDENT_SOURCE`
-//! is off, has the name that the export writes. A Pose type is the exception:
+//! ([`type_names`]), which holds no Ident source ([`hashed_names`]). So two
+//! tables are equal where their Types and their TableRows are equal, whichever
+//! forms make their Idents. A Pose type is the exception:
 //! the name that the export writes holds the slots of its `RIGID_DET` and of the
 //! `DET`s that the form reads, which differ between programs of one query, so
 //! its name in the TableHash names the assembly by the QueryHash of its
@@ -67,7 +65,7 @@ use arclog::relations::Relation;
 use arclog::session::SessionAllocation;
 use arclog::task::{Grid, Task};
 use arclog::program::RigidDetName;
-use arclog::types::{AssemblyId, IdentSource, SourceId, ValueType};
+use arclog::types::{AssemblyId, ValueType};
 use arclog_features::{Grid as FeatureGrid, Input, Pair, TableRows};
 
 use crate::columns::{row_width, sorted_rows, sorted_rows_at, type_names};
@@ -778,25 +776,11 @@ fn run_of(rows: &Encoded, width: usize, start: usize, len: usize, row: usize) ->
 }
 
 /// The names of `types` as the TableHash writes them: the name that the export
-/// writes, with [`pose_name`] for each Pose type in it, and `@` and the 32
-/// hexadecimal digits of the identity of the source after it for each Ident of
-/// a source in the type, in the order of the type.
+/// writes, with [`pose_name`] for each Pose type in it. The name holds no Ident
+/// source, so two tables whose Idents have equal contents have one TableHash
+/// whichever forms make the Idents.
 fn hashed_names(types: &[ValueType], assemblies: &Assemblies) -> Vec<String> {
-    fn push_sources(ty: &ValueType, name: &mut String) {
-        match ty {
-            ValueType::Ident(IdentSource::Form(SourceId(id))) => name.push_str(&format!("@{:032x}", id.0)),
-            ValueType::Record(fields) => fields.iter().for_each(|(_, field)| push_sources(field, name)),
-            _ => {}
-        }
-    }
-    types
-        .iter()
-        .map(|ty| {
-            let mut name = hashed_type_name(ty, assemblies);
-            push_sources(ty, &mut name);
-            name
-        })
-        .collect()
+    types.iter().map(|ty| hashed_type_name(ty, assemblies)).collect()
 }
 
 /// The name of `ty` that the export writes ([`type_names`]), with

@@ -3,6 +3,7 @@
   ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET [K N]    SET: train, dev or held-out; K N takes the tasks at positions K, K + N, ... and writes fits-SET-K.jsonl. A restart skips the tasks the file has. With FITS_TASKS set (tasks separated by spaces), K N name only the output file, and the run takes those tasks.
   With FITS_REUSE set (fits files separated by commas, with or without the header line), a program that has a row (same task and text_sha) in one of those files, the first that has it, is not run: its row copies that row's assignments, fitting, fit, test_ok and why, and its cases are those of the current cases-SET.jsonl. The progress line of each task says how many of its programs were copied.
   With FITS_CAP=S set, each program runs in a forked child that is killed after S seconds. A killed program has fit and test_ok null and why 'timeout S s', and the union leaves it out with that reason.
+  Where the engine's replay of a program stops (the deadline, a cap), a later program of the task that has the same forms up to and with the form it stopped in (the identities of design.md, "Forms and tables") is not replayed in full: it runs for FITS_STOP_PROBE seconds (default 1), which gives its static refusals, and it gives `replay: stopped` as the first program did. See StopMemo.
   ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET decode K N     the same for decode, on an engine with Session.check_stream; it writes decode-SET-K.jsonl.
   ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET sampler K N     adds the sampler outcome to the programs of fits-SET.jsonl that have none: it writes sampler-SET-K.jsonl for the tasks at positions K, K + N, ..., and the merge takes it.
   ARCLOG_IDENT_SOURCE=value PYTHONPATH=<site> python gold_union_fits.py SET merge     writes fits-SET.jsonl from the fits-SET-K.jsonl files, sorted by task, after a first line {"t": "header", "code": {"sha", "dirty"}} (gold_union_code.py: the commit of the code that merged it). A reader of fits-SET.jsonl skips the lines that have `t`.
@@ -21,6 +22,7 @@ WORK_CAP = int(os.environ.get('FITS_WORK_CAP', 1 << 28))  # the engine's table w
 DEADLINE = float(os.environ.get('FITS_DEADLINE', 120))  # the engine's deadline in seconds; its default, 10, stops programs by the machine's load
 SESSION_BYTES = int(os.environ.get('FITS_SESSION_BYTES', 8 << 30))  # the engine's session byte bound; its default is 512 MiB
 CAP = float(os.environ.get('FITS_CAP', 0))  # seconds per program; 0 runs each program in this process, with no cap
+STOP_PROBE = float(os.environ.get('FITS_STOP_PROBE', 1))  # the engine's deadline in seconds for a program that a StopMemo holds as stopped: it still gets the engine's static checks, and gives no tables where it stops
 SPLIT = {f[0]: 'held-out' if f[3] in ('held', 'held-out') else f[3] for f in (l.rstrip('\n').split('\t') for l in open(ROOT / 'model/study/samples/split_design/split2.tsv')) if f[0] != 'task'}  # {task: split}, from the `split` column
 
 
@@ -119,18 +121,74 @@ def grids_of(tb, text):
     return by_key
 
 
-def check(env, task, text, tasks, task_json):
-    """(assignments, fitting, test_ok, why) of a program text: the assignments of its OUT table, those that give every train output, whether the program solves (the fitting assignments give, on each test example, at most two distinct grids over all models, and one is the expected output), and the reason it gives no tables."""
-    cli, arclog, np = env
+HEAD = re.compile(r'\((\w+) &([A-Za-z_]\w*)')
+NAME = re.compile(r'&([A-Za-z_]\w*)((?:\.\w+)*)')
+
+
+def form_idents(text):
+    """[identity] of the forms of a program, in order of the text: as in design.md ("Forms and tables"), the form's text with each read replaced by the identity of the form it reads, and its own label dropped. The OUT query is no form."""
+    ident, got = {}, []
+    for x in text.splitlines():
+        m = HEAD.match(x)
+        if not m or x.startswith('(OUT'):
+            continue
+        body = NAME.sub(lambda n: '{%s}%s' % (ident[n[1]], n[2]) if n[1] in ident else '&_' + n[2], ' '.join(x[m.end():].split()))
+        ident[m[2]] = hashlib.sha256((m[1] + body).encode()).hexdigest()[:16]
+        got.append(ident[m[2]])
+    return got
+
+
+class StopMemo:
+    """The programs of one task whose replay the engine stopped, by the forms they have up to the form it stopped in. The engine replays the forms in the order of the text and a form's table depends on the forms before it alone, so a program whose forms, up to and with the stopped form, have the same identities as those of a stopped program stops there too, under the same limits, and its replay is not run: it gives the same `replay: stopped`."""
+
+    def __init__(self):
+        self.stopped = []  # [tuple of identities, up to the stopped form]
+
+    def hit(self, text):
+        ids = form_idents(text)
+        return any(ids[:len(p)] == list(p) for p in self.stopped)
+
+    def add(self, text, form):
+        self.stopped.append(tuple(form_idents(text)[:form + 1]))
+
+
+def run_program(cli, arclog, np, text, task, tasks, task_json, deadline=None):
+    """(tables, why, stop): what cli.run_case gives for a program text, and `stop`, the index of the form that the engine stopped in where its replay stopped and says so, else None. run_case does not return the engine's status, which says it. `deadline` is the engine's deadline in seconds, in place of DEADLINE."""
+    settings = arclog.DecodeSettings(**({'deadline_seconds': deadline} if deadline else {}))
     try:
-        tb, why = cli.run_case(arclog, np, SimpleNamespace(arclog=text, fault=None), task, tasks, task_json)
+        program = arclog.StudyProgram.from_sexp(text, settings)
+    except ValueError as e:
+        return None, 'refused: %s' % e, None
+    evaluator = arclog.StudyTaskEvaluator(task, str(tasks.resolve()), settings)
+    rows = 'held_rows' if 'held_rows' in type(evaluator).gold_tables.__text_signature__ else 'full_rows'  # as run_case does
+    status, ct = evaluator.gold_tables(program, **{rows: True})
+    st = json.loads(status)
+    if st.get('status') not in (None, 'complete'):
+        m = re.fullmatch(r'NodePath\(\[PathStep\((\d+)\)\]\)', str(st.get('form')))
+        return None, 'replay: %s' % st.get('status'), int(m[1]) if m and st.get('status') == 'stopped' else None
+    return cli.Tables(arclog, np, program, ct, task_json), None, None
+
+
+def check(env, task, text, tasks, task_json, memo=None):
+    """(assignments, fitting, test_ok, why) of a program text, as check_stop() gives it."""
+    return check_stop(env, task, text, tasks, task_json, memo)[0]
+
+
+def check_stop(env, task, text, tasks, task_json, memo=None):
+    """((assignments, fitting, test_ok, why), stop) of a program text: the assignments of its OUT table, those that give every train output, whether the program solves (the fitting assignments give, on each test example, at most two distinct grids over all models, and one is the expected output), and the reason it gives no tables. `stop` is the index of the form the engine's replay stopped in, or None. With a StopMemo of the task, a program that it holds as stopped is not run (its stop is None, as the memo has it), and a program that stops is added to it."""
+    cli, arclog, np = env
+    held = memo is not None and memo.hit(text)
+    try:
+        tb, why, stop = run_program(cli, arclog, np, text, task, tasks, task_json, STOP_PROBE if held else None)
         if tb is None:
-            return 0, 0, False, why[:200]
+            if memo is not None and stop is not None and not held:
+                memo.add(text, stop)
+            return (0, 0, False, why[:200]), None if held else stop
         if not re.search(r'^\(OUT ', text, re.M):
-            return 0, 0, False, 'no OUT form'
+            return (0, 0, False, 'no OUT form'), None
         by_key = grids_of(tb, text)
     except Exception as e:  # noqa: BLE001
-        return 0, 0, False, '%s: %s' % (type(e).__name__, str(e)[:150])
+        return (0, 0, False, '%s: %s' % (type(e).__name__, str(e)[:150])), None
     wants = {}
 
     def cells(g):
@@ -160,17 +218,18 @@ def check(env, task, text, tasks, task_json):
         return bool(fitting)
 
     fitting = [d for d in by_key.values() if gives(d, 'train')]
-    return len(by_key), len(fitting), solves(fitting), None
+    return (len(by_key), len(fitting), solves(fitting), None), None
 
 
-def capped(env, task, text, tasks, task_json):
-    """check() in a forked child. A child still running after CAP seconds is killed. Its outcome is a timeout, not a verdict: assignments, fitting, fit and test_ok are null, and why is 'timeout'."""
+def capped(env, task, text, tasks, task_json, memo=None):
+    """check() in a forked child. A child still running after CAP seconds is killed. Its outcome is a timeout, not a verdict: assignments, fitting, fit and test_ok are null, and why is 'timeout'. The child gives its stop to the parent, which keeps it in the memo."""
+    held = memo is not None and memo.hit(text)
     r, w = os.pipe()
     pid = os.fork()
     if pid == 0:
         os.close(r)
         with os.fdopen(w, 'w') as f:
-            f.write(json.dumps(check(env, task, text, tasks, task_json)))
+            f.write(json.dumps(check_stop(env, task, text, tasks, task_json, memo)))
         os._exit(0)
     os.close(w)
     got, end = b'', time.time() + CAP
@@ -183,7 +242,12 @@ def capped(env, task, text, tasks, task_json):
         os.kill(pid, signal.SIGKILL)
     os.close(r)
     os.waitpid(pid, 0)
-    return json.loads(got) if got else (None, None, None, 'timeout %ds' % CAP)
+    if not got:
+        return None, None, None, 'timeout %ds' % CAP
+    result, stop = json.loads(got)
+    if memo is not None and stop is not None and not held:
+        memo.add(text, stop)
+    return tuple(result)
 
 
 def sampler_settings():
@@ -279,7 +343,7 @@ def reuse_of():
 def one(env, task, texts, tasks, reuse):
     """(the fits row of a task, how many of its programs it copies). `reuse` is {text_sha: program} of the task, from reuse_of()."""
     task_json = json.load(open(tasks / (task + '.json')))
-    progs, copied = [], 0
+    progs, copied, memo = [], 0, StopMemo()
     for text, cases in texts.items():
         old = reuse.get(sha16(text))
         if old:
@@ -288,7 +352,7 @@ def one(env, task, texts, tasks, reuse):
                               **decode_of(env, task_json, text, old)))
             copied += 1
             continue
-        n, k, ok, why = (capped if CAP else check)(env, task, text, tasks, task_json)
+        n, k, ok, why = (capped if CAP else check)(env, task, text, tasks, task_json, memo)
         progs.append(dict(text_sha=sha16(text), cases=cases, assignments=n, fitting=k, fit=None if why else k > 0, test_ok=None if why else ok, why=why,
                           sampler=sampler_capped(env, task_json, text), **decode_of(env, task_json, text, {})))
     return dict(task=task, programs=progs), copied

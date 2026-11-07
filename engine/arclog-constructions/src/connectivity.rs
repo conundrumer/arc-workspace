@@ -14,7 +14,7 @@ use arclog::eval::instance::{Construction, ConstructionContext, GroupInputs, Gro
 use arclog::eval::join::Batch;
 use arclog::hash::{StableHashMap, StableHashSet};
 use arclog::program::ColumnName;
-use arclog::relations::{Row, RowSet};
+use arclog::relations::{encoding_order, Row, RowSet};
 use arclog::terms::{Content, Margins, MemberSet, Term, TermId};
 use arclog::types::ValueType;
 
@@ -77,7 +77,7 @@ impl Construction for Quotient {
             classes.union(Row::from(a), Row::from(b));
             work.count(context.budget, 1)?;
         }
-        let class = identified(context, &group.types[0][..width], &classes.classes());
+        let class = identified(context, &group.types[0][..width], &classes.classes(|a, b| encoding_order(a, b)));
         rows_held(context, [&class])?;
         Ok(GroupOutputs { outputs: Box::new([class]) })
     }
@@ -237,7 +237,7 @@ fn components(
             }
         }
     }
-    Ok((classes.classes(), adjacent))
+    Ok((classes.classes(|a, b| encoding_order(a, b)), adjacent))
 }
 
 /// The nodes of `nodes` that a walk from each of `sources` that is a node
@@ -380,13 +380,20 @@ impl<T: Hash + Eq + Clone> UnionFind<T> {
         self.parent[a] = b;
     }
 
-    /// The members of each class.
-    fn classes(mut self) -> Vec<Vec<T>> {
+    /// The members of each class, each class's members in `order`, and the
+    /// classes in the order of their least members, so that the result does not
+    /// follow the order the elements were met in or a hash map's.
+    fn classes(mut self, order: impl Fn(&T, &T) -> std::cmp::Ordering) -> Vec<Vec<T>> {
         let mut by_root: StableHashMap<usize, Vec<T>> = StableHashMap::default();
         for at in 0..self.elements.len() {
             let root = self.find(at);
             by_root.entry(root).or_default().push(self.elements[at].clone());
         }
-        by_root.into_values().collect()
+        let mut classes: Vec<Vec<T>> = by_root.into_values().collect();
+        for class in &mut classes {
+            class.sort_unstable_by(&order);
+        }
+        classes.sort_unstable_by(|a, b| order(&a[0], &b[0]));
+        classes
     }
 }

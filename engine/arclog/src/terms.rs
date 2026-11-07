@@ -655,16 +655,14 @@ pub enum DataValueError {
 /// The task session's table from contents to Idents. It finds a content by
 /// its hash, and compares contents only where two hashes match. The table's
 /// bytes count toward the task session's bound, and a freed number is not
-/// used again in the session. Where `ARCLOG_IDENT_SOURCE` is `value`, it also
-/// keeps the member digest of each content, which is the same in every
-/// session.
+/// used again in the session. It also keeps the member digest of each content,
+/// which is the same in every session.
 #[derive(Debug, Default)]
 pub struct InternTable {
     /// The content of each number given, `None` once freed.
     contents: Vec<Option<Content>>,
     /// The member digest of each number given, as [`InternTable::digest`]
-    /// gives it: zero where the content is freed, and while Ident values are
-    /// off.
+    /// gives it: zero where the content is freed.
     digests: Vec<StableHash>,
     /// The Idents of the contents of each hash.
     by_hash: crate::hash::StableHashMap<StableHash, Vec<Ident>>,
@@ -703,7 +701,7 @@ impl InternTable {
         idents.push(ident);
         let grown = (idents.capacity() - before) * std::mem::size_of::<Ident>();
         self.held_bytes += grown + Self::content_bytes(&content);
-        let digest = if crate::types::ident_mode() == crate::types::IdentMode::Value { self.digest_of(&content) } else { StableHash(0) };
+        let digest = self.digest_of(&content);
         self.digests.push(digest);
         self.contents.push(Some(content));
         ident
@@ -752,7 +750,7 @@ impl InternTable {
     }
 
     /// The member digest of `ident`'s content, as [`InternTable::intern`]
-    /// computed it. It is zero unless `ARCLOG_IDENT_SOURCE` is `value`.
+    /// computed it.
     pub fn digest(&self, ident: Ident) -> StableHash {
         self.digests[ident.0 as usize]
     }

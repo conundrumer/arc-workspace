@@ -1,5 +1,6 @@
 //! The one hash function of the arclog engine: a fixed function with no
-//! random seed, so hashes are the same from run to run.
+//! random seed, so hashes are the same from run to run. A seed for maps and
+//! sets alone can be set for a check ([`StableState`]).
 //!
 //! Every hash map and hash set of the engine is built with [`StableState`],
 //! and every content hash is a [`StableHash`]. The standard library's
@@ -161,24 +162,55 @@ impl Hasher for StableHasher {
 }
 
 /// The [`BuildHasher`] of every hash map and hash set of the engine.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct StableState;
+///
+/// The environment variable `ARCLOG_MAP_SEED`, a `u64`, seeds the hashers of
+/// maps and sets, and no content hash. A seed changes where each key stands in
+/// its map's buckets, so a run with a seed iterates its maps in another order,
+/// as a table of another platform does ([`StableHashMap`]). Equal outputs of
+/// runs with and without a seed show that no output follows a map's order. The
+/// variable is read once, at the first map made. Unset, the seed is 0 and the
+/// hashers are the unseeded ones.
+#[derive(Clone, Copy, Debug)]
+pub struct StableState {
+    seed: u64,
+}
+
+impl Default for StableState {
+    fn default() -> Self {
+        StableState { seed: map_seed() }
+    }
+}
 
 impl BuildHasher for StableState {
     type Hasher = StableHasher;
 
     fn build_hasher(&self) -> StableHasher {
-        StableHasher::new()
+        let mut hasher = StableHasher::new();
+        hasher.state[0] ^= self.seed;
+        hasher
     }
+}
+
+/// The seed that `ARCLOG_MAP_SEED` gives, 0 where it is unset.
+///
+/// # Panics
+///
+/// At the first call, where the variable is set and is no `u64`.
+fn map_seed() -> u64 {
+    static SEED: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *SEED.get_or_init(|| match std::env::var("ARCLOG_MAP_SEED") {
+        Err(_) => 0,
+        Ok(text) => text.parse().unwrap_or_else(|_| panic!("ARCLOG_MAP_SEED is `{text}`; it must be unset or a u64")),
+    })
 }
 
 /// A hash map under the engine's fixed hash function.
 ///
-/// Its iteration order follows from its keys and the order they were
-/// inserted in, so it is the same from run to run only where both are, and
-/// not where the keys hold an Ident, whose number depends on the order of
-/// interning. It is an order of encodings either way, and no order of the
-/// content.
+/// Its iteration order follows from its keys, the order they were inserted in,
+/// and the layout of the standard library's table, which differs between
+/// platforms: the same keys inserted in the same order iterate in another order
+/// on a CPU with other vector instructions. So no output may follow it. It is
+/// an order of encodings either way, and no order of the content.
 pub type StableHashMap<K, V> = std::collections::HashMap<K, V, StableState>;
 
 /// A hash set under the engine's fixed hash function, with the iteration rule

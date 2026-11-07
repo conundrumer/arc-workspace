@@ -16,7 +16,7 @@ pub use body_walks::{each_atom, each_conjunct, each_site_label, each_site_use, u
 pub(crate) use body_walks::column_label;
 pub(crate) use label_walk::{flat_label_types, fresh_in_nested_form, label_binding_type_cached, label_fault_message, label_type_cached, list_class, meet, scope_lists, settle_label_types, typed, TypedLabels, WalkCache, ZeroMade};
 pub use label_walk::{label_type, label_type_keyed, LabelFault};
-pub use ident_source::{ident_mode, sources_on, IdentMode, IdentSource, SourceId};
+pub use ident_source::{IdentSource, SourceId};
 pub use lattice::{Meet, ValueType};
 pub use program_types::{FormRelation, FormTypes, GraphRelation, ProgramTypes};
 
