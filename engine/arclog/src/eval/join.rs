@@ -19,6 +19,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use super::ir::{Argument, Arguments, ClauseIr, Comparison, Filter, IrNode, Operand, Variable};
+pub(crate) mod branches;
 mod spatial;
 
 use super::plan::{
@@ -171,6 +172,27 @@ impl<'a> Budget<'a> {
         Ok((result?, inner))
     }
 
+    /// Runs `evaluate` as a nested evaluation ([`Budget::nested`]) and gives
+    /// its result with what it did to the counts of this budget: the bindings
+    /// it charged and the most rows that a nested evaluation in it held.
+    /// [`Budget::replay_nested`] does the same to a budget without running
+    /// the evaluation.
+    fn counted<T>(&mut self, evaluate: impl FnOnce(&mut Self) -> Result<T, ReachedBound>) -> Result<(T, Counted), ReachedBound> {
+        let outside = std::mem::take(&mut self.nested_rows);
+        let result = self.logged(evaluate);
+        let inside = std::mem::replace(&mut self.nested_rows, outside);
+        self.nested_rows = outside.max(inside);
+        let (value, bindings) = result?;
+        Ok((value, Counted { bindings, rows: inside }))
+    }
+
+    /// Does to the counts of this budget what `counted` says an evaluation
+    /// did to them, as [`Budget::counted`] gives it.
+    fn replay_nested(&mut self, counted: Counted) -> Result<(), ReachedBound> {
+        self.nested_rows = self.nested_rows.max(counted.rows);
+        self.replay(counted.bindings)
+    }
+
     /// Charges the `bindings` of an evaluation that [`Budget::logged`] gave.
     /// A memo hit charges the bindings of the evaluation it stands for and no
     /// row, since a nested evaluation adds none ([`Budget::nested`]) and the
@@ -186,6 +208,14 @@ impl<'a> Budget<'a> {
     pub fn record(&self) {
         self.session.record_counts(Counts { bindings: self.bindings, rows: self.rows.max(self.nested_rows) });
     }
+}
+
+/// What a nested evaluation did to the counts of the budget it ran in: the
+/// bindings it charged, and the most rows that a nested evaluation in it held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Counted {
+    bindings: Charges,
+    rows: u64,
 }
 
 /// One operation's materialization policy. It borrows the current limits;
@@ -614,7 +644,7 @@ fn union_rows(
     let mut rows = RowSet::empty(projected.len() as u16);
     for ((branch, inputs), (order, columns)) in union.branches.iter().zip(bodies.iter()).zip(searches) {
         let nodes: Vec<usize> = (0..branch.nodes.len()).collect();
-        let found = budget.nested(|budget| search(branch, &nodes, &[], order, &[], inputs, registry, &columns, budget));
+        let found = branches::rows(budget, branch, inputs, &columns, |budget| search(branch, &nodes, &[], order, &[], inputs, registry, &columns, budget));
         let found = match found {
             Ok(found) => found,
             Err(bound) => return Some(Err(bound)),

@@ -843,6 +843,8 @@ fn entry_bytes(key: &ResultKey) -> usize {
 pub struct TaskSession {
     pub intern: Arc<RwLock<InternTable>>,
     pub results: Arc<ResultCache>,
+    /// The rows of the branches of unions that are a clause's whole body.
+    pub(crate) branches: Arc<crate::eval::join::branches::BranchMemo>,
     /// The caps of every evaluation in the session.
     pub caps: Caps,
     /// The bound on the session's bytes.
@@ -904,7 +906,7 @@ impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), native_rows: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default(), path_masks: Arc::default() }
+        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), branches: Arc::default(), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), native_rows: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default(), path_masks: Arc::default() }
     }
 
     /// A session with this session's intern table and fact relations, and
@@ -912,6 +914,7 @@ impl TaskSession {
     pub fn sharing_terms(&self) -> Self {
         TaskSession {
             results: Arc::new(ResultCache::default()),
+            branches: Arc::default(),
             allocated: Arc::new(AtomicUsize::new(0)),
             largest_bindings: Arc::new(AtomicU64::new(0)),
             largest_rows: Arc::new(AtomicU64::new(0)),
