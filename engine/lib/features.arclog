@@ -1480,6 +1480,31 @@
   (QUERY &q (?R (*others ?R)) (&top.maximal (:key ?keys) (:t ?f)))
   (gives &q))
 
+(fragment (second-frequent-rows (?R relation) (?keys columns ?R) (?f column ?R))
+  "The rows whose value of a column has the next most rows of their key, at the count level just below the most. Under a tie, every value tied at that level."
+  (QUERY &whole (d4_elem (:D *Whole)) (d4_compose (:A Whole) (:B Whole) (:C Whole)))
+  (INIT &rows Order
+    (member ((:t (others ?R)))
+      (?R (*others ?R))))
+  (INIT &per_value Cardinality
+    (key ((?R (?keys ^) (?f ^)))
+      (member ((:m (others ?R ?keys ?f)))
+        (&rows.minimal (:t ?keys ?f (*others ?R ?keys ?f))))))
+  (INIT &top Order
+    (key ((?R (?keys ^)) (&whole ^Whole))
+      (member ((:t ?f))
+        (&whole Whole)
+        (&per_value.size (:key ?keys (?f *))))
+      (score ((:t ?f) (:S Rows))
+        (&whole Whole)
+        (&per_value.size (:key ?keys (?f *)) (:N *Rows)))))
+  (INIT &below Cardinality
+    (key ((?R (?keys ^) (?f ^))
+          (&top.successor (:key ?keys) (:a ?f) (:b *Top))
+          (&top.maximal (:key ?keys) (:t Top)))))
+  (QUERY &q (?R (*others ?R)) (&below.size (:key ?keys ?f)))
+  (gives &q))
+
 (fragment (determines-flag (?L relation) (?S relation) (?keys columns ?L) (?a column ?L) (?b column ?S))
   "Whether each key's rows all have a match in a second relation, or none do."
   (INIT &others_have Order

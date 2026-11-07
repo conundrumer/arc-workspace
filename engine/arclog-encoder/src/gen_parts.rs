@@ -52,6 +52,8 @@ pub enum PartStep {
     SameColorNeighbors { p: u16 },
     /// A relation's rows whose value is the one most frequent of their key, in a key of two rows or more.
     MostFrequentRows { keys: Box<[u16]>, v: u16 },
+    /// A relation's rows whose value has the greatest count of rows of their key below the key's top count. A key with one count has none.
+    SecondFrequentRows { keys: Box<[u16]>, v: u16 },
     /// No columns: each key's rows all have a match in the second relation, or none do.
     DeterminesFlag { keys: Box<[u16]>, a: u16, b: u16 },
     /// Group properties: keys, Id or N; or the keys that hold.
@@ -201,7 +203,7 @@ impl PartStep {
             PartStep::Count { keys } | PartStep::ClassOf { keys } => keys.to_vec(),
             PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => with(keys, &[*f]),
             PartStep::Extreme { keys, t, score, .. } => with(keys, &[*t, *score]),
-            PartStep::MostFrequentRows { keys, v } => with(keys, &[*v]),
+            PartStep::MostFrequentRows { keys, v } | PartStep::SecondFrequentRows { keys, v } => with(keys, &[*v]),
             PartStep::DeterminesFlag { keys, a, .. } => with(keys, &[*a]),
             PartStep::Occurs { keys, p, v, .. } => with(keys, &[*p, *v]),
             PartStep::DiffRows { p, .. } | PartStep::DiffCells { p, .. } => vec![*p],
@@ -255,6 +257,7 @@ impl PartStep {
             PartStep::NeighborColorClass { p } => format!("(neighbor-color-class &r {} {grid})", c(p)),
             PartStep::SameColorNeighbors { p } => format!("(same-color-neighbors &r {} {grid})", c(p)),
             PartStep::MostFrequentRows { keys, v } => format!("(most-frequent-rows &r {} {})", list(keys), c(v)),
+            PartStep::SecondFrequentRows { keys, v } => format!("(second-frequent-rows &r {} {})", list(keys), c(v)),
             PartStep::DeterminesFlag { keys, a, b } => format!("(determines-flag &r &s {} {} {})", list(keys), c(a), second(*b)),
             PartStep::ShapeClass { keys, p, turned } => format!("({} &r {} {})", if *turned { "shape-class-d4" } else { "shape-class" }, list(keys), c(p)),
             PartStep::Holes { keys, p } => format!("(holes &r {} {})", list(keys), c(p)),
@@ -1456,7 +1459,7 @@ impl PartStep {
     /// output has one distinct head per group, so two keys that group the rows alike give one count.
     pub fn grouping_keys(&self) -> Option<&[u16]> {
         match self {
-            PartStep::DiffGroupsOff { keys, .. } | PartStep::Pieces { keys, .. } | PartStep::BoxOf { keys, .. } | PartStep::RelBox { keys, .. } | PartStep::Count { keys } | PartStep::OneValue { keys, .. } | PartStep::Several { keys, .. } | PartStep::Determines { keys, .. } | PartStep::Extreme { keys, .. } | PartStep::ClassOf { keys } | PartStep::MostFrequentRows { keys, .. } | PartStep::DeterminesFlag { keys, .. } | PartStep::ShapeClass { keys, .. } | PartStep::Holes { keys, .. } | PartStep::Symmetry { keys, .. } | PartStep::TouchesEdge { keys, .. } | PartStep::FillsBox { keys, .. } | PartStep::Occurs { keys, .. } | PartStep::SameShape { keys, .. } | PartStep::BoxSides { keys, .. } | PartStep::BoxMargins { keys, .. } | PartStep::LineCounts { keys, .. } | PartStep::CellCount { keys, .. } | PartStep::GroupGap { keys, .. } | PartStep::Straight { keys, .. } | PartStep::FullLines { keys, .. } => Some(keys),
+            PartStep::DiffGroupsOff { keys, .. } | PartStep::Pieces { keys, .. } | PartStep::BoxOf { keys, .. } | PartStep::RelBox { keys, .. } | PartStep::Count { keys } | PartStep::OneValue { keys, .. } | PartStep::Several { keys, .. } | PartStep::Determines { keys, .. } | PartStep::Extreme { keys, .. } | PartStep::ClassOf { keys } | PartStep::MostFrequentRows { keys, .. } | PartStep::SecondFrequentRows { keys, .. } | PartStep::DeterminesFlag { keys, .. } | PartStep::ShapeClass { keys, .. } | PartStep::Holes { keys, .. } | PartStep::Symmetry { keys, .. } | PartStep::TouchesEdge { keys, .. } | PartStep::FillsBox { keys, .. } | PartStep::Occurs { keys, .. } | PartStep::SameShape { keys, .. } | PartStep::BoxSides { keys, .. } | PartStep::BoxMargins { keys, .. } | PartStep::LineCounts { keys, .. } | PartStep::CellCount { keys, .. } | PartStep::GroupGap { keys, .. } | PartStep::Straight { keys, .. } | PartStep::FullLines { keys, .. } => Some(keys),
             _ => None,
         }
     }
@@ -1793,7 +1796,7 @@ impl PartStep {
                 let width = if matches!(self, PartStep::SameColorNeighbors { .. }) { 3 } else { 2 };
                 Val::of_table(Table::new(width, out))
             }
-            PartStep::MostFrequentRows { keys, v } => {
+            PartStep::MostFrequentRows { keys, v } | PartStep::SecondFrequentRows { keys, v } => {
                 let (grouping, first) = key_ids(t, keys);
                 let ids = &grouping.0;
                 // The rows at each pair of a key and a value, counted by the pair's own id.
@@ -1810,9 +1813,22 @@ impl PartStep {
                     let best = &mut best[ids[*at as usize] as usize];
                     *best = (*best).max(*count);
                 }
+                // The rows kept have the key's top count, or its greatest count below the top: none where the key has one count.
+                let second = matches!(self, PartStep::SecondFrequentRows { .. });
+                let mut kept = best;
+                if second {
+                    let mut below = vec![0u32; first.len()];
+                    for (at, count) in pair_first.iter().zip(&counts) {
+                        let key = ids[*at as usize] as usize;
+                        if *count < kept[key] {
+                            below[key] = below[key].max(*count);
+                        }
+                    }
+                    kept = below;
+                }
                 let mut out = Vec::new();
                 for ((row, id), pair) in t.rows().zip(ids).zip(&pair_ids) {
-                    if counts[*pair as usize] == best[*id as usize] {
+                    if counts[*pair as usize] == kept[*id as usize] {
                         out.extend_from_slice(row);
                     }
                 }

@@ -1784,7 +1784,7 @@ impl Generated {
         out
     }
 
-    /// What one column says as a whole: its cells' frame and how they fill it, its values as a list, and the rows that its two greatest numbers count.
+    /// What one column says as a whole: its cells' frame and how they fill it, its values as a list, the rows that its two greatest numbers count, and the rows of a color column's two most frequent values.
     fn column_measures(&mut self) {
         use crate::gen_parts::ColumnMeasureKind::*;
         let columns = self.terms[LEAF_TABLE as usize].columns.clone();
@@ -1821,6 +1821,17 @@ impl Generated {
                     }
                     if let Some(term) = self.push_forced(Step::Part(Box::new(PartStep::ColumnMeasure { a: at, measure: ExtentsDistinct })), LEAF_TABLE, NO_TERM, number(), 1, format!("(extents-distinct T {name})"), RootKind::Number) {
                         self.refined[term as usize].count_follows = true;
+                    }
+                }
+                ValueType::Color => {
+                    // The rows of its most frequent value over those of its next most frequent one.
+                    let text_of = |word: &str| format!("({word} T () {name})");
+                    let (most_text, second_text) = (text_of("most-frequent-rows"), text_of("second-frequent-rows"));
+                    let found = self.terms.iter().rposition(|term| term.text == most_text).map(|held| held as u32);
+                    let most = found.or_else(|| self.push_forced(Step::Part(Box::new(PartStep::MostFrequentRows { keys: Box::new([]), v: at })), LEAF_TABLE, NO_TERM, columns.clone(), 1, most_text.clone(), RootKind::Share));
+                    let second = self.push_forced(Step::Part(Box::new(PartStep::SecondFrequentRows { keys: Box::new([]), v: at })), LEAF_TABLE, NO_TERM, columns.clone(), 1, second_text.clone(), RootKind::Share);
+                    if let (Some(most), Some(second)) = (most, second) {
+                        self.push_forced(Step::Part(Box::new(PartStep::Same)), most, second, Vec::new(), 2, format!("{most_text} {second_text}"), RootKind::Against);
                     }
                 }
                 ValueType::Nat | ValueType::Int => {
