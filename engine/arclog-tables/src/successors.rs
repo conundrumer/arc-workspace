@@ -203,7 +203,7 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
         // A caller exports a relation table with the QueryHash that the successor's own decode gives, and the table of an unchanged body with no step of its own, so neither takes part.
         let named = kind != SuccessorKind::Unchanged && kind != SuccessorKind::Exhausted && tables.iter().all(|table| matches!(table.point, Point::Body { .. }));
         let same_as = if named {
-            let found = body_key.as_ref().and_then(|key| held_at.get(key).copied()).or_else(|| firsts.iter().copied().find(|&first| each[first].as_ref().is_ok_and(|first| same_tables(&first.tables, &tables, limits.request.gauges()))));
+            let found = body_key.as_ref().and_then(|key| held_at.get(key).copied()).or_else(|| firsts.iter().copied().find(|&first| each[first].as_ref().is_ok_and(|first| same_tables(&first.tables, &tables, Compared { gauges: limits.request.gauges(), cap: decoder.settings().compared_rows_cap }))));
             if found.is_none() {
                 firsts.push(each.len());
             }
@@ -232,20 +232,25 @@ pub fn exhaustion(limits: &Limits) -> Option<arclog::eval::ReachedBound> {
     }
 }
 
-/// The most rows of a relation that [`same_relation`] compares row by row;
-/// it takes two larger relations that are no clones of one another as
-/// different.
-const COMPARED_ROWS: u64 = 1 << 20;
+/// What the comparison of two successors' tables reads: the gauges to note
+/// the rows compared in, and the most rows of a relation that [`same_relation`]
+/// compares row by row (the setting `compared_rows_cap`); it takes two larger
+/// relations that are no clones of one another as different.
+#[derive(Clone, Copy)]
+pub struct Compared<'g> {
+    pub gauges: &'g Gauges,
+    pub cap: u64,
+}
 
 /// Whether the tables `a` and `b` are equal, one by one, in each field that
 /// an export reads: then they export the same columns after the same
 /// stream. A table with projections or with extents is taken as different
 /// from every other table.
-pub fn same_tables(a: &[Table], b: &[Table], gauges: &Gauges) -> bool {
+pub fn same_tables(a: &[Table], b: &[Table], gauges: Compared<'_>) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_table(a, b, gauges))
 }
 
-fn same_table(a: &Table, b: &Table, gauges: &Gauges) -> bool {
+fn same_table(a: &Table, b: &Table, gauges: Compared<'_>) -> bool {
     let Table { form, point, contents } = a;
     *form == b.form
         && *point == b.point
@@ -256,7 +261,7 @@ fn same_table(a: &Table, b: &Table, gauges: &Gauges) -> bool {
         }
 }
 
-fn same_contents(a: &Contents, b: &Contents, gauges: &Gauges) -> bool {
+fn same_contents(a: &Contents, b: &Contents, gauges: Compared<'_>) -> bool {
     // Each field is named, so that a field added to `Contents` is compared here too.
     let Contents { assignment_layout, relation, columns, dets, examples, projections, name, output_name, flows, rows, bound_labels, depth, keys, selected, frames, extents } = a;
     let layout = match (assignment_layout, &b.assignment_layout) {
@@ -297,7 +302,7 @@ fn same_det(a: &TableDet, b: &TableDet) -> bool {
     *relation == b.relation && *types == b.types && *columns == b.columns
 }
 
-fn same_example(a: &ExampleRows, b: &ExampleRows, gauges: &Gauges) -> bool {
+fn same_example(a: &ExampleRows, b: &ExampleRows, gauges: Compared<'_>) -> bool {
     let ExampleRows { example, rows } = a;
     *example == b.example
         && match (rows, &b.rows) {
@@ -307,7 +312,7 @@ fn same_example(a: &ExampleRows, b: &ExampleRows, gauges: &Gauges) -> bool {
         }
 }
 
-fn same_assigned(a: &Assigned<Vec<RelationValue>>, b: &Assigned<Vec<RelationValue>>, gauges: &Gauges) -> bool {
+fn same_assigned(a: &Assigned<Vec<RelationValue>>, b: &Assigned<Vec<RelationValue>>, gauges: Compared<'_>) -> bool {
     let Assigned { at, stop } = a;
     *stop == b.stop
         && at.len() == b.at.len()
@@ -326,18 +331,18 @@ fn same_assigned(a: &Assigned<Vec<RelationValue>>, b: &Assigned<Vec<RelationValu
 
 /// Whether `a` and `b` hold the same rows in the same order of
 /// [`each_row`], which every reader of a table's rows follows.
-fn same_relation(a: &Arc<Relation>, b: &Arc<Relation>, gauges: &Gauges) -> bool {
+fn same_relation(a: &Arc<Relation>, b: &Arc<Relation>, compared: Compared<'_>) -> bool {
     if Arc::ptr_eq(a, b) {
         return true;
     }
     if a.arity() != b.arity() || a.len() != b.len() {
         return false;
     }
-    if a.len() > COMPARED_ROWS {
-        gauges.hit(Gauge::ComparedRows, a.len(), COMPARED_ROWS);
+    if a.len() > compared.cap {
+        compared.gauges.hit(Gauge::ComparedRows, a.len(), compared.cap);
         return false;
     }
-    gauges.note(Gauge::ComparedRows, a.len(), COMPARED_ROWS);
+    compared.gauges.note(Gauge::ComparedRows, a.len(), compared.cap);
     let width = usize::from(a.arity());
     let mut cells: Vec<arclog::terms::TermId> = Vec::with_capacity(width.saturating_mul(a.len() as usize));
     each_row(a, &mut |row| cells.extend_from_slice(row));

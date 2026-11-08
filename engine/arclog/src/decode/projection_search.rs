@@ -6,9 +6,9 @@
 //! The search is exact. It walks the head sites depth-first, over the tokens
 //! of [`State::head_site_completions`], and refuses only where every
 //! completion of the head that those tokens give is refused by the checks.
-//! It refuses with no verdict only where it has spent [`PROJECTION_STEP_CAP`]
-//! steps. The cap is a bound on the time of one search, which a valid program
-//! is not meant to reach.
+//! It refuses with no verdict only where it has spent the steps of the setting
+//! `projection_step_cap`. The cap is a bound on the time of one search,
+//! which a valid program is not meant to reach.
 //!
 //! A walk with no cut comes first, for [`QUICK_STEPS`] steps. A completion
 //! it finds passes the checks, and where it ends with no completion it has
@@ -47,10 +47,6 @@ const SPENT: &str = "the completion search of a projection spent its budget";
 
 /// The steps of the walk with no cut that starts a search.
 const QUICK_STEPS: usize = 8;
-
-/// The most steps that one search takes, a step being one token tried at a
-/// head site. A search that spends them is refused with [`SPENT`].
-const PROJECTION_STEP_CAP: usize = 4096;
 
 /// What a search gives.
 struct Outcome {
@@ -334,12 +330,12 @@ impl<'d> Decoder<'d> {
     /// The completions are the tokens of [`State::head_site_completions`] at
     /// each head site that stands open or follows, up to the state where the
     /// input is closed or the field's label stands, which is the one the
-    /// checks must pass. Where the search has spent [`PROJECTION_STEP_CAP`]
-    /// steps it refuses, with a refusal that says it spent its steps.
+    /// checks must pass. Where the search has spent the steps of the setting
+    /// `projection_step_cap` it refuses, with a refusal that says it spent its steps.
     pub(super) fn completes_projection(&self, state: &State, checks: &PrefixChecks<'_>, reads_example: ReadsExample<'_>) -> Result<(), Refusal> {
         let work = self.request_work();
         let search = |cap: usize| ProjectionSearch { decoder: self, checks, reads_example, cuts: None, steps: 0, cap, capped: false, limit_shortened: false, work: work.clone() };
-        let cap = PROJECTION_STEP_CAP;
+        let cap = usize::try_from(self.context.settings.projection_step_cap).unwrap_or(usize::MAX);
         let quick = search(QUICK_STEPS.min(cap)).decide(state, false);
         let outcome = if quick.verdict.is_ok() || !quick.capped {
             quick

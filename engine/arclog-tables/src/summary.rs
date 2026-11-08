@@ -32,7 +32,7 @@
 //!    body hash is the least over the orders that a search of the table's
 //!    content reaches, individualization-refinement as the module
 //!    `column_order` defines it. A table whose search passes
-//!    [`SEARCH_WORK_CAP`] has no TableHash, and its reason is
+//!    the cap of the setting `column_search_work_cap` has no TableHash, and its reason is
 //!    [`COLUMN_SEARCH_BOUND`].
 //! 5. The TableHash is the hash of the sorted type names and the body hash.
 //!
@@ -76,7 +76,6 @@ mod column_hash;
 mod column_order;
 use column_hash::Cells;
 pub use column_hash::{ColumnKey, TIE_EXCHANGEABLE, TIE_NONE, TIE_OPEN};
-pub use column_order::SEARCH_WORK_CAP;
 
 use crate::columns::{row_width, sorted_rows, sorted_rows_at, type_names};
 use crate::shape_rows::{ShapeExample, ShapeModel, ShapeRows, SharedShapeRows};
@@ -87,7 +86,7 @@ use crate::tables::{example_axis, Contents, Point, Table, TableDet, TableRelatio
 /// that wrote it (`arclog.table_hash_version()`), and two TableHashes compare only under one version.
 pub const TABLE_HASH_VERSION: u32 = 2;
 
-/// The reason of an assignment with no TableHash because the search for the order of its tied columns passed [`SEARCH_WORK_CAP`].
+/// The reason of an assignment with no TableHash because the search for the order of its tied columns passed its cap.
 pub const COLUMN_SEARCH_BOUND: &str = "ColumnSearch";
 
 /// An example at one assignment of a table.
@@ -775,13 +774,14 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
     }
     let views: Vec<(u8, u32, &[Encoded])> = examples.iter().map(|(kind, index, distinct)| (*kind, *index, &distinct[..])).collect();
     // A table that no `DET` reads as a value needs a hash that tells its rows from those of its other assignments, and no other: it reads its rows once for each part.
-    let (found, search_work) = if with_dets { table_hash(types, &views, &fulls.assemblies) } else { (Some((rows_hash_of_table(types, &views, &fulls.assemblies), vec![0; views.len()])), None) };
+    let search_cap = materializer.limits().request.column_search_cap();
+    let (found, search_work) = if with_dets { table_hash(types, &views, &fulls.assemblies, search_cap) } else { (Some((rows_hash_of_table(types, &views, &fulls.assemblies), vec![0; views.len()])), None) };
     if let Some(work) = search_work {
         let gauges = materializer.limits().request.gauges();
         if found.is_none() {
-            gauges.hit(Gauge::ColumnSearch, work, SEARCH_WORK_CAP);
+            gauges.hit(Gauge::ColumnSearch, work, search_cap);
         } else {
-            gauges.note(Gauge::ColumnSearch, work, SEARCH_WORK_CAP);
+            gauges.note(Gauge::ColumnSearch, work, search_cap);
         }
     }
     // A search that passed its cap gives no TableHash, and no hash of an example.
@@ -970,7 +970,7 @@ fn pose_name(assembly: &AssemblyId, assemblies: &Assemblies) -> String {
 /// gives the TableHash; none of them where the search for the order of the tied
 /// columns passed its cap. The second value is the work of that search in units,
 /// none where no columns tie and no search ran.
-fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblies: &Assemblies) -> (Option<(StableHash, Vec<u64>)>, Option<u64>) {
+fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblies: &Assemblies, search_cap: u64) -> (Option<(StableHash, Vec<u64>)>, Option<u64>) {
     let names = hashed_names(types, assemblies);
     let widths: Vec<usize> = types.iter().map(|ty| if ty.is_box() { 4 } else { 1 }).collect();
     let starts: Vec<usize> = widths.iter().scan(0, |at, width| { let start = *at; *at += width; Some(start) }).collect();
@@ -1009,7 +1009,7 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
     let ties = sorted.windows(2).any(|pair| (&names[pair[0]], column_hashes[pair[0]]) == (&names[pair[1]], column_hashes[pair[1]]));
     let cells = Cells::new(types, examples);
     let (found, work) = if ties {
-        let searched = column_order::least_body(&cells, &names, &column_hashes);
+        let searched = column_order::least_body(&cells, &names, &column_hashes, search_cap);
         (searched.found, Some(searched.work))
     } else {
         (Some(cells.body_examples(&sorted)), None)

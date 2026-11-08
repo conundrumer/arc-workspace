@@ -218,7 +218,7 @@ pub(super) struct Names {
     /// head sites outside it, as [`NameWriter::feature_sites`] says.
     pub(super) feature_sites: bool,
     /// Set when a search for a canonical labeling under a [`Writer`] of these
-    /// names passed [`crate::program::canonical::SEARCH_NODE_CAP`]: the
+    /// names passed the labeling node cap: the
     /// content that these names write is then not free of the written order.
     pub(super) labeling_bound: Arc<std::sync::atomic::AtomicBool>,
 }

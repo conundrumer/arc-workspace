@@ -45,8 +45,8 @@
 //!
 //! The search counts its work, and the count depends on the table's content alone,
 //! by the same argument. Work is counted in units: a cell hashed is a unit, and a
-//! search node is [`NODE_WORK`] units. A search that passes [`SEARCH_WORK_CAP`]
-//! has no result, and the table has no TableHash: a search cut short would give a
+//! search node is [`NODE_WORK`] units. A search that passes the cap
+//! of the setting `column_search_work_cap` has no result, and the table has no TableHash: a search cut short would give a
 //! hash that depends on the order in which the table wrote its columns.
 
 use std::hash::Hasher;
@@ -55,20 +55,15 @@ use arclog::hash::StableHasher;
 
 use super::column_hash::Cells;
 
-/// The most work that the search for the order of the columns of one table at
-/// one assignment does, in units. Provisional: the work that the searches of
-/// the gold programs' tables do sets it.
-pub const SEARCH_WORK_CAP: u64 = 1 << 28;
-
-/// The units that one search node counts, which cover its refinement: with
-/// [`SEARCH_WORK_CAP`], the cap stands for 1024 nodes of a table whose leaves
-/// hash no cell.
+/// The units that one search node counts, which cover its refinement: with the
+/// default cap (`arclog::eval::COLUMN_SEARCH_WORK_CAP`, 2^28), the cap stands
+/// for 1024 nodes of a table whose leaves hash no cell.
 const NODE_WORK: u64 = 1 << 18;
 
 /// The result of a search for the order of the columns of a table.
 pub(super) struct Searched {
     /// The least body hash and the low 64 bits of the hash of each example's Set of
-    /// TableRows under the order that gives it; none where the search passed [`SEARCH_WORK_CAP`].
+    /// TableRows under the order that gives it; none where the search passed its cap.
     pub found: Option<(u128, Vec<u64>)>,
     /// The work of the search, in units.
     pub work: u64,
@@ -76,20 +71,23 @@ pub(super) struct Searched {
 
 /// The least body hash of the table `cells` over the leaves of the search, where
 /// column `c` has the type name `names[c]` and, for its first color, `start[c]`.
-/// At least two columns must tie.
-pub(super) fn least_body(cells: &Cells<'_>, names: &[String], start: &[u128]) -> Searched {
+/// At least two columns must tie. The search does at most `cap` units of work,
+/// the setting `column_search_work_cap`.
+pub(super) fn least_body(cells: &Cells<'_>, names: &[String], start: &[u128], cap: u64) -> Searched {
     let count = names.len();
     let mut ranked: Vec<&String> = names.iter().collect();
     ranked.sort();
     ranked.dedup();
     let kinds: Vec<u32> = names.iter().map(|name| ranked.binary_search(&name).expect("the name is among the names") as u32).collect();
-    let mut search = Search { cells, count, kinds, pairs: vec![0; count * count], work: 0, cut: false, whole: None, swaps: vec![None; count * count], leaf_work: cells.cell_count() };
+    let mut search = Search { cells, cap, count, kinds, pairs: vec![0; count * count], work: 0, cut: false, whole: None, swaps: vec![None; count * count], leaf_work: cells.cell_count() };
     let found = search.run(start);
     Searched { found: if search.cut { None } else { found }, work: search.work }
 }
 
 struct Search<'c, 'a> {
     cells: &'c Cells<'a>,
+    /// The most work the search does, in units.
+    cap: u64,
     count: usize,
     /// The rank of each column's type name among the distinct type names.
     kinds: Vec<u32>,
@@ -106,10 +104,10 @@ struct Search<'c, 'a> {
 }
 
 impl Search<'_, '_> {
-    /// Counts `units` of work, and whether the search is still within [`SEARCH_WORK_CAP`].
+    /// Counts `units` of work, and whether the search is still within its cap.
     fn charge(&mut self, units: u64) -> bool {
         self.work = self.work.saturating_add(units);
-        if self.work > SEARCH_WORK_CAP {
+        if self.work > self.cap {
             self.cut = true;
         }
         !self.cut

@@ -5,8 +5,9 @@
 //! from the renaming that [`canonical_hash`] gives. The labeling comes from
 //! individualization–refinement: color refinement with the column paths as
 //! edge labels, then the first largest cell that is not a singleton, with a
-//! cap of [`SEARCH_NODE_CAP`] search nodes on the search of each label
-//! scope. A form whose search passes the cap has no canonical labeling that
+//! cap of `labeling_node_cap` search nodes on the search of each label
+//! scope (`DecodeSettings`; [`crate::eval::LABELING_NODE_CAP`] by default). A
+//! form whose search passes the cap has no canonical labeling that
 //! is free of its written order, so the form is refused with a
 //! [`LabelingBound`] and no hash of it reaches a caller.
 //!
@@ -47,31 +48,22 @@ pub(crate) use form::{holds_rigid_det, normalized_constraint,canonical_form, for
 pub use form::{canonical_hash, opens_scope, AsWritten, Canonical, CanonicalForm, CanonicalWriter, NameWriter};
 pub(in crate::program) use form::form_of;
 
-/// The provisional cap on the search nodes of individualization–refinement,
-/// for the search of each label scope.
-///
-/// The cap guards synthesized bodies, whose symmetry the corpus does not
-/// show. The corpus's search reaches at most 13 nodes, by one reading. The
-/// gauge `labeling_nodes` ([`crate::eval::Gauge::LabelingNodes`]) measures
-/// the most nodes that a search reaches over the gold requests, and the cap
-/// is to be set from that.
-pub const SEARCH_NODE_CAP: u32 = 1000;
-
 /// The bound that a form passes where the search for the canonical labeling
-/// of one of its label scopes takes more than [`SEARCH_NODE_CAP`] search
-/// nodes. The labeling that such a search ends with may depend on the
+/// of one of its label scopes takes more than the search nodes of the setting
+/// `labeling_node_cap`. The labeling that such a search ends with may depend on the
 /// written order of the form, so the form is refused and no hash of it
 /// reaches a caller.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct LabelingBound {
     /// The cap that the search passed.
-    pub cap: u32,
+    pub cap: u64,
 }
 
 impl LabelingBound {
-    /// The bound at [`SEARCH_NODE_CAP`].
+    /// The bound at the cap that the request most recently begun on this
+    /// thread gives ([`crate::eval::ambient::labeling_cap`]).
     pub fn at_cap() -> Self {
-        LabelingBound { cap: SEARCH_NODE_CAP }
+        LabelingBound { cap: crate::eval::ambient::labeling_cap() }
     }
 }
 
@@ -85,20 +77,25 @@ impl std::error::Error for LabelingBound {}
 
 /// The search nodes that the search of the label scope in progress has
 /// left, and whether the search of any scope of the value passed the cap.
-/// Each scope's search starts with [`SEARCH_NODE_CAP`] nodes, and a search
+/// Each scope's search starts with `cap` nodes, and a search
 /// that runs inside a leaf of another spends none of that other's nodes.
 #[derive(Clone, Debug)]
 pub struct SearchBudget {
-    pub remaining: u32,
+    pub remaining: u64,
+    /// The nodes that each scope's search starts with.
+    pub cap: u64,
     /// Set when the search of a scope passed the cap: the value is refused
     /// with a [`LabelingBound`].
     pub reached: bool,
 }
 
 impl SearchBudget {
-    /// A budget of [`SEARCH_NODE_CAP`] nodes, with no scope at the cap.
+    /// A budget of the nodes that the request most recently begun on this
+    /// thread gives ([`crate::eval::ambient::labeling_cap`]), with no scope at
+    /// the cap.
     pub fn new() -> Self {
-        SearchBudget { remaining: SEARCH_NODE_CAP, reached: false }
+        let cap = crate::eval::ambient::labeling_cap();
+        SearchBudget { remaining: cap, cap, reached: false }
     }
 }
 
@@ -131,7 +128,7 @@ pub(super) struct FormCache {
 #[derive(Clone, Debug)]
 pub struct CanonicalLabeling {
     pub positions: Box<[(super::LabelId, u32)]>,
-    /// Whether the search passed [`SEARCH_NODE_CAP`], so that the labeling
+    /// Whether the search passed the cap, so that the labeling
     /// is no canonical labeling: a form with such a scope is refused with a
     /// [`LabelingBound`].
     pub reached_cap: bool,
@@ -217,7 +214,7 @@ struct Context<'a> {
     others: Option<Box<[Box<[(LabelId, u32)]>]>>,
     /// The search nodes that the search of the label scope in progress has
     /// visited, those past the cap included.
-    visited: u32,
+    visited: u64,
 }
 
 impl<'a> Context<'a> {
@@ -329,7 +326,7 @@ impl<'a> Context<'a> {
         let root = graph.vertex(Tag::Root, |_| {});
         walk::scope(&mut graph, root, scope);
         let graph = graph.colored();
-        let outer = std::mem::replace(&mut self.search.remaining, SEARCH_NODE_CAP);
+        let outer = std::mem::replace(&mut self.search.remaining, self.search.cap);
         let outer_visited = std::mem::take(&mut self.visited);
         let mut best = None;
         let mut cut_short = false;
@@ -344,7 +341,7 @@ impl<'a> Context<'a> {
         }
         self.visit(&graph, colors, scope, &mut best, &mut cut_short);
         self.search.remaining = outer;
-        crate::eval::ambient::note_labeling(self.visited);
+        crate::eval::ambient::note_labeling(self.visited, self.search.cap);
         self.visited = outer_visited;
         self.search.reached |= cut_short;
         if cut_short {

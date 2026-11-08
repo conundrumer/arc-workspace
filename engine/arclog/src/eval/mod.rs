@@ -62,7 +62,8 @@ pub use lookup::{input_relation, output_relation, relation_of};
 pub use models::ModelsEnd;
 pub(crate) use values::{tally_counts, tally_gauges, tally_table};
 pub(crate) use values::{noting, once_noted, replay_notes, NoteId};
-pub use values::{adopt_fault_sink, ambient, fault_sink, take_effort_fault, FaultSinkHandle, uncounted, unmetered_effort, AssignmentScope, BodyValue, ByteCaps, ByteSpan, Caps, Cancellation, Charged, Cost, EffortFault, Gauge, Gauges, GridValue, Hit, Limits, Outcome, ReachedBound, RelationValue, RequestWork, RunFault, Stop, TableWork, ASSIGNMENT_BYTES_CAP, CANDIDATE_BYTES_CAP, EFFORT_CAP, PREFIX_CONTENT_CAP, REQUEST_BYTES_CAP, REQUEST_WORK_CAP};
+pub use values::{adopt_fault_sink, ambient, fault_sink, take_effort_fault, FaultSinkHandle, uncounted, unmetered_effort, AssignmentScope, BodyValue, ByteCaps, ByteSpan, Caps, Cancellation, Charged, Cost, EffortFault, Gauge, Gauges, GridValue, Hit, Limits, Outcome, ReachedBound, RelationValue, RequestWork, RunFault, Stop, TableWork, ASSIGNMENT_BYTES_CAP, ATOM_STATE_CAP, CANDIDATE_BYTES_CAP, COLUMN_SEARCH_WORK_CAP, COMPARED_ROWS_CAP, EFFORT_CAP, LABELING_NODE_CAP, PREFIX_CONTENT_CAP, PROJECTION_STEP_CAP, REQUEST_BYTES_CAP, REQUEST_WORK_CAP, STUDY_ROW_WORK_CAP};
+pub use values::SearchCaps;
 
 use crate::check::CheckedProgram;
 use crate::hash::StableHashMap;

@@ -76,7 +76,7 @@ impl CanonicalOrder {
     ///
     /// The write runs on the first call for the node of `form`, which
     /// caches its result; a search of each label scope starts with
-    /// [`super::SEARCH_NODE_CAP`] nodes whatever `search` holds, so the
+    /// the labeling node cap's nodes (`SearchBudget::cap`) whatever `search` holds, so the
     /// result reads nothing of `search`, and sets its `reached` where a
     /// search reached the cap.
     pub fn with_form<'f>(form: &'f Form, search: &mut SearchBudget) -> (&'f Self, &'f CanonicalForm) {
@@ -252,7 +252,7 @@ impl CanonicalOrder {
     /// scope's search found whose form is the canonical form, other than the
     /// identity. A permutation `p` has `p[a] = b` where a label has position
     /// `a` in the canonical labeling and `b` in the other. The permutations
-    /// are those of the search; where it reached its cap ([`super::SEARCH_NODE_CAP`])
+    /// are those of the search; where it reached its cap (the labeling node cap)
     /// they may not hold every symmetry of the scope. Empty where the form
     /// holds no such scope.
     pub fn label_permutations(&self, scope: &NodePath) -> Vec<Vec<u32>> {

@@ -406,7 +406,7 @@ fn gauges_of_admits(arclog: &str, warm: bool) -> Vec<(&'static str, u64, u64)> {
 }
 
 /// The gauges whose cap is no setting of `DecodeSettings`: a constant of the engine.
-const CONSTANT_CAP_GAUGES: [&str; 6] = ["box_margin", "projection_steps", "atom_states", "study_row_work", "compared_rows", "column_search_work"];
+const CONSTANT_CAP_GAUGES: [&str; 1] = ["box_margin"];
 
 /// What the decode of `COPIES_OUT` gave under `settings`: the verdict of every token of the vocabulary
 /// before the last token, the verdicts of the `RULE` end and of the `OUT` end, whether the decode ended,

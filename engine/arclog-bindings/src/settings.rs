@@ -9,6 +9,10 @@ use pyo3::prelude::*;
 /// search of the mutation draw stops at `mutation_node_cap`, and every other
 /// request at a work cap, `request_work_cap` among them, or at a byte budget,
 /// `request_byte_cap`, `assignment_byte_cap` and `candidate_byte_cap`.
+/// `projection_step_cap`, `study_row_work_cap`, `compared_rows_cap`,
+/// `atom_state_cap`, `column_search_work_cap` and `labeling_node_cap` are the
+/// caps of the gauges `projection_steps`, `study_row_work`, `compared_rows`,
+/// `atom_states`, `column_search_work` and `labeling_nodes`.
 /// `binding_cap`, `row_cap`, `model_cap`, `node_cap` and `assignment_cap` are
 /// the fields of `arclog::eval::Caps`, each at its `Caps::CORPUS` value by default.
 /// `spill_resident_bytes` moves rows to disk and changes no result.
@@ -33,6 +37,12 @@ pub struct PyDecodeSettings {
     request_byte_cap: u64,
     assignment_byte_cap: u64,
     candidate_byte_cap: u64,
+    projection_step_cap: u64,
+    study_row_work_cap: u64,
+    compared_rows_cap: u64,
+    atom_state_cap: u64,
+    column_search_work_cap: u64,
+    labeling_node_cap: u64,
     spill_resident_bytes: u64,
     binding_cap: u64,
     row_cap: u64,
@@ -57,6 +67,12 @@ impl PyDecodeSettings {
             request_byte_cap: settings.request_byte_cap,
             assignment_byte_cap: settings.assignment_byte_cap,
             candidate_byte_cap: settings.candidate_byte_cap,
+            projection_step_cap: settings.projection_step_cap,
+            study_row_work_cap: settings.study_row_work_cap,
+            compared_rows_cap: settings.compared_rows_cap,
+            atom_state_cap: settings.atom_state_cap,
+            column_search_work_cap: settings.column_search_work_cap,
+            labeling_node_cap: settings.labeling_node_cap,
             spill_resident_bytes: settings.spill_resident_bytes,
             binding_cap: settings.caps.bindings,
             row_cap: settings.caps.rows,
@@ -80,6 +96,12 @@ impl PyDecodeSettings {
             request_byte_cap: self.request_byte_cap,
             assignment_byte_cap: self.assignment_byte_cap,
             candidate_byte_cap: self.candidate_byte_cap,
+            projection_step_cap: self.projection_step_cap,
+            study_row_work_cap: self.study_row_work_cap,
+            compared_rows_cap: self.compared_rows_cap,
+            atom_state_cap: self.atom_state_cap,
+            column_search_work_cap: self.column_search_work_cap,
+            labeling_node_cap: self.labeling_node_cap,
             spill_resident_bytes: self.spill_resident_bytes,
             caps: arclog::eval::Caps { bindings: self.binding_cap, rows: self.row_cap, models: self.model_cap, nodes: self.node_cap, assignments: self.assignment_cap },
             rule_tests: self.rule_tests,
@@ -137,7 +159,7 @@ impl PyDecodeSettings {
     }
 
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, mutation_node_cap=None, projection_cap=None, table_work_cap=None, request_work_cap=None, effort_cap=None, prefix_content_cap=None, request_byte_cap=None, assignment_byte_cap=None, candidate_byte_cap=None, spill_resident_bytes=None, binding_cap=None, row_cap=None, model_cap=None, node_cap=None, assignment_cap=None, rule_tests=None, static_pruning=None, grids_at_model_cap=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, mutation_node_cap=None, projection_cap=None, table_work_cap=None, request_work_cap=None, effort_cap=None, prefix_content_cap=None, request_byte_cap=None, assignment_byte_cap=None, candidate_byte_cap=None, projection_step_cap=None, study_row_work_cap=None, compared_rows_cap=None, atom_state_cap=None, column_search_work_cap=None, labeling_node_cap=None, spill_resident_bytes=None, binding_cap=None, row_cap=None, model_cap=None, node_cap=None, assignment_cap=None, rule_tests=None, static_pruning=None, grids_at_model_cap=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
@@ -153,6 +175,12 @@ impl PyDecodeSettings {
         request_byte_cap: Option<u64>,
         assignment_byte_cap: Option<u64>,
         candidate_byte_cap: Option<u64>,
+        projection_step_cap: Option<u64>,
+        study_row_work_cap: Option<u64>,
+        compared_rows_cap: Option<u64>,
+        atom_state_cap: Option<u64>,
+        column_search_work_cap: Option<u64>,
+        labeling_node_cap: Option<u64>,
         spill_resident_bytes: Option<u64>,
         binding_cap: Option<u64>,
         row_cap: Option<u64>,
@@ -181,6 +209,12 @@ impl PyDecodeSettings {
             request_byte_cap: request_byte_cap.unwrap_or(base.request_byte_cap),
             assignment_byte_cap: assignment_byte_cap.unwrap_or(base.assignment_byte_cap),
             candidate_byte_cap: candidate_byte_cap.unwrap_or(base.candidate_byte_cap),
+            projection_step_cap: projection_step_cap.unwrap_or(base.projection_step_cap),
+            study_row_work_cap: study_row_work_cap.unwrap_or(base.study_row_work_cap),
+            compared_rows_cap: compared_rows_cap.unwrap_or(base.compared_rows_cap),
+            atom_state_cap: atom_state_cap.unwrap_or(base.atom_state_cap),
+            column_search_work_cap: column_search_work_cap.unwrap_or(base.column_search_work_cap),
+            labeling_node_cap: labeling_node_cap.unwrap_or(base.labeling_node_cap),
             spill_resident_bytes: spill_resident_bytes.unwrap_or(base.spill_resident_bytes),
             binding_cap: binding_cap.unwrap_or(base.binding_cap),
             row_cap: row_cap.unwrap_or(base.row_cap),

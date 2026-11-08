@@ -193,13 +193,13 @@ impl PyDecoder {
 
     /// The atoms that may come next at this state, each as the ids of its
     /// tokens, in a fixed order, with the count of the states that the walk
-    /// read and whether it stopped at `limit` states
+    /// read and whether it stopped at the setting `atom_state_cap`
     /// (`arclog::decode::Decoder::candidate_atoms`).
-    #[pyo3(signature = (limit=1<<20, reference=false))]
-    fn atoms(&self, py: Python<'_>, limit: usize, reference: bool) -> PyResult<(Vec<Vec<u32>>, usize, bool)> {
+    #[pyo3(signature = (reference=false))]
+    fn atoms(&self, py: Python<'_>, reference: bool) -> PyResult<(Vec<Vec<u32>>, usize, bool)> {
         let _entry = self.enter()?;
         let decoder = self.decoder();
-        let found = py.detach(|| if reference { decoder.candidate_atoms_reference(limit) } else { decoder.candidate_atoms(limit) });
+        let found = py.detach(|| if reference { decoder.candidate_atoms_reference() } else { decoder.candidate_atoms() });
         check_effort(py)?;
         Ok((found.atoms.iter().map(|atom| atom.to_vec()).collect(), found.states, found.truncated))
     }

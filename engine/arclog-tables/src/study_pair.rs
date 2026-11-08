@@ -37,12 +37,6 @@ pub mod form_memo;
 /// alert allowance. Callers can explicitly choose another session bound.
 pub const STUDY_SESSION_BYTES:usize=512*1024*1024;
 
-/// The bindings that the rows of one assignment of one table of
-/// [`gold_tables_cached_in`] may count. The count depends on the program alone,
-/// so this cap stops an assignment at one place at any machine load, and the
-/// stop rejects that assignment alone.
-pub const TABLE_ROW_WORK:u64=1<<28;
-
 /// The bytes of the session at which [`table_limits`] has the session evict its
 /// caches. It stops no evaluation and cuts no table: the heap count it reads
 /// depends on the session's history, so no result may depend on it.
@@ -311,7 +305,7 @@ fn source_stream(program:&StudyProgram,decoder:&Decoder<'_>,cache:&PairCache)->O
 
 /// The tables of `form` of `program`, after the tables `earlier`, with the
 /// stops of a table's rows that `skipping` holds where it is given: then a
-/// table's rows count under [`TABLE_ROW_WORK`].
+/// table's rows count under the setting `study_row_work_cap`.
 fn form_relations(program:&StudyProgram,written:&arclog::stream::WrittenStream,form:&arclog::stream::write::WrittenForm,skipping:Option<&TooLarge>,decoder:&Decoder<'_>,earlier:&[&Table],mut memo:Option<(&mut form_memo::FormMemo,&form_memo::TopHashes<'_>)>)->Outcome<Vec<(usize,Table)>> {
     let checked=program.checked();
     let mut held:Vec<(usize,Table)>=Vec::new();
@@ -320,7 +314,7 @@ fn form_relations(program:&StudyProgram,written:&arclog::stream::WrittenStream,f
         let declared=&written.relations[slot];
         let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;
         let dets=relation_dets(checked,relation.node);
-        let work=if skipping.is_some() {TableWork::counted_as(TABLE_ROW_WORK,arclog::eval::Gauge::StudyRowWork,&decoder.request_work())} else {decoder.query_work()};
+        let work=if skipping.is_some() {TableWork::counted_as(decoder.settings().study_row_work_cap,arclog::eval::Gauge::StudyRowWork,&decoder.request_work())} else {decoder.query_work()};
         let output=output_name(program.program().value(),&form.path,declared);
         let ordinal=outputs.iter().filter(|seen|**seen==output).count();
         outputs.push(output.clone());

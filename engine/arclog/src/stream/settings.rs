@@ -6,7 +6,7 @@
 //! and the type-domain proposers as tokens, always applies the static prune
 //! and always gives the grids at the model cap: `docs/engine/synthesis.md#switches`.
 
-use crate::eval::values::{ByteCaps, Caps, ASSIGNMENT_BYTES_CAP, CANDIDATE_BYTES_CAP, REQUEST_BYTES_CAP, REQUEST_WORK_CAP};
+use crate::eval::values::{ByteCaps, Caps, SearchCaps, ASSIGNMENT_BYTES_CAP, ATOM_STATE_CAP, CANDIDATE_BYTES_CAP, COLUMN_SEARCH_WORK_CAP, COMPARED_ROWS_CAP, LABELING_NODE_CAP, PROJECTION_STEP_CAP, REQUEST_BYTES_CAP, REQUEST_WORK_CAP, STUDY_ROW_WORK_CAP};
 
 /// The mutation node cap of [`DecodeSettings::synthesis`]. Provisional: the
 /// nodes that a draw's search reaches on the gold programs set it.
@@ -81,6 +81,27 @@ pub struct DecodeSettings {
     /// `docs/engine/synthesis.md#decode-settings` gives it. It is the same for
     /// every candidate, whatever the order or the count of the candidates.
     pub candidate_byte_cap: u64,
+    /// The steps of one completion search of a projection, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it: a search that
+    /// spends them is refused with no verdict.
+    pub projection_step_cap: u64,
+    /// The bindings that the rows of one assignment of one table of a study
+    /// request may count, as `docs/engine/synthesis.md#decode-settings` gives
+    /// it.
+    pub study_row_work_cap: u64,
+    /// The rows of a relation that a comparison of successor tables reads row
+    /// by row, as `docs/engine/synthesis.md#decode-settings` gives it.
+    pub compared_rows_cap: u64,
+    /// The states that the walk of `Decoder::candidate_atoms` checks, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it.
+    pub atom_state_cap: u64,
+    /// The work of the search for the order of the tied columns of one table
+    /// at one assignment, as `docs/engine/synthesis.md#decode-settings` gives
+    /// it.
+    pub column_search_work_cap: u64,
+    /// The search nodes of the canonical labeling of one label scope, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it.
+    pub labeling_node_cap: u64,
     /// The bytes of exported rows that a call keeps in memory at once for its
     /// candidates, as `docs/engine/synthesis.md#decode-settings` gives it: the
     /// rows of a candidate past it wait on disk, compressed, until read. It
@@ -104,12 +125,17 @@ impl DecodeSettings {
     /// thread until another request begins on it.
     pub fn operation_limits(&self)->crate::eval::Limits {
         let mut limits=crate::eval::Limits::new(Some(self.request_work_cap),crate::eval::Cancellation::default());
-        limits.request=crate::eval::RequestWork::begin_capped(self.request_work_cap,self.byte_caps(),self.effort_cap);
+        limits.request=crate::eval::RequestWork::begin_capped(self.request_work_cap,self.byte_caps(),self.effort_cap,self.search_caps());
         limits
     }
     /// The byte budgets of a request and of each assignment in it.
     pub fn byte_caps(&self)->ByteCaps {
         ByteCaps { request: self.request_byte_cap, assignment: self.assignment_byte_cap, candidate: self.candidate_byte_cap }
+    }
+    /// The caps of the searches that a request carries for the code that has
+    /// no settings at hand.
+    pub fn search_caps(&self)->SearchCaps {
+        SearchCaps { column_search_work: self.column_search_work_cap, labeling_nodes: self.labeling_node_cap }
     }
     /// The default settings with the mutation node cap of the synthesis
     /// decode, which only the mutation draw's search reads.
@@ -124,9 +150,8 @@ impl DecodeSettings {
     /// the size of an allocation or the bound of a loop that runs to the cap,
     /// so a request that needs little uses little.
     ///
-    /// A gauge whose cap is no setting keeps that cap: `projection_steps`,
-    /// `study_row_work`, `compared_rows`, `atom_states`, `column_search_work`,
-    /// `labeling_nodes`, `box_margin` and `session_bytes`.
+    /// A gauge whose cap is no setting keeps that cap: `box_margin` and
+    /// `session_bytes`.
     pub fn measurement() -> DecodeSettings {
         DecodeSettings {
             caps: Caps { bindings: MEASURED_CAP, rows: MEASURED_CAP, models: MEASURED_CAP, nodes: MEASURED_CAP, assignments: MEASURED_CAP },
@@ -138,6 +163,12 @@ impl DecodeSettings {
             request_byte_cap: MEASURED_CAP,
             assignment_byte_cap: MEASURED_CAP,
             candidate_byte_cap: MEASURED_CAP,
+            projection_step_cap: MEASURED_CAP,
+            study_row_work_cap: MEASURED_CAP,
+            compared_rows_cap: MEASURED_CAP,
+            atom_state_cap: MEASURED_CAP,
+            column_search_work_cap: MEASURED_CAP,
+            labeling_node_cap: MEASURED_CAP,
             ..DecodeSettings::default()
         }
     }
@@ -163,6 +194,12 @@ impl Default for DecodeSettings {
             request_byte_cap: REQUEST_BYTES_CAP,
             assignment_byte_cap: ASSIGNMENT_BYTES_CAP,
             candidate_byte_cap: CANDIDATE_BYTES_CAP,
+            projection_step_cap: PROJECTION_STEP_CAP,
+            study_row_work_cap: STUDY_ROW_WORK_CAP,
+            compared_rows_cap: COMPARED_ROWS_CAP,
+            atom_state_cap: ATOM_STATE_CAP,
+            column_search_work_cap: COLUMN_SEARCH_WORK_CAP,
+            labeling_node_cap: LABELING_NODE_CAP,
             spill_resident_bytes: SPILL_RESIDENT_BYTES,
             check_copies: false,
             rule_tests: false,

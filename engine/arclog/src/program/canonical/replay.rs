@@ -55,7 +55,7 @@ impl NameCall {
 struct Recording<'n> {
     names: &'n dyn NameWriter,
     calls: std::cell::RefCell<StableHashMap<NameCall, Box<[u8]>>>,
-    /// Whether a search under the write passed [`SEARCH_NODE_CAP`].
+    /// Whether a search under the write passed the labeling node cap.
     reached: std::cell::Cell<bool>,
 }
 
@@ -102,7 +102,7 @@ impl NameWriter for Recording<'_> {
 /// of a write that the node of `form` keeps whose every call `names`
 /// answers with the same bytes. `write` writes `form` alone and reads no
 /// name but through the name writer it is given. A write with a search past
-/// [`SEARCH_NODE_CAP`] is kept nowhere, so that each use of it reaches
+/// the labeling node cap is kept nowhere, so that each use of it reaches
 /// `names.labeling_bound_reached()`.
 pub(crate) fn cached_write(form: &Form, names: &dyn NameWriter, write: impl FnOnce(&dyn NameWriter) -> CanonicalForm) -> CanonicalForm {
     if names.feature_sites() {

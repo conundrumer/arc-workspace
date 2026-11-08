@@ -231,6 +231,12 @@ impl AtomWalk<'_> {
 }
 
 impl Decoder<'_> {
+    /// The states that a walk of the candidate atoms checks at most: the
+    /// setting `atom_state_cap`.
+    fn atom_state_limit(&self) -> usize {
+        usize::try_from(self.context.settings.atom_state_cap).unwrap_or(usize::MAX)
+    }
+
     /// The atoms that may come next at this state: each atom that a walk of
     /// the masks writes from here, as a relation with one value at each site
     /// and its sites in ascending order of their columns, where the mask after
@@ -241,9 +247,11 @@ impl Decoder<'_> {
     /// The checks of one atom read what its tokens spell, and of the labels
     /// before it their types and whether they are bound, so the walk asks them
     /// once for each shape of an atom ([`Shapes`]), and each later atom of that
-    /// shape takes the verdict. The walk asks at most `limit` times.
-    pub fn candidate_atoms(&self, limit: usize) -> CandidateAtoms {
+    /// shape takes the verdict. The walk asks at most as many times as the
+    /// setting `atom_state_cap` gives.
+    pub fn candidate_atoms(&self) -> CandidateAtoms {
         let _request = self.begin_request();
+        let limit = self.atom_state_limit();
         let mut found = CandidateAtoms::default();
         let vocabulary = self.vocabulary();
         let mut tokens = Tokens { opening: Vec::new(), not: None, columns: Vec::new(), values: Vec::new(), closing: Vec::new(), end: None, ascending_after_site: Vec::new(), settings: { let settings = &self.context.settings; format!("{:?}", (&settings.vocabulary, &settings.caps, settings.check_copies, settings.rule_tests)) } };
@@ -284,7 +292,7 @@ impl Decoder<'_> {
             }
         }
         let gauges = self.request_work();
-        let (gauges, states, limit) = (gauges.gauges(), found.states as u64, limit as u64);
+        let (gauges, states, limit) = (gauges.gauges(), found.states as u64, self.context.settings.atom_state_cap);
         if found.truncated {
             gauges.hit(crate::eval::Gauge::AtomStates, states, limit);
         } else {
@@ -570,8 +578,9 @@ impl Decoder<'_> {
 impl Decoder<'_> {
     /// The list of [`Decoder::candidate_atoms`] from a whole mask at each token
     /// of each atom, for a check of that walk.
-    pub fn candidate_atoms_reference(&self, limit: usize) -> CandidateAtoms {
+    pub fn candidate_atoms_reference(&self) -> CandidateAtoms {
         let _request = self.begin_request();
+        let limit = self.atom_state_limit();
         let mut found = CandidateAtoms::default();
         let mut path = Vec::new();
         let mask = self.admissible();

@@ -73,7 +73,7 @@ pub trait NameWriter {
     }
 
     /// Called where the search for a canonical labeling under this writer
-    /// passes [`SEARCH_NODE_CAP`], so that a writer which hands out the
+    /// passes the labeling node cap, so that a writer which hands out the
     /// content it writes can refuse it ([`LabelingBound`]).
     fn labeling_bound_reached(&self) {}
 }
@@ -382,7 +382,7 @@ impl NameWriter for AsWritten {
 ///
 /// Two values whose forms are equal under a reorder and a renaming may still
 /// hash apart in two cases. A value whose search passes
-/// [`SEARCH_NODE_CAP`] ends with a labeling that may differ between the two;
+/// the labeling node cap ends with a labeling that may differ between the two;
 /// the checks refuse such a value ([`LabelingBound`]), so no caller gets its
 /// hash. A label that stands alone at a site on a
 /// column of a type parameter, `(:v *Col)` against `(:v *X)` where `v` holds

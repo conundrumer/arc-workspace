@@ -419,6 +419,63 @@ pub const REQUEST_WORK_CAP: u64 = 1 << 30;
 /// which `request_stats()` gives as the gauge `effort`, sets it.
 pub const EFFORT_CAP: u64 = 1 << 34;
 
+/// The default of the setting `projection_step_cap` (`DecodeSettings`): the
+/// most steps that one completion search of a projection takes
+/// ([`Gauge::ProjectionSteps`]), a step being one token tried at a head site.
+/// A search that spends them is refused with no verdict.
+pub const PROJECTION_STEP_CAP: u64 = 4096;
+
+/// The default of the setting `study_row_work_cap`: the bindings that the rows
+/// of one assignment of one table of a study request may count
+/// ([`Gauge::StudyRowWork`]). The count depends on the program alone, so the
+/// cap stops an assignment at one place at any machine load, and the stop
+/// rejects that assignment alone.
+pub const STUDY_ROW_WORK_CAP: u64 = 1 << 28;
+
+/// The default of the setting `compared_rows_cap`: the most rows of a relation
+/// that a comparison of successor tables reads row by row
+/// ([`Gauge::ComparedRows`]); it takes two larger relations that are no clones
+/// of one another as different.
+pub const COMPARED_ROWS_CAP: u64 = 1 << 20;
+
+/// The default of the setting `atom_state_cap`: the most states that the walk
+/// of `Decoder::candidate_atoms` checks ([`Gauge::AtomStates`]). A walk that
+/// reaches it is truncated.
+pub const ATOM_STATE_CAP: u64 = 1 << 20;
+
+/// The default of the setting `column_search_work_cap`: the most work that the
+/// search for the order of the columns of one table at one assignment does
+/// ([`Gauge::ColumnSearch`]), in units. A search that passes it has no result,
+/// and the table has no TableHash. Provisional: the work that the searches of
+/// the gold programs' tables do sets it.
+pub const COLUMN_SEARCH_WORK_CAP: u64 = 1 << 28;
+
+/// The default of the setting `labeling_node_cap`: the most search nodes of
+/// individualization–refinement for the search of each label scope
+/// ([`Gauge::LabelingNodes`]). The cap guards synthesized bodies, whose
+/// symmetry the corpus does not show: the corpus's search reaches at most 13
+/// nodes, by one reading. A form whose search passes it has no canonical
+/// labeling that is free of its written order, so the form is refused with a
+/// [`crate::program::canonical::LabelingBound`] and no hash of it reaches a
+/// caller. Provisional: the gauge `labeling_nodes` over the gold requests sets
+/// it.
+pub const LABELING_NODE_CAP: u64 = 1000;
+
+/// The caps of the gauges that code with no settings at hand reads from its
+/// request: the search for the order of the columns of a table, and the
+/// search for a canonical labeling ([`ambient`]).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SearchCaps {
+    pub column_search_work: u64,
+    pub labeling_nodes: u64,
+}
+
+impl Default for SearchCaps {
+    fn default() -> Self {
+        SearchCaps { column_search_work: COLUMN_SEARCH_WORK_CAP, labeling_nodes: LABELING_NODE_CAP }
+    }
+}
+
 /// The default cap on the content that one prefix check counts: the rows it
 /// reads and writes, and the rows its joins hold as they produce them. A
 /// check that passes it stops, and its token is admitted, since the cap
@@ -511,8 +568,8 @@ pub enum Gauge {
     Nodes,
     /// The rows of one projection read, under the projection cap.
     ProjectionRows,
-    /// The steps of one completion search of an input's head, under the step
-    /// bound of the search.
+    /// The steps of one completion search of an input's head, under the
+    /// projection step cap (`projection_step_cap`).
     ProjectionSteps,
     /// The bytes of the session at a check, under the session's byte bound,
     /// at which the session evicts its caches. A study request runs under its
@@ -520,13 +577,15 @@ pub enum Gauge {
     /// gauge has no hits: the bound stops nothing.
     SessionBytes,
     /// The bindings of the rows of one table of a study request that skips
-    /// the tables a larger one made too large, under `TABLE_ROW_WORK`.
+    /// the tables a larger one made too large, under the study row work cap
+    /// (`study_row_work_cap`).
     StudyRowWork,
     /// The row comparisons of one study pair, under the table work cap of the
     /// settings.
     PairComparisons,
     /// The rows of the larger of two relations that a comparison of successor
-    /// tables reads row by row, under `COMPARED_ROWS`.
+    /// tables reads row by row, under the compared rows cap
+    /// (`compared_rows_cap`).
     ComparedRows,
     /// The largest margin of a Box that a term holds, as the bits it takes
     /// (a margin `m` takes `m` for `m >= 0` and `-m - 1` for `m < 0`), under
@@ -534,7 +593,7 @@ pub enum Gauge {
     /// its own threads make ([`ambient`]).
     BoxMargin,
     /// The states that the walk of `Decoder::candidate_atoms` checked, under
-    /// its `limit`.
+    /// the atom state cap (`atom_state_cap`).
     AtomStates,
     /// The most bytes that a request held at a time
     /// ([`RequestWork::charge_bytes`]), under the request byte budget.
@@ -543,7 +602,7 @@ pub enum Gauge {
     /// ([`TableWork::charge_bytes`]), under the assignment byte budget.
     AssignmentBytes,
     /// The search nodes of the canonical labeling of one label scope, under
-    /// [`crate::program::canonical::SEARCH_NODE_CAP`]. A search past the cap
+    /// the labeling node cap (`labeling_node_cap`). A search past the cap
     /// is a hit, and refuses its form
     /// ([`crate::program::canonical::LabelingBound`]). The request counts the
     /// searches that its own threads run ([`ambient`]).
@@ -558,8 +617,8 @@ pub enum Gauge {
     PrefixContent,
     /// The work of the search for the order of the tied columns of one table at
     /// one assignment, in units (a cell hashed is a unit, a search node is
-    /// 2^18), under the search work cap
-    /// (`arclog_tables::summary::SEARCH_WORK_CAP`). A search past the cap is a
+    /// 2^18), under the column search work cap (`column_search_work_cap`). A
+    /// search past the cap is a
     /// hit: the table at that assignment has no TableHash, and its reason is
     /// `ColumnSearch`. The count is of the request that ran the search.
     ColumnSearch,
@@ -626,6 +685,10 @@ impl Gauge {
 #[derive(Debug, Default)]
 pub struct Gauges {
     slots: [GaugeSlot; GAUGES],
+    /// The cap of the gauge `labeling_nodes`, which the searches for a
+    /// canonical labeling run under ([`ambient::labeling_cap`]); 0 where the
+    /// request gave none, which stands for [`LABELING_NODE_CAP`].
+    labeling_cap: AtomicU64,
 }
 
 #[derive(Debug, Default)]
@@ -638,6 +701,14 @@ struct GaugeSlot {
 impl Gauges {
     fn slot(&self, gauge: Gauge) -> &GaugeSlot {
         &self.slots[gauge as usize]
+    }
+
+    /// The cap that the searches for a canonical labeling run under.
+    fn labeling_cap(&self) -> u64 {
+        match self.labeling_cap.load(Ordering::Relaxed) {
+            0 => LABELING_NODE_CAP,
+            cap => cap,
+        }
     }
 
     /// Records that `gauge` reached `value` under `cap`.
@@ -688,10 +759,10 @@ impl Gauges {
     pub fn each(&self) -> [(Gauge, u64, u64, u64); GAUGES] {
         Gauge::ALL.map(|gauge| {
             let slot = self.slot(gauge);
-            // The two ambient gauges run under a cap that no request gives.
+            // The box margin runs under a cap that no request gives.
             let cap = match gauge {
                 Gauge::BoxMargin => ambient::MARGIN_CAP,
-                Gauge::LabelingNodes => ambient::LABELING_CAP,
+                Gauge::LabelingNodes => self.labeling_cap(),
                 _ => slot.cap.load(Ordering::Relaxed),
             };
             (gauge, slot.max.load(Ordering::Relaxed), cap, slot.hits.load(Ordering::Relaxed))
@@ -755,8 +826,12 @@ pub mod ambient {
     pub const MARGIN_CAP: u64 = 127;
 
     /// The cap on the search nodes of one canonical labeling
-    /// ([`super::Gauge::LabelingNodes`]).
-    pub const LABELING_CAP: u64 = crate::program::canonical::SEARCH_NODE_CAP as u64;
+    /// ([`super::Gauge::LabelingNodes`]) that the request most recently begun
+    /// on this thread gives ([`super::SearchCaps::labeling_nodes`]), and
+    /// [`super::LABELING_NODE_CAP`] where none has begun.
+    pub fn labeling_cap() -> u64 {
+        AMBIENT.try_with(|ambient| ambient.borrow().as_ref().map(|gauges| gauges.labeling_cap())).ok().flatten().unwrap_or(super::LABELING_NODE_CAP)
+    }
 
     /// Records `value` of `gauge` under `cap` in the gauges of this thread's
     /// request: a load and a compare while it is no new largest and holds.
@@ -789,10 +864,10 @@ pub mod ambient {
     }
 
     /// Records that a search for a canonical labeling visited `nodes` search
-    /// nodes.
+    /// nodes, under `cap`.
     #[inline]
-    pub fn note_labeling(nodes: u32) {
-        note(Gauge::LabelingNodes, u64::from(nodes), LABELING_CAP);
+    pub fn note_labeling(nodes: u64, cap: u64) {
+        note(Gauge::LabelingNodes, nodes, cap);
     }
 }
 
@@ -831,6 +906,9 @@ pub struct RequestWork {
     /// The bindings that the request's searches tried, and the guard on them.
     effort: Arc<Effort>,
     effort_cap: u64,
+    /// The cap of the search for the order of a table's columns, read where
+    /// no settings are at hand ([`RequestWork::column_search_cap`]).
+    column_search_cap: u64,
     /// Where the request leaves its effort fault.
     sink: Arc<FaultSink>,
 }
@@ -1580,13 +1658,33 @@ impl RequestWork {
     /// A count of no work and no bytes, under `cap` and the byte budgets
     /// `byte_caps`.
     pub fn with_byte_caps(cap: u64, byte_caps: ByteCaps) -> Self {
-        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default(), held: Arc::default(), effort: Arc::default(), effort_cap: EFFORT_CAP, sink: current_sink() }
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default(), held: Arc::default(), effort: Arc::default(), effort_cap: EFFORT_CAP, column_search_cap: COLUMN_SEARCH_WORK_CAP, sink: current_sink() }
     }
 
     /// This count with the effort guard `effort_cap` in place of
     /// [`EFFORT_CAP`].
     pub fn with_effort_cap(self, effort_cap: u64) -> Self {
         RequestWork { effort_cap, ..self }
+    }
+
+    /// This count with the caps of the searches `caps` in place of the
+    /// defaults. The labeling cap goes to the gauges of the request, where
+    /// the searches for a canonical labeling read it ([`ambient`]).
+    pub fn with_search_caps(self, caps: SearchCaps) -> Self {
+        self.gauges.labeling_cap.store(caps.labeling_nodes, Ordering::Relaxed);
+        self.held.labeling_cap.store(caps.labeling_nodes, Ordering::Relaxed);
+        RequestWork { column_search_cap: caps.column_search_work, ..self }
+    }
+
+    /// The caps of the searches this request runs under.
+    pub fn search_caps(&self) -> SearchCaps {
+        SearchCaps { column_search_work: self.column_search_cap, labeling_nodes: self.gauges.labeling_cap() }
+    }
+
+    /// The cap on the work of the search for the order of the columns of one
+    /// table at one assignment ([`SearchCaps::column_search_work`]).
+    pub fn column_search_cap(&self) -> u64 {
+        self.column_search_cap
     }
 
     /// A count of no work for a request that begins now, under `cap`, which
@@ -1598,12 +1696,13 @@ impl RequestWork {
 
     /// [`RequestWork::begin`], under the byte budgets `byte_caps`.
     pub fn begin_with(cap: u64, byte_caps: ByteCaps) -> Self {
-        Self::begin_capped(cap, byte_caps, EFFORT_CAP)
+        Self::begin_capped(cap, byte_caps, EFFORT_CAP, SearchCaps::default())
     }
 
-    /// [`RequestWork::begin_with`], under the effort guard `effort_cap`.
-    pub fn begin_capped(cap: u64, byte_caps: ByteCaps, effort_cap: u64) -> Self {
-        let work = Self::with_byte_caps(cap, byte_caps).with_effort_cap(effort_cap);
+    /// [`RequestWork::begin_with`], under the effort guard `effort_cap` and the
+    /// caps of the searches `search_caps`.
+    pub fn begin_capped(cap: u64, byte_caps: ByteCaps, effort_cap: u64, search_caps: SearchCaps) -> Self {
+        let work = Self::with_byte_caps(cap, byte_caps).with_effort_cap(effort_cap).with_search_caps(search_caps);
         AMBIENT.with(|ambient| *ambient.borrow_mut() = Some(Arc::clone(&work.gauges)));
         tally(|tally| tally.unbilled = 0);
         LATEST.with(|latest| *latest.borrow_mut() = Some(work.clone()));
@@ -1615,7 +1714,7 @@ impl RequestWork {
     /// the task and not to the query whose first step exports it. [`RequestWork::latest`] still gives the request that began last, and
     /// [`RequestWork::latest_side`] gives this one until another request begins on the thread.
     pub fn side(&self) -> Self {
-        let work = Self::with_byte_caps(self.cap, self.byte_caps).with_effort_cap(self.effort_cap);
+        let work = Self::with_byte_caps(self.cap, self.byte_caps).with_effort_cap(self.effort_cap).with_search_caps(self.search_caps());
         SIDE.with(|side| *side.borrow_mut() = Some(work.clone()));
         work
     }
@@ -1632,7 +1731,7 @@ impl RequestWork {
     /// candidate's charges are not added to this count, and its stop at a cap
     /// ends its own evaluations alone.
     pub fn candidate(&self) -> Self {
-        RequestWork { count: Arc::new(AtomicU64::new(0)), cap: self.cap, bytes: Arc::default(), byte_caps: ByteCaps { request: self.byte_caps.candidate, ..self.byte_caps }, gauges: Arc::clone(&self.gauges), held: Arc::clone(&self.held), effort: Arc::clone(&self.effort), effort_cap: self.effort_cap, sink: Arc::clone(&self.sink) }
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap: self.cap, bytes: Arc::default(), byte_caps: ByteCaps { request: self.byte_caps.candidate, ..self.byte_caps }, gauges: Arc::clone(&self.gauges), held: Arc::clone(&self.held), effort: Arc::clone(&self.effort), effort_cap: self.effort_cap, column_search_cap: self.column_search_cap, sink: Arc::clone(&self.sink) }
     }
 
     /// The request most recently begun on this thread, or `None` where none

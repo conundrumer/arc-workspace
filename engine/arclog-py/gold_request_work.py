@@ -1,6 +1,6 @@
 """The work and the counters of each request that the writer makes along each gold stream of the feature corpus.
 
-    PYTHONPATH=SITE python gold_request_work.py --out OUT.jsonl.zst --corpus DIR --tasks-dir DIR [--shard K/N] [--limit N] [--world closed|open] [--cap N] [--successors N] [--atoms | --no-atoms] [--atoms-limit N] [TASK ...]
+    PYTHONPATH=SITE python gold_request_work.py --out OUT.jsonl.zst --corpus DIR --tasks-dir DIR [--shard K/N] [--limit N] [--world closed|open] [--cap N] [--successors N] [--atoms | --no-atoms] [TASK ...]
 
 Run it with the interpreter of the site to test, with `PYTHONPATH` set to that site and without `-I`: it imports that site's `arclog` and `zstandard`.
 Give `--corpus` and `--tasks-dir` as absolute paths.
@@ -240,7 +240,7 @@ def task_line(task, mutants, tasks_dir, world, args):
             meter.run("rows", written, form, lambda: dec.rows(example))
         meter.run("projections", written, form, dec.projections)
         if args.atoms:
-            meter.run("atoms", written, form, lambda: dec.atoms(args.atoms_limit))
+            meter.run("atoms", written, form, lambda: dec.atoms())
         successors = [id_] + [other for other in admissible[: args.successors] if other != id_]
         meter.run("successor_tables", written, form, lambda: arclog.successor_tables(dec, successors, TASK, CASE, before=before, rows=True))
         fork = dec.fork()
@@ -291,7 +291,6 @@ def main():
     parser.add_argument("--cap", type=int, default=1 << 34, help="the request work cap of every request (default 2^34)")
     parser.add_argument("--successors", type=int, default=32)
     parser.add_argument("--atoms", action=argparse.BooleanOptionalAction, default=True, help="request the candidate atoms at each prefix, as the atom writer does (default on)")
-    parser.add_argument("--atoms-limit", type=int, default=1 << 20, help="the `limit` of `atoms` (default 2^20, the binding's and the atom writer's)")
     args = parser.parse_args()
     if not hasattr(arclog, "request_stats"):
         sys.exit("this arclog has no request_stats")

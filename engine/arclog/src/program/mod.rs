@@ -68,7 +68,7 @@ pub struct Node<T> {
 struct Shared<T> {
     value: T,
     /// The hash of the value's canonical form, and whether its search
-    /// reached [`canonical::SEARCH_NODE_CAP`], set on first use.
+    /// reached the labeling node cap, set on first use.
     canonical_hash: OnceLock<((StableHash, bool), crate::eval::NoteId)>,
     /// What the canonical form of the value gives where the value is a
     /// form, [`canonical::FormCache`], made on its first use, so that a
@@ -89,7 +89,7 @@ impl<T: canonical::Canonical> Node<T> {
     }
 
     /// Whether the search for the value's canonical form reached
-    /// [`canonical::SEARCH_NODE_CAP`], which is an alert on the node.
+    /// the labeling node cap, which is an alert on the node.
     pub fn reached_search_cap(&self) -> bool {
         self.computed().1
     }
