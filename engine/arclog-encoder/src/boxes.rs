@@ -120,7 +120,7 @@ fn span(held: Cell, h: i32, w: i32) -> (i32, i32, i32, i32) {
 }
 
 /// The count of cells of a grid of `h` rows and `w` columns in a box.
-fn area_of(held: Cell, h: i32, w: i32) -> u64 {
+pub(crate) fn area_of(held: Cell, h: i32, w: i32) -> u64 {
     let (r0, r1, c0, c1) = span(held, h, w);
     ((r1 - r0 + 1).max(0) * (c1 - c0 + 1).max(0)) as u64
 }

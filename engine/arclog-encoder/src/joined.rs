@@ -1319,6 +1319,11 @@ impl Joined {
 
     /// The count of rows that `step` gives over the join's rows, where every row it gives holds a row of the join in the cells it reads, or it keeps whole rows of the join: a part that gives each row it takes followed by cells that the cells at some of its columns fix, a `semijoin` or an `antijoin` or a part that keeps the rows that agree with a test on some of its columns, and a part that keeps the rows whose value is the most frequent of their key. No rows of the join are written: the step runs over the distinct tuples at the columns it reads, written as rows of the join's width with 0 at each other column, and each row it gives counts as many times as the join holds its tuple. `second` is the step's second relation, where it has one. `None` where `step` is not of that form.
     pub fn count_over(&self, step: &Step, second: Option<&Val>) -> Option<Option<u64>> {
+        if let Step::Part(part) = step {
+            if let PartStep::Inside { b } = part.step() {
+                return self.inside_count(*b, second);
+            }
+        }
         let mut key = match step {
             Step::Part(part) => part.row_columns().or_else(|| part.weighted_columns())?,
             Step::Semijoin { left, .. } | Step::Antijoin { left, .. } => left.to_vec(),
@@ -1385,6 +1390,20 @@ impl Joined {
         };
         for row in given.rows() {
             total = total.saturating_add(weight_of(row)?);
+        }
+        Some(Some(total))
+    }
+
+    /// The count of rows that an `inside` over the join's rows gives, whose boxes stand at column `at` of the join: each distinct tuple of that column counts as many times as the join holds it, and a box counts the cells of the second relation's grid that it holds. No rows of the join are written. `None` where `at` is not a column of the join.
+    fn inside_count(&self, at: u16, second: Option<&Val>) -> Option<Option<u64>> {
+        if usize::from(at) >= self.width() {
+            return None;
+        }
+        let Some(grid) = second.and_then(crate::gen_parts::grid_of) else { return Some(None) };
+        let counted = self.counted(&[at])?;
+        let mut total = 0u64;
+        for (tuple, weight) in counted.tuples.iter().zip(&counted.weights) {
+            total = total.saturating_add(weight.saturating_mul(crate::boxes::area_of(*tuple, grid.h, grid.w)));
         }
         Some(Some(total))
     }

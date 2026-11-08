@@ -1974,6 +1974,8 @@ impl PartStep {
             PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => with(keys, &[*f]),
             PartStep::Extreme { keys, t, score, .. } => with(keys, &[*t, *score]),
             PartStep::NumberExtreme { n, .. } => Some(vec![*n]),
+            PartStep::BoxRead { b, .. } => Some(vec![*b]),
+            PartStep::BoxFrameRead { b, x, .. } | PartStep::BoxCellRead { b, x, .. } => Some(if b == x { vec![*b] } else { vec![*b, *x] }),
             PartStep::CellsOn { p } | PartStep::ColorsUnder { p } | PartStep::Around { p } | PartStep::NeighborhoodClass { p } | PartStep::NeighborColorClass { p } | PartStep::SameColorNeighbors { p } | PartStep::Distance { p } | PartStep::FrameExtent { p } | PartStep::Complement { p } | PartStep::BoxCells { p, .. } | PartStep::HoleCells { p } | PartStep::DiffCells { p, .. } | PartStep::TopColorsUnder { p } | PartStep::FrameCells { p } | PartStep::ComplementParts { p } | PartStep::EveryPartStraight { p } | PartStep::OutlinesBox { p } | PartStep::LineSpacings { p } => Some(vec![*p]),
             PartStep::DeterminesFlag { keys, a, .. } => with(keys, &[*a]),
             PartStep::Occurs { keys, p, v, .. } => with(keys, &[*p, *v]),
