@@ -1108,7 +1108,7 @@ fn view_of(table: &Arc<Table>) -> Arc<GridView> {
     })
 }
 
-fn grid_of(value: &Val) -> Option<Arc<GridView>> {
+pub(crate) fn grid_of(value: &Val) -> Option<Arc<GridView>> {
     let Val::Rows(parts) = value else { return None };
     let [one] = parts.as_slice() else { return None };
     Some(view_of(&one.table))

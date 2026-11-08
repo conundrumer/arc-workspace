@@ -7,16 +7,19 @@
 //! in the grid where the columns are the relation's, and otherwise from a union of boxes per
 //! tuple of the relation's columns. An operator that keeps rows whole, over the relation's
 //! columns, keeps the relation's rows, and gives boxes again. A `select` that compares the cell
-//! column or the color column writes only the pairs of a row and a cell that pass. Any other
-//! operator reads the rows written out, once. The pairs that a `select` keeps, where they pass the
-//! output limit of cells, give no value.
+//! column or the color column writes only the pairs of a row and a cell that pass. The count of
+//! rows that a part, a `semijoin`, an `antijoin`, a `join` or an `inside` gives is read from the
+//! distinct tuples of the rows at the columns it reads, each with the count of rows that hold it.
+//! Any other operator reads the rows written out, once. The pairs that a `select` keeps, where
+//! they pass the output limit of cells, give no value.
 
+use std::cmp::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::columns::Columns;
 use crate::expression::Op;
 use crate::gen_constants::{box_bits, margins_of};
-use crate::gen_parts::GridView;
+use crate::gen_parts::{grid_of, GridView, PartStep};
 use crate::native::{all, antijoin, hash_words, holds, project, select, semijoin, Cell, FastMap, Part, Step, Table, Val};
 
 /// Marks the hash of a [`Boxes`], which no other value's hash has.
@@ -24,6 +27,9 @@ const BOXES_WORD: u64 = 0x426f_7865_7352_6f77;
 
 /// The most cells of the tables of `Boxes::sketch` that one value keeps for later readers.
 const SKETCH_KEPT: usize = 1 << 18;
+
+/// The most cells of the tuples, counts and rows of `Boxes::counted` that one value keeps for later readers.
+const COUNTED_KEPT: usize = 1 << 19;
 
 pub struct Boxes {
     /// The relation: its rows, each with a box at `at`.
@@ -41,6 +47,50 @@ pub struct Boxes {
     written: OnceLock<Val>,
     /// The tuples of `sketch`, by their columns, and the cells that the kept tables hold.
     sketches: Mutex<(usize, FastMap<Box<[u16]>, Arc<Sketch>>)>,
+    /// The tuples of `counted`, by their columns, and the cells that the kept values hold.
+    counts: Mutex<(usize, FastMap<Box<[u16]>, Arc<Counted>>)>,
+}
+
+/// The distinct tuples of the rows of `inside` at some columns, in order, each with the count of rows of `inside` that hold it.
+struct Counted {
+    /// The tuples, one cell for each column of the key, in ascending order.
+    tuples: Vec<Cell>,
+    weights: Vec<u64>,
+    /// The tuples as rows of the arity of `inside`, with 0 at each column that is not in the key, once something has read them.
+    wide: OnceLock<Arc<Table>>,
+}
+
+impl Counted {
+    /// The tuples as rows of `arity` cells, with 0 at each column that is not in `key`.
+    fn wide(&self, key: &[u16], arity: usize) -> Arc<Table> {
+        self.wide
+            .get_or_init(|| {
+                let mut cells: Vec<Cell> = vec![0; self.weights.len() * arity];
+                for (row, tuple) in cells.chunks_exact_mut(arity).zip(self.tuples.chunks_exact(key.len())) {
+                    for (column, cell) in key.iter().zip(tuple) {
+                        row[usize::from(*column)] = *cell;
+                    }
+                }
+                Table::new(arity, cells)
+            })
+            .clone()
+    }
+
+    /// The count of rows of `inside` that hold the tuple that `row` has at the columns `key`.
+    fn weight_of(&self, key: &[u16], row: &[Cell]) -> Option<u64> {
+        let stride = key.len();
+        let (mut low, mut high) = (0, self.weights.len());
+        while low < high {
+            let middle = low + (high - low) / 2;
+            let order = self.tuples[middle * stride..(middle + 1) * stride].iter().zip(key).map(|(cell, column)| cell.cmp(&row[usize::from(*column)])).find(|order| order.is_ne()).unwrap_or(Ordering::Equal);
+            match order {
+                Ordering::Equal => return Some(self.weights[middle]),
+                Ordering::Less => low = middle + 1,
+                Ordering::Greater => high = middle,
+            }
+        }
+        None
+    }
 }
 
 /// The distinct tuples of the rows of `inside` at some columns that include a column after the relation's.
@@ -84,7 +134,7 @@ impl Boxes {
         }
         let relation = table.hash();
         let hash = hash_words([BOXES_WORD, relation as u64, (relation >> 64) as u64, u64::from(at), grid_hash as u64, (grid_hash >> 64) as u64]);
-        Val::Boxes(Arc::new(Boxes { table: table.clone(), at, grid, grid_hash, hash, rows, support: OnceLock::new(), written: OnceLock::new(), sketches: Mutex::new((0, FastMap::default())) }))
+        Val::Boxes(Arc::new(Boxes { table: table.clone(), at, grid, grid_hash, hash, rows, support: OnceLock::new(), written: OnceLock::new(), sketches: Mutex::new((0, FastMap::default())), counts: Mutex::new((0, FastMap::default())) }))
     }
 
     /// The count of rows of `inside`.
@@ -390,6 +440,296 @@ impl Boxes {
         Some(Table::new(arity_out, out))
     }
 
+    /// The distinct tuples of the rows of `inside` at the columns `key`, which stand sorted and distinct, each with the count of rows of `inside` that hold it, from the value's own keep where it holds this read. No value where `key` is empty or names a column past the rows of `inside`.
+    fn counted(&self, key: &[u16]) -> Option<Arc<Counted>> {
+        if let Some(found) = self.counts.lock().expect("a count lock").1.get(key).cloned() {
+            return Some(found);
+        }
+        let started = crate::bounds::started();
+        let built = Arc::new(self.build_counted(key)?);
+        crate::bounds::wrote("counts", built.tuples.len(), started);
+        let cells = built.tuples.len() + built.weights.len() * (2 + self.table.arity + 2);
+        let mut kept = self.counts.lock().expect("a count lock");
+        if kept.0 + cells <= COUNTED_KEPT {
+            kept.0 += cells;
+            kept.1.insert(key.into(), built.clone());
+        }
+        Some(built)
+    }
+
+    /// What `counted` gives, built from the relation's rows. The rows of `inside` are the distinct rows of the relation that have a cell in the grid, each with the cells of its box: a tuple of the relation's columns alone is held by the rows that agree with it, each as often as its box has cells. A tuple that has the cell, or its color, is held by as many rows as have the cell in their box.
+    fn build_counted(&self, key: &[u16]) -> Option<Counted> {
+        let width = self.table.arity;
+        if key.is_empty() || key.iter().any(|column| usize::from(*column) >= width + 2) {
+            return None;
+        }
+        let at = usize::from(self.at);
+        let support = self.support();
+        let relation: Vec<usize> = key.iter().filter(|column| usize::from(**column) < width).map(|column| usize::from(*column)).collect();
+        let want_p = key.contains(&(width as u16));
+        let want_color = key.contains(&(width as u16 + 1));
+        let stride = key.len();
+        if !want_p && !want_color {
+            let mut flat: Vec<Cell> = Vec::with_capacity(support.len * stride);
+            let mut areas: Vec<u64> = Vec::with_capacity(support.len);
+            for row in support.rows() {
+                flat.extend(relation.iter().map(|column| row[*column]));
+                areas.push(self.area(row[at]));
+            }
+            let (tuples, weights) = sum_sorted(&flat, stride, &areas);
+            return Some(Counted { tuples, weights, wide: OnceLock::new() });
+        }
+        let grid = &self.grid;
+        let prefix = relation.len();
+        // The distinct pairs of the relation's columns and a box, in order, each with the count of rows of the relation that hold it, so that the pairs of one tuple stand together.
+        let mut flat: Vec<Cell> = Vec::with_capacity(support.len * (prefix + 1));
+        for row in support.rows() {
+            flat.extend(relation.iter().map(|column| row[*column]));
+            flat.push(row[at]);
+        }
+        let (pairs, repeats) = sum_sorted(&flat, prefix + 1, &vec![1u64; support.len]);
+        drop(flat);
+        // The bit of a cell is its column from the last times the grid's height, plus its row from the last, so the bits stand in the order of the cells' `P`.
+        let cells = (grid.h * grid.w) as usize;
+        let bit = |r: i32, c: i32| ((grid.w - 1 - c) * grid.h + (grid.h - 1 - r)) as usize;
+        let mut p_of = vec![0 as Cell; if want_p { cells } else { 0 }];
+        let mut color_of = vec![0 as Cell; cells];
+        for r in 0..grid.h {
+            for c in 0..grid.w {
+                if want_p {
+                    p_of[bit(r, c)] = box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c);
+                }
+                color_of[bit(r, c)] = grid.colors[(r * grid.w + c) as usize];
+            }
+        }
+        // How many rows of the tuple's group have each cell in their box, by the cell's bit, and the bits that hold a count.
+        let mut covered = vec![0u64; cells];
+        let mut touched: Vec<usize> = Vec::new();
+        // The same counts by the corners of the boxes, which one pass over the grid sums.
+        let side = grid.w as usize + 1;
+        let mut corners = vec![0i64; (grid.h as usize + 1) * side];
+        let mut out: Vec<Cell> = Vec::new();
+        let mut counts: Vec<u64> = Vec::new();
+        let pair_count = repeats.len();
+        let pair_stride = prefix + 1;
+        let mut from = 0usize;
+        while from < pair_count {
+            let head = &pairs[from * pair_stride..from * pair_stride + prefix];
+            let mut to = from + 1;
+            while to < pair_count && pairs[to * pair_stride..to * pair_stride + prefix] == *head {
+                to += 1;
+            }
+            let area: u64 = (from..to).map(|pair| self.area(pairs[pair * pair_stride + prefix])).sum();
+            let mut emit = |place: usize, count: u64| {
+                out.extend_from_slice(head);
+                if want_p {
+                    out.push(p_of[place]);
+                }
+                if want_color {
+                    out.push(color_of[place]);
+                }
+                counts.push(count);
+            };
+            if area.saturating_mul(4) <= cells as u64 {
+                for pair in from..to {
+                    let (r0, r1, c0, c1) = span(pairs[pair * pair_stride + prefix], grid.h, grid.w);
+                    for c in c0..=c1 {
+                        for r in r0..=r1 {
+                            let place = bit(r, c);
+                            if covered[place] == 0 {
+                                touched.push(place);
+                            }
+                            covered[place] += repeats[pair];
+                        }
+                    }
+                }
+                touched.sort_unstable();
+                for place in touched.drain(..) {
+                    emit(place, covered[place]);
+                    covered[place] = 0;
+                }
+            } else {
+                corners.fill(0);
+                for pair in from..to {
+                    let (r0, r1, c0, c1) = span(pairs[pair * pair_stride + prefix], grid.h, grid.w);
+                    let count = repeats[pair] as i64;
+                    corners[r0 as usize * side + c0 as usize] += count;
+                    corners[r0 as usize * side + c1 as usize + 1] -= count;
+                    corners[(r1 as usize + 1) * side + c0 as usize] -= count;
+                    corners[(r1 as usize + 1) * side + c1 as usize + 1] += count;
+                }
+                for r in 0..=grid.h as usize {
+                    for c in 0..side {
+                        let above = if r > 0 { corners[(r - 1) * side + c] } else { 0 };
+                        let left = if c > 0 { corners[r * side + c - 1] } else { 0 };
+                        let both = if r > 0 && c > 0 { corners[(r - 1) * side + c - 1] } else { 0 };
+                        corners[r * side + c] += above + left - both;
+                    }
+                }
+                for place in 0..cells {
+                    let (r, c) = (grid.h - 1 - (place as i32 % grid.h), grid.w - 1 - (place as i32 / grid.h));
+                    let count = corners[r as usize * side + c as usize];
+                    if count > 0 {
+                        emit(place, count as u64);
+                    }
+                }
+            }
+            from = to;
+        }
+        // Tuples that differ in the cell alone but agree in its color are one tuple where the cell is not asked for.
+        let (tuples, weights) = sum_sorted(&out, stride, &counts);
+        Some(Counted { tuples, weights, wide: OnceLock::new() })
+    }
+
+    /// The count of distinct tuples of the rows of `inside` at `columns`.
+    fn distinct_count(&self, columns: &[u16]) -> Option<Option<u64>> {
+        let mut key: Vec<u16> = columns.to_vec();
+        key.sort_unstable();
+        key.dedup();
+        Some(Some(self.counted(&key)?.weights.len() as u64))
+    }
+
+    /// The count of rows that an `inside` over these rows gives, whose boxes stand at column `at` of them: each distinct tuple of that column counts as many times as the rows of `inside` hold it, and a box counts the cells of the second relation's grid that it holds.
+    fn inside_count(&self, at: u16, second: Option<&Val>) -> Option<Option<u64>> {
+        if usize::from(at) >= usize::from(self.width()) + 2 {
+            return None;
+        }
+        let Some(grid) = second.and_then(grid_of) else { return Some(None) };
+        let counted = self.counted(&[at])?;
+        let mut total = 0u64;
+        for (tuple, weight) in counted.tuples.iter().zip(&counted.weights) {
+            total = total.saturating_add(weight.saturating_mul(area_of(*tuple, grid.h, grid.w)));
+        }
+        Some(Some(total))
+    }
+
+    /// The count of rows of a `join` of these rows with the second relation: for each tuple at the columns the join reads, the count of rows of `inside` that hold it times the count of rows of the second relation that hold the tuple at its columns. No value where the second relation is not one table or a column stands twice.
+    fn join_count(&self, left: &[u16], right: &[u16], second: Option<&Val>) -> Option<Option<u64>> {
+        let table = match second? {
+            Val::None => return Some(None),
+            Val::Empty => return Some(Some(0)),
+            Val::Rows(parts) => match parts.as_slice() {
+                [one] if one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) => one.table.clone(),
+                _ => return None,
+            },
+            Val::Boxes(_) | Val::Joined(_) => return None,
+        };
+        if left.is_empty() || left.len() != right.len() || right.iter().any(|column| usize::from(*column) >= table.arity) {
+            return None;
+        }
+        let mut order: Vec<usize> = (0..left.len()).collect();
+        order.sort_unstable_by_key(|place| left[*place]);
+        if order.windows(2).any(|pair| left[pair[0]] == left[pair[1]]) {
+            return None;
+        }
+        let key: Vec<u16> = order.iter().map(|place| left[*place]).collect();
+        let counted = self.counted(&key)?;
+        let stride = key.len();
+        let mut flat: Vec<Cell> = Vec::with_capacity(table.len * stride);
+        for row in table.rows() {
+            flat.extend(order.iter().map(|place| row[usize::from(right[*place])]));
+        }
+        let (tuples, repeats) = sum_sorted(&flat, stride, &vec![1u64; table.len]);
+        // Both lists of tuples stand in order, so one pass along them pairs the tuples that agree.
+        let (mut mine, mut theirs) = (0usize, 0usize);
+        let mut total = 0u64;
+        while mine < counted.weights.len() && theirs < repeats.len() {
+            match counted.tuples[mine * stride..(mine + 1) * stride].cmp(&tuples[theirs * stride..(theirs + 1) * stride]) {
+                Ordering::Less => mine += 1,
+                Ordering::Greater => theirs += 1,
+                Ordering::Equal => {
+                    total = total.saturating_add(counted.weights[mine].saturating_mul(repeats[theirs]));
+                    mine += 1;
+                    theirs += 1;
+                }
+            }
+        }
+        Some(Some(total))
+    }
+
+    /// The count of rows that `step` gives over the rows of `inside`, where it needs no rows written. `second` is the step's second relation, where it has one. `None` where `step` is not of a form that is counted so, or where the count cannot be read from the tuples.
+    pub fn count_of(&self, step: &Step, second: Option<&Val>) -> Option<Option<u64>> {
+        let width = self.width();
+        match step {
+            Step::Part(part) => match part.step() {
+                // The rows of a count over keys that are all columns of the relation are read as boxes.
+                PartStep::Count { keys } if !keys.is_empty() && keys.iter().any(|key| *key >= width) => self.distinct_count(keys),
+                // A class of each key's rows is one row at the key.
+                PartStep::ClassOf { keys } if !keys.is_empty() => self.distinct_count(keys),
+                PartStep::Inside { b } => self.inside_count(*b, second),
+                _ => self.count_over(step, second),
+            },
+            Step::Join { left, right, .. } => self.join_count(left, right, second),
+            Step::Semijoin { .. } | Step::Antijoin { .. } => self.count_over(step, second),
+            _ => None,
+        }
+    }
+
+    /// The count of rows that `step` gives over the rows of `inside`, where every row it gives holds a row of `inside` in the cells it reads, or it keeps whole rows of `inside`: a part that gives each row it takes followed by cells that the cells at some of its columns fix, a `semijoin` or an `antijoin` whose columns include the cell or its color, and a part that keeps the rows whose value is the most frequent of their key and reads the cell or its color. No rows of `inside` are written: the step runs over the distinct tuples at the columns it reads, written as rows of the arity of `inside` with 0 at each other column, and each row it gives counts as many times as `inside` holds its tuple. `second` is the step's second relation, where it has one. `None` where `step` is not of that form.
+    fn count_over(&self, step: &Step, second: Option<&Val>) -> Option<Option<u64>> {
+        let width = self.width();
+        let mut key = match step {
+            Step::Part(part) => part.row_columns().or_else(|| part.weighted_columns().filter(|columns| columns.iter().any(|column| *column >= width)))?,
+            Step::Semijoin { left, .. } | Step::Antijoin { left, .. } if left.iter().any(|column| *column >= width) => left.to_vec(),
+            _ => return None,
+        };
+        key.sort_unstable();
+        key.dedup();
+        if key.is_empty() {
+            return None;
+        }
+        // A second relation that stands as the relations it comes from is read at the columns the step reads of it.
+        let replaced;
+        let second = match second {
+            Some(Val::None) => return Some(None),
+            Some(Val::Joined(joined)) => {
+                replaced = joined.read_second(step)?;
+                Some(&replaced)
+            }
+            Some(Val::Boxes(boxes)) => {
+                replaced = boxes.read_second(step)?;
+                Some(&replaced)
+            }
+            other => other,
+        };
+        if matches!(second, Some(Val::None)) {
+            return Some(None);
+        }
+        let counted = self.counted(&key)?;
+        let arity = usize::from(width) + 2;
+        let wide = counted.wide(&key, arity);
+        let mut total = 0u64;
+        if let Step::Part(part) = step {
+            if part.row_columns().is_none() {
+                let counts: Vec<u64> = wide.rows().map(|row| counted.weight_of(&key, row)).collect::<Option<_>>()?;
+                let kept = part.step().kept_rows(&wide, &counts)?;
+                for row in kept.chunks_exact(arity) {
+                    total = total.saturating_add(counted.weight_of(&key, row)?);
+                }
+                return Some(Some(total));
+            }
+        }
+        let first = Val::of_table(wide.clone());
+        let given = match step {
+            Step::Part(part) => {
+                let children: Vec<&Val> = std::iter::once(&first).chain(second).collect();
+                part.step().run(&wide, &children)
+            }
+            Step::Semijoin { left, right } => semijoin(&first, second?, left, right),
+            Step::Antijoin { left, right } => antijoin(&first, second?, left, right),
+            _ => return None,
+        };
+        let given = match given {
+            None | Some(Val::None) => return Some(None),
+            Some(Val::Empty) => return Some(Some(0)),
+            Some(given) => crate::gen_parts::flat(&given)?,
+        };
+        for row in given.rows() {
+            total = total.saturating_add(counted.weight_of(&key, row)?);
+        }
+        Some(Some(total))
+    }
+
     /// Whether `step` takes what it needs from the boxes, without writing the rows.
     pub fn reads(&self, step: &Step) -> bool {
         let width = self.width();
@@ -610,6 +950,26 @@ pub(crate) fn project_tuples(tuples: &Arc<Table>, key: &[u16], columns: &[u16], 
         Table::distinct(places.len(), cells)
     };
     Val::Rows(Arc::new(vec![Part { table, columns: (0..places.len() as u16).collect() }]))
+}
+
+/// The rows of `flat`, `stride` cells each, in ascending order, each once, with the sum of the `weights` of the rows that equal it.
+fn sum_sorted(flat: &[Cell], stride: usize, weights: &[u64]) -> (Vec<Cell>, Vec<u64>) {
+    let row = |at: u32| &flat[at as usize * stride..(at as usize + 1) * stride];
+    let mut order: Vec<u32> = (0..weights.len() as u32).collect();
+    order.sort_unstable_by(|a, b| row(*a).cmp(row(*b)));
+    let mut tuples: Vec<Cell> = Vec::new();
+    let mut sums: Vec<u64> = Vec::new();
+    for at in order {
+        let cells = row(at);
+        match sums.last_mut() {
+            Some(last) if tuples[tuples.len() - stride..] == *cells => *last += weights[at as usize],
+            _ => {
+                tuples.extend_from_slice(cells);
+                sums.push(weights[at as usize]);
+            }
+        }
+    }
+    (tuples, sums)
 }
 
 /// Sets the bits from `from` up to `to`, in words of 64 bits.

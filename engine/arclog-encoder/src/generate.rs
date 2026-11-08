@@ -2986,6 +2986,21 @@ impl<'a> Walker<'a> {
                 }
             }
         }
+        // The count of rows of the rows of `inside` that a part, a `semijoin`, an `antijoin`, a `join` or an `inside` reads at some of their columns is read from the tuples of the boxes at those columns, with no rows written.
+        if !number {
+            let boxes = match &self.values[id as usize] {
+                Val::Boxes(boxes) => Some(boxes.clone()),
+                _ => None,
+            };
+            if let Some(boxes) = boxes {
+                crate::bounds::begin();
+                let second = (b != NO_TERM).then(|| &self.values[b as usize]);
+                if let Some(found) = boxes.count_of(step, second) {
+                    crate::bounds::end(false);
+                    return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
+                }
+            }
+        }
         // A part that reads cells of `inside` runs on the rows written out, once per grouping. Rows of `inside` that the part takes as boxes group as the relation's rows do, where its keys are the relation's.
         let written = if steps.grouped[at].is_some() { self.written_id(step, id, true) } else { id };
         if let Some((part, keys)) = steps.grouped[at] {
