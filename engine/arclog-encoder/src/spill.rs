@@ -30,7 +30,7 @@ pub fn write(path: &Path, parts: &[Part]) -> std::io::Result<()> {
         out.write_all(&(part.table.arity as u64).to_ne_bytes())?;
         out.write_all(&(part.table.len as u64).to_ne_bytes())?;
         out.write_all(&part.table.hash().to_ne_bytes())?;
-        for cells in part.table.cells.chunks(BLOCK_CELLS) {
+        for cells in part.table.cells().chunks(BLOCK_CELLS) {
             block.clear();
             for cell in cells {
                 block.extend_from_slice(&cell.to_ne_bytes());

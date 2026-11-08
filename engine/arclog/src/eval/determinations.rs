@@ -195,6 +195,7 @@ impl Evaluation<'_> {
         stats::seen(Phase::EvalDomain, || stats::digest(&(node.0, self.parameters.stats_digest())));
         let (mut kept, types) = match self.gather(node, Order::Content)? {
             Gathered::Sets { kept, types } => (kept, types),
+            Gathered::Count(_) => unreachable!("a gather in content order reads the rows"),
             Gathered::Undefined => return Ok(Domain::Undefined),
             Gathered::Stopped(stop) => return Ok(Domain::Stopped(stop)),
         };
@@ -222,7 +223,7 @@ impl Evaluation<'_> {
     ///
     /// The evaluation of the forms is that of `domain`. It makes the same
     /// lookups, ids and stores in the session and counts the same table work,
-    /// and a fault or a stop comes at the same place. It skips the two steps
+    /// and a fault or a stop comes at the same place. It skips the steps
     /// that `domain` takes after that, which read no session and count no
     /// work: the order of the values by content, and the build of the
     /// relation of each value. A walk asks for the count where no later step
@@ -233,6 +234,10 @@ impl Evaluation<'_> {
     /// its values as sets of rows with each row once, and the forms give a
     /// value where each gives the same rows, so the rows of a value stand in
     /// the order of their terms' encodings, which keeps equal rows equal.
+    ///
+    /// A `DET` of one form has the count of one, or of the rows of the form
+    /// where it gives each row as a value, so its rows are not read out and
+    /// not put in order.
     pub fn domain_size(&self, node: GraphNodeIndex) -> Outcome<DomainSize> {
         let program = &self.program.program;
         assert!(is_det(program, node), "the node of a `DET`");
@@ -243,6 +248,7 @@ impl Evaluation<'_> {
         stats::seen(Phase::EvalDomain, || stats::digest(&(node.0, self.parameters.stats_digest())));
         Ok(match self.gather(node, Order::Id)? {
             Gathered::Sets { kept, .. } => DomainSize::Count(kept.len()),
+            Gathered::Count(count) => DomainSize::Count(count),
             Gathered::Undefined => DomainSize::Undefined,
             Gathered::Stopped(stop) => DomainSize::Stopped(stop),
         })
@@ -263,6 +269,7 @@ impl Evaluation<'_> {
         let driver = Driver::reading_det(self, node);
         let root = NodeRef::Program(program.program.value());
         let mut kept: Option<Vec<Vec<Row>>> = None;
+        let single = matches!(order, Order::Id) && program.forms_of(node).len() == 1;
         for at in program.forms_of(node) {
             let Some(NodeRef::Clause(clause)) = node_at(root, at) else { panic!("a clause of a `DET`") };
             if let Some(fault) = conversion_fault(clause, at) {
@@ -270,6 +277,24 @@ impl Evaluation<'_> {
             }
             let fault = |message: String| RunFault { message: message.into(), form: at.clone() };
             let domain = derivation(clause, at)?.is_some_and(|index| per_row(self.registry, clause, &clause.proposers[index]));
+            if single {
+                // The values of the one form are its rows, each as a value of
+                // its own where `domain`, and otherwise all as one value. A
+                // relation holds each row once, so the count is that of its rows.
+                let read = driver.clause(at, None)?;
+                return match super::init_form::relation_read(self, at, read, types.len()).map_err(fault)? {
+                    Ok(relation) => {
+                        let rows = usize::try_from(relation.len()).unwrap_or(usize::MAX);
+                        if stats::enabled() {
+                            stats::units(Phase::EvalDomain, rows);
+                        }
+                        Ok(Gathered::Count(if domain { rows } else { 1 }))
+                    }
+                    Err(RelationValue::Undefined) => Ok(Gathered::Undefined),
+                    Err(RelationValue::Stopped(stop)) => Ok(Gathered::Stopped(stop)),
+                    Err(RelationValue::Rows(_)) => unreachable!("a value that holds no rows"),
+                };
+            }
             let mut rows = match super::init_form::rows_of(self, at, driver.clause(at, None)?, types.len()).map_err(fault)? {
                 Ok(rows) => rows,
                 Err(RelationValue::Undefined) => return Ok(Gathered::Undefined),
@@ -314,6 +339,9 @@ enum Order {
 /// rows, in no order, each once, or the `undefined` or the stop of a read.
 enum Gathered<'t> {
     Sets { kept: Vec<Vec<Row>>, types: &'t [ValueType] },
+    /// The count of the values of a `DET` of one form, which a gather in
+    /// the order of the encodings gives with no read of the rows.
+    Count(usize),
     Undefined,
     Stopped(Stop),
 }

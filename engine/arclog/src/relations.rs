@@ -720,8 +720,38 @@ fn fold(x: u64) -> u64 {
     (x & MODULUS) + (x >> 61)
 }
 
+/// The slots of a thread's memo of [`value_hash`].
+const VALUE_MEMO: usize = 4096;
+
+thread_local! {
+    /// The values of [`value_hash`] this thread computed last, each in the slot
+    /// that its column and value select, with the key it belongs to as
+    /// `(column << 32 | value) + 1`, so that a slot of key 0 is empty. The
+    /// cells need no allocation and no destructor.
+    static VALUE_HASHES: [std::cell::Cell<(u64, u64)>; VALUE_MEMO] = const { [const { std::cell::Cell::new((0, 0)) }; VALUE_MEMO] };
+}
+
 /// The hash of `value` at `column`, in `1..MODULUS`.
+///
+/// The rows hash of a relation takes it for each cell of each row, and the
+/// same few values recur at each column, so a thread keeps the hashes it
+/// computed last, and a kept hash is the one that the computation gives.
 pub(crate) fn value_hash(column: u16, value: u32) -> u64 {
+    let key = (u64::from(column) << 32 | u64::from(value)) + 1;
+    let at = (value as usize ^ usize::from(column).wrapping_mul(0x9E5)) & (VALUE_MEMO - 1);
+    let kept = VALUE_HASHES.try_with(|memo| {
+        let (held, hash) = memo[at].get();
+        if held == key {
+            return hash;
+        }
+        let hash = computed_value_hash(column, value);
+        memo[at].set((key, hash));
+        hash
+    });
+    kept.unwrap_or_else(|_| computed_value_hash(column, value))
+}
+
+fn computed_value_hash(column: u16, value: u32) -> u64 {
     let mut hasher = StableHasher::new();
     std::hash::Hash::hash(&(column, value), &mut hasher);
     1 + (hasher.finish128().0 as u64) % (MODULUS - 1)

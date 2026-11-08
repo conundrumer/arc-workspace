@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use arclog::stream::Emitter;
 use arclog_bindings::PyDecoder;
 use arclog_tables::columns::{step_case_columns_by_assignment_hashed, step_case_columns_by_assignment_in, step_case_columns_by_assignment_with, step_case_columns_in};
 use arclog_tables::split::{self, Part};
@@ -111,9 +110,8 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     let train = decoder.derived(|| train_pairs(evidence));
     let shapes = decoder.derived(|| ShapeRuntime::new(evidence));
     // The indexes of the tokens the model wrote, which the engine's forced tokens follow in the trace. The last is the index `stream_tables` gives the step; a decode before its first step has none, and no table.
-    let written: Vec<usize> = engine.trace().records().iter().enumerate().filter(|(_, record)| record.emitter == Emitter::Model).map(|(index, _)| index).collect();
-    let index = written.last().copied();
-    let earlier = check_before(before.as_deref(), &task, &case, bodies, &written)?;
+    let (written, index) = engine.model_steps();
+    let earlier = check_before(before.as_deref(), &task, &case, bodies, written, index)?;
     let (columns, stream, left) = py.detach(|| {
         // With the rows packed, the export reserves for each row at least what the packing
         // reserves: the cells of the row, at least one for each column, four times over, and
@@ -284,13 +282,10 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
     let tokens = ids.iter().map(|&id| vocabulary.token(id).cloned().ok_or_else(|| PyIndexError::new_err(format!("no token with id {id}")))).collect::<PyResult<Vec<_>>>()?;
     let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
     let summaries = decoder.derived(SummaryCache::default);
-    let records = engine.trace().records();
-    let mut written: Vec<usize> = records.iter().enumerate().filter(|(_, record)| record.emitter == Emitter::Model).map(|(index, _)| index).collect();
-    let now = written.last().copied();
+    let (written, now) = engine.model_steps();
     // The token of each successor's step is the next record of the trace.
-    let index = records.len();
-    written.push(index);
-    let earlier = check_before(before.as_deref(), &task, &case, true, &written)?;
+    let index = engine.trace().len();
+    let earlier = check_before(before.as_deref(), &task, &case, true, written + 1, Some(index))?;
     let train = decoder.derived(|| train_pairs(evidence));
     let shapes = decoder.derived(|| ShapeRuntime::new(evidence));
     let (current, each, unchanged) = py.detach(|| {
@@ -410,14 +405,13 @@ fn complete(columns: &CaseColumns) -> PyResult<()> {
 }
 
 /// The `Step` of `before`, the `before` of a call of `step_tables` for `task`
-/// and `case` under `bodies`, at the step of the last of the tokens `written`
-/// by the model, or a `ValueError` where `before` cannot stand before that
-/// step. It is `None` for the call at the first model step, which has no
+/// and `case` under `bodies`, at the step of the last of the tokens the model
+/// wrote, of which there are `written`, the last at `index` in the trace, or
+/// a `ValueError` where `before` cannot stand before that step. It is `None` for the call at the first model step, which has no
 /// `before`.
-fn check_before<'b>(before: Option<&'b PyCaseTables>, task: &str, case: &str, bodies: bool, written: &[usize]) -> PyResult<Option<&'b Step>> {
-    let index = written.last().copied();
+fn check_before<'b>(before: Option<&'b PyCaseTables>, task: &str, case: &str, bodies: bool, written: usize, index: Option<usize>) -> PyResult<Option<&'b Step>> {
     let Some(before) = before else {
-        return if written.len() > 1 { Err(PyValueError::new_err(format!("the decode has {} model steps, and a call after its first takes the result of the call at the previous model step as `before`", written.len()))) } else { Ok(None) };
+        return if written > 1 { Err(PyValueError::new_err(format!("the decode has {written} model steps, and a call after its first takes the result of the call at the previous model step as `before`"))) } else { Ok(None) };
     };
     let Some(step) = before.step() else { return Err(PyValueError::new_err("`before` is no result of `step_tables`")) };
     if before.task != task || before.case != case {

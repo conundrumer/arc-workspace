@@ -34,16 +34,28 @@ thread_local! {
     static PENDING: Cell<isize> = const { Cell::new(0) };
 }
 
+/// Adds `bytes` to [`LIVE`]. A thread takes this path once its count passes
+/// [`FLUSH`] bytes either way.
+#[cold]
+#[inline(never)]
+fn flush(bytes: isize) {
+    LIVE.fetch_add(bytes, Ordering::Relaxed);
+    if !COUNTED.load(Ordering::Relaxed) {
+        COUNTED.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Adds `delta` to the calling thread's count, and the count to [`LIVE`] once
+/// it passes [`FLUSH`].
+///
+/// This runs for each allocation and each free of the process, so it stands
+/// inline in the allocator's methods, which are in the crate of the global
+/// allocator, and the rare flush stands apart.
+#[inline(always)]
 fn add(delta: isize) {
-    let flush = |bytes: isize| {
-        LIVE.fetch_add(bytes, Ordering::Relaxed);
-        if !COUNTED.load(Ordering::Relaxed) {
-            COUNTED.store(true, Ordering::Relaxed);
-        }
-    };
     let held = PENDING.try_with(|pending| {
         let next = pending.get() + delta;
-        if next.abs() >= FLUSH {
+        if next.unsigned_abs() >= FLUSH as usize {
             pending.set(0);
             flush(next);
         } else {
@@ -55,6 +67,7 @@ fn add(delta: isize) {
     }
 }
 
+#[inline(always)]
 fn size(bytes: usize) -> isize {
     isize::try_from(bytes).unwrap_or(isize::MAX)
 }
@@ -62,6 +75,7 @@ fn size(bytes: usize) -> isize {
 // SAFETY: each method calls the same method of `A` with the same arguments
 // and returns its result; the count reads and writes no allocated memory.
 unsafe impl<A: GlobalAlloc> GlobalAlloc for Counted<A> {
+    #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let block = unsafe { self.0.alloc(layout) };
         if !block.is_null() {
@@ -70,6 +84,7 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for Counted<A> {
         block
     }
 
+    #[inline]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let block = unsafe { self.0.alloc_zeroed(layout) };
         if !block.is_null() {
@@ -78,11 +93,13 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for Counted<A> {
         block
     }
 
+    #[inline]
     unsafe fn dealloc(&self, block: *mut u8, layout: Layout) {
         unsafe { self.0.dealloc(block, layout) };
         add(-size(layout.size()));
     }
 
+    #[inline]
     unsafe fn realloc(&self, block: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let moved = unsafe { self.0.realloc(block, layout, new_size) };
         if !moved.is_null() {

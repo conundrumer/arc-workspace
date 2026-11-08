@@ -14,10 +14,10 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::columns::Columns;
+use crate::expression::Op;
 use crate::gen_constants::{box_bits, margins_of};
 use crate::gen_parts::GridView;
-use crate::expression::Op;
-use crate::native::{all, antijoin, hash_words, holds, project, select, semijoin, Cell, FastMap, Step, Table, Val};
+use crate::native::{all, antijoin, hash_words, holds, project, select, semijoin, Cell, FastMap, Part, Step, Table, Val};
 
 /// Marks the hash of a [`Boxes`], which no other value's hash has.
 const BOXES_WORD: u64 = 0x426f_7865_7352_6f77;
@@ -39,8 +39,16 @@ pub struct Boxes {
     support: OnceLock<Arc<Table>>,
     /// The rows of `inside`, once written: no value where they pass the output limit.
     written: OnceLock<Val>,
-    /// The tables of `sketch`, by their columns, and the cells that they hold.
-    sketches: Mutex<(usize, FastMap<Box<[u16]>, Option<Arc<Table>>>)>,
+    /// The tuples of `sketch`, by their columns, and the cells that the kept tables hold.
+    sketches: Mutex<(usize, FastMap<Box<[u16]>, Arc<Sketch>>)>,
+}
+
+/// The distinct tuples of the rows of `inside` at some columns that include a column after the relation's.
+struct Sketch {
+    /// The tuples in order, as a table of the relation's columns among them, then `P` where it is among them, then `Col` where it is or where `P` is not.
+    tuples: Option<Arc<Table>>,
+    /// The tuples as rows of the arity of `inside`, with 0 at each other column, once something has read them.
+    wide: OnceLock<Arc<Table>>,
 }
 
 impl Drop for Boxes {
@@ -70,7 +78,7 @@ fn area_of(held: Cell, h: i32, w: i32) -> u64 {
 impl Boxes {
     /// The rows of `inside` over `table`, whose boxes stand at column `at`, in the grid `grid`, whose table hashes as `grid_hash`.
     pub fn of(table: &Arc<Table>, at: u16, grid: Arc<GridView>, grid_hash: u128) -> Val {
-        let rows: u64 = table.rows().map(|row| area_of(row[usize::from(at)], grid.h, grid.w)).sum();
+        let rows: u64 = table.sum_rows(|row| area_of(row[usize::from(at)], grid.h, grid.w));
         if rows == 0 {
             return Val::Empty;
         }
@@ -102,16 +110,10 @@ impl Boxes {
     pub fn support(&self) -> Arc<Table> {
         self.support.get_or_init(|| {
             let at = usize::from(self.at);
-            if self.table.rows().all(|row| self.area(row[at]) > 0) {
+            if self.table.all_rows(|row| self.area(row[at]) > 0) {
                 return self.table.clone();
             }
-            let mut cells = Vec::new();
-            for row in self.table.rows() {
-                if self.area(row[at]) > 0 {
-                    cells.extend_from_slice(row);
-                }
-            }
-            Table::new(self.table.arity, cells)
+            self.table.filter_rows(|row| self.area(row[at]) > 0)
         }).clone()
     }
 
@@ -187,41 +189,93 @@ impl Boxes {
         if columns.iter().all(|column| *column < self.width()) {
             return Some(self.support());
         }
-        self.sketch(columns)
+        let key = Boxes::key_of(columns);
+        let sketch = self.sketch(&key);
+        let tuples = sketch.tuples.as_ref()?;
+        if let Some(wide) = sketch.wide.get() {
+            return Some(wide.clone());
+        }
+        let width = self.table.arity;
+        let (relation, want_p, with_color) = self.layout(&key);
+        // The tuples stand in order of the relation's columns, then `P`, then `Col`, so the rows stand in order.
+        let mut out: Vec<Cell> = vec![0; tuples.len * (width + 2)];
+        for (row, tuple) in out.chunks_exact_mut(width + 2).zip(tuples.rows()) {
+            let mut cells = tuple.iter();
+            for column in &relation {
+                row[*column] = *cells.next().expect("a cell for each column of a tuple");
+            }
+            if want_p {
+                row[width] = *cells.next().expect("a cell for each column of a tuple");
+            }
+            if with_color {
+                row[width + 1] = *cells.next().expect("a cell for each column of a tuple");
+            }
+        }
+        let wide = Table::new(width + 2, out);
+        let mut kept = self.sketches.lock().expect("a sketch lock");
+        if kept.0 + wide.cell_count() <= SKETCH_KEPT && sketch.wide.set(wide.clone()).is_ok() {
+            kept.0 += wide.cell_count();
+        }
+        Some(wide)
     }
 
-    /// The distinct tuples of the rows of `inside` at `columns`, as rows of the arity of `inside` with 0 at each other column. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
-    fn sketch(&self, columns: &Columns) -> Option<Arc<Table>> {
+    /// The columns `columns` in order.
+    fn key_of(columns: &Columns) -> Box<[u16]> {
         let mut key: Vec<u16> = columns.to_vec();
         key.sort_unstable();
-        let key = key.into_boxed_slice();
-        let held = self.sketches.lock().expect("a sketch lock").1.get(&key).cloned();
-        let built = match held {
-            Some(built) => built,
-            None => {
-                let started = crate::bounds::started();
-                let built = self.build_sketch(&key);
-                crate::bounds::wrote("tuples", built.as_ref().map_or(0, |table| table.cells.len()), started);
-                let mut kept = self.sketches.lock().expect("a sketch lock");
-                let cells = built.as_ref().map_or(0, |table| table.cells.len());
-                if kept.0 + cells <= SKETCH_KEPT {
-                    kept.0 += cells;
-                    kept.1.insert(key, built.clone());
-                }
-                built
-            }
-        };
-        built
+        key.into_boxed_slice()
     }
 
+    /// The places in the relation of the key's columns that are the relation's, whether `P` is among them, and whether `Col` is among the tuples: it is wherever `P` is not.
+    fn layout(&self, key: &[u16]) -> (Vec<usize>, bool, bool) {
+        let width = self.table.arity;
+        let relation: Vec<usize> = key.iter().filter(|column| usize::from(**column) < width).map(|column| usize::from(*column)).collect();
+        let want_p = key.contains(&(width as u16));
+        (relation, want_p, !want_p || key.contains(&(width as u16 + 1)))
+    }
+
+    /// The distinct tuples of the rows of `inside` at the columns `key`, which stand in order.
+    fn sketch(&self, key: &[u16]) -> Arc<Sketch> {
+        let held = self.sketches.lock().expect("a sketch lock").1.get(key).cloned();
+        match held {
+            Some(sketch) => sketch,
+            None => {
+                let started = crate::bounds::started();
+                let sketch = Arc::new(Sketch { tuples: self.build_sketch(key), wide: OnceLock::new() });
+                crate::bounds::wrote("tuples", sketch.tuples.as_ref().map_or(0, |table| table.cell_count()), started);
+                let mut kept = self.sketches.lock().expect("a sketch lock");
+                let cells = sketch.tuples.as_ref().map_or(0, |table| table.cell_count());
+                if kept.0 + cells <= SKETCH_KEPT {
+                    kept.0 += cells;
+                    kept.1.insert(key.into(), sketch.clone());
+                }
+                sketch
+            }
+        }
+    }
+
+    /// What a `project` onto `columns` gives over the rows of `inside`.
+    fn project(&self, columns: &Columns) -> Val {
+        let arity = usize::from(self.width()) + 2;
+        if columns.iter().all(|column| *column < self.width()) || columns.iter().any(|column| usize::from(*column) >= arity) {
+            return match self.rows_at(columns) {
+                Some(table) => project(&Val::of_table(table), columns),
+                None => Val::None,
+            };
+        }
+        let key = Boxes::key_of(columns);
+        match &self.sketch(&key).tuples {
+            Some(tuples) => project_tuples(tuples, &key, columns, arity),
+            None => Val::None,
+        }
+    }
+
+    /// The distinct tuples of the rows of `inside` at the columns `key`, which stand in order, as a table of the relation's columns among them, then `P` where it is among them, then `Col` where it is or where `P` is not. An operator whose value depends on those tuples alone has the same value on the tuples as on the rows written out.
     fn build_sketch(&self, key: &[u16]) -> Option<Arc<Table>> {
         let grid = &self.grid;
         let width = self.table.arity;
-        let arity = width + 2;
         let at = usize::from(self.at);
-        let want_p = key.contains(&(width as u16));
-        let want_color = key.contains(&(width as u16 + 1));
-        let relation: Vec<usize> = key.iter().filter(|column| usize::from(**column) < width).map(|column| usize::from(*column)).collect();
+        let (relation, want_p, with_color) = self.layout(key);
         let support = self.support();
         // The distinct pairs of the relation's columns and a box, in order, so that the pairs of one tuple stand together.
         let mut pairs: Vec<Cell> = Vec::with_capacity(support.len * (relation.len() + 1));
@@ -231,73 +285,109 @@ impl Boxes {
         }
         let stride = relation.len() + 1;
         let pairs = Table::distinct(stride, pairs);
-        // The cells of each box in the grid, as bits in the order of the grid's cells.
+        // The cells of each box in the grid, as bits. The bit of a cell is its column from the last times the grid's height, plus its row from the last, so the bits stand in the order of the cells' `P`.
+        let bit = |r: i32, c: i32| ((grid.w - 1 - c) * grid.h + (grid.h - 1 - r)) as usize;
         let words = ((grid.h * grid.w) as usize).div_ceil(64);
         let mut masks_at: FastMap<Cell, usize> = FastMap::default();
         let mut masks: Vec<u64> = Vec::new();
-        let mut out: Vec<Cell> = Vec::new();
-        let mut union = vec![0u64; words];
-        let mut row = vec![0 as Cell; arity];
-        let mut colors: Vec<Cell> = Vec::new();
-        let mut start = 0;
-        while start < pairs.len {
-            let tuple = &pairs.cells[start * stride..start * stride + relation.len()];
-            union.fill(0);
-            let mut end = start;
-            while end < pairs.len && pairs.cells[end * stride..end * stride + relation.len()] == *tuple {
-                let held = pairs.cells[end * stride + relation.len()];
-                let from = *masks_at.entry(held).or_insert_with(|| {
+        // The first bit set of each pair's box in `masks`.
+        let mask_of: Vec<usize> = pairs
+            .rows()
+            .map(|pair| {
+                let held = pair[relation.len()];
+                *masks_at.entry(held).or_insert_with(|| {
                     let from = masks.len();
                     masks.resize(from + words, 0);
                     let (r0, r1, c0, c1) = span(held, grid.h, grid.w);
-                    for r in r0..=r1 {
-                        set_bits(&mut masks[from..from + words], (r * grid.w + c0) as usize, (r * grid.w + c1 + 1) as usize);
+                    for c in c0..=c1 {
+                        set_bits(&mut masks[from..from + words], bit(r1, c), bit(r0, c) + 1);
                     }
                     from
-                });
-                for (word, mask) in union.iter_mut().zip(&masks[from..from + words]) {
+                })
+            })
+            .collect();
+        // The pairs of each tuple of the relation's columns: where its pairs start, and the end of the last.
+        let mut starts: Vec<usize> = Vec::new();
+        for pair in 0..pairs.len {
+            if pair == 0 || pairs.cells()[pair * stride..pair * stride + relation.len()] != pairs.cells()[(pair - 1) * stride..(pair - 1) * stride + relation.len()] {
+                starts.push(pair);
+            }
+        }
+        starts.push(pairs.len);
+        let mut union = vec![0u64; words];
+        let union_of = |tuple: usize, union: &mut [u64]| {
+            union.fill(0);
+            for from in &mask_of[starts[tuple]..starts[tuple + 1]] {
+                for (word, mask) in union.iter_mut().zip(&masks[*from..*from + words]) {
                     *word |= mask;
                 }
-                end += 1;
             }
-            start = end;
-            row.fill(0);
-            for (column, cell) in relation.iter().zip(tuple) {
-                row[*column] = *cell;
+        };
+        let tuples = starts.len() - 1;
+        let tuple_at = |tuple: usize| starts[tuple] * stride..starts[tuple] * stride + relation.len();
+        let cells_in = |union: &[u64]| union.iter().map(|word| word.count_ones() as usize).sum::<usize>();
+        // The colors of the cells, by their bit.
+        let mut color_of = vec![0 as Cell; (grid.h * grid.w) as usize];
+        for r in 0..grid.h {
+            for c in 0..grid.w {
+                color_of[bit(r, c)] = grid.colors[(r * grid.w + c) as usize];
             }
-            let cells_of = |union: &[u64]| -> Vec<usize> {
-                let mut found = Vec::new();
+        }
+        let arity_out = relation.len() + usize::from(want_p) + usize::from(with_color);
+        let mut out: Vec<Cell>;
+        if want_p {
+            // The rows of each tuple are the cells of its boxes' union, so the count of rows is known before they are written.
+            let mut total = 0usize;
+            for tuple in 0..tuples {
+                union_of(tuple, &mut union[..]);
+                total += cells_in(&union[..]);
+            }
+            let mut p_of = vec![0 as Cell; (grid.h * grid.w) as usize];
+            for r in 0..grid.h {
+                for c in 0..grid.w {
+                    p_of[bit(r, c)] = box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c);
+                }
+            }
+            out = Vec::with_capacity(total * arity_out);
+            for tuple in 0..tuples {
+                union_of(tuple, &mut union[..]);
+                let prefix = &pairs.cells()[tuple_at(tuple)];
                 for (at, word) in union.iter().enumerate() {
                     let mut bits = *word;
                     while bits != 0 {
-                        found.push(at * 64 + bits.trailing_zeros() as usize);
+                        let place = at * 64 + bits.trailing_zeros() as usize;
+                        bits &= bits - 1;
+                        out.extend_from_slice(prefix);
+                        out.push(p_of[place]);
+                        if with_color {
+                            out.push(color_of[place]);
+                        }
+                    }
+                }
+            }
+        } else {
+            out = Vec::new();
+            let mut colors: Vec<Cell> = Vec::new();
+            for tuple in 0..tuples {
+                union_of(tuple, &mut union[..]);
+                colors.clear();
+                for (at, word) in union.iter().enumerate() {
+                    let mut bits = *word;
+                    while bits != 0 {
+                        colors.push(color_of[at * 64 + bits.trailing_zeros() as usize]);
                         bits &= bits - 1;
                     }
                 }
-                found
-            };
-            let held = cells_of(&union);
-            if want_p {
-                for place in held {
-                    let (r, c) = ((place as i32) / grid.w, (place as i32) % grid.w);
-                    row[width] = box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c);
-                    if want_color {
-                        row[width + 1] = grid.colors[place];
-                    }
-                    out.extend_from_slice(&row);
-                }
-            } else {
-                colors.clear();
-                colors.extend(held.iter().map(|place| grid.colors[*place]));
                 colors.sort_unstable();
                 colors.dedup();
+                let prefix = &pairs.cells()[tuple_at(tuple)];
                 for color in &colors {
-                    row[width + 1] = *color;
-                    out.extend_from_slice(&row);
+                    out.extend_from_slice(prefix);
+                    out.push(*color);
                 }
             }
         }
-        Some(Table::new(arity, out))
+        Some(Table::new(arity_out, out))
     }
 
     /// Whether `step` takes what it needs from the boxes, without writing the rows.
@@ -449,10 +539,7 @@ impl Boxes {
             return None;
         }
         match step {
-            Step::Project { columns } => Some(match self.rows_at(columns) {
-                Some(table) => project(&Val::of_table(table), columns),
-                None => Val::None,
-            }),
+            Step::Project { columns } => Some(self.project(columns)),
             Step::Select { at, op, other, drop } => Some(self.select(*at, *op, *other, *drop)),
             Step::Semijoin { left, right } => {
                 let kept = semijoin(&Val::of_table(self.support()), children[1], left, right);
@@ -497,6 +584,32 @@ pub(crate) fn second_columns(step: &Step) -> Option<&Columns> {
         Step::Part(part) => part.second_columns(),
         _ => None,
     }
+}
+
+/// What a `project` onto `columns` gives over a relation of `arity` columns, from `tuples`: the distinct tuples of its rows at the columns `key`, which stand in order, each once. `key` holds the columns of `columns`, each once.
+pub(crate) fn project_tuples(tuples: &Arc<Table>, key: &[u16], columns: &[u16], arity: usize) -> Val {
+    if tuples.len == 0 {
+        return Val::Empty;
+    }
+    let places: Vec<usize> = columns.iter().map(|column| key.binary_search(column).expect("a projected column is one of the key")).collect();
+    if key.len() == arity {
+        // The tuples are all the relation's columns, so the table stays, and each column goes to its place in `columns`.
+        let mut mapped = vec![0u16; places.len()];
+        for (position, place) in places.iter().enumerate() {
+            mapped[*place] = position as u16;
+        }
+        return Val::Rows(Arc::new(vec![Part { table: tuples.clone(), columns: mapped.into_boxed_slice() }]));
+    }
+    let table = if places.iter().enumerate().all(|(position, place)| position == *place) {
+        tuples.clone()
+    } else {
+        let mut cells = Vec::with_capacity(tuples.len * places.len());
+        for row in tuples.rows() {
+            cells.extend(places.iter().map(|at| row[*at]));
+        }
+        Table::distinct(places.len(), cells)
+    };
+    Val::Rows(Arc::new(vec![Part { table, columns: (0..places.len() as u16).collect() }]))
 }
 
 /// Sets the bits from `from` up to `to`, in words of 64 bits.

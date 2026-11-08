@@ -2561,7 +2561,7 @@ enum RootNumber {
 /// The cells that a stored value holds: those of its tables, or of a joined value's sides and ids.
 fn held_of(value: &Val) -> usize {
     match value {
-        Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
+        Val::Rows(parts) => parts.iter().map(|part| part.table.cell_count()).sum::<usize>(),
         Val::Joined(joined) => joined.held_cells(),
         _ => 0,
     }
@@ -3616,7 +3616,7 @@ fn number_word(value: &Val) -> u32 {
     let Some(table) = flat(value) else { return 0 };
     if table.len == 1 && table.arity == 1 {
         // 0 stands for no number. A number from 0 up stands one above itself, and one below 0 in two's complement, which is the word's top half.
-        let number = number_of(table.cells[0]);
+        let number = number_of(table.cells()[0]);
         if number >= 0 {
             (number + 1).min(i64::from(i32::MAX)) as u32
         } else {

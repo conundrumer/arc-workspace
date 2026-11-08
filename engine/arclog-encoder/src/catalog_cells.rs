@@ -560,14 +560,10 @@ fn group_properties(view: &mut View<'_>, pos: &Pos, group_of: &[u32], groups: u3
         u32::from(list.len() == (rmax - rmin + 1) as usize * (cmax - cmin + 1) as usize)
     }).collect();
     let dense_forms = |values: &[Vec<(u8, u8)>]| -> Vec<u32> {
-        let mut seen: Vec<&Vec<(u8, u8)>> = Vec::new();
-        values.iter().map(|value| match seen.iter().position(|held| *held == value) {
-            Some(at) => at as u32,
-            None => {
-                seen.push(value);
-                seen.len() as u32 - 1
-            }
-        }).collect()
+        let mut distinct: Vec<&Vec<(u8, u8)>> = values.iter().collect();
+        distinct.sort_unstable();
+        distinct.dedup();
+        values.iter().map(|value| distinct.binary_search(&value).map_or(0, |at| at as u32)).collect()
     };
     let form_ids = dense_forms(&forms);
     let canon_ids = dense_forms(&canons);

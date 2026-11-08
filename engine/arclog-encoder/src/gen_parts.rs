@@ -434,10 +434,10 @@ pub fn flat(value: &Val) -> Option<Arc<Table>> {
     let built = flat_product(value, parts, arity)?;
     FLATS.with(|flats| {
         let mut flats = flats.borrow_mut();
-        flats.1 += built.cells.len();
+        flats.1 += built.cell_count();
         if flats.1 > HELD_GROUP_CELLS {
             flats.0.clear();
-            flats.1 = built.cells.len();
+            flats.1 = built.cell_count();
         }
         flats.0.insert(key, built.clone());
     });
@@ -467,7 +467,7 @@ fn flat_product(value: &Val, parts: &[crate::native::Part], arity: usize) -> Opt
         let (width, rows) = (part.table.arity, part.table.len);
         let mut at = 0usize;
         while at < total {
-            for own in part.table.cells.chunks_exact(width) {
+            for own in part.table.cells().chunks_exact(width) {
                 for _ in 0..stride {
                     for (cell, column) in own.iter().zip(part.columns.iter()) {
                         cells[at * arity + usize::from(*column)] = *cell;
@@ -487,14 +487,14 @@ type KeyCells = (Vec<Vec<(u8, u8)>>, Vec<Vec<Cell>>);
 /// What the parts of one table read alike, held while its walks go on, up to [`HELD_GROUP_CELLS`] of its cells in all.
 #[derive(Default)]
 struct Groups {
-    groupings: FastMap<(u64, u128), Arc<Grouping>>,
-    cells: FastMap<(u64, u128), Arc<KeyCells>>,
-    frames: FastMap<(u64, u128), bool>,
-    boxes: FastMap<(u64, u128), BoxFeatures>,
-    margins: FastMap<(u64, u128), Arc<[Vec<i32>; 4]>>,
-    colors: FastMap<(u64, u128), Arc<BTreeMap<Cell, Vec<Cell>>>>,
-    in_frames: FastMap<(u64, u128), usize>,
-    fronts: FastMap<(u64, u128), Arc<Vec<[i32; 4]>>>,
+    groupings: FastMap<(u128, u128), Arc<Grouping>>,
+    cells: FastMap<(u128, u128), Arc<KeyCells>>,
+    frames: FastMap<(u128, u128), bool>,
+    boxes: FastMap<(u128, u128), BoxFeatures>,
+    margins: FastMap<(u128, u128), Arc<[Vec<i32>; 4]>>,
+    colors: FastMap<(u128, u128), Arc<BTreeMap<Cell, Vec<Cell>>>>,
+    in_frames: FastMap<(u128, u128), usize>,
+    fronts: FastMap<(u128, u128), Arc<Vec<[i32; 4]>>>,
     held: usize,
 }
 
@@ -533,7 +533,7 @@ fn places_word(keys: &[u16], p: Option<u16>) -> u128 {
 
 /// The dense id of each row's key, and the first row at each key.
 pub fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Arc<Grouping>, Vec<&'t [Cell]>) {
-    let key = (table.id, places_word(keys, None));
+    let key = (table.hash(), places_word(keys, None));
     let found = GROUPS.with(|groups| groups.borrow().groupings.get(&key).cloned());
     let grouping = found.unwrap_or_else(|| {
         let built = grouping_of(table, keys);
@@ -552,8 +552,38 @@ pub fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Arc<Grouping>, Vec<&'t [C
         built
     });
     let arity = table.arity.max(1);
-    let first = grouping.1.iter().map(|at| &table.cells[*at as usize * arity..(*at as usize + 1) * arity]).collect();
+    let first = grouping.1.iter().map(|at| &table.cells()[*at as usize * arity..(*at as usize + 1) * arity]).collect();
     (grouping, first)
+}
+
+/// The distinct pairs of a key group's id and a cell of one of its rows at column `p`, each packed as the id above the cell, in order. `ids` is each row's group, of `groups` in all. Rows are counted into their groups first, so only the cells of a group are sorted together.
+fn group_cells(t: &Table, ids: &[u32], groups: usize, p: u16) -> Vec<u64> {
+    let mut start = vec![0usize; groups + 1];
+    for id in ids {
+        start[*id as usize + 1] += 1;
+    }
+    for at in 0..groups {
+        start[at + 1] += start[at];
+    }
+    let mut next = start.clone();
+    let mut cells: Vec<Cell> = vec![0; ids.len()];
+    for (row, id) in t.rows().zip(ids) {
+        cells[next[*id as usize]] = row[usize::from(p)];
+        next[*id as usize] += 1;
+    }
+    let mut pairs = Vec::with_capacity(ids.len());
+    for group in 0..groups {
+        let held = &mut cells[start[group]..start[group + 1]];
+        held.sort_unstable();
+        let mut last = None;
+        for cell in held.iter() {
+            if last != Some(*cell) {
+                pairs.push(((group as u64) << 32) | u64::from(*cell));
+                last = Some(*cell);
+            }
+        }
+    }
+    pairs
 }
 
 /// The cells of each key group on each row and each column of its frame, for cells that all have a margin from 0 to 127 and stand on one frame per group. `each` takes the group's id, whether the line is a row, the line's near and far margins, how many distinct cells lie on it, and the frame's height and width.
@@ -561,10 +591,7 @@ fn lines_of(t: &Table, ids: &[u32], groups: usize, p: u16, mut each: impl FnMut(
     let pairs: Vec<u64> = if groups == 1 {
         t.sorted_column(usize::from(p)).iter().map(|cell| u64::from(*cell)).collect()
     } else {
-        let mut pairs: Vec<u64> = t.rows().zip(ids).map(|(row, id)| (u64::from(*id) << 32) | u64::from(row[usize::from(p)])).collect();
-        pairs.sort_unstable();
-        pairs.dedup();
-        pairs
+        group_cells(t, ids, groups, p)
     };
     // The count of cells and the far margin of each line, by its near margin.
     let mut by_row = [(0u32, 0i32); 256];
@@ -610,10 +637,7 @@ fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
         // One group: its cells are the column's distinct values, in order.
         t.sorted_column(usize::from(p)).iter().map(|cell| u64::from(*cell)).collect()
     } else {
-        let mut pairs: Vec<u64> = t.rows().zip(&grouping.0).map(|(row, id)| (u64::from(*id) << 32) | u64::from(row[usize::from(p)])).collect();
-        pairs.sort_unstable();
-        pairs.dedup();
-        pairs
+        group_cells(t, &grouping.0, first.len(), p)
     };
     let steps = &STEPS[..if four { 4 } else { 8 }];
     let mut out = Vec::with_capacity(pairs.len() * (keys.len() + 2));
@@ -706,10 +730,11 @@ fn frequent_rows(t: &Table, keys: &[u16], v: u16, second: bool, weights: Option<
         }
         kept = below;
     }
-    let mut out = Vec::new();
+    let keeps = |id: &u32, pair: &u32| counts[*pair as usize] == kept[*id as usize];
+    let mut out = Vec::with_capacity(ids.iter().zip(&pair_ids).filter(|(id, pair)| keeps(*id, *pair)).count() * t.arity);
     for ((row, id), pair) in t.rows().zip(ids).zip(&pair_ids) {
-        if counts[*pair as usize] == kept[*id as usize] {
-            out.extend_from_slice(row);
+        if keeps(id, pair) {
+            push_row(&mut out, row);
         }
     }
     out
@@ -731,6 +756,8 @@ pub struct GridView {
     pub pairs: Vec<(Cell, Cell)>,
     /// The places of each color's cells, as (row, column).
     pub of_color: FastMap<Cell, Vec<(i32, i32)>>,
+    /// Whether every cell of the grid lies in one frame of `h` rows and `w` columns with no margin below 0 and has a color other than `u32::MAX`, so that `colors` answers for any cell.
+    dense: bool,
     /// The places of each shape that `placements_on` has searched for on this grid, and the count of cells of those shapes.
     searched: std::sync::Mutex<(FastMap<Shape, Arc<Vec<(i32, i32)>>>, usize)>,
 }
@@ -781,6 +808,23 @@ pub fn keys_of(value: &Val, at: &[u16]) -> Option<Arc<Vec<u64>>> {
     Some(compute(&table))
 }
 
+impl GridView {
+    /// The color of a cell of the grid, if the grid has the cell.
+    #[inline]
+    fn color_of(&self, cell: Cell) -> Option<Cell> {
+        if !self.dense {
+            return self.at.get(&cell).copied();
+        }
+        // In a dense grid a cell is held where its frame is the grid's and no margin is below 0.
+        let m = margins_of(cell);
+        if !is_cell(&m) || m[0] + m[1] + 1 != self.h || m[2] + m[3] + 1 != self.w {
+            return None;
+        }
+        let color = self.colors[(m[0] * self.w + m[2]) as usize];
+        (color != u32::MAX).then_some(color)
+    }
+}
+
 fn view_of(table: &Arc<Table>) -> Arc<GridView> {
     let key = table.hash();
     VIEWS.with(|views| {
@@ -805,7 +849,11 @@ fn view_of(table: &Arc<Table>) -> Arc<GridView> {
                     colors[(m[0] * w + m[2]) as usize] = row[1];
                 }
             }
-            Arc::new(GridView { h, w, colors, at, pairs, of_color, searched: Default::default() })
+            let dense = !colors.is_empty() && table.rows().all(|row| {
+                let m = margins_of(row[0]);
+                is_cell(&m) && m[0] + m[1] + 1 == h && m[2] + m[3] + 1 == w && row[1] != u32::MAX
+            });
+            Arc::new(GridView { h, w, colors, at, pairs, of_color, dense, searched: Default::default() })
         }).clone()
     })
 }
@@ -851,9 +899,22 @@ fn shifted(m: [i32; 4], dr: i32, dc: i32) -> Option<Cell> {
     (bits != u32::MAX).then_some(bits)
 }
 
-fn rows_with(table: &Table, extra: usize, mut each: impl FnMut(&[Cell], &mut Vec<Cell>)) -> Val {
+/// Adds the cells of a row to a list. A row of up to four cells is written in place, with no call to copy memory.
+#[inline(always)]
+fn push_row(out: &mut Vec<Cell>, row: &[Cell]) {
+    match *row {
+        [a] => out.push(a),
+        [a, b] => out.extend_from_slice(&[a, b]),
+        [a, b, c] => out.extend_from_slice(&[a, b, c]),
+        [a, b, c, d] => out.extend_from_slice(&[a, b, c, d]),
+        _ => out.extend_from_slice(row),
+    }
+}
+
+/// The rows of `table`, each with `extra` more columns, and with up to `fan` rows written for each row of `table`.
+fn rows_with(table: &Table, extra: usize, fan: usize, mut each: impl FnMut(&[Cell], &mut Vec<Cell>)) -> Val {
     let arity = table.arity + extra;
-    let mut out: Vec<Cell> = Vec::with_capacity(table.cells.len() * 2);
+    let mut out: Vec<Cell> = Vec::with_capacity(table.len * fan * arity);
     for row in table.rows() {
         each(row, &mut out);
     }
@@ -867,7 +928,7 @@ fn is_cell(m: &[i32; 4]) -> bool {
 
 /// Each key's cells, as (row, column) places of cells with no margin below 0.
 fn cells_by_key(table: &Table, keys: &[u16], p: u16) -> Arc<KeyCells> {
-    let key = (table.id, places_word(keys, Some(p)));
+    let key = (table.hash(), places_word(keys, Some(p)));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().cells.get(&key).cloned()) {
         return found;
     }
@@ -900,7 +961,7 @@ fn cells_by_key(table: &Table, keys: &[u16], p: u16) -> Arc<KeyCells> {
 /// Whether each key's cells at a column stand on one frame. The parts that read a cell as a row and
 /// a column have no native value on any other column.
 fn on_one_frame(table: &Table, keys: &[u16], p: u16) -> bool {
-    let key = (table.id, places_word(keys, Some(p)));
+    let key = (table.hash(), places_word(keys, Some(p)));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().frames.get(&key).copied()) {
         return found;
     }
@@ -930,15 +991,16 @@ fn nearest_other(own: &[(u8, u8)], held: &[bool], h: usize, w: usize) -> Option<
 }
 
 
+/// The rows of a key's head and its value, for each key that has one. The heads differ, so the rows do.
 fn keyed_values(heads: &[Vec<Cell>], values: impl Iterator<Item = Option<Vec<Cell>>>, width: usize) -> Val {
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(heads.len() * width);
     for (head, value) in heads.iter().zip(values) {
         if let Some(value) = value {
             out.extend_from_slice(head);
             out.extend_from_slice(&value);
         }
     }
-    Val::of_table(Table::distinct(width, out))
+    Val::of_table(Table::new(width, out))
 }
 
 fn keys_only(heads: &[Vec<Cell>], holds: impl Iterator<Item = bool>, width: usize) -> Val {
@@ -953,7 +1015,8 @@ fn keys_only(heads: &[Vec<Cell>], holds: impl Iterator<Item = bool>, width: usiz
     if width == 0 {
         return Val::of_table(Table::unit(any));
     }
-    Val::of_table(Table::distinct(width, out))
+    // The heads differ, so the rows do.
+    Val::of_table(Table::new(width, out))
 }
 
 impl Canvas for GridView {
@@ -1028,8 +1091,8 @@ struct OccurPatterns {
 /// What the occurs parts share, held while a table's walks go on, up to [`HELD_GROUP_CELLS`] of cells in all.
 #[derive(Default)]
 struct OccurHeld {
-    patterns: FastMap<(u64, u128), Arc<OccurPatterns>>,
-    moves: FastMap<(u64, u128, u128), Arc<Vec<Vec<Cell>>>>,
+    patterns: FastMap<(u128, u128), Arc<OccurPatterns>>,
+    moves: FastMap<(u128, u128, u128), Arc<Vec<Vec<Cell>>>>,
     held: usize,
 }
 
@@ -1039,7 +1102,7 @@ thread_local! {
 
 /// The patterns of the key groups of a table, whose rows give a cell at column `p` and its color at column `v`. `ids` is each row's group, and `word` hashes the keys and columns.
 fn occur_patterns(table: &Table, ids: &[u32], groups: usize, (p, v): (u16, u16), word: u128) -> Arc<OccurPatterns> {
-    let key = (table.id, word);
+    let key = (table.hash(), word);
     if let Some(found) = OCCURS.with(|held| held.borrow().patterns.get(&key).cloned()) {
         return found;
     }
@@ -1070,7 +1133,7 @@ fn occur_patterns(table: &Table, ids: &[u32], groups: usize, (p, v): (u16, u16),
 }
 
 /// The offsets that move each distinct pattern onto the grid as it stands, for a table, columns and grid that `key` names.
-fn occur_moves(patterns: &OccurPatterns, grid: &GridView, key: (u64, u128, u128)) -> Arc<Vec<Vec<Cell>>> {
+fn occur_moves(patterns: &OccurPatterns, grid: &GridView, key: (u128, u128, u128)) -> Arc<Vec<Vec<Cell>>> {
     if let Some(found) = OCCURS.with(|held| held.borrow().moves.get(&key).cloned()) {
         return found;
     }
@@ -1079,6 +1142,8 @@ fn occur_moves(patterns: &OccurPatterns, grid: &GridView, key: (u64, u128, u128)
         if let Some((cells, frame)) = framed {
             framed_moves(cells, *frame, grid, &mut moves);
         }
+        moves.sort_unstable();
+        moves.dedup();
         moves
     }).collect());
     let size: usize = built.iter().map(Vec::len).sum::<usize>() + built.len();
@@ -1104,7 +1169,8 @@ fn turned_moves_of(framed: &Option<Framed>, grid: &GridView, plain: &[Cell]) -> 
             false
         });
     }
-    out.sort_unstable();
+    // The offsets of the pattern and of each image come in runs that stand in order, which the merging sort reads as they are.
+    out.sort();
     out.dedup();
     out
 }
@@ -1226,7 +1292,7 @@ fn frame_of_rows(value: &Val, f: u16) -> Option<(i32, i32)> {
 }
 
 fn box_features_of(table: &Table, b: u16, h: i32, w: i32) -> BoxFeatures {
-    let key = (table.id, places_word(&[], Some(b)) ^ (u128::from(h as u32) << 96) ^ (u128::from(w as u32) << 64));
+    let key = (table.hash(), places_word(&[], Some(b)) ^ (u128::from(h as u32) << 96) ^ (u128::from(w as u32) << 64));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().boxes.get(&key).copied()) {
         return found;
     }
@@ -1312,7 +1378,7 @@ fn box_features(set: &[[i32; 4]], h: i32, w: i32) -> BoxFeatures {
 
 /// The boxes of a column that decide whether a box lies inside one of them, or holds one: the ones no other box is beyond on every margin. Past 64 of them, every box. Held with the table.
 fn box_front(table: &Table, b: u16, inside: bool) -> Arc<Vec<[i32; 4]>> {
-    let key = (table.id, places_word(&[], Some(b)) ^ u128::from(inside));
+    let key = (table.hash(), places_word(&[], Some(b)) ^ u128::from(inside));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().fronts.get(&key).cloned()) {
         return found;
     }
@@ -1346,7 +1412,7 @@ fn box_front(table: &Table, b: u16, inside: bool) -> Arc<Vec<[i32; 4]>> {
 
 /// How many of a column's distinct cells lie in a frame of `h` rows and `w` columns, counted once for all that ask.
 fn cells_in_frame(table: &Table, at: u16, h: i32, w: i32, cells: &[Cell], in_frame: &dyn Fn(&Cell) -> bool) -> usize {
-    let key = (table.id, places_word(&[], Some(at)) ^ (u128::from(h as u32) << 96) ^ (u128::from(w as u32) << 64));
+    let key = (table.hash(), places_word(&[], Some(at)) ^ (u128::from(h as u32) << 96) ^ (u128::from(w as u32) << 64));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().in_frames.get(&key).copied()) {
         return found;
     }
@@ -1359,7 +1425,7 @@ fn cells_in_frame(table: &Table, at: u16, h: i32, w: i32, cells: &[Cell], in_fra
 
 /// The distinct values of one column at each value of another, held with the table.
 fn colors_by_cell(table: &Table, cell: u16, color: u16) -> Arc<BTreeMap<Cell, Vec<Cell>>> {
-    let key = (table.id, places_word(&[cell], Some(color)));
+    let key = (table.hash(), places_word(&[cell], Some(color)));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().colors.get(&key).cloned()) {
         return found;
     }
@@ -1385,7 +1451,7 @@ fn colors_by_cell(table: &Table, cell: u16, color: u16) -> Arc<BTreeMap<Cell, Ve
 
 /// The distinct margins of a column of boxes on each edge, in order, held with the table.
 fn margin_sets(table: &Table, b: u16) -> Arc<[Vec<i32>; 4]> {
-    let key = (table.id, places_word(&[], Some(b)));
+    let key = (table.hash(), places_word(&[], Some(b)));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().margins.get(&key).cloned()) {
         return found;
     }
@@ -1667,9 +1733,9 @@ impl PartStep {
                 let mut out = Vec::new();
                 for row in t.rows() {
                     let cell = row[usize::from(*p)];
-                    let in_diff = one.at.get(&cell).is_some_and(|color| two.at.get(&cell) != Some(color));
+                    let in_diff = one.color_of(cell).is_some_and(|color| two.color_of(cell) != Some(color));
                     if in_diff == *on {
-                        out.extend_from_slice(row);
+                        push_row(&mut out, row);
                     }
                 }
                 Val::of_table(Table::new(t.arity, out))
@@ -1682,7 +1748,7 @@ impl PartStep {
                 let mut touching = vec![false; first.len()];
                 for (row, id) in t.rows().zip(ids) {
                     let cell = row[usize::from(*p)];
-                    touching[*id as usize] |= one.at.get(&cell).is_some_and(|color| two.at.get(&cell) != Some(color));
+                    touching[*id as usize] |= one.color_of(cell).is_some_and(|color| two.color_of(cell) != Some(color));
                 }
                 let heads: Vec<Vec<Cell>> = first.iter().map(|row| keys.iter().map(|at| row[usize::from(*at)]).collect()).collect();
                 keys_only(&heads, touching.into_iter().map(|held| !held), keys.len())
@@ -1693,7 +1759,7 @@ impl PartStep {
                 let held: LookupSet<Cell> = t.rows().map(|row| row[usize::from(*p)]).collect();
                 let mut out = Vec::new();
                 for (cell, color) in &one.pairs {
-                    if two.at.get(cell) != Some(color) && held.contains(cell) == *on {
+                    if two.color_of(*cell) != Some(*color) && held.contains(cell) == *on {
                         out.extend_from_slice(&[*cell, *color]);
                     }
                 }
@@ -1738,12 +1804,12 @@ impl PartStep {
             }
             PartStep::CellsOn { p } => {
                 let grid = grid_of(children[1])?;
-                let out: Vec<Cell> = t.sorted_column(usize::from(*p)).iter().copied().filter(|cell| grid.at.contains_key(cell)).collect();
+                let out: Vec<Cell> = t.sorted_column(usize::from(*p)).iter().copied().filter(|cell| grid.color_of(*cell).is_some()).collect();
                 Val::of_table(Table::new(1, out))
             }
             PartStep::ColorsUnder { p } => {
                 let grid = grid_of(children[1])?;
-                let mut out: Vec<Cell> = t.sorted_column(usize::from(*p)).iter().filter_map(|cell| grid.at.get(cell).copied()).collect();
+                let mut out: Vec<Cell> = t.sorted_column(usize::from(*p)).iter().filter_map(|cell| grid.color_of(*cell)).collect();
                 out.sort_unstable();
                 out.dedup();
                 Val::of_table(Table::new(1, out))
@@ -1765,52 +1831,52 @@ impl PartStep {
                 out.dedup();
                 Val::of_table(Table::new(1, out))
             }
-            PartStep::Neighbors { p } => rows_with(t, 2, |row, out| {
+            PartStep::Neighbors { p } => rows_with(t, 2, 8, |row, out| {
                 let m = margins_of(row[usize::from(*p)]);
                 for (at, (dr, dc)) in STEPS.iter().enumerate() {
                     if let Some(next) = moved(m, *dr, *dc) {
-                        out.extend_from_slice(row);
+                        push_row(out, row);
                         out.push(e.dirs[at]);
                         out.push(next);
                     }
                 }
             }),
-            PartStep::Split { p } => rows_with(t, 2, |row, out| {
+            PartStep::Split { p } => rows_with(t, 2, 2, |row, out| {
                 let m = margins_of(row[usize::from(*p)]);
-                out.extend_from_slice(row);
+                push_row(out, row);
                 out.push(e.axes[0]);
                 out.push(box_bits(m[0], m[1], 0, 0));
-                out.extend_from_slice(row);
+                push_row(out, row);
                 out.push(e.axes[1]);
                 out.push(box_bits(0, 0, m[2], m[3]));
             }),
-            PartStep::Margin { p } => rows_with(t, 2, |row, out| {
+            PartStep::Margin { p } => rows_with(t, 2, 4, |row, out| {
                 let m = margins_of(row[usize::from(*p)]);
                 for at in 0..4 {
-                    out.extend_from_slice(row);
+                    push_row(out, row);
                     out.push(e.dirs[at]);
                     out.push(number_bits(i64::from(m[at])));
                 }
             }),
-            PartStep::CornerDist { p } => rows_with(t, 2, |row, out| {
+            PartStep::CornerDist { p } => rows_with(t, 2, 4, |row, out| {
                 let m = margins_of(row[usize::from(*p)]);
                 for (at, (a, b)) in [(0, 2), (0, 3), (1, 2), (1, 3)].iter().enumerate() {
-                    out.extend_from_slice(row);
+                    push_row(out, row);
                     out.push(e.dirs[4 + at]);
                     out.push(number_bits(i64::from(m[*a] + m[*b])));
                 }
             }),
-            PartStep::Parity { p } => rows_with(t, 2, |row, out| {
+            PartStep::Parity { p } => rows_with(t, 2, 4, |row, out| {
                 let m = margins_of(row[usize::from(*p)]);
                 for (at, (a, b)) in [(0, 2), (0, 3), (1, 2), (1, 3)].iter().enumerate() {
-                    out.extend_from_slice(row);
+                    push_row(out, row);
                     out.push(e.dirs[4 + at]);
                     out.push(number_bits(i64::from((m[*a] + m[*b]).rem_euclid(2))));
                 }
             }),
-            PartStep::BorderDistance { p } => rows_with(t, 1, |row, out| {
+            PartStep::BorderDistance { p } => rows_with(t, 1, 1, |row, out| {
                 let m = margins_of(row[usize::from(*p)]);
-                out.extend_from_slice(row);
+                push_row(out, row);
                 out.push(number_bits(i64::from(m[0].min(m[1]).min(m[2]).min(m[3]))));
             }),
             PartStep::Pieces { keys, p, four } => pieces(t, keys, *p, *four),
@@ -1869,19 +1935,18 @@ impl PartStep {
             PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => {
                 let (grouping, first) = key_ids(t, keys);
                 let ids = &grouping.0;
-                let mut held: Vec<Option<Cell>> = vec![None; first.len()];
+                // The value of each key's first row, which the key's other rows are compared with.
+                let held: Vec<Cell> = first.iter().map(|row| row[usize::from(*f)]).collect();
+                if let PartStep::Determines { .. } = self {
+                    // On no rows it is false, as an `ALL` form's empty domain is. A key with two values makes it false at once.
+                    let holds = !first.is_empty() && t.rows().zip(ids).all(|(row, id)| row[usize::from(*f)] == held[*id as usize]);
+                    return Some(Val::of_table(Table::unit(holds)));
+                }
                 let mut many = vec![false; first.len()];
                 for (row, id) in t.rows().zip(ids) {
-                    let value = row[usize::from(*f)];
-                    match held[*id as usize] {
-                        None => held[*id as usize] = Some(value),
-                        Some(own) if own != value => many[*id as usize] = true,
-                        _ => {}
-                    }
+                    many[*id as usize] |= row[usize::from(*f)] != held[*id as usize];
                 }
                 match self {
-                    // On no rows it is false, as an `ALL` form's empty domain is.
-                    PartStep::Determines { .. } => Val::of_table(Table::unit(!first.is_empty() && !many.iter().any(|flag| *flag))),
                     PartStep::Several { .. } => {
                         let mut out = Vec::new();
                         for (flag, head) in many.iter().zip(&first) {
@@ -1892,7 +1957,8 @@ impl PartStep {
                         if keys.is_empty() {
                             Val::of_table(Table::unit(many.iter().any(|flag| *flag)))
                         } else {
-                            Val::of_table(Table::distinct(keys.len(), out))
+                            // The keys differ, so the rows do.
+                            Val::of_table(Table::new(keys.len(), out))
                         }
                     }
                     _ => {
@@ -1900,7 +1966,7 @@ impl PartStep {
                         for ((flag, value), head) in many.iter().zip(&held).zip(&first) {
                             if !*flag {
                                 push_key(&mut out, head, keys);
-                                out.push((*value)?);
+                                out.push(*value);
                             }
                         }
                         Val::of_table(Table::new(keys.len() + 1, out))
@@ -1947,20 +2013,20 @@ impl PartStep {
             }
             PartStep::NeighborhoodClass { p } | PartStep::NeighborColorClass { p } | PartStep::SameColorNeighbors { p } => {
                 let grid = grid_of(children[1])?;
-                let own: Vec<Cell> = t.sorted_column(usize::from(*p)).iter().copied().filter(|cell| grid.at.contains_key(cell)).collect();
+                let own: Vec<(Cell, Cell)> = t.sorted_column(usize::from(*p)).iter().filter_map(|cell| grid.color_of(*cell).map(|color| (*cell, color))).collect();
                 let mut out = Vec::new();
-                for cell in &own {
-                    let m = margins_of(*cell);
-                    let mine = grid.at[cell];
+                for (cell, mine) in &own {
+                    let (cell, mine) = (*cell, *mine);
+                    let m = margins_of(cell);
                     let mut held = [u32::MAX; 8];
                     let mut same = 0i64;
                     for (at, (dr, dc)) in STEPS.iter().enumerate() {
-                        if let Some(color) = moved(m, *dr, *dc).and_then(|next| grid.at.get(&next)) {
-                            held[at] = *color;
-                            same += i64::from(*color == mine);
+                        if let Some(color) = moved(m, *dr, *dc).and_then(|next| grid.color_of(next)) {
+                            held[at] = color;
+                            same += i64::from(color == mine);
                         }
                     }
-                    out.push(*cell);
+                    out.push(cell);
                     match self {
                         PartStep::NeighborhoodClass { .. } => {
                             out.push(hash_words(held.iter().map(|x| u64::from(*x)).chain([u64::from(mine)])) as u32);
@@ -1986,18 +2052,24 @@ impl PartStep {
                 let other = flat(children[1])?;
                 let held = other.sorted_column(usize::from(*b));
                 let (grouping, first) = key_ids(t, keys);
-                let ids = &grouping.0;
-                let mut flag: Vec<Option<bool>> = vec![None; first.len()];
-                let mut holds = true;
-                for (row, id) in t.rows().zip(ids) {
-                    let found = held.binary_search(&row[usize::from(*a)]).is_ok();
-                    match flag[*id as usize] {
-                        None => flag[*id as usize] = Some(found),
-                        Some(own) if own != found => holds = false,
-                        _ => {}
+                if first.is_empty() {
+                    return Some(Val::of_table(Table::unit(false)));
+                }
+                // Whether each distinct value of the column is among the second relation's values, looked up once per value.
+                let values = t.column_grouping(usize::from(*a));
+                let found: Vec<bool> = values.1.iter().map(|at| held.binary_search(&t.cells()[*at as usize * t.arity + usize::from(*a)]).is_ok()).collect();
+                // Each key's flag: 0 and 1 are the found flag of the key's rows so far, and 2 is that it has none yet. A key with both flags makes it false.
+                let mut flag = vec![2u8; first.len()];
+                for (id, value) in grouping.0.iter().zip(&values.0) {
+                    let own = u8::from(found[*value as usize]);
+                    let seen = &mut flag[*id as usize];
+                    if *seen == 2 {
+                        *seen = own;
+                    } else if *seen != own {
+                        return Some(Val::of_table(Table::unit(false)));
                     }
                 }
-                Val::of_table(Table::unit(holds && !first.is_empty()))
+                Val::of_table(Table::unit(true))
             }
             PartStep::ShapeClass { keys, p, turned } => {
                 if !on_one_frame(t, keys, *p) {
@@ -2056,7 +2128,7 @@ impl PartStep {
                 let word = hash_words(keys.iter().map(|at| u64::from(*at)).chain([u64::MAX, u64::from(*p), u64::from(*v)]));
                 let patterns = occur_patterns(t, &grouping.0, first.len(), (*p, *v), word);
                 // The moves of the patterns themselves are shared by the part with and without the turns.
-                let plain = occur_moves(&patterns, &grid, (t.id, word, children[1].hash()));
+                let plain = occur_moves(&patterns, &grid, (t.hash(), word, children[1].hash()));
                 let turned_moves;
                 let moves: &[Vec<Cell>] = if *turned {
                     turned_moves = patterns.distinct.iter().zip(plain.iter()).map(|(pattern, held)| turned_moves_of(pattern, &grid, held)).collect::<Vec<_>>();
@@ -2072,7 +2144,8 @@ impl PartStep {
                         out.push(*moved);
                     }
                 }
-                Val::of_table(Table::distinct(keys.len() + 1, out))
+                // A pattern's offsets are sorted without repeats, and two keys differ, so no row repeats.
+                Val::of_table(Table::new(keys.len() + 1, out))
             }
             PartStep::SetWord { a, b, cells, word } => {
                 let other = flat(children[1])?;
@@ -2303,7 +2376,7 @@ impl PartStep {
                     let mut m = margins_of(row[0]);
                     while let Some(next) = moved(m, dr, dc) {
                         if theirs.binary_search(&next).is_ok() {
-                            out.extend_from_slice(row);
+                            push_row(&mut out, row);
                             break;
                         }
                         m = [m[0] + dr, m[1] - dr, m[2] + dc, m[3] - dc];
@@ -2315,8 +2388,8 @@ impl PartStep {
                 let grid = grid_of(children[1])?;
                 let mut counts: BTreeMap<Cell, u32> = BTreeMap::new();
                 for cell in sorted_values(t, *p).iter() {
-                    if let Some(color) = grid.at.get(cell) {
-                        *counts.entry(*color).or_insert(0) += 1;
+                    if let Some(color) = grid.color_of(*cell) {
+                        *counts.entry(color).or_insert(0) += 1;
                     }
                 }
                 let top = counts.values().copied().max().unwrap_or(0);
@@ -2393,7 +2466,7 @@ impl PartStep {
                     let own = margins_of(row[usize::from(*a)]);
                     let met = others.iter().any(|held| (0..4).all(|at| if inside { own[at] >= held[at] } else { held[at] >= own[at] }));
                     if met {
-                        out.extend_from_slice(row);
+                        push_row(&mut out, row);
                     }
                 }
                 Val::of_table(Table::new(t.arity, out))
@@ -2417,7 +2490,8 @@ impl PartStep {
                 let mut first: FastMap<Cell, (Cell, bool)> = FastMap::default();
                 let mut second: FastMap<Cell, (Cell, bool)> = FastMap::default();
                 for row in t.rows() {
-                    let Some(color) = output.at.get(&row[usize::from(*p)]) else { continue };
+                    let Some(color) = output.color_of(row[usize::from(*p)]) else { continue };
+                    let color = &color;
                     let (one, other) = (row[usize::from(*v)], row[usize::from(*w)]);
                     let held = both.entry((one, other)).or_insert((*color, false));
                     held.1 |= held.0 != *color;
@@ -2436,7 +2510,7 @@ impl PartStep {
                 for row in t.rows() {
                     let m = margins_of(row[usize::from(*a)]);
                     if (0..4).any(|at| margins[at].binary_search(&m[at]).is_ok()) {
-                        out.extend_from_slice(row);
+                        push_row(&mut out, row);
                     }
                 }
                 Val::of_table(Table::new(t.arity, out))
@@ -2448,7 +2522,7 @@ impl PartStep {
                 let mut layer = Vec::new();
                 for row in t.rows() {
                     let cell = row[usize::from(*p)];
-                    if grid.at.contains_key(&cell) {
+                    if grid.color_of(cell).is_some() {
                         let m = margins_of(cell);
                         let at = (m[0] * w + m[2]) as usize;
                         if away[at] == i64::MAX {
@@ -2485,33 +2559,33 @@ impl PartStep {
                 }
                 Val::of_table(Table::new(2, out))
             }
-            PartStep::BoxMargin { b } => rows_with(t, 2, |row, out| {
+            PartStep::BoxMargin { b } => rows_with(t, 2, 4, |row, out| {
                 let m = margins_of(row[usize::from(*b)]);
                 for at in 0..4 {
-                    out.extend_from_slice(row);
+                    push_row(out, row);
                     out.push(e.dirs[at]);
                     out.push(number_bits(i64::from(m[at])));
                 }
             }),
             PartStep::BoxExtent { b } => {
                 let grid = grid_of(children[1])?;
-                rows_with(t, 2, |row, out| {
+                rows_with(t, 2, 2, |row, out| {
                     let m = margins_of(row[usize::from(*b)]);
                     let (along, across) = (grid.h - m[0] - m[1], grid.w - m[2] - m[3]);
                     if along > 0 && across > 0 {
-                        out.extend_from_slice(row);
+                        push_row(out, row);
                         out.push(e.axes[0]);
                         out.push(number_bits(i64::from(along)));
-                        out.extend_from_slice(row);
+                        push_row(out, row);
                         out.push(e.axes[1]);
                         out.push(number_bits(i64::from(across)));
                     }
                 })
             }
-            PartStep::Displacement { a, b } => rows_with(t, 1, |row, out| {
+            PartStep::Displacement { a, b } => rows_with(t, 1, 1, |row, out| {
                 let (from, to) = (margins_of(row[usize::from(*a)]), margins_of(row[usize::from(*b)]));
                 if from[0] + from[1] == to[0] + to[1] && from[2] + from[3] == to[2] + to[3] {
-                    out.extend_from_slice(row);
+                    push_row(out, row);
                     out.push(less_cell(to, from));
                 }
             }),
@@ -2570,7 +2644,8 @@ impl PartStep {
                         }
                     }
                 }
-                Val::of_table(Table::distinct(keys.len() + 2, out))
+                // A key has each of its rows once, and two keys differ, so no row repeats.
+                Val::of_table(Table::new(keys.len() + 2, out))
             }
             PartStep::LineCounts { keys, p } => {
                 if !on_one_frame(t, keys, *p) {
@@ -2627,7 +2702,8 @@ impl PartStep {
                         out.push(e.axes[1]);
                     }
                 }
-                Val::of_table(Table::distinct(keys.len() + 1, out))
+                // A key has each axis once, and two keys differ, so no row repeats.
+                Val::of_table(Table::new(keys.len() + 1, out))
             }
             PartStep::CellCount { keys, p } => {
                 if !on_one_frame(t, keys, *p) {
@@ -2801,11 +2877,11 @@ impl PartStep {
                         let other = add_cell(n, m);
                         (other, cell, other)
                     };
-                    let (Some(from), Some(to)) = (input.at.get(&at_in), output.at.get(&at_out)) else { continue };
+                    let (Some(from), Some(to)) = (input.color_of(at_in), output.color_of(at_out)) else { continue };
                     if (from == to) == *kept {
-                        out.extend_from_slice(&[held, cell, other, *from]);
+                        out.extend_from_slice(&[held, cell, other, from]);
                         if !*kept {
-                            out.push(*to);
+                            out.push(to);
                         }
                     }
                 }

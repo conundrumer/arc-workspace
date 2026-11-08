@@ -63,21 +63,23 @@ pub fn extent_of(pattern: &[PatternCell]) -> (i32, i32) {
 pub fn each_turned_image(pattern: &[PatternCell], extent: (i32, i32), frame_matters: bool, mut visit: impl FnMut(usize, &[PatternCell]) -> bool) -> bool {
     let (r1, c1) = extent;
     let same_frame = |a: bool, b: bool| !frame_matters || r1 == c1 || a == b;
+    // Where the cells stand sorted at distinct places, each image is written in order from the cells by row and the cells by column, with no sort.
+    let by_rows = pattern.windows(2).all(|pair| (pair[0].0, pair[0].1) < (pair[1].0, pair[1].1));
+    let by_columns = by_rows.then(|| {
+        let mut cells = pattern.to_vec();
+        cells.sort_unstable_by_key(|cell| (cell.1, cell.0));
+        cells
+    });
     let mut seen: Vec<(bool, Vec<PatternCell>)> = Vec::new();
     for which in 1..8 {
-        let mut image: Vec<PatternCell> = pattern.iter().map(|&(r, c, color)| {
-            let (y, z) = match which {
-                1 => (r, c1 - c),
-                2 => (r1 - r, c),
-                3 => (r1 - r, c1 - c),
-                4 => (c, r1 - r),
-                5 => (c1 - c, r),
-                6 => (c, r),
-                _ => (c1 - c, r1 - r),
-            };
-            (y, z, color)
-        }).collect();
-        image.sort_unstable();
+        let image: Vec<PatternCell> = match &by_columns {
+            Some(by_columns) => ordered_image(which, pattern, by_columns, extent),
+            None => {
+                let mut image = pattern.iter().map(|&cell| turned_cell(which, cell, extent)).collect::<Vec<PatternCell>>();
+                image.sort_unstable();
+                image
+            }
+        };
         let quarter = which >= 4;
         if (image == pattern && same_frame(quarter, false)) || seen.iter().any(|(held, cells)| *cells == image && same_frame(quarter, *held)) {
             continue;
@@ -88,6 +90,42 @@ pub fn each_turned_image(pattern: &[PatternCell], extent: (i32, i32), frame_matt
         seen.push((quarter, image));
     }
     false
+}
+
+/// The cell under element `which` of D4 (1 to 7) in a frame with the last row `r1` and the last column `c1`.
+#[inline]
+fn turned_cell(which: usize, (r, c, color): PatternCell, (r1, c1): (i32, i32)) -> PatternCell {
+    let (y, z) = match which {
+        1 => (r, c1 - c),
+        2 => (r1 - r, c),
+        3 => (r1 - r, c1 - c),
+        4 => (c, r1 - r),
+        5 => (c1 - c, r),
+        6 => (c, r),
+        _ => (c1 - c, r1 - r),
+    };
+    (y, z, color)
+}
+
+/// The sorted image of cells under element `which` of D4 (1 to 7), where `by_rows` holds the cells sorted by row then column at distinct places and `by_columns` holds them sorted by column then row. An image of the first three sorts by the cells' rows and an image of the last four by their columns. Within each run of cells of one row, or of one column, a turn either keeps the order or reverses it, and either keeps the order of the runs or reverses it.
+fn ordered_image(which: usize, by_rows: &[PatternCell], by_columns: &[PatternCell], extent: (i32, i32)) -> Vec<PatternCell> {
+    let along_rows = which < 4;
+    let list = if along_rows { by_rows } else { by_columns };
+    let reverse_runs = matches!(which, 2 | 3 | 5 | 7);
+    let reverse_within = matches!(which, 1 | 3 | 4 | 7);
+    let mut runs: Vec<&[PatternCell]> = list.chunk_by(|a, b| if along_rows { a.0 == b.0 } else { a.1 == b.1 }).collect();
+    if reverse_runs {
+        runs.reverse();
+    }
+    let mut image = Vec::with_capacity(list.len());
+    for run in runs {
+        if reverse_within {
+            image.extend(run.iter().rev().map(|&cell| turned_cell(which, cell, extent)));
+        } else {
+            image.extend(run.iter().map(|&cell| turned_cell(which, cell, extent)));
+        }
+    }
+    image
 }
 
 /// The distinct patterns among the patterns of groups, each as sorted cells without repeats and the patterns in sorted order, and for each group the place of its pattern among them.

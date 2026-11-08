@@ -240,7 +240,7 @@ impl Stored {
     /// The rows of a grid's table as a table of `Col` and `P`, whose columns stand in type order.
     pub fn of_grids(tables: &[Arc<Table>]) -> Stored {
         let rows = tables.iter().map(|table| {
-            let mut cells = Vec::with_capacity(table.cells.len());
+            let mut cells = Vec::with_capacity(table.cell_count());
             for row in table.rows() {
                 cells.push(row[1]);
                 cells.push(row[0]);

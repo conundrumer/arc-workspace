@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::bounds::Bound;
-use crate::boxes::second_columns;
+use crate::boxes::{project_tuples, second_columns};
 use crate::columns::Columns;
 use crate::expression::Op;
 use crate::gen_constants::number_bits;
@@ -67,8 +67,16 @@ pub struct Joined {
     written: OnceLock<Val>,
     /// For each node, whether each of its rows stands in a row of the join.
     live: OnceLock<Vec<Vec<bool>>>,
-    /// The tables of `rows_at`, by their columns, and the cells that they hold.
-    sketches: Mutex<(usize, FastMap<Box<[u16]>, Option<Arc<Table>>>)>,
+    /// The distinct tuples at some columns, by those columns, and the cells that the kept tables hold.
+    sketches: Mutex<(usize, FastMap<Box<[u16]>, Arc<Sketch>>)>,
+}
+
+/// The distinct tuples of the rows of a join at the columns `key`.
+struct Sketch {
+    /// The tuples in order, as a table of the key's columns, or no table where a column is not one of the join.
+    tuples: Option<Arc<Table>>,
+    /// The tuples as rows of the join's width, with 0 at each column that is not in the key, once something has read them.
+    wide: OnceLock<Arc<Table>>,
 }
 
 impl Drop for Joined {
@@ -113,39 +121,137 @@ fn common(a: &[(u32, usize, usize)], b: &[(u32, usize, usize)]) -> Vec<((usize, 
     out
 }
 
-/// The rows of `flat`, which stand `stride` cells wide, in order, each once, and how many times it stood, or the sum of its `weights`.
-fn sum_runs(flat: &[Cell], stride: usize, weights: Option<&[u64]>) -> (Vec<Cell>, Vec<u64>) {
-    let count = flat.len() / stride;
-    let mut order: Vec<u32> = (0..count as u32).collect();
-    order.sort_unstable_by(|a, b| flat[*a as usize * stride..(*a as usize + 1) * stride].cmp(&flat[*b as usize * stride..(*b as usize + 1) * stride]));
-    let mut rows: Vec<Cell> = Vec::new();
-    let mut sums: Vec<u64> = Vec::new();
-    for at in order {
-        let row = &flat[at as usize * stride..(at as usize + 1) * stride];
-        let weight = weights.map_or(1, |weights| weights[at as usize]);
-        if !sums.is_empty() && rows[rows.len() - stride..] == *row {
-            let last = sums.len() - 1;
-            sums[last] = sums[last].saturating_add(weight);
+/// A row of at most four cells as one number whose order is the order of the rows of that width.
+trait Packed: Copy + Ord {
+    fn pack(row: &[Cell]) -> Self;
+    /// The cells of the row of `stride` cells that the number stands for, appended to `out`.
+    fn unpack(self, stride: usize, out: &mut Vec<Cell>);
+}
+
+impl Packed for u32 {
+    #[inline]
+    fn pack(row: &[Cell]) -> u32 {
+        row[0]
+    }
+
+    #[inline]
+    fn unpack(self, _: usize, out: &mut Vec<Cell>) {
+        out.push(self);
+    }
+}
+
+impl Packed for u64 {
+    #[inline]
+    fn pack(row: &[Cell]) -> u64 {
+        row.iter().fold(0u64, |held, cell| (held << 32) | u64::from(*cell))
+    }
+
+    #[inline]
+    fn unpack(self, stride: usize, out: &mut Vec<Cell>) {
+        for place in (0..stride).rev() {
+            out.push((self >> (32 * place)) as u32);
+        }
+    }
+}
+
+impl Packed for u128 {
+    #[inline]
+    fn pack(row: &[Cell]) -> u128 {
+        row.iter().fold(0u128, |held, cell| (held << 32) | u128::from(*cell))
+    }
+
+    #[inline]
+    fn unpack(self, stride: usize, out: &mut Vec<Cell>) {
+        for place in (0..stride).rev() {
+            out.push((self >> (32 * place)) as u32);
+        }
+    }
+}
+
+/// The rows of `flat`, which stand `stride` cells wide, in order, each once, and the sum of the `weights` of each, with the rows packed into numbers where they are at most four cells wide.
+fn sum_runs(flat: &[Cell], stride: usize, weights: &[u64]) -> (Vec<Cell>, Vec<u64>) {
+    match stride {
+        1 => sum_packed::<u32>(flat, stride, weights),
+        2 => sum_packed::<u64>(flat, stride, weights),
+        3 | 4 => sum_packed::<u128>(flat, stride, weights),
+        _ => {
+            let count = flat.len() / stride;
+            let mut order: Vec<u32> = (0..count as u32).collect();
+            order.sort_unstable_by(|a, b| flat[*a as usize * stride..(*a as usize + 1) * stride].cmp(&flat[*b as usize * stride..(*b as usize + 1) * stride]));
+            let mut rows: Vec<Cell> = Vec::new();
+            let mut sums: Vec<u64> = Vec::new();
+            for at in order {
+                let row = &flat[at as usize * stride..(at as usize + 1) * stride];
+                let weight = weights[at as usize];
+                if !sums.is_empty() && rows[rows.len() - stride..] == *row {
+                    let last = sums.len() - 1;
+                    sums[last] = sums[last].saturating_add(weight);
+                } else {
+                    rows.extend_from_slice(row);
+                    sums.push(weight);
+                }
+            }
+            (rows, sums)
+        }
+    }
+}
+
+fn sum_packed<K: Packed>(flat: &[Cell], stride: usize, weights: &[u64]) -> (Vec<Cell>, Vec<u64>) {
+    let mut keyed: Vec<(K, u64)> = flat.chunks_exact(stride).zip(weights).map(|(row, weight)| (K::pack(row), *weight)).collect();
+    keyed.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    let distinct = usize::from(!keyed.is_empty()) + keyed.windows(2).filter(|pair| pair[0].0 != pair[1].0).count();
+    let mut rows: Vec<Cell> = Vec::with_capacity(distinct * stride);
+    let mut sums: Vec<u64> = Vec::with_capacity(distinct);
+    let mut last: Option<K> = None;
+    for (row, weight) in keyed {
+        if last == Some(row) {
+            let at = sums.len() - 1;
+            sums[at] = sums[at].saturating_add(weight);
         } else {
-            rows.extend_from_slice(row);
+            row.unpack(stride, &mut rows);
             sums.push(weight);
+            last = Some(row);
         }
     }
     (rows, sums)
 }
 
-/// The table of the rows of `table` that `keep` holds of; the table itself where all of them pass.
-fn filtered(table: &Arc<Table>, keep: impl Fn(&[Cell]) -> bool) -> Arc<Table> {
-    let mut cells: Vec<Cell> = Vec::new();
-    for row in table.rows() {
-        if keep(row) {
-            cells.extend_from_slice(row);
+/// The rows of `flat`, which stand `stride` cells wide, in order, each once.
+fn distinct_runs(flat: &[Cell], stride: usize) -> Vec<Cell> {
+    match stride {
+        1 => distinct_packed::<u32>(flat, stride),
+        2 => distinct_packed::<u64>(flat, stride),
+        3 | 4 => distinct_packed::<u128>(flat, stride),
+        _ => {
+            let mut rows: Vec<&[Cell]> = flat.chunks_exact(stride).collect();
+            rows.sort_unstable();
+            rows.dedup();
+            let mut out = Vec::with_capacity(rows.len() * stride);
+            for row in rows {
+                out.extend_from_slice(row);
+            }
+            out
         }
     }
-    if cells.len() == table.cells.len() {
+}
+
+fn distinct_packed<K: Packed>(flat: &[Cell], stride: usize) -> Vec<Cell> {
+    let mut keys: Vec<K> = flat.chunks_exact(stride).map(K::pack).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    let mut rows: Vec<Cell> = Vec::with_capacity(keys.len() * stride);
+    for key in keys {
+        key.unpack(stride, &mut rows);
+    }
+    rows
+}
+
+/// The table of the rows of `table` that `keep` holds of; the table itself where all of them pass.
+fn filtered(table: &Arc<Table>, keep: impl Fn(&[Cell]) -> bool) -> Arc<Table> {
+    if table.all_rows(&keep) {
         table.clone()
     } else {
-        Table::new(table.arity, cells)
+        table.filter_rows(keep)
     }
 }
 
@@ -360,24 +466,63 @@ struct Rel {
     cols: Vec<usize>,
     stride: usize,
     flat: Vec<Cell>,
+    /// The count of each entry, or none where the counts are not asked for.
     weights: Vec<u64>,
     /// For each id of the node's key, the first entry and the end of its run.
     ranges: Vec<(usize, usize)>,
 }
 
-/// The tuples of the entries of `rels` that the `ids` pick, appended to `head`, with the product of their counts, for each of the choices.
-fn expand(rels: &[&Rel], ids: &[u32], head: &mut Vec<Cell>, weight: u64, flat: &mut Vec<Cell>, weights: &mut Vec<u64>) {
-    let Some((rel, rest)) = rels.split_first() else {
-        flat.extend_from_slice(head);
-        weights.push(weight);
+/// Appends to `tuples` the tuples of a group: its `head` cells, then the cells of one entry of each of `rels` in the run that the group's ids in `ids` pick, for each choice of entries. Each cell of a tuple stands at the place that `positions` gives for its place in that order. Where `sums` is some, it gets the product of `weight` and the counts of the entries, for each of the tuples.
+#[allow(clippy::too_many_arguments)]
+fn expand(rels: &[&Rel], head: &[Cell], ids: &[Cell], positions: &[usize], weight: u64, tuples: &mut Vec<Cell>, mut sums: Option<&mut Vec<u64>>, spans: &mut Vec<(usize, usize)>) {
+    let stride = positions.len();
+    spans.clear();
+    let mut count = 1usize;
+    for (rel, id) in rels.iter().zip(ids) {
+        let (from, to) = rel.ranges[*id as usize];
+        spans.push((from, to - from));
+        count *= to - from;
+    }
+    if count == 0 {
         return;
-    };
-    let (from, to) = rel.ranges[ids[0] as usize];
-    let mark = head.len();
-    for entry in from..to {
-        head.extend_from_slice(&rel.flat[entry * rel.stride + 1..(entry + 1) * rel.stride]);
-        expand(rest, &ids[1..], head, weight.saturating_mul(rel.weights[entry]), flat, weights);
-        head.truncate(mark);
+    }
+    let base = tuples.len();
+    tuples.resize(base + count * stride, 0);
+    let out = &mut tuples[base..];
+    for tuple in out.chunks_exact_mut(stride) {
+        for (cell, place) in head.iter().zip(positions) {
+            tuple[*place] = *cell;
+        }
+    }
+    let sums_base = sums.as_ref().map_or(0, |sums| sums.len());
+    if let Some(sums) = sums.as_deref_mut() {
+        sums.resize(sums_base + count, weight);
+    }
+    let mut repeat = count;
+    let mut offset = head.len();
+    for (rel, (from, len)) in rels.iter().zip(spans.iter()) {
+        repeat /= len;
+        let width = rel.stride - 1;
+        let places = &positions[offset..offset + width];
+        let mut tuple = 0usize;
+        while tuple < count {
+            for entry in *from..from + len {
+                let cells = &rel.flat[entry * rel.stride + 1..(entry + 1) * rel.stride];
+                for at in tuple..tuple + repeat {
+                    let target = &mut out[at * stride..(at + 1) * stride];
+                    for (cell, place) in cells.iter().zip(places) {
+                        target[*place] = *cell;
+                    }
+                }
+                if let Some(sums) = sums.as_deref_mut() {
+                    for sum in &mut sums[sums_base + tuple..sums_base + tuple + repeat] {
+                        *sum = sum.saturating_mul(rel.weights[entry]);
+                    }
+                }
+                tuple += repeat;
+            }
+        }
+        offset += width;
     }
 }
 
@@ -494,7 +639,7 @@ impl Joined {
 
     /// The cells that the nodes and the ids of the join hold, which a walker counts as held.
     pub fn held_cells(&self) -> usize {
-        self.nodes.iter().map(|table| table.cells.len()).sum::<usize>() + self.links.iter().map(|link| link.ids.len() + link.parent_ids.len() + 2 * link.weights.len()).sum::<usize>()
+        self.nodes.iter().map(|table| table.cell_count()).sum::<usize>() + self.links.iter().map(|link| link.ids.len() + link.parent_ids.len() + 2 * link.weights.len()).sum::<usize>()
     }
 
     /// Whether the rows of the join can be written out, in at most the output limit of cells.
@@ -561,7 +706,7 @@ impl Joined {
     fn write_below(&self, depth: usize, chosen: &mut [usize], by_id: &[(Vec<usize>, Vec<u32>)], emit: &[(usize, usize, u16)], cells: &mut Vec<Cell>) {
         if depth == self.nodes.len() {
             for (node, at, _) in emit {
-                cells.push(self.nodes[*node].cells[chosen[*node] * self.nodes[*node].arity + *at]);
+                cells.push(self.nodes[*node].cells()[chosen[*node] * self.nodes[*node].arity + *at]);
             }
             return;
         }
@@ -607,21 +752,33 @@ impl Joined {
             let up = usize::from(node > 0);
             // The rows of the node, grouped by their key to the parent, their own columns, and the keys to the children that hold columns.
             let width = up + own.len() + wanted.len();
+            let own_places: Vec<usize> = own.iter().map(|(_, place)| *place).collect();
             let mut flat: Vec<Cell> = Vec::new();
             let mut weights: Vec<u64> = Vec::new();
             for (row, cells) in self.nodes[node].rows().enumerate() {
                 if !live[node][row] {
                     continue;
                 }
+                let start = flat.len();
                 if node > 0 {
                     flat.push(self.links[node - 1].ids[row]);
                 }
-                flat.extend(own.iter().map(|(_, place)| cells[*place]));
+                flat.extend(own_places.iter().map(|place| cells[*place]));
                 flat.extend(wanted.iter().map(|child| self.links[*child - 1].parent_ids[row]));
                 // A child with no column of the key tells how many rows it adds.
-                weights.push(if weighted { unwanted.iter().fold(1u64, |total, child| total.saturating_mul(self.links[*child - 1].weights[self.links[*child - 1].parent_ids[row] as usize])) } else { 1 });
+                let weight = if weighted { unwanted.iter().fold(1u64, |total, child| total.saturating_mul(self.links[*child - 1].weights[self.links[*child - 1].parent_ids[row] as usize])) } else { 1 };
+                // A row equal to the one before it adds to that one.
+                if start >= width && flat[start - width..start] == flat[start..] {
+                    flat.truncate(start);
+                    if weighted {
+                        let last = weights.len() - 1;
+                        weights[last] = weights[last].saturating_add(weight);
+                    }
+                } else if weighted {
+                    weights.push(weight);
+                }
             }
-            let (groups, counts) = sum_runs(&flat, width, Some(&weights));
+            let (groups, counts) = if weighted { sum_runs(&flat, width, &weights) } else { (distinct_runs(&flat, width), Vec::new()) };
             let below: Vec<&Rel> = wanted.iter().map(|child| rels[*child].as_ref().expect("a child below a node is done first")).collect();
             let cols: Vec<usize> = own.iter().map(|(index, _)| *index).chain(below.iter().flat_map(|rel| rel.cols.iter().copied())).collect();
             let stride = up + cols.len();
@@ -633,26 +790,26 @@ impl Joined {
                 });
                 total = total.saturating_add(product);
             }
-            let mut tuples: Vec<Cell> = Vec::with_capacity(total * stride);
-            let mut tuple_counts: Vec<u64> = Vec::with_capacity(total);
-            let mut head: Vec<Cell> = Vec::with_capacity(stride);
-            for (group, weight) in groups.chunks_exact(width).zip(&counts) {
-                head.clear();
-                head.extend_from_slice(&group[..up + own.len()]);
-                expand(&below, &group[up + own.len()..], &mut head, *weight, &mut tuples, &mut tuple_counts);
-            }
-            let (tuples, tuple_counts) = sum_runs(&tuples, stride, Some(&tuple_counts));
+            // With no child that holds a column of the key, the groups are the tuples. Otherwise each group gives the tuples of the choices of its children's entries, and a root gives them in the key's own order.
+            let (tuples, tuple_counts) = if below.is_empty() {
+                (groups, counts)
+            } else {
+                let positions: Vec<usize> = if node == 0 { cols.clone() } else { (0..stride).collect() };
+                let mut tuples: Vec<Cell> = Vec::with_capacity(total * stride);
+                let mut sums: Vec<u64> = Vec::new();
+                let mut spans: Vec<(usize, usize)> = Vec::with_capacity(below.len());
+                for (index, group) in groups.chunks_exact(width).enumerate() {
+                    let (head, ids) = group.split_at(up + own.len());
+                    if weighted {
+                        expand(&below, head, ids, &positions, counts[index], &mut tuples, Some(&mut sums), &mut spans);
+                    } else {
+                        expand(&below, head, ids, &positions, 1, &mut tuples, None, &mut spans);
+                    }
+                }
+                if weighted { sum_runs(&tuples, stride, &sums) } else { (distinct_runs(&tuples, stride), Vec::new()) }
+            };
             if node == 0 {
-                // The key's own order.
-                let mut put = vec![0usize; key.len()];
-                for (place, index) in cols.iter().enumerate() {
-                    put[*index] = place;
-                }
-                let mut ordered: Vec<Cell> = Vec::with_capacity(tuples.len());
-                for tuple in tuples.chunks_exact(stride) {
-                    ordered.extend(put.iter().map(|place| tuple[*place]));
-                }
-                result = Some(sum_runs(&ordered, key.len(), Some(&tuple_counts)));
+                result = Some((tuples, tuple_counts));
             } else {
                 let mut ranges = vec![(0usize, 0usize); self.links[node - 1].weights.len()];
                 for (id, from, to) in runs(&tuples, stride) {
@@ -669,42 +826,83 @@ impl Joined {
         key.iter().filter_map(|column| self.places.get(usize::from(*column))).filter(|place| place.node == node).map(|place| place.at).collect()
     }
 
-    /// A table in which the distinct tuples of the rows of the join stand at `columns`, as rows of the join's width with 0 at each other column. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
-    pub fn rows_at(&self, columns: &Columns) -> Option<Arc<Table>> {
-        let mut key: Vec<u16> = columns.to_vec();
-        key.sort_unstable();
-        let key = key.into_boxed_slice();
-        let held = self.sketches.lock().expect("a sketch lock").1.get(&key).cloned();
-        let built = match held {
-            Some(built) => built,
+    /// The distinct tuples of the rows of the join at the columns `key`, which stand in order.
+    fn sketch(&self, key: &[u16]) -> Arc<Sketch> {
+        let held = self.sketches.lock().expect("a sketch lock").1.get(key).cloned();
+        match held {
+            Some(sketch) => sketch,
             None => {
-                let built = self.build_tuples(&key);
+                let sketch = Arc::new(Sketch { tuples: self.build_tuples(key), wide: OnceLock::new() });
                 let mut kept = self.sketches.lock().expect("a sketch lock");
-                let cells = built.as_ref().map_or(0, |table| table.cells.len());
+                let cells = sketch.tuples.as_ref().map_or(0, |table| table.cell_count());
                 if kept.0 + cells <= SKETCH_KEPT {
                     kept.0 += cells;
-                    kept.1.insert(key, built.clone());
+                    kept.1.insert(key.into(), sketch.clone());
                 }
-                built
+                sketch
             }
-        };
-        built
+        }
     }
 
-    fn build_tuples(&self, key: &[u16]) -> Option<Arc<Table>> {
+    /// The columns `columns` in order.
+    fn key_of(columns: &Columns) -> Box<[u16]> {
+        let mut key: Vec<u16> = columns.to_vec();
+        key.sort_unstable();
+        key.into_boxed_slice()
+    }
+
+    /// A table in which the distinct tuples of the rows of the join stand at `columns`, as rows of the join's width with 0 at each other column. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
+    pub fn rows_at(&self, columns: &Columns) -> Option<Arc<Table>> {
+        let key = Joined::key_of(columns);
+        let sketch = self.sketch(&key);
+        let tuples = sketch.tuples.as_ref()?;
+        if let Some(wide) = sketch.wide.get() {
+            return Some(wide.clone());
+        }
         let width = self.width();
+        let wide = if key.is_empty() {
+            Table::new(width, vec![0; width])
+        } else {
+            // The key stands in order, so the rows stand in order.
+            let mut out: Vec<Cell> = vec![0; tuples.len * width];
+            for (row, tuple) in out.chunks_exact_mut(width).zip(tuples.rows()) {
+                for (column, cell) in key.iter().zip(tuple) {
+                    row[usize::from(*column)] = *cell;
+                }
+            }
+            Table::new(width, out)
+        };
+        let mut kept = self.sketches.lock().expect("a sketch lock");
+        if kept.0 + wide.cell_count() <= SKETCH_KEPT && sketch.wide.set(wide.clone()).is_ok() {
+            kept.0 += wide.cell_count();
+        }
+        Some(wide)
+    }
+
+    /// What a `project` onto `columns` gives over the join's rows.
+    fn project(&self, columns: &Columns) -> Val {
+        if columns.is_empty() {
+            return match self.rows_at(columns) {
+                Some(table) => project(&Val::of_table(table), columns),
+                None => Val::None,
+            };
+        }
+        let key = Joined::key_of(columns);
+        match &self.sketch(&key).tuples {
+            Some(tuples) => project_tuples(tuples, &key, columns, self.width()),
+            None => Val::None,
+        }
+    }
+
+    /// The distinct tuples of the rows of the join at the columns `key`, which stand in order, as a table of those columns in order.
+    fn build_tuples(&self, key: &[u16]) -> Option<Arc<Table>> {
         self.at(key)?;
         if key.is_empty() {
-            return Some(Table::new(width, vec![0; width]));
+            return Some(Table::unit(true));
         }
         let (tuples, _) = self.grouped(key, false)?;
-        let mut out: Vec<Cell> = vec![0; tuples.len() / key.len() * width];
-        for (row, tuple) in out.chunks_exact_mut(width).zip(tuples.chunks_exact(key.len())) {
-            for (column, cell) in key.iter().zip(tuple) {
-                row[usize::from(*column)] = *cell;
-            }
-        }
-        Some(Table::distinct(width, out))
+        // The tuples stand in order, each once.
+        Some(Table::new(key.len(), tuples))
     }
 
     /// The count of distinct tuples of the rows of the join at `columns`: no value where a column is not one of the join.
@@ -819,7 +1017,7 @@ impl Joined {
             return Some(self.one_side_count(1, &rights));
         }
         let (a, b) = (self.side_tuples(0, &lefts), self.side_tuples(1, &rights));
-        let (a_runs, b_runs) = (runs(&a.cells, a.arity), runs(&b.cells, b.arity));
+        let (a_runs, b_runs) = (runs(a.cells(), a.arity), runs(b.cells(), b.arity));
         let pairs = common(&a_runs, &b_runs);
         // Two values of the paired columns that the tuples do not tell apart can give a tuple twice; where the tuples hold each paired column, they cannot.
         let link = &self.links[0];
@@ -837,11 +1035,11 @@ impl Joined {
         let mut sets: FastMap<Vec<u32>, u64> = FastMap::default();
         let mut start = 0;
         while start < by_tuple.len {
-            let tuple = &by_tuple.cells[start * a.arity..start * a.arity + width];
+            let tuple = &by_tuple.cells()[start * a.arity..start * a.arity + width];
             let mut end = start;
             let mut ids: Vec<u32> = Vec::new();
-            while end < by_tuple.len && by_tuple.cells[end * a.arity..end * a.arity + width] == *tuple {
-                ids.push(by_tuple.cells[end * a.arity + width]);
+            while end < by_tuple.len && by_tuple.cells()[end * a.arity..end * a.arity + width] == *tuple {
+                ids.push(by_tuple.cells()[end * a.arity + width]);
                 end += 1;
             }
             *sets.entry(ids).or_default() += 1;
@@ -851,7 +1049,7 @@ impl Joined {
         Some(sets.saturating_sum_of(|ids, tuples| {
             let mut flat: Vec<Cell> = Vec::new();
             for (from, to) in ids.iter().filter_map(|id| range_of(*id)) {
-                for row in b.cells[from * b.arity..to * b.arity].chunks_exact(b.arity) {
+                for row in b.cells()[from * b.arity..to * b.arity].chunks_exact(b.arity) {
                     flat.extend_from_slice(&row[1..]);
                 }
             }
@@ -871,12 +1069,17 @@ impl Joined {
             return Val::None;
         }
         let Some((tuples, weights)) = self.grouped(&unique, true) else { return Val::None };
-        let picks: Vec<usize> = keys.iter().map(|key| unique.binary_search(key).expect("a key is one of the distinct keys")).collect();
-        let mut ordered: Vec<Cell> = Vec::with_capacity(weights.len() * keys.len());
-        for tuple in tuples.chunks_exact(unique.len()) {
-            ordered.extend(picks.iter().map(|place| tuple[*place]));
-        }
-        let (tuples, counts) = sum_runs(&ordered, keys.len(), Some(&weights));
+        // Keys that are the distinct keys already give each tuple once.
+        let (tuples, counts) = if keys == unique.as_slice() {
+            (tuples, weights)
+        } else {
+            let picks: Vec<usize> = keys.iter().map(|key| unique.binary_search(key).expect("a key is one of the distinct keys")).collect();
+            let mut ordered: Vec<Cell> = Vec::with_capacity(weights.len() * keys.len());
+            for tuple in tuples.chunks_exact(unique.len()) {
+                ordered.extend(picks.iter().map(|place| tuple[*place]));
+            }
+            sum_runs(&ordered, keys.len(), &weights)
+        };
         let mut out: Vec<Cell> = Vec::with_capacity(counts.len() * (keys.len() + 1));
         for (tuple, count) in tuples.chunks_exact(keys.len()).zip(&counts) {
             // A count past a number's range has no value.
@@ -915,10 +1118,7 @@ impl Joined {
     /// What `step` gives over the join's rows, where `reads` holds of it.
     pub fn read(&self, step: &Step, children: &[&Val]) -> Option<Val> {
         match step {
-            Step::Project { columns } => Some(match self.rows_at(columns) {
-                Some(table) => project(&Val::of_table(table), columns),
-                None => Val::None,
-            }),
+            Step::Project { columns } => Some(self.project(columns)),
             Step::All { reads, left_len, right } => {
                 let (left, outer) = reads.split(*left_len);
                 Some(match self.rows_at(reads) {
@@ -1029,7 +1229,7 @@ impl Joined {
                 return None;
             }
             for at in run {
-                let child_row = &child_table.cells[*at as usize * child_arity..(*at as usize + 1) * child_arity];
+                let child_row = &child_table.cells()[*at as usize * child_arity..(*at as usize + 1) * child_arity];
                 if holds(op, value(first, parent_row, child_row), value(second, parent_row, child_row)) {
                     cells.extend_from_slice(parent_row);
                     cells.extend_from_slice(child_row);
