@@ -22,6 +22,7 @@ use arclog::eval::join::each_row;
 use arclog::hash::StableHashMap;
 use arclog::task::{Grid, Task};
 use arclog_encoder::generate::{Generators, ShapeList, ShapeMask, Walker, MAX_COLUMNS};
+use arclog_encoder::lookup::LookupSet;
 use arclog_encoder::native::CELL_CAP;
 use arclog_encoder::stored::{stored_json, Model, Placed, Stored};
 use arclog_encoder::table_vector::{table_vector, table_vector_of_shapes, Grids, TableVector};
@@ -397,10 +398,7 @@ pub(crate) struct PyShapeVector {
 /// The text of the shape with hash `hash`, or `None` where no family that this process built has it.
 #[pyfunction]
 pub(crate) fn shape_text(hash: u64) -> Option<String> {
-    // The encoder's `texts_of` takes the standard set.
-    #[allow(clippy::disallowed_types)]
-    let wanted = std::collections::HashSet::from([hash]);
-    shared().families.names.texts_of(&wanted).remove(&hash)
+    shared().families.names.texts_of(&LookupSet::from([hash])).remove(&hash)
 }
 
 /// The hash of a shape's text, as a vector names the shape.

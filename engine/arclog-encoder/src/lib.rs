@@ -22,6 +22,8 @@
 //!   evaluation reads.
 //! - [`run`]: the check and the evaluation of those forms, through the
 //!   engine's evaluator.
+//! - [`lookup`]: the hash maps and sets of the encoder, which have no iteration in the order of a
+//!   hash, so no output follows it.
 //! - [`native`]: the operators over materialized rows, a faster evaluation of
 //!   what those forms compute.
 //! - [`boxes`]: the rows of `inside`, as the boxes they come from, written out where an
@@ -55,6 +57,7 @@ pub mod grid_walks;
 pub mod joined;
 pub mod law;
 pub mod library;
+pub mod lookup;
 pub mod native;
 pub mod occurrence;
 pub mod program_relations;

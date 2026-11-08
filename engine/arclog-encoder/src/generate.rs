@@ -6,7 +6,6 @@
 //! example where the example has several. What the numbers are is the specification's section on
 //! vectors, and `table_vector` combines the instances into a table's vector.
 
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use arclog::types::ValueType;
@@ -14,6 +13,7 @@ use arclog::types::ValueType;
 use crate::expression::Op;
 use crate::gen_constants::{constant_parts, constant_tables, number_of};
 use crate::gen_parts::{clear_views, flat, PartStep};
+use crate::lookup::{InsertionMap, LookupMap, LookupSet};
 use crate::native::{hash_words, Evaluator, FastMap, Step, Table, Val, WORD_COUNT, WORD_NONEMPTY, WORD_SET};
 use crate::refine::{self, bit, Claim, Refined, Rejected, Within};
 use crate::refine_parts::{self, PartPlan, RelationInput};
@@ -2334,7 +2334,8 @@ pub const SLOT_NO_VALUE: u8 = 2;
 /// Each root's numbers at each instance of a table.
 #[derive(Default)]
 pub struct RootTable {
-    pub index: FastMap<u128, u32>,
+    /// The place of each root, in the order the roots came in, which is also the order of their places.
+    pub index: InsertionMap<u128, u32>,
     pub slots: Vec<Slot>,
     pub stride: usize,
     /// What each root reads, its size, and which kind of root it is.
@@ -2359,7 +2360,7 @@ impl RootTable {
 /// A list of shapes, each by the low 64 bits of its hash, which is how a vector names it.
 #[derive(Clone, Debug, Default)]
 pub struct ShapeList {
-    shapes: HashSet<u64>,
+    shapes: LookupSet<u64>,
 }
 
 impl ShapeList {
@@ -3286,12 +3287,12 @@ pub fn constants_of(facts: &[crate::catalog_facts::PairFacts], tests: &[crate::c
 #[derive(Default)]
 pub struct NameStore {
     names: Mutex<FastMap<u128, String>>,
-    file: Option<Mutex<(HashSet<u64>, Box<dyn std::io::Write + Send>)>>,
+    file: Option<Mutex<(LookupSet<u64>, Box<dyn std::io::Write + Send>)>>,
 }
 
 pub enum NameWriter<'a> {
     Map(std::sync::MutexGuard<'a, FastMap<u128, String>>),
-    File(std::sync::MutexGuard<'a, (HashSet<u64>, Box<dyn std::io::Write + Send>)>),
+    File(std::sync::MutexGuard<'a, (LookupSet<u64>, Box<dyn std::io::Write + Send>)>),
 }
 
 impl NameWriter<'_> {
@@ -3313,7 +3314,7 @@ impl NameWriter<'_> {
 impl NameStore {
     pub fn to_file(path: &str) -> Result<NameStore, String> {
         let file = crate::zio::writer(path, true)?;
-        Ok(NameStore { names: Mutex::default(), file: Some(Mutex::new((HashSet::new(), file))) })
+        Ok(NameStore { names: Mutex::default(), file: Some(Mutex::new((LookupSet::new(), file))) })
     }
 
     /// Writes the name of a root that no family holds.
@@ -3339,14 +3340,20 @@ impl NameStore {
     }
 
     /// The name of each root of `wanted` that the store holds in memory, by the low 64 bits of its hash, which is how a vector names it.
-    pub fn texts_of(&self, wanted: &HashSet<u64>) -> std::collections::HashMap<u64, String> {
+    pub fn texts_of(&self, wanted: &LookupSet<u64>) -> LookupMap<u64, String> {
         let names = self.names.lock().expect("no panic");
-        names.iter().filter(|(hash, _)| wanted.contains(&(**hash as u64))).map(|(hash, name)| (*hash as u64, name.clone())).collect()
+        names.to_map_keeping_least(|hash, name| wanted.contains(&(*hash as u64)).then(|| (*hash as u64, name.clone())))
     }
 
-    /// Each root's name that the store holds in memory.
+    /// The name of each root that the store holds in memory, by the low 64 bits of its hash, which is how a vector names it.
+    pub fn by_vector_hash(&self) -> LookupMap<u64, String> {
+        let names = self.names.lock().expect("no panic");
+        names.to_map_keeping_least(|hash, name| Some((*hash as u64, name.clone())))
+    }
+
+    /// Each root's name that the store holds in memory, in the order of the roots' hashes.
     pub fn all(&self) -> Vec<(u128, String)> {
-        self.names.lock().expect("no panic").iter().map(|(hash, name)| (*hash, name.clone())).collect()
+        self.names.lock().expect("no panic").sorted_entries().into_iter().map(|(hash, name)| (*hash, name.clone())).collect()
     }
 }
 
@@ -3439,9 +3446,9 @@ impl Generators {
         let (cache, clock) = &mut *held;
         *clock += 1;
         cache.insert(hash, (family.clone(), *clock));
-        let mut total: usize = cache.values().map(|found| found.0.terms.len()).sum();
+        let mut total: usize = cache.sum_of(|_, found| found.0.terms.len());
         while total > limit && cache.len() > 1 {
-            let Some(oldest) = cache.iter().filter(|(key, _)| **key != hash).min_by_key(|(_, found)| found.1).map(|(key, _)| *key) else { break };
+            let Some(oldest) = cache.min_entry_by(|key, found| (*key == hash, found.1)).map(|(key, _)| *key) else { break };
             if let Some(gone) = cache.remove(&oldest) {
                 total -= gone.0.terms.len();
             }

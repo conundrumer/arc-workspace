@@ -5,7 +5,6 @@
 //! A macro is a function from s-expressions to forms: each hole takes what
 //! its kind declares, and each name the macro declares is fresh at each call.
 
-use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use arclog::layout::SourceFile;
@@ -14,6 +13,7 @@ use arclog::types::ValueType;
 
 use crate::expand::{label_of, Col, Expander, Mark, Rows};
 use crate::expression::Written;
+use crate::lookup::{LookupMap, LookupSet};
 
 /// The text of the library, which the crate embeds as the engine embeds the
 /// registry.
@@ -59,7 +59,7 @@ pub struct Macro {
 /// The macros of the library.
 #[derive(Debug, Default)]
 pub struct Library {
-    macros: HashMap<String, Macro>,
+    macros: LookupMap<String, Macro>,
     /// Each name in the order of the file.
     order: Vec<String>,
 }
@@ -206,20 +206,20 @@ pub enum Bound {
 /// One call's holes, the names it declares and the labels of the form in
 /// progress.
 struct Call {
-    holes: HashMap<String, Bound>,
+    holes: LookupMap<String, Bound>,
     /// The fresh name of each name that the macro declares.
-    declared: HashMap<String, String>,
+    declared: LookupMap<String, String>,
     /// The label of each column of each relation hole, in the form in progress.
-    labels: HashMap<(String, String), String>,
+    labels: LookupMap<(String, String), String>,
     /// The labels the form in progress has given.
     taken: Vec<String>,
     /// Whether the atoms in progress stand in an `INIT` form.
     in_instance: bool,
     /// The labels that a column hole or a splice writes at this call. A label that the macro writes
     /// under one of these names takes another name, outside the form that gives its columns.
-    reserved: HashSet<String>,
+    reserved: LookupSet<String>,
     /// The name each such label takes.
-    renames: HashMap<String, String>,
+    renames: LookupMap<String, String>,
     /// Whether the form in progress gives the macro's columns, which keep their names.
     in_final: bool,
 }
@@ -244,7 +244,7 @@ impl Call {
         }
         let mut suffix = 2;
         let mut fresh = format!("{name}_{suffix}");
-        while self.reserved.contains(&fresh) || self.renames.values().any(|held| *held == fresh) {
+        while self.reserved.contains(&fresh) || self.renames.any(|_, held| *held == fresh) {
             suffix += 1;
             fresh = format!("{name}_{suffix}");
         }
@@ -364,7 +364,7 @@ impl Expander<'_> {
         if found.holes.len() != args.len() && !found.holes.last().is_some_and(|hole| matches!(hole.kind, HoleKind::Columns(_))) {
             return Err(format!("the macro `{name}` takes {} arguments, and the call writes {}", found.holes.len(), args.len()));
         }
-        let mut holes: HashMap<String, Bound> = HashMap::new();
+        let mut holes: LookupMap<String, Bound> = LookupMap::new();
         for (index, hole) in found.holes.iter().enumerate() {
             let arg = args.get(index).ok_or_else(|| format!("the call of `{name}` lacks `{}`", hole.name))?;
             let bound = match &hole.kind {
@@ -394,7 +394,7 @@ impl Expander<'_> {
         self.rel(&rel)
     }
 
-    fn call(&mut self, found: &Macro, holes: HashMap<String, Bound>) -> Result<Rows, String> {
+    fn call(&mut self, found: &Macro, holes: LookupMap<String, Bound>) -> Result<Rows, String> {
         for hole in &found.holes {
             let (of, names) = match holes.get(&hole.name) {
                 Some(Bound::Column { of, name }) => (of, vec![name.clone()]),
@@ -407,7 +407,7 @@ impl Expander<'_> {
             }
         }
         let reserved = reserved_labels(found, &holes);
-        let mut call = Call { holes, declared: HashMap::new(), labels: HashMap::new(), taken: Vec::new(), in_instance: false, reserved, renames: HashMap::new(), in_final: false };
+        let mut call = Call { holes, declared: LookupMap::new(), labels: LookupMap::new(), taken: Vec::new(), in_instance: false, reserved, renames: LookupMap::new(), in_final: false };
         let last_query = found.forms.iter().rposition(|form| matches!(items_of(form).ok().and_then(|list| list.first()).map(symbol_of), Some(Ok("QUERY" | "EXPORT"))));
         // Each name the macro declares is fresh at this call.
         for form in &found.forms {
@@ -712,9 +712,9 @@ impl Expander<'_> {
 }
 
 /// The labels that a column hole or a splice writes at a call.
-fn reserved_labels(found: &Macro, holes: &HashMap<String, Bound>) -> HashSet<String> {
-    let mut out = HashSet::new();
-    for bound in holes.values() {
+fn reserved_labels(found: &Macro, holes: &LookupMap<String, Bound>) -> LookupSet<String> {
+    let mut out = LookupSet::new();
+    for bound in holes.sorted_values() {
         match bound {
             Bound::Column { name, .. } => {
                 out.insert(label_of(name));
@@ -778,7 +778,7 @@ fn unique_in(call: &Call, name: &str) -> String {
     // its own body, unless another column of the form has that name.
     let mut label = name.to_string();
     let mut suffix = 2;
-    while call.labels.values().any(|held| *held == label) {
+    while call.labels.any(|_, held| *held == label) {
         label = format!("{name}_{suffix}");
         suffix += 1;
     }

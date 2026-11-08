@@ -19,7 +19,7 @@
 //! constant of each number that an orientation column holds. The body holds, for each key of `layout`,
 //! each TableRows, and each column of it, that column's numbers as 4-byte integers, one cell after another.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::io::Read;
 
 use arclog::registry::Registry;
@@ -27,6 +27,7 @@ use arclog::terms::{Color, Constant, Margins, Term, TermId};
 use arclog::types::ValueType;
 use serde_json::Value;
 
+use crate::lookup::LookupMap;
 use crate::stored::{Model, Stored};
 
 pub const MAGIC: &[u8; 8] = b"ARCTBL1\n";
@@ -309,8 +310,8 @@ fn column_of(kind: Kind, bytes: &[u8], rows: usize, names: &mut Orientations) ->
 
 /// The orientation constants of a table's numbers, each looked up once.
 struct Orientations {
-    named: HashMap<i32, String>,
-    found: HashMap<i32, Option<u32>>,
+    named: LookupMap<i32, String>,
+    found: LookupMap<i32, Option<u32>>,
 }
 
 impl Orientations {
@@ -337,13 +338,13 @@ fn decode_table(meta: &Value, body: &[u8], train: usize, test: usize) -> Option<
     if widths.len() != types.len() || widths.iter().zip(&kinds).any(|(width, kind)| *width != if *kind == Kind::Box { 4 } else { 1 }) {
         return None;
     }
-    let mut orientations = Orientations { named: HashMap::new(), found: HashMap::new() };
+    let mut orientations = Orientations { named: LookupMap::new(), found: LookupMap::new() };
     for (number, name) in meta["orient"].as_object()? {
         orientations.named.insert(number.parse().ok()?, name.as_str()?.to_string());
     }
     let per_row: usize = widths.iter().sum();
     // Where each key's TableRows stand in the body, and how many rows each has.
-    let mut places: HashMap<&str, (usize, Vec<usize>)> = HashMap::new();
+    let mut places: LookupMap<&str, (usize, Vec<usize>)> = LookupMap::new();
     let mut at = 0usize;
     for entry in meta["layout"].as_array()? {
         let key = entry.get(0)?.as_str()?;

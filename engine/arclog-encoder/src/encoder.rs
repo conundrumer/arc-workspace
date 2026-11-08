@@ -3,7 +3,7 @@
 //! (`docs/feature-spec/feature-spec.md#size-and-the-encoder`). Small sizes come
 //! first, and a record is written as soon as it exists.
 
-use std::collections::HashMap;
+use crate::lookup::LookupMap;
 use std::ops::ControlFlow;
 
 use arclog::registry::Registry;
@@ -106,7 +106,7 @@ pub fn encode(host: &Host, options: &Options, visit: &mut dyn FnMut(Record) -> C
         })
         .collect();
     let mut lower: Vec<Vec<Vec<Typed>>> = vec![Vec::new(), Vec::new()];
-    let mut seen: HashMap<u128, String> = HashMap::new();
+    let mut seen: LookupMap<u128, String> = LookupMap::new();
     host.set_work_cap(options.work_cap);
     for size in 0..=options.size {
         for (index, space) in spaces.iter().enumerate() {
@@ -130,7 +130,7 @@ pub fn encode(host: &Host, options: &Options, visit: &mut dyn FnMut(Record) -> C
     }
 }
 
-fn root_walk(host: &Host, space: &Space<'_>, term: &Typed, size: usize, seen: &mut HashMap<u128, String>, visit: &mut dyn FnMut(Record) -> ControlFlow<()>) -> ControlFlow<()> {
+fn root_walk(host: &Host, space: &Space<'_>, term: &Typed, size: usize, seen: &mut LookupMap<u128, String>, visit: &mut dyn FnMut(Record) -> ControlFlow<()>) -> ControlFlow<()> {
     // An expression that reads no table has one value on every table.
     let mut reads_table = false;
     term.rel.each_leaf(&mut |leaf| reads_table |= matches!(leaf, Leaf::Table(_)));
@@ -147,7 +147,7 @@ fn root_walk(host: &Host, space: &Space<'_>, term: &Typed, size: usize, seen: &m
     })
 }
 
-fn outcome_of(host: &Host, feature: &Feature, expression: &str, seen: &mut HashMap<u128, String>) -> Outcome {
+fn outcome_of(host: &Host, feature: &Feature, expression: &str, seen: &mut LookupMap<u128, String>) -> Outcome {
     let checked: Checked = match host.check(feature) {
         Ok(checked) => checked,
         Err(_) => return Outcome::Refused,

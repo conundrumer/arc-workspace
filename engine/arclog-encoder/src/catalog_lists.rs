@@ -1,8 +1,6 @@
 //! The catalog's kinds as a table's entries: each kind's shape, with its greatest value at each example
 //! of its scope, which is the train pairs for a kind that reads the output, and every example otherwise.
 
-use std::collections::HashMap;
-
 use arclog::registry::Registry;
 use arclog::terms::{Constant, Term, TermId};
 use arclog::types::ValueType;
@@ -10,6 +8,7 @@ use arclog::types::ValueType;
 use crate::catalog::{orientation, pass, pass_input, Cell, Kind, Record, TableAt, Value};
 use crate::catalog_facts::PairFacts;
 use crate::catalog_vector::shape_name;
+use crate::lookup::InsertionMap;
 use crate::gen_constants::{margins_of, number_of};
 use crate::stored::Stored;
 
@@ -58,7 +57,7 @@ fn number(value: Value) -> Option<f64> {
     }
 }
 
-fn greatest_of(records: &[Record], kinds: &[Kind], per: &mut HashMap<String, f64>) {
+fn greatest_of(records: &[Record], kinds: &[Kind], per: &mut InsertionMap<String, f64>) {
     for record in records {
         let name = shape_name(record, kinds);
         if let Value::Word(word) = record.value {
@@ -87,12 +86,12 @@ pub struct NamedShape {
 pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts], inputs: &[PairFacts]) -> Vec<NamedShape> {
     let kinds: Vec<Kind> = table.types.iter().map(kind_of).collect();
     let pairs = facts.len() + tests.len();
-    let mut shapes: HashMap<String, Vec<Option<f64>>> = HashMap::new();
+    let mut shapes: InsertionMap<String, Vec<Option<f64>>> = InsertionMap::new();
     let mut records = Vec::with_capacity(256);
     let mut cells: Vec<Cell> = Vec::new();
     for (pair, fact) in facts.iter().chain(tests).enumerate() {
         let models = table.rows.get(pair).map_or(&[][..], Vec::as_slice);
-        let mut sums: HashMap<String, (f64, usize)> = HashMap::new();
+        let mut sums: InsertionMap<String, (f64, usize)> = InsertionMap::new();
         for model in models {
             cells.clear();
             for row in model.rows() {
@@ -100,14 +99,14 @@ pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts], in
             }
             records.clear();
             pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, fact, &mut records);
-            let mut per = HashMap::new();
+            let mut per = InsertionMap::new();
             greatest_of(&records, &kinds, &mut per);
             // A kind that reads the output alone also stands for the input, read as its own output.
             records.clear();
             let own = if pair < inputs.len() { &inputs[pair] } else { fact };
             pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, own, &mut records);
             records.retain(|record| record.kind.contains("output") && !record.kind.contains("input") && !record.kind.contains("change"));
-            let mut mirrored = HashMap::new();
+            let mut mirrored = InsertionMap::new();
             greatest_of(&records, &kinds, &mut mirrored);
             per.extend(mirrored.into_iter().map(|(name, value)| (name.replace("output", "input"), value)));
             records.clear();

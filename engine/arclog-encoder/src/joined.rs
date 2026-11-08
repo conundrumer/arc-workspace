@@ -443,22 +443,20 @@ impl Joined {
             start = end;
         }
         let range_of = |id: u32| b_runs.binary_search_by(|run| run.0.cmp(&id)).ok().map(|at| (b_runs[at].1, b_runs[at].2));
-        let work: usize = sets.keys().map(|ids| ids.iter().filter_map(|id| range_of(*id)).map(|(from, to)| to - from).sum::<usize>()).sum();
+        let work: usize = sets.sum_of(|ids, _| ids.iter().filter_map(|id| range_of(*id)).map(|(from, to)| to - from).sum::<usize>());
         if work > COUNT_WORK {
             crate::bounds::mark(Bound::CountOutput);
             return None;
         }
-        let mut total = 0u64;
-        for (ids, tuples) in &sets {
+        Some(sets.saturating_sum_of(|ids, tuples| {
             let mut flat: Vec<Cell> = Vec::new();
             for (from, to) in ids.iter().filter_map(|id| range_of(*id)) {
                 for row in b.cells[from * b.arity..to * b.arity].chunks_exact(b.arity) {
                     flat.extend_from_slice(&row[1..]);
                 }
             }
-            total = total.saturating_add(tuples.saturating_mul(Table::distinct(b.arity - 1, flat).len as u64));
-        }
-        Some(total)
+            tuples.saturating_mul(Table::distinct(b.arity - 1, flat).len as u64)
+        }))
     }
 
     /// The count of distinct tuples at `picks` of the rows of one side that have a partner.

@@ -287,13 +287,11 @@ fn pool_values(pairs: &[&PairValues]) -> Vec<(u64, f32, f32, f32)> {
         }
     }
     let total = pairs.len();
-    let mut out: Vec<(u64, f32, f32, f32)> = held.into_iter().map(|(shape, (least, sum, most, seen))| {
+    held.into_sorted_vec().into_iter().map(|(shape, (least, sum, most, seen))| {
         let least = if seen < total { least.min(0.0) } else { least };
         let most = if seen < total { most.max(0.0) } else { most };
         (shape, least, sum / total as f32, most)
-    }).collect();
-    out.sort_unstable_by_key(|entry| entry.0);
-    out
+    }).collect()
 }
 
 /// A task's lists as they are made. Each list leaves memory as a zstd frame, into a file beside the task's lists where one is named, and memory holds only where it stands and
@@ -392,8 +390,7 @@ impl ListSink {
             return Err(fault);
         }
         heads.sort_by_key(|head| head.rank);
-        let mut dictionary: Vec<u64> = shapes.into_keys().collect();
-        dictionary.sort_unstable();
+        let dictionary: Vec<u64> = shapes.into_sorted_keys();
         let header = header(dictionary.len(), &heads);
         let shape_count = dictionary.len() as u64;
         match (spool, target) {

@@ -1,10 +1,11 @@
 //! Reads tables and grids from JSON for the catalog's pass, writes its values, and gives
 //! Candidate's stable templates in the form the scoring reads.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::catalog::*;
 use crate::catalog_facts::*;
+use crate::lookup::LookupMap;
 
 /// A table's columns, and its rows at each train pair.
 pub struct ParsedTable {
@@ -14,7 +15,7 @@ pub struct ParsedTable {
     pub rows: Vec<Option<(usize, Vec<Cell>)>>,
 }
 
-fn cell_of(value: &serde_json::Value, kind: Kind, names: &mut HashMap<String, i32>) -> Cell {
+fn cell_of(value: &serde_json::Value, kind: Kind, names: &mut LookupMap<String, i32>) -> Cell {
     match kind {
         Kind::Position | Kind::Box | Kind::Offset => {
             let mut out = [0i32; 4];
@@ -41,7 +42,7 @@ pub fn parse_table(table: &serde_json::Value, train: usize) -> ParsedTable {
     let columns = table["columns"].as_array().unwrap_or(&empty);
     let kinds: Vec<Kind> = types.iter().map(|name| Kind::of(name.as_str().unwrap_or(""))).collect();
     let keys: Vec<bool> = columns.iter().map(|name| name.as_str().unwrap_or("").starts_with("key.")).collect();
-    let mut names = HashMap::new();
+    let mut names = LookupMap::new();
     let rows = (0..train).map(|pair| {
         let held = table["rows"].get(format!("train/{pair}"))?.as_array()?;
         let mut cells = Vec::with_capacity(held.len() * kinds.len());
@@ -189,7 +190,7 @@ pub fn dump_task(path: &str, tasks: &std::path::Path, orders: &BTreeMap<String, 
 pub fn values_of(requests: &str, tasks: &std::path::Path, out: &mut impl std::io::Write) -> Result<(u64, std::time::Duration), String> {
     let text = crate::zio::read_text(requests).map_err(|error| error.to_string())?;
     let mut spent = (0u64, std::time::Duration::ZERO);
-    let mut held: HashMap<String, Vec<PairFacts>> = HashMap::new();
+    let mut held: LookupMap<String, Vec<PairFacts>> = LookupMap::new();
     for (at, line) in text.lines().enumerate() {
         let request: serde_json::Value = serde_json::from_str(line).map_err(|error| error.to_string())?;
         let name = request["task"].as_str().ok_or("a request's task")?.to_string();

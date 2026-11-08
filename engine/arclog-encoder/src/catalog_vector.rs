@@ -6,10 +6,9 @@
 //! whose every value is at its default is left out. A binding with no record has no value at
 //! that example, and `present` counts the examples where the shape has one.
 
-use std::collections::HashMap;
-
 use crate::catalog::*;
 use crate::catalog_facts::*;
+use crate::lookup::InsertionMap;
 
 /// An exact fraction in lowest terms, with a positive denominator.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -113,7 +112,7 @@ struct Per {
 /// One table's vector, with its records at each train pair.
 pub fn vector_of(records: &[Vec<Record>], kinds: &[Kind]) -> Vec<Entry> {
     let examples = records.len();
-    let mut per: HashMap<String, Per> = HashMap::new();
+    let mut per: InsertionMap<String, Per> = InsertionMap::new();
     for (example, held) in records.iter().enumerate() {
         for record in held {
             let name = shape_name(record, kinds);
