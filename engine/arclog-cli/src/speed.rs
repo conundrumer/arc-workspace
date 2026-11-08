@@ -7,9 +7,9 @@
 //! with both times, and each solver whose run stops at a cap, with the cap
 //! and the form that reached it.
 //!
-//! It prints as well, for each solver run, the largest count of bindings
-//! tried and of rows held of any one of its evaluations that ended with no
-//! stop, and then the largest of each over the solvers run, the counts the
+//! It prints as well, for each solver run, the largest count of content
+//! units (the rows an evaluation reads and writes) and of rows held of any
+//! one of its evaluations that ended with no stop, and then the largest of each over the solvers run, the counts the
 //! caps are set from.
 //!
 //! Its arguments: the snapshot's directory, the corpus directory, the
@@ -65,11 +65,11 @@ pub fn run(args: &[String]) -> ExitCode {
     };
     let counts = counts.into_inner().expect("a map of counts that no panic poisoned");
     for (id, counts) in &counts {
-        println!("{id}: the largest counts of one evaluation: {} bindings tried, {} rows held", counts.bindings, counts.rows);
+        println!("{id}: the largest counts of one evaluation: {} content units counted, {} rows held", counts.bindings, counts.rows);
     }
     let largest = |count: fn(&Counts) -> u64| counts.iter().max_by_key(|(_, counts)| count(counts)).map(|(id, counts)| (count(counts), id));
     if let (Some((bindings, bindings_id)), Some((rows, rows_id))) = (largest(|c| c.bindings), largest(|c| c.rows)) {
-        println!("the largest counts of the solvers run: {bindings} bindings tried, of {bindings_id}; {rows} rows held, of {rows_id}");
+        println!("the largest counts of the solvers run: {bindings} content units counted, of {bindings_id}; {rows} rows held, of {rows_id}");
     }
     let ran = selected.map_or(report.checked, |ids| ids.len());
     println!("{} of {ran} solvers run slower than Souffle, stop at a cap, or do not run", report.failures.len());
