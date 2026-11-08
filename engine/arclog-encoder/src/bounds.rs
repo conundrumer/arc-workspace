@@ -18,8 +18,6 @@ use crate::lookup::LookupMap;
 pub enum Bound {
     /// `inside-boxes` and `boxes-holding`: the rows of the left side times the boxes of the right side pass 4,000,000.
     BoxesGuard,
-    /// The work of counting the distinct tuples of the rows of a `join` passes its bound.
-    CountOutput,
     /// A term has passed its budget of cells: the cells of the inputs it reads plus the cells of its outputs, each as rows times columns, at each instance. An operator that writes an output past the budget calls [`mark`] with it as well.
     Walk,
     /// `complement` reads a box of more than 4096 cells.
@@ -27,7 +25,7 @@ pub enum Bound {
 }
 
 /// The name of each bound, in the order of [`Bound`].
-const NAMES: [&str; 4] = ["boxes-guard", "cap-count-output", "walk", "complement-area"];
+const NAMES: [&str; 3] = ["boxes-guard", "walk", "complement-area"];
 
 /// The slot of the evaluations in a head's counts, and of those whose input already had no value.
 const EVALUATIONS: usize = NAMES.len();

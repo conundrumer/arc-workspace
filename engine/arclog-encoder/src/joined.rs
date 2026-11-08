@@ -27,9 +27,6 @@ const SKETCH_KEPT: usize = 1 << 18;
 /// The id of a row of a parent that no row of its child pairs with.
 const NO_PARTNER: u32 = u32::MAX;
 
-/// The most rows of a side that a count of distinct tuples reads, over all the tuples it groups.
-const COUNT_WORK: usize = 1 << 24;
-
 /// The most pairs of rows that a `select` over two nodes tests.
 const PAIR_WORK: usize = 1 << 26;
 
@@ -710,7 +707,7 @@ impl Joined {
         Some(Table::distinct(width, out))
     }
 
-    /// The count of distinct tuples of the rows of the join at `columns`: no value where it takes more than a bound of work.
+    /// The count of distinct tuples of the rows of the join at `columns`: no value where a column is not one of the join.
     pub fn distinct_count(&self, columns: &[u16]) -> Option<u64> {
         let mut key: Vec<u16> = columns.to_vec();
         key.sort_unstable();
@@ -725,13 +722,7 @@ impl Joined {
         if let Some(count) = self.tree_count(&key) {
             return Some(count);
         }
-        match self.grouped(&key, false) {
-            Some((tuples, _)) => Some((tuples.len() / key.len()) as u64),
-            None => {
-                crate::bounds::mark(Bound::CountOutput);
-                None
-            }
-        }
+        self.grouped(&key, false).map(|(tuples, _)| (tuples.len() / key.len()) as u64)
     }
 
     /// The count of distinct tuples at `key` where the key of each node's link is told by the columns of `key`, so that rows at two keys never give one tuple: each node counts the distinct tuples below it at each of its parent's keys. No value where some link below a column of `key` is not told.
@@ -857,11 +848,6 @@ impl Joined {
             start = end;
         }
         let range_of = |id: u32| b_runs.binary_search_by(|run| run.0.cmp(&id)).ok().map(|at| (b_runs[at].1, b_runs[at].2));
-        let work: usize = sets.sum_of(|ids, _| ids.iter().filter_map(|id| range_of(*id)).map(|(from, to)| to - from).sum::<usize>());
-        if work > COUNT_WORK {
-            crate::bounds::mark(Bound::CountOutput);
-            return None;
-        }
         Some(sets.saturating_sum_of(|ids, tuples| {
             let mut flat: Vec<Cell> = Vec::new();
             for (from, to) in ids.iter().filter_map(|id| range_of(*id)) {
@@ -884,10 +870,7 @@ impl Joined {
         if self.at(&unique).is_none() {
             return Val::None;
         }
-        let Some((tuples, weights)) = self.grouped(&unique, true) else {
-            crate::bounds::mark(Bound::CountOutput);
-            return Val::None;
-        };
+        let Some((tuples, weights)) = self.grouped(&unique, true) else { return Val::None };
         let picks: Vec<usize> = keys.iter().map(|key| unique.binary_search(key).expect("a key is one of the distinct keys")).collect();
         let mut ordered: Vec<Cell> = Vec::with_capacity(weights.len() * keys.len());
         for tuple in tuples.chunks_exact(unique.len()) {
@@ -957,7 +940,7 @@ impl Joined {
         }
     }
 
-    /// The count of rows that `step` gives over the join's rows, where it is a count of distinct tuples of its columns and needs no tuples written: no value where a bound stops it. `None` where `step` is not of that form.
+    /// The count of rows that `step` gives over the join's rows, where it is a count of distinct tuples of its columns and needs no tuples written. `None` where `step` is not of that form.
     pub fn count_of(&self, step: &Step) -> Option<Option<u64>> {
         match step {
             Step::Project { columns } => Some(self.distinct_count(columns)),
