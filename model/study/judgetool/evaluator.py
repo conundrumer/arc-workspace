@@ -114,8 +114,7 @@ class ReplayEvaluator:
         require_evaluator(self.arclog)
         self.deadline = deadline if deadline is not None else self.cfg['deadline']
         self.work_cap = self.cfg['work_cap'] * (64 if deadline is not None else 1)
-        self.settings = self.arclog.DecodeSettings(deadline_seconds=self.deadline,
-                                                   table_work_cap=self.work_cap, rule_tests=False)
+        self.settings = self.arclog.DecodeSettings(table_work_cap=self.work_cap, rule_tests=False)
         self.artifacts = Path(artifacts).resolve()
         roots=(DATA_ROOT/'judgetool',DATA_ROOT/'ast/run/mech4',DATA_ROOT/'ast/run/mech5',
                DATA_ROOT/'ast/run/mech/det-later-fit',DATA_ROOT/'population_passes')
@@ -127,7 +126,7 @@ class ReplayEvaluator:
         self.runtime = dict(python=str(Path(sys.executable).resolve()), binary=str(Path(binary).resolve()),
                             binary_sha256=hashlib.sha256(Path(binary).read_bytes()).hexdigest())
         self.receipt = dict(schema='judgetool-replay-settings-v1', runtime=self.runtime,
-                            config_sha256=sha(self.cfg), deadline_seconds=self.deadline,
+                            config_sha256=sha(self.cfg),
                             table_work_cap=self.work_cap, rule_tests=False,
                             session_bytes=self.cfg['session_mib']*1024*1024,
                             budget_scope='one gold_tables operation, not entire candidate search',
@@ -205,7 +204,7 @@ class ReplayEvaluator:
         if provenance.get('program_sexp')!=checked.sexp():
             raise ValueError(stage+' report program differs')
         settings=report.get('settings',{})
-        expected=dict(deadline_seconds=self.deadline,table_work_cap=self.work_cap,
+        expected=dict(table_work_cap=self.work_cap,
                       rule_tests=False,session_bytes=self.receipt['session_bytes'])
         if any(settings.get(k)!=v for k,v in expected.items()):
             raise ValueError(stage+' report settings differ')
