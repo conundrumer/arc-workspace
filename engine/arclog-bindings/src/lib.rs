@@ -80,6 +80,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.function(wrap_pyfunction!(engine_stats::engine_stats, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::request_stats, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::work_total, module)?)?;
+    names.function(wrap_pyfunction!(engine_stats::registry_text, module)?)?;
     names.class::<PyReplayProgress>()?;
     names.function(wrap_pyfunction!(streams::corpus_streams, module)?)?;
     names.function(wrap_pyfunction!(study::empty_gold_json, module)?)?;

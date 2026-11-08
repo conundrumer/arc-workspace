@@ -74,6 +74,13 @@ pub(crate) fn request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, 
     Ok(Some(stats))
 }
 
+/// The registry text that the engine embeds as `REGISTRY_TEXT`
+/// (`engine/lib/registry.sexpr`), as it was when this build compiled.
+#[pyfunction]
+pub(crate) fn registry_text() -> &'static str {
+    arclog::registry::REGISTRY_TEXT
+}
+
 /// Where [`work_total`] counts from: the total at its last reset.
 static WORK_TOTAL_BASE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
