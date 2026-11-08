@@ -1,7 +1,7 @@
 //! The CUDA side of `softmax-gpu` (gpu/bbgpu.cu): the arrays of the store and of the pairs on the card, and the calls that `softmax` makes in place of its
 //! CPU gradient, pair sums, histogram, partition and score steps. Built without the feature `gpu`, every call panics.
 
-use super::{Bin, Pairs, Store};
+use super::{Bin, Cut, Pairs, Store};
 use std::ffi::c_void;
 
 macro_rules! ffi {
@@ -35,7 +35,7 @@ ffi! {
     fn bbgpu_root(ctx: *mut c_void, slot: u32, out_g: *mut f64, out_h: *mut f64);
     fn bbgpu_subtract(ctx: *mut c_void, dst: u32, src: u32);
     fn bbgpu_download(ctx: *mut c_void, slot: u32, out: *mut Bin);
-    fn bbgpu_partition(ctx: *mut c_void, start: u64, len: u64, column: u32, pos: u32, default_left: i32, out: *mut u64);
+    fn bbgpu_partition(ctx: *mut c_void, start: u64, len: u64, column: u32, pos: u32, default_left: i32, set: *const u64, set_words: u32, out: *mut u64);
     fn bbgpu_add_value(ctx: *mut c_void, start: u64, len: u64, value: f64);
     fn bbgpu_reset_items(ctx: *mut c_void);
 }
@@ -110,10 +110,15 @@ impl Gpu {
         unsafe { bbgpu_download(self.ctx, slot, out.as_mut_ptr()) }
     }
 
-    /// Partitions the pairs `start..start + len` by the split. Gives the count of pairs that go left and of the rows they stand for.
-    pub fn partition(&self, start: usize, len: usize, column: u32, pos: u32, default_left: bool) -> (usize, usize) {
+    /// Partitions the pairs `start..start + len` by the split: the places up to a position go left, or the places of a category set. Gives the count of pairs that go left
+    /// and of the rows they stand for.
+    pub fn partition(&self, start: usize, len: usize, column: u32, cut: &Cut, default_left: bool) -> (usize, usize) {
         let mut out = [0u64; 2];
-        unsafe { bbgpu_partition(self.ctx, start as u64, len as u64, column, pos, default_left as i32, out.as_mut_ptr()) };
+        let (pos, set, words) = match cut {
+            Cut::Upto(pos) => (*pos, std::ptr::null(), 0),
+            Cut::Set(bits) => (0, bits.as_ptr(), bits.len() as u32),
+        };
+        unsafe { bbgpu_partition(self.ctx, start as u64, len as u64, column, pos, default_left as i32, set, words, out.as_mut_ptr()) };
         (out[0] as usize, out[1] as usize)
     }
 

@@ -35,9 +35,13 @@ struct UseDev {
     uint32_t* count;     // how many
 };
 
+// What a split sends left: for a numeric column, the places up to `pos`; for a categorical one, the places whose bit is set in `set` (bit p % 64 of word p / 64,
+// on the card), which is null for a numeric column. `zero_left` is whether the default bin's place goes left. The column's NaN bin goes the way `default_left` says,
+// which is right for a categorical column.
 struct SplitArgs {
     uint32_t start, end, zero, pos;
-    int has_nan, default_left;
+    int has_nan, default_left, zero_left;
+    const uint64_t* set;
     uint64_t mask;
     uint32_t stamp;
 };
@@ -46,6 +50,8 @@ struct Ctx {
     uint32_t kept = 0, bins = 0, num_uses = 0, maps = 0, slots = 0;
     uint64_t pairs = 0, rows = 0, groups = 0;
     uint32_t* col_start = nullptr; uint32_t* zero_pos = nullptr; uint8_t* has_nan = nullptr; uint64_t* col_uses = nullptr;
+    uint64_t* set = nullptr;          // the category set of the split being partitioned, as many words as the widest column has places
+    uint32_t set_words = 0;
     std::vector<uint32_t> h_col_start, h_zero_pos; std::vector<uint8_t> h_has_nan; std::vector<uint64_t> h_col_uses;
     UseDev uses_h[MAX_USES];
     UseDev* uses_d = nullptr;
@@ -223,7 +229,7 @@ __device__ __forceinline__ uint32_t code_of(const UseDev& d, uint32_t b, const S
         } else {
             uint32_t index = bid - s.start;
             uint32_t place = index < s.zero ? index : index + 1;
-            left = place <= s.pos;
+            left = s.set ? ((s.set[place >> 6] >> (place & 63)) & 1ull) != 0 : place <= s.pos;
         }
         return left ? GOES_LEFT : GOES_RIGHT;
     }
@@ -249,7 +255,7 @@ __device__ __forceinline__ bool goes_left(const UseDev* uses, const uint32_t* pa
         }
         if (code != NO_ENTRY) return code == GOES_LEFT;
     }
-    return s.zero <= s.pos;
+    return s.zero_left != 0;
 }
 
 __global__ void k_flags(const uint32_t* items, uint64_t n, const uint32_t* pair_block, uint32_t maps, const UseDev* uses, SplitArgs s, const uint32_t* pair_start, uint32_t* flag, unsigned long long* counts) {
@@ -345,6 +351,11 @@ void bbgpu_set_columns(void* ctx, const uint32_t* col_start, const uint32_t* zer
     c->h_zero_pos.assign(zero_pos, zero_pos + c->kept);
     c->h_has_nan.assign(has_nan, has_nan + c->kept);
     c->h_col_uses.assign(col_uses, col_uses + c->kept);
+    // A column of b bins has at most b + 1 places.
+    uint32_t widest = 0;
+    for (uint32_t k = 0; k < c->kept; k++) widest = widest > col_start[k + 1] - col_start[k] ? widest : col_start[k + 1] - col_start[k];
+    c->set_words = (widest + 1 + 63) / 64;
+    c->set = dalloc<uint64_t>(c, c->set_words, "category set");
 }
 
 // Use u: its map, its blocks' count, the pointers into the entries (blocks + 1 of them) and the entries (bin numbers).
@@ -467,8 +478,10 @@ void bbgpu_download(void* ctx, uint32_t slot, Bin* out) {
     CK(cudaMemcpy(out, c->hist + (size_t)slot * c->bins * 2, (size_t)c->bins * sizeof(Bin), cudaMemcpyDeviceToHost));
 }
 
-// Stably partitions idx[start..start + len] by the split. Gives, in out[0] and out[1], the count of pairs that go left and the count of rows they stand for.
-void bbgpu_partition(void* ctx, uint64_t start, uint64_t len, uint32_t column, uint32_t pos, int default_left, uint64_t* out) {
+// Stably partitions idx[start..start + len] by the split. A numeric split sends the places up to `pos` left (set is null). A categorical split gives the words of its
+// category set, `set_words` of them (the column's places, in 64 to a word), and sends the places in the set left. Gives, in out[0] and out[1], the count of pairs that go
+// left and the count of rows they stand for.
+void bbgpu_partition(void* ctx, uint64_t start, uint64_t len, uint32_t column, uint32_t pos, int default_left, const uint64_t* set, uint32_t set_words, uint64_t* out) {
     Ctx* c = (Ctx*)ctx;
     SplitArgs s;
     s.start = c->h_col_start[column];
@@ -477,6 +490,15 @@ void bbgpu_partition(void* ctx, uint64_t start, uint64_t len, uint32_t column, u
     s.pos = pos;
     s.has_nan = c->h_has_nan[column] != 0;
     s.default_left = default_left;
+    if (set) {
+        if (set_words > c->set_words) { fprintf(stderr, "bbgpu: a category set of %u words, and the widest column has %u\n", set_words, c->set_words); abort(); }
+        CK(cudaMemcpy(c->set, set, set_words * sizeof(uint64_t), cudaMemcpyHostToDevice));
+        s.set = c->set;
+        s.zero_left = ((set[s.zero >> 6] >> (s.zero & 63)) & 1ull) != 0;
+    } else {
+        s.set = nullptr;
+        s.zero_left = s.zero <= pos;
+    }
     s.mask = c->h_col_uses[column];
     s.stamp = ++c->stamp;
     if (s.stamp >= (1u << 30)) { fprintf(stderr, "bbgpu: a memo stamp has 30 bits\n"); abort(); }

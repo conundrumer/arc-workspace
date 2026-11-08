@@ -10,7 +10,8 @@
 //!     block-boost softmax FILE  a model of the writer's softmax over the ids of each writing point, from the JSON in FILE
 //!     block-boost softmax-gpu FILE  the same, with the gradient, histograms, partitions and scores on a CUDA card (build with --features gpu)
 //!
-//! The objective and the tree growth are those of LightGBM's lambdarank, with the same parameters. A histogram entry holds
+//! The objective and the tree growth are those of LightGBM's lambdarank, with the same parameters. A column that plan.json lists as `categorical` has one bin
+//! for each of its values, and splits as LightGBM splits a categorical feature: a set of values goes left (see `best_in_categorical`). A histogram entry holds
 //! the sums of a bin, and a leaf's rows add their sums to the blocks first, so one block's entries are read once for a leaf.
 //! Rows with the same blocks in every map have the same leaf in every tree, so `softmax` grows its trees over those pairs of rows, keeps one score for
 //! each pair, and goes over rows only for the gradient and for the sums of each pair's rows.
@@ -193,6 +194,8 @@ struct Plan {
     sample_cap: u64,
     threads: usize,
     reference: Option<PathBuf>,
+    /// The columns (by their number in the plan's column map) that split as categories, each value a category.
+    categorical: Vec<usize>,
     maps: Vec<PlanMap>,
     uses: Vec<PlanUse>,
 }
@@ -215,6 +218,12 @@ impl Plan {
             sample_cap: v["sample_cap"].as_u64().unwrap(),
             threads: v["threads"].as_u64().unwrap() as usize,
             reference: v["reference"].as_str().map(PathBuf::from),
+            categorical: v["categorical"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{}: plan.json has no list `categorical` (the columns that split as categories; [] for none)", dir.display()))
+                .iter()
+                .map(|x| x.as_u64().expect("`categorical` lists column numbers") as usize)
+                .collect(),
             maps: v["maps"].as_array().unwrap().iter().map(|m| PlanMap { file: path(&m["file"]), domain: m["domain"].as_u64().unwrap() as usize }).collect(),
             uses: v["uses"]
                 .as_array()
@@ -395,6 +404,28 @@ fn column_bounds(values: &[f64], counts: &[f64], max_bin: usize, has_nan: bool) 
     (bounds, zero)
 }
 
+/// A categorical column's upper bounds: its default bin (the value 0), then one bound for each value that has an entry, which is that value. A value's place
+/// is the place of the first bound at or above it, and a value with no bound of its own has no category.
+fn category_bounds(k: usize, values: &[f64]) -> (Vec<f64>, u32) {
+    let mut bounds = vec![ZERO];
+    for &value in values {
+        assert!(value > 0.0 && value == value.trunc(), "categorical column {k} holds {value}, which is not a whole number of at least 0");
+        bounds.push(value);
+    }
+    (bounds, 0)
+}
+
+/// Which kept columns are categorical: 1 for each, else 0.
+fn categorical_of(plan: &Plan, keep: &[i32], kept: usize) -> Vec<u8> {
+    let mut categorical = vec![0u8; kept];
+    for &column in &plan.categorical {
+        assert!(column < keep.len(), "plan.json: categorical column {column} is not a column");
+        assert!(keep[column] >= 0, "plan.json: categorical column {column} is not kept");
+        categorical[keep[column] as usize] = 1;
+    }
+    categorical
+}
+
 #[derive(Clone, Copy)]
 struct Sample {
     column: u32,
@@ -416,7 +447,7 @@ fn merge_samples(samples: &mut Vec<Sample>) {
 }
 
 /// Bins from a sample of each column's values, at most `sample_cap` of them, so a rare column keeps every value it has.
-fn find_bins(dir: &Path, plan: &Plan, keep: &[i32], kept: usize) {
+fn find_bins(dir: &Path, plan: &Plan, keep: &[i32], kept: usize, categorical: &[u8]) {
     let started = Instant::now();
     let entries: Vec<u64> = read_all(&dir.join("entries.u64"));
     let nans: Vec<u64> = read_all(&dir.join("nans.u64"));
@@ -458,7 +489,8 @@ fn find_bins(dir: &Path, plan: &Plan, keep: &[i32], kept: usize) {
                         continue;
                     }
                     let held = entries[logical as usize];
-                    if held <= plan.sample_cap || random.unit() < plan.sample_cap as f64 / held as f64 {
+                    // A categorical column keeps every value it has.
+                    if categorical[k as usize] != 0 || held <= plan.sample_cap || random.unit() < plan.sample_cap as f64 / held as f64 {
                         out.push(Sample { column: k as u32, value, weight: rows[block] });
                     }
                 }
@@ -488,7 +520,8 @@ fn find_bins(dir: &Path, plan: &Plan, keep: &[i32], kept: usize) {
     }
     let mut has_nan = vec![0u8; kept];
     for (logical, &k) in keep.iter().enumerate() {
-        if k >= 0 && nans[logical] > 0 {
+        // A categorical column has a bin for the NaN and for the values that it had no entry for in the fit.
+        if k >= 0 && (nans[logical] > 0 || categorical[k as usize] != 0) {
             has_nan[k as usize] = 1;
         }
     }
@@ -506,7 +539,7 @@ fn find_bins(dir: &Path, plan: &Plan, keep: &[i32], kept: usize) {
                     counts.push(sample.weight as f64);
                 }
             }
-            column_bounds(&values, &counts, plan.max_bin, has_nan[k] != 0)
+            if categorical[k] != 0 { category_bounds(k, &values) } else { column_bounds(&values, &counts, plan.max_bin, has_nan[k] != 0) }
         })
         .collect();
     let (mut bound_start, mut col_start, mut zero_pos) = (vec![0u32; kept + 1], vec![0u32; kept + 1], vec![0u32; kept]);
@@ -535,10 +568,17 @@ fn compile(dir: &Path) {
     let source = match &plan.reference {
         Some(train) => train.clone(),
         None => {
-            find_bins(dir, &plan, &keep, kept);
+            find_bins(dir, &plan, &keep, kept, &categorical_of(&plan, &keep, kept));
             dir.to_path_buf()
         }
     };
+    // A set that has a reference splits the columns as the reference's set does.
+    let categorical: Vec<u8> = match &plan.reference {
+        Some(_) => read_all(&source.join("categorical.u8")),
+        None => categorical_of(&plan, &keep, kept),
+    };
+    assert_eq!(categorical.len(), kept, "{}: categorical.u8 has an entry for each kept column", source.display());
+    write_all(&dir.join("categorical.u8"), &categorical);
     let bounds: Vec<f64> = read_all(&source.join("bounds.f64"));
     let bound_start: Vec<u32> = read_all(&source.join("bound_start.u32"));
     let col_start: Vec<u32> = read_all(&source.join("col_start.u32"));
@@ -614,6 +654,13 @@ fn compile(dir: &Path) {
                             continue;
                         }
                         col_start[k + 1] - 1
+                    } else if categorical[k] != 0 {
+                        let x = value as f64;
+                        assert!(x >= 0.0 && x == x.trunc(), "categorical column {k} holds {x}, which is not a whole number of at least 0");
+                        let here = &bounds[bound_start[k] as usize..bound_start[k + 1] as usize];
+                        let place = here.partition_point(|&bound| bound < x);
+                        // A value that the fit had no entry for stands in the last bin, with the NaN.
+                        if here.get(place) == Some(&x) { col_start[k] + place as u32 - 1 } else { col_start[k + 1] - 1 }
                     } else {
                         let here = &bounds[bound_start[k] as usize..bound_start[k + 1] as usize];
                         let x = value as f64;
@@ -681,6 +728,9 @@ struct Store {
     col_start: Vec<u32>,
     zero_pos: Vec<u32>,
     has_nan: Vec<u8>,
+    /// 1 for a categorical column. Its places are its values: place 0 is the value 0 (the default bin), place p the p-th value with an entry, and the last bin
+    /// (the NaN bin) holds the NaN and the values with no place.
+    categorical: Vec<u8>,
     col_uses: Vec<u64>,
     col_entries: Vec<u64>,
     maps: Vec<Mapped<u32>>,
@@ -690,13 +740,14 @@ struct Store {
 impl Store {
     fn open(dir: &Path) -> Store {
         let meta = read_json(&dir.join("compiled.json"));
-        Store {
+        let store = Store {
             rows: meta["rows"].as_u64().unwrap() as usize,
             kept: meta["kept"].as_u64().unwrap() as usize,
             bins: meta["bins"].as_u64().unwrap() as usize,
             col_start: read_all(&dir.join("col_start.u32")),
             zero_pos: read_all(&dir.join("zero_pos.u32")),
             has_nan: read_all(&dir.join("has_nan.u8")),
+            categorical: read_all(&dir.join("categorical.u8")),
             col_uses: read_all(&dir.join("col_uses.u64")),
             col_entries: read_all(&dir.join("col_entries.u64")),
             maps: (0..meta["maps"].as_u64().unwrap()).map(|m| Mapped::open(&dir.join(format!("map{m}.blocks.u32")))).collect(),
@@ -711,12 +762,17 @@ impl Store {
                     bid: Mapped::open(&dir.join(format!("use{place}.bid.u32"))),
                 })
                 .collect(),
+        };
+        assert_eq!(store.categorical.len(), store.kept, "{}: categorical.u8 has an entry for each column", dir.display());
+        for k in 0..store.kept {
+            assert!(store.categorical[k] == 0 || (store.zero_pos[k] == 0 && store.has_nan[k] != 0), "categorical column {k} has its default bin first and a NaN bin");
         }
+        store
     }
 
-    /// Whether a row goes left at a split: its value's place among the column's bins is at or before `pos`.
+    /// Whether a row goes left at a split: the cut sends its value's place among the column's bins left. A NaN goes the way `default_left` says.
     #[inline]
-    fn left(&self, row: u32, column: u32, pos: u32, default_left: bool) -> bool {
+    fn left(&self, row: u32, column: u32, cut: &Cut, default_left: bool) -> bool {
         let k = column as usize;
         let (start, end) = (self.col_start[k], self.col_start[k + 1]);
         let zero = self.zero_pos[k];
@@ -739,10 +795,29 @@ impl Store {
                 }
                 let index = bid - start;
                 let place = if index < zero { index } else { index + 1 };
-                return place <= pos;
+                return cut.left(place);
             }
         }
-        zero <= pos
+        cut.left(zero)
+    }
+}
+
+/// How a split sends the places of its column.
+#[derive(Clone, Debug)]
+enum Cut {
+    /// The places up to this one go left.
+    Upto(u32),
+    /// The places whose bit is set go left: bit `p % 64` of word `p / 64` is place p. The column's NaN bin is not a place, and goes right.
+    Set(Vec<u64>),
+}
+
+impl Cut {
+    #[inline]
+    fn left(&self, place: u32) -> bool {
+        match self {
+            Cut::Upto(pos) => place <= *pos,
+            Cut::Set(bits) => bits[(place >> 6) as usize] >> (place & 63) & 1 != 0,
+        }
     }
 }
 
@@ -753,14 +828,16 @@ struct Bin {
     h: f64,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Split {
     column: u32,
-    pos: u32,
+    cut: Cut,
     default_left: bool,
     gain: f64,
     left_g: f64,
     left_h: f64,
+    /// The `lambda_l2` of the leaf values that the split makes: the fit's, and for a categorical split with sorted categories, that and `cat_l2`, as in LightGBM.
+    child_l2: f64,
 }
 
 struct Config {
@@ -782,22 +859,60 @@ struct Config {
     /// The least count of tasks on each side of a split, and each row's task. 0 asks for no such test.
     min_tasks: usize,
     row_task: Vec<u32>,
+    categorical: CategoricalConfig,
 }
 
-/// A leaf's output before the learning rate: -G/(H + lambda_l2), limited to +-max_delta_step where that is above 0.
-fn leaf_output(g: f64, h: f64, config: &Config) -> f64 {
-    let output = -g / (h + config.lambda_l2);
+/// The parameters of a categorical split, with their meaning and default values in LightGBM.
+struct CategoricalConfig {
+    /// `max_cat_threshold` (32): the most categories that one side of a split holds.
+    max_cat_threshold: usize,
+    /// `cat_l2` (10): added to `lambda_l2` when the gain of a split of sorted categories is found, and in the values of its two leaves.
+    cat_l2: f64,
+    /// `cat_smooth` (10): a category is considered where it holds at least this many rows, and categories are sorted by G / (H + cat_smooth).
+    cat_smooth: f64,
+    /// `max_cat_to_onehot` (4): a column with this many bins or fewer is split as one category against the others.
+    max_cat_to_onehot: usize,
+    /// `min_data_per_group` (100): the least count of rows in the categories that the scan adds between two splits that it considers, and on the right of a split.
+    min_data_per_group: f64,
+}
+
+impl CategoricalConfig {
+    /// From the settings JSON, where each parameter that is left out has LightGBM's default.
+    fn read(v: &Value) -> CategoricalConfig {
+        CategoricalConfig {
+            max_cat_threshold: v["max_cat_threshold"].as_u64().unwrap_or(32) as usize,
+            cat_l2: v["cat_l2"].as_f64().unwrap_or(10.0),
+            cat_smooth: v["cat_smooth"].as_f64().unwrap_or(10.0),
+            max_cat_to_onehot: v["max_cat_to_onehot"].as_u64().unwrap_or(4) as usize,
+            min_data_per_group: v["min_data_per_group"].as_f64().unwrap_or(100.0),
+        }
+    }
+
+    /// The parameters as numbers, for the fingerprint of a fit.
+    fn bits(&self) -> [u64; 5] {
+        [self.max_cat_threshold as u64, self.cat_l2.to_bits(), self.cat_smooth.to_bits(), self.max_cat_to_onehot as u64, self.min_data_per_group.to_bits()]
+    }
+}
+
+/// A leaf's output before the learning rate: -G/(H + l2), with `l2` the L2 term (`lambda_l2`, or more for a leaf of a categorical split), limited to +-max_delta_step where that is above 0.
+fn leaf_output_l2(g: f64, h: f64, l2: f64, config: &Config) -> f64 {
+    let output = -g / (h + l2);
     if config.max_delta_step > 0.0 { output.clamp(-config.max_delta_step, config.max_delta_step) } else { output }
 }
 
 /// What a leaf adds to the sum of gains, as LightGBM's `GetLeafGain`: G^2/(H + lambda_l2), and with max_delta_step the gain of the limited output w,
 /// -(2 G w + (H + lambda_l2) w^2).
 fn leaf_gain(g: f64, h: f64, config: &Config) -> f64 {
+    leaf_gain_l2(g, h, config.lambda_l2, config)
+}
+
+/// `leaf_gain` with the L2 term `l2`.
+fn leaf_gain_l2(g: f64, h: f64, l2: f64, config: &Config) -> f64 {
     if config.max_delta_step > 0.0 {
-        let w = leaf_output(g, h, config);
-        -(2.0 * g * w + (h + config.lambda_l2) * w * w)
+        let w = leaf_output_l2(g, h, l2, config);
+        -(2.0 * g * w + (h + l2) * w * w)
     } else {
-        g * g / (h + config.lambda_l2)
+        g * g / (h + l2)
     }
 }
 
@@ -818,12 +933,14 @@ impl Admit {
 #[derive(Default)]
 struct Tree {
     column: Vec<u32>,
-    pos: Vec<u32>,
+    cut: Vec<Cut>,
     default_left: Vec<bool>,
     left: Vec<i32>,
     right: Vec<i32>,
     gain: Vec<f64>,
     value: Vec<f64>,
+    /// The L2 term of each leaf's value.
+    leaf_l2: Vec<f64>,
 }
 
 impl Tree {
@@ -834,7 +951,7 @@ impl Tree {
         let mut node = 0i32;
         loop {
             let n = node as usize;
-            node = if store.left(row, self.column[n], self.pos[n], self.default_left[n]) { self.left[n] } else { self.right[n] };
+            node = if store.left(row, self.column[n], &self.cut[n], self.default_left[n]) { self.left[n] } else { self.right[n] };
             if node < 0 {
                 return !node as usize;
             }
@@ -1518,6 +1635,9 @@ fn best_in_column(store: &Store, k: usize, hist: &[Bin], total: (f64, f64, f64),
     if bins.is_empty() {
         return None;
     }
+    if store.categorical[k] != 0 {
+        return best_in_categorical(store, k, bins, total, config, parent);
+    }
     let (mut other_g, mut other_h, mut filled) = (0.0, 0.0, 0.0);
     for bin in bins {
         other_g += bin.g;
@@ -1550,8 +1670,8 @@ fn best_in_column(store: &Store, k: usize, hist: &[Bin], total: (f64, f64, f64),
     let mut best: Option<Split> = None;
     let mut consider = |pos: usize, nan_left: bool, left_g: f64, left_h: f64, right_g: f64, right_h: f64| {
         let gain = leaf_gain(left_g, left_h, config) + leaf_gain(right_g, right_h, config);
-        if gain > parent && best.is_none_or(|b| gain - parent > b.gain) {
-            best = Some(Split { column: k as u32, pos: pos as u32, default_left: nan_left, gain: gain - parent, left_g, left_h: left_h - EPSILON });
+        if gain > parent && best.as_ref().is_none_or(|b| gain - parent > b.gain) {
+            best = Some(Split { column: k as u32, cut: Cut::Upto(pos as u32), default_left: nan_left, gain: gain - parent, left_g, left_h: left_h - EPSILON, child_l2: config.lambda_l2 });
         }
     };
     let (mut right_g, mut right_h, mut right_n) = (0.0, EPSILON, 0.0);
@@ -1587,6 +1707,105 @@ fn best_in_column(store: &Store, k: usize, hist: &[Bin], total: (f64, f64, f64),
     best
 }
 
+/// The bits of the given places, of a column with `count` places.
+fn place_set(count: usize, places: &mut dyn Iterator<Item = usize>) -> Vec<u64> {
+    let mut bits = vec![0u64; count.div_ceil(64)];
+    for place in places {
+        bits[place >> 6] |= 1u64 << (place & 63);
+    }
+    bits
+}
+
+/// The best split of a categorical column, as LightGBM's `FindBestThresholdCategoricalInner` finds it, from the column's bins `bins` in the leaf's histogram.
+///
+/// A category is a place of the column: place 0, the default bin, is the value 0, and the others are the values with an entry. The last bin, which holds the NaN
+/// and the values that the fit has no category for, is no category: its rows go right. The split sends a set of categories left.
+///
+/// A column with `max_cat_to_onehot` bins or fewer, counting the last bin, is split as one category against the others. In a larger column, the categories
+/// with at least `cat_smooth` rows are sorted by G / (H + cat_smooth), and a scan from each end of that order adds one category at a time to the left side. The
+/// scan adds at most `max_cat_threshold` categories and half of them, and it considers a split only once the categories added since the last split that it
+/// considered hold `min_data_per_group` rows. It stops at the first split that leaves too few rows on the right. The gain of those splits, and the values of the
+/// leaves they make, use `lambda_l2 + cat_l2`, and the gain of the parent uses `lambda_l2`.
+fn best_in_categorical(store: &Store, k: usize, bins: &[Bin], total: (f64, f64, f64), config: &Config, parent: f64) -> Option<Split> {
+    let (g, h, n) = total;
+    let numeric = bins.len() - 1;
+    debug_assert!(store.has_nan[k] != 0 && store.zero_pos[k] == 0);
+    let (other_g, other_h) = bins.iter().fold((0.0, 0.0), |(sg, sh), bin| (sg + bin.g, sh + bin.h));
+    let sum_h = h + EPSILON;
+    let factor = n / sum_h;
+    let (min_n, min_h) = (config.min_data_in_leaf, config.min_sum_hessian);
+    let cat = &config.categorical;
+    let default = Bin { g: g - other_g, h: (h - other_h).max(0.0) };
+    // The categories, places 0..=numeric, each with its sums and its estimated count of rows.
+    let categories: Vec<(Bin, f64)> = (0..=numeric)
+        .map(|place| {
+            let bin = if place == 0 { default } else { bins[place - 1] };
+            (bin, (bin.h * factor).round())
+        })
+        .collect();
+    let set_of = |places: &mut dyn Iterator<Item = usize>| place_set(numeric + 1, places);
+    let mut best_gain = f64::NEG_INFINITY;
+    let mut best: Option<Split> = None;
+    if numeric + 2 <= cat.max_cat_to_onehot {
+        for (place, &(bin, count)) in categories.iter().enumerate() {
+            if count < min_n || bin.h < min_h || n - count < min_n {
+                continue;
+            }
+            let other_h = sum_h - bin.h - EPSILON;
+            if other_h < min_h {
+                continue;
+            }
+            let gain = leaf_gain(g - bin.g, other_h, config) + leaf_gain(bin.g, bin.h + EPSILON, config);
+            if gain > parent && gain > best_gain {
+                best_gain = gain;
+                best = Some(Split { column: k as u32, cut: Cut::Set(set_of(&mut std::iter::once(place))), default_left: false, gain: gain - parent, left_g: bin.g, left_h: bin.h, child_l2: config.lambda_l2 });
+            }
+        }
+        return best;
+    }
+    let mut sorted: Vec<usize> = (0..=numeric).filter(|&place| categories[place].1 >= cat.cat_smooth).collect();
+    let ratio = |place: usize| categories[place].0.g / (categories[place].0.h + cat.cat_smooth);
+    sorted.sort_by(|&a, &b| ratio(a).total_cmp(&ratio(b)));
+    let used = sorted.len();
+    let l2 = config.lambda_l2 + cat.cat_l2;
+    let most = cat.max_cat_threshold.min(used.div_ceil(2));
+    // The best scan so far: the direction, the count of categories it added, and the sums of the left side.
+    let mut found: Option<(bool, usize, f64, f64)> = None;
+    for forward in [true, false] {
+        let (mut since_split, mut left_g, mut left_h, mut left_n) = (0.0, 0.0, EPSILON, 0.0);
+        for added in 0..used.min(most) {
+            let (bin, count) = categories[sorted[if forward { added } else { used - 1 - added }]];
+            left_g += bin.g;
+            left_h += bin.h;
+            left_n += count;
+            since_split += count;
+            if left_n < min_n || left_h < min_h {
+                continue;
+            }
+            let right_n = n - left_n;
+            if right_n < min_n || right_n < cat.min_data_per_group {
+                break;
+            }
+            let right_h = sum_h - left_h;
+            if right_h < min_h {
+                break;
+            }
+            if since_split < cat.min_data_per_group {
+                continue;
+            }
+            since_split = 0.0;
+            let gain = leaf_gain_l2(left_g, left_h, l2, config) + leaf_gain_l2(g - left_g, right_h, l2, config);
+            if gain > parent && gain > best_gain {
+                best_gain = gain;
+                found = Some((forward, added + 1, left_g, left_h));
+            }
+        }
+    }
+    let (forward, count, left_g, left_h) = found?;
+    let mut places = (0..count).map(|added| sorted[if forward { added } else { used - 1 - added }]);
+    Some(Split { column: k as u32, cut: Cut::Set(set_of(&mut places)), default_left: false, gain: best_gain - parent, left_g, left_h: left_h - EPSILON, child_l2: l2 })
+}
+
 /// A leaf's best split among the columns its parent could split, and the columns that have a split here, which alone stand
 /// for its children, as in LightGBM.
 fn best_split(store: &Store, used: &[u32], hist: &[Bin], total: (f64, f64, f64), config: &Config, rows: &[u32]) -> (Option<Split>, Vec<u32>) {
@@ -1619,7 +1838,7 @@ fn best_split(store: &Store, used: &[u32], hist: &[Bin], total: (f64, f64, f64),
                 (tops, open)
             },
         );
-    let best = if config.min_tasks == 0 { tops.first().copied() } else { tops.into_iter().find(|split| both_sides_hold_tasks(store, config, rows, split)) };
+    let best = if config.min_tasks == 0 { tops.first().cloned() } else { tops.into_iter().find(|split| both_sides_hold_tasks(store, config, rows, split)) };
     (best, open)
 }
 
@@ -1637,7 +1856,7 @@ fn both_sides_hold_tasks(store: &Store, config: &Config, rows: &[u32], split: &S
     let (mut left, mut right) = (std::collections::HashSet::new(), std::collections::HashSet::new());
     for &row in rows {
         let task = config.row_task[row as usize];
-        if store.left(row, split.column, split.pos, split.default_left) {
+        if store.left(row, split.column, &split.cut, split.default_left) {
             left.insert(task);
         } else {
             right.insert(task);
@@ -1677,7 +1896,9 @@ struct SplitTest<'a, I: Items> {
     start: u32,
     end: u32,
     zero: u32,
-    pos: u32,
+    cut: &'a Cut,
+    /// Whether the column's default bin goes left, for an item with no entry in the column.
+    zero_left: bool,
     has_nan: bool,
     default_left: bool,
     mask: u64,
@@ -1713,7 +1934,7 @@ impl<I: Items> SplitTest<'_, I> {
                 return code == GOES_LEFT;
             }
         }
-        self.zero <= self.pos
+        self.zero_left
     }
 
     /// What the use's block `b` says: no entry in the column, or the side its entry goes to.
@@ -1732,7 +1953,7 @@ impl<I: Items> SplitTest<'_, I> {
             } else {
                 let index = bid - self.start;
                 let place = if index < self.zero { index } else { index + 1 };
-                place <= self.pos
+                self.cut.left(place)
             };
             return if left { GOES_LEFT } else { GOES_RIGHT };
         }
@@ -1772,7 +1993,7 @@ fn scatter_chunk(out: &Disjoint<u32>, flags: &[bool], here: &[u32], mut l: usize
 
 /// Stably partitions the leaf's items `work.indices[start..start + len]` by whether they go left at `split`. It returns the count of items that go left
 /// and the count of rows they stand for.
-fn partition<I: Items>(work: &mut Work, store: &Store, items: &I, start: usize, len: usize, column: u32, pos: u32, default_left: bool) -> (usize, usize) {
+fn partition<I: Items>(work: &mut Work, store: &Store, items: &I, start: usize, len: usize, column: u32, cut: &Cut, default_left: bool) -> (usize, usize) {
     let began = Instant::now();
     let k = column as usize;
     let mask = store.col_uses[k];
@@ -1795,7 +2016,8 @@ fn partition<I: Items>(work: &mut Work, store: &Store, items: &I, start: usize, 
         start: store.col_start[k],
         end: store.col_start[k + 1],
         zero: store.zero_pos[k],
-        pos,
+        cut,
+        zero_left: cut.left(store.zero_pos[k]),
         has_nan: store.has_nan[k] != 0,
         default_left,
         mask,
@@ -1869,6 +2091,8 @@ struct Leaf {
     open: Vec<u32>,
     parent: i32,
     is_left: bool,
+    /// The L2 term of the leaf's value.
+    l2: f64,
 }
 
 /// One tree over the items in `active`, best leaf first. It leaves each leaf's items in `work.indices` and gives each leaf's
@@ -1888,13 +2112,13 @@ fn grow<I: Items>(work: &mut Work, store: &Store, config: &Config, items: &I, ac
     let began = Instant::now();
     let (best, open) = best_split(store, used, &hist, (g, h, total_rows as f64), config, active);
     work.time[3] += began.elapsed().as_secs_f64();
-    let mut leaves = vec![Leaf { start: 0, len: active.len(), rows: total_rows, g, h, hist: Some(hist), touched: None, best, open, parent: -1, is_left: false }];
+    let mut leaves = vec![Leaf { start: 0, len: active.len(), rows: total_rows, g, h, hist: Some(hist), touched: None, best, open, parent: -1, is_left: false, l2: config.lambda_l2 }];
     let mut tree = Tree::default();
     while leaves.len() < config.num_leaves {
         let mut chosen = None;
         let mut most = 0.0;
         for (at, leaf) in leaves.iter().enumerate() {
-            if let Some(split) = leaf.best {
+            if let Some(split) = &leaf.best {
                 if split.gain > most {
                     most = split.gain;
                     chosen = Some(at);
@@ -1904,10 +2128,10 @@ fn grow<I: Items>(work: &mut Work, store: &Store, config: &Config, items: &I, ac
         let Some(at) = chosen else { break };
         let split = leaves[at].best.take().unwrap();
         let (start, len) = (leaves[at].start, leaves[at].len);
-        let (left_len, left_rows) = partition(work, store, items, start, len, split.column, split.pos, split.default_left);
+        let (left_len, left_rows) = partition(work, store, items, start, len, split.column, &split.cut, split.default_left);
         let node = tree.column.len() as i32;
         tree.column.push(split.column);
-        tree.pos.push(split.pos);
+        tree.cut.push(split.cut.clone());
         tree.default_left.push(split.default_left);
         tree.gain.push(split.gain);
         let right_leaf = leaves.len();
@@ -1955,15 +2179,15 @@ fn grow<I: Items>(work: &mut Work, store: &Store, config: &Config, items: &I, ac
         let (left_best, left_open) = best_split(store, &open, &left_hist, (left_g, left_h, left_rows as f64), config, &work.indices[start..start + left_len]);
         let (right_best, right_open) = best_split(store, &open, &right_hist, (right_g, right_h, right_rows as f64), config, &work.indices[start + left_len..start + len]);
         work.time[3] += began.elapsed().as_secs_f64();
-        leaves[at] = Leaf { start, len: left_len, rows: left_rows, g: left_g, h: left_h, hist: None, touched: None, best: left_best, open: left_open, parent: node, is_left: true };
-        if left_best.is_some() {
+        leaves[at] = Leaf { start, len: left_len, rows: left_rows, g: left_g, h: left_h, hist: None, touched: None, best: left_best, open: left_open, parent: node, is_left: true, l2: split.child_l2 };
+        if leaves[at].best.is_some() {
             leaves[at].hist = Some(left_hist);
             leaves[at].touched = left_touched;
         } else {
             work.give(left_hist, left_touched);
         }
-        let mut right = Leaf { start: start + left_len, len: right_len, rows: right_rows, g: right_g, h: right_h, hist: None, touched: None, best: right_best, open: right_open, parent: node, is_left: false };
-        if right_best.is_some() {
+        let mut right = Leaf { start: start + left_len, len: right_len, rows: right_rows, g: right_g, h: right_h, hist: None, touched: None, best: right_best, open: right_open, parent: node, is_left: false, l2: split.child_l2 };
+        if right.best.is_some() {
             right.hist = Some(right_hist);
             right.touched = right_touched;
         } else {
@@ -1973,7 +2197,7 @@ fn grow<I: Items>(work: &mut Work, store: &Store, config: &Config, items: &I, ac
         // Past the pool's size, the leaf least likely to split next gives up its histogram.
         let pool = (HISTOGRAM_BYTES / (store.bins.max(1) * std::mem::size_of::<Bin>())).max(2);
         while leaves.iter().filter(|leaf| leaf.hist.is_some()).count() > pool {
-            let weakest = leaves.iter().enumerate().filter(|(_, leaf)| leaf.hist.is_some()).min_by(|(_, a), (_, b)| a.best.map_or(0.0, |s| s.gain).total_cmp(&b.best.map_or(0.0, |s| s.gain))).unwrap().0;
+            let weakest = leaves.iter().enumerate().filter(|(_, leaf)| leaf.hist.is_some()).min_by(|(_, a), (_, b)| a.best.as_ref().map_or(0.0, |s| s.gain).total_cmp(&b.best.as_ref().map_or(0.0, |s| s.gain))).unwrap().0;
             let hist = leaves[weakest].hist.take().unwrap();
             let touched = leaves[weakest].touched.take();
             work.give(hist, touched);
@@ -1981,13 +2205,14 @@ fn grow<I: Items>(work: &mut Work, store: &Store, config: &Config, items: &I, ac
     }
     let mut places = Vec::with_capacity(leaves.len());
     tree.value = vec![0.0; leaves.len()];
+    tree.leaf_l2 = leaves.iter().map(|leaf| leaf.l2).collect();
     for (at, leaf) in leaves.iter_mut().enumerate() {
         if let Some(hist) = leaf.hist.take() {
             let touched = leaf.touched.take();
             work.give(hist, touched);
         }
         places.push((leaf.start, leaf.len));
-        tree.value[at] = if tree.column.is_empty() { 0.0 } else { leaf_output(leaf.g, leaf.h, config) * config.learning_rate };
+        tree.value[at] = if tree.column.is_empty() { 0.0 } else { leaf_output_l2(leaf.g, leaf.h, leaf.l2, config) * config.learning_rate };
     }
     (tree, places)
 }
@@ -2234,13 +2459,39 @@ fn resident_gib() -> f64 {
     usage.ru_maxrss as f64 / unit as f64
 }
 
+/// A tree as a line of JSON. A split on a numeric column has a `threshold`, a number or null (no finite bound), and null in `categories`. A split on a categorical
+/// column has the string "categorical" as its `threshold`, so that a reader that does not know categories fails on it, and in `categories` the ascending values that
+/// go left. A value that is not among them goes right, as does a NaN.
 fn tree_json(tree: &Tree, bounds: &[f64], bound_start: &[u32], has_nan: &[u8]) -> Value {
-    let threshold: Vec<f64> = tree.column.iter().zip(&tree.pos).map(|(&k, &pos)| bounds[bound_start[k as usize] as usize + pos as usize]).collect();
     // A threshold of no finite bound sends every number left.
-    let threshold: Vec<Value> = threshold.iter().map(|&x| if x.is_finite() { json!(x) } else { Value::Null }).collect();
+    let threshold: Vec<Value> = tree
+        .column
+        .iter()
+        .zip(&tree.cut)
+        .map(|(&k, cut)| match cut {
+            Cut::Upto(pos) => {
+                let x = bounds[bound_start[k as usize] as usize + *pos as usize];
+                if x.is_finite() { json!(x) } else { Value::Null }
+            }
+            Cut::Set(_) => json!("categorical"),
+        })
+        .collect();
+    // A place of a categorical column is its value, which is the bound at that place, and the default bin's is 0.
+    let categories: Vec<Value> = tree
+        .column
+        .iter()
+        .zip(&tree.cut)
+        .map(|(&k, cut)| match cut {
+            Cut::Upto(_) => Value::Null,
+            Cut::Set(bits) => {
+                let places = (0..bits.len() * 64).filter(|&place| bits[place >> 6] >> (place & 63) & 1 != 0);
+                json!(places.map(|place| if place == 0 { 0 } else { bounds[bound_start[k as usize] as usize + place] as u64 }).collect::<Vec<u64>>())
+            }
+        })
+        .collect();
     // A column with no NaN in the fit reads a NaN as its default, 0, as `compile` does.
     let nan_seen: Vec<bool> = tree.column.iter().map(|&k| has_nan[k as usize] != 0).collect();
-    json!({"column": tree.column, "threshold": threshold, "default_left": tree.default_left, "nan_seen": nan_seen, "gain": tree.gain, "left": tree.left, "right": tree.right, "value": tree.value})
+    json!({"column": tree.column, "threshold": threshold, "categories": categories, "default_left": tree.default_left, "nan_seen": nan_seen, "gain": tree.gain, "left": tree.left, "right": tree.right, "value": tree.value})
 }
 
 fn fit(file: &Path) {
@@ -2262,6 +2513,7 @@ fn fit(file: &Path) {
         stream: v["out"].as_str().map(PathBuf::from),
         min_tasks: v["min_tasks"].as_u64().unwrap_or(0) as usize,
         row_task: v["row_task"].as_str().map_or(Vec::new(), |path| read_all(Path::new(path))),
+        categorical: CategoricalConfig::read(&v),
     };
     let train_dir = PathBuf::from(v["train"].as_str().unwrap());
     let store = Store::open(&train_dir);
@@ -2412,7 +2664,7 @@ fn audit_tree<I: Items>(store: &Store, items: &I, tree: &Tree, places: &[(usize,
         })
         .collect();
     for (leaf, &(g, h, rows)) in sums.iter().enumerate() {
-        let implied = leaf_output(g, h + EPSILON, config) * config.learning_rate;
+        let implied = leaf_output_l2(g, h + EPSILON, tree.leaf_l2[leaf], config) * config.learning_rate;
         let relative = (tree.value[leaf] - implied).abs() / implied.abs().max(1e-12);
         if relative > 1e-6 {
             println!("audit round {round} leaf {leaf}: value {:.6e} but -G/H x rate of its {rows} rows is {implied:.6e} (G {g:.6e} H {h:.6e})", tree.value[leaf]);
@@ -2455,32 +2707,47 @@ fn largest_leaf(tree: &Tree) -> usize {
 fn tree_from_json(line: &Value, bounds: &[f64], bound_start: &[u32]) -> Tree {
     let list = |name: &str| line[name].as_array().unwrap_or_else(|| panic!("a tree has no {name}"));
     let column: Vec<u32> = list("column").iter().map(|x| x.as_u64().unwrap() as u32).collect();
-    let pos = column
+    let cut = column
         .iter()
         .zip(list("threshold"))
-        .map(|(&k, threshold)| {
+        .zip(list("categories"))
+        .map(|((&k, threshold), categories)| {
             let here = &bounds[bound_start[k as usize] as usize..bound_start[k as usize + 1] as usize];
+            if let Some(values) = categories.as_array() {
+                assert!(threshold.as_str() == Some("categorical"), "column {k} lists categories and has a threshold");
+                let mut places = values.iter().map(|value| {
+                    let x = value.as_u64().expect("a category is a whole number") as f64;
+                    if x == 0.0 {
+                        return 0;
+                    }
+                    let at = here.partition_point(|&bound| bound < x);
+                    assert!(here.get(at) == Some(&x), "column {k} has no category {x}");
+                    at
+                });
+                return Cut::Set(place_set(here.len(), &mut places));
+            }
             match threshold.as_f64() {
                 None => {
                     assert!(here.last() == Some(&f64::INFINITY), "column {k} has a null threshold and no infinite last bound");
-                    here.len() as u32 - 1
+                    Cut::Upto(here.len() as u32 - 1)
                 }
                 Some(t) => {
                     let at = here.partition_point(|&bound| bound < t);
                     assert!(here.get(at) == Some(&t), "column {k} has no bound {t}");
-                    at as u32
+                    Cut::Upto(at as u32)
                 }
             }
         })
         .collect();
     Tree {
         column,
-        pos,
+        cut,
         default_left: list("default_left").iter().map(|x| x.as_bool().unwrap()).collect(),
         left: list("left").iter().map(|x| x.as_i64().unwrap() as i32).collect(),
         right: list("right").iter().map(|x| x.as_i64().unwrap() as i32).collect(),
         gain: list("gain").iter().map(|x| x.as_f64().unwrap()).collect(),
         value: list("value").iter().map(|x| x.as_f64().unwrap()).collect(),
+        leaf_l2: Vec::new(),
     }
 }
 
@@ -2501,7 +2768,7 @@ fn replay<I: Items>(work: &mut Work, store: &Store, items: &I, tree: &Tree, acti
     for n in 0..tree.column.len() {
         let at = leaf_split[n];
         let (start, len) = places[at];
-        let (left_len, _) = partition(work, store, items, start, len, tree.column[n], tree.pos[n], tree.default_left[n]);
+        let (left_len, _) = partition(work, store, items, start, len, tree.column[n], &tree.cut[n], tree.default_left[n]);
         assert_eq!(places.len(), n + 1);
         places[at] = (start, left_len);
         places.push((start + left_len, len - left_len));
@@ -2525,7 +2792,7 @@ fn replay_gpu(card: &gpu::Gpu, tree: &Tree, count: usize) {
     for n in 0..tree.column.len() {
         let at = leaf_split[n];
         let (start, len) = places[at];
-        let (left_len, _) = card.partition(start, len, tree.column[n], tree.pos[n], tree.default_left[n]);
+        let (left_len, _) = card.partition(start, len, tree.column[n], &tree.cut[n], tree.default_left[n]);
         places[at] = (start, left_len);
         places.push((start + left_len, len - left_len));
     }
@@ -2547,6 +2814,8 @@ struct CardLeaf {
     open: Vec<u32>,
     parent: i32,
     is_left: bool,
+    /// The L2 term of the leaf's value.
+    l2: f64,
 }
 
 /// `grow` with the histograms, the partitions and the order of the pairs on the card. The choice of the leaf, the best split of a histogram (the histogram is copied
@@ -2566,13 +2835,13 @@ fn grow_gpu(card: &mut gpu::Gpu, store: &Store, config: &Config, used: &[u32], c
     let began = Instant::now();
     let (best, open) = best_split(store, used, &left_hist, (g, h, store.rows as f64), config, &[]);
     times[3] += began.elapsed().as_secs_f64();
-    let mut leaves = vec![CardLeaf { start: 0, len: count, rows: store.rows, g, h, slot: Some(root_slot), best, open, parent: -1, is_left: false }];
+    let mut leaves = vec![CardLeaf { start: 0, len: count, rows: store.rows, g, h, slot: Some(root_slot), best, open, parent: -1, is_left: false, l2: config.lambda_l2 }];
     let mut tree = Tree::default();
     while leaves.len() < config.num_leaves {
         let mut chosen = None;
         let mut most = 0.0;
         for (at, leaf) in leaves.iter().enumerate() {
-            if let Some(split) = leaf.best {
+            if let Some(split) = &leaf.best {
                 if split.gain > most {
                     most = split.gain;
                     chosen = Some(at);
@@ -2583,11 +2852,11 @@ fn grow_gpu(card: &mut gpu::Gpu, store: &Store, config: &Config, used: &[u32], c
         let split = leaves[at].best.take().unwrap();
         let (start, len) = (leaves[at].start, leaves[at].len);
         let began = Instant::now();
-        let (left_len, left_rows) = card.partition(start, len, split.column, split.pos, split.default_left);
+        let (left_len, left_rows) = card.partition(start, len, split.column, &split.cut, split.default_left);
         times[0] += began.elapsed().as_secs_f64();
         let node = tree.column.len() as i32;
         tree.column.push(split.column);
-        tree.pos.push(split.pos);
+        tree.cut.push(split.cut.clone());
         tree.default_left.push(split.default_left);
         tree.gain.push(split.gain);
         let right_leaf = leaves.len();
@@ -2627,24 +2896,25 @@ fn grow_gpu(card: &mut gpu::Gpu, store: &Store, config: &Config, used: &[u32], c
         let (left_best, left_open) = best_split(store, &open, &left_hist, (left_g, left_h, left_rows as f64), config, &[]);
         let (right_best, right_open) = best_split(store, &open, &right_hist, (right_g, right_h, right_rows as f64), config, &[]);
         times[3] += began.elapsed().as_secs_f64();
-        leaves[at] = CardLeaf { start, len: left_len, rows: left_rows, g: left_g, h: left_h, slot: Some(left_slot), best: left_best, open: left_open, parent: node, is_left: true };
-        if left_best.is_none() {
+        leaves[at] = CardLeaf { start, len: left_len, rows: left_rows, g: left_g, h: left_h, slot: Some(left_slot), best: left_best, open: left_open, parent: node, is_left: true, l2: split.child_l2 };
+        if leaves[at].best.is_none() {
             card.give_slot(leaves[at].slot.take().unwrap());
         }
-        let mut right = CardLeaf { start: start + left_len, len: right_len, rows: right_rows, g: right_g, h: right_h, slot: Some(right_slot), best: right_best, open: right_open, parent: node, is_left: false };
-        if right_best.is_none() {
+        let mut right = CardLeaf { start: start + left_len, len: right_len, rows: right_rows, g: right_g, h: right_h, slot: Some(right_slot), best: right_best, open: right_open, parent: node, is_left: false, l2: split.child_l2 };
+        if right.best.is_none() {
             card.give_slot(right.slot.take().unwrap());
         }
         leaves.push(right);
     }
     let mut places = Vec::with_capacity(leaves.len());
     tree.value = vec![0.0; leaves.len()];
+    tree.leaf_l2 = leaves.iter().map(|leaf| leaf.l2).collect();
     for (at, leaf) in leaves.iter_mut().enumerate() {
         if let Some(slot) = leaf.slot.take() {
             card.give_slot(slot);
         }
         places.push((leaf.start, leaf.len));
-        tree.value[at] = if tree.column.is_empty() { 0.0 } else { leaf_output(leaf.g, leaf.h, config) * config.learning_rate };
+        tree.value[at] = if tree.column.is_empty() { 0.0 } else { leaf_output_l2(leaf.g, leaf.h, leaf.l2, config) * config.learning_rate };
     }
     (tree, places)
 }
@@ -2774,6 +3044,7 @@ fn softmax(file: &Path, use_gpu: bool) {
         stream: None,
         min_tasks: 0,
         row_task: Vec::new(),
+        categorical: CategoricalConfig::read(&v),
     };
     let checkpoint_every = v["checkpoint_every"].as_u64().unwrap_or(10) as usize;
     let path = |name: &str| PathBuf::from(v[name].as_str().unwrap());
@@ -2805,7 +3076,7 @@ fn softmax(file: &Path, use_gpu: bool) {
     println!("pairs {} of {} rows, {:.2} rows a pair, {:.0}s", pairs.count(), store.rows, store.rows as f64 / pairs.count().max(1) as f64, pairs_started.elapsed().as_secs_f64());
     let seed = v["seed"].as_u64().unwrap_or(0);
     let settings = [config.learning_rate.to_bits(), config.num_leaves as u64, config.min_data_in_leaf.to_bits(), config.min_sum_hessian.to_bits(), config.lambda_l2.to_bits(), config.max_delta_step.to_bits(), config.fraction.to_bits(), seed, store.rows as u64, store.kept as u64, store.bins as u64];
-    let fingerprint = settings.iter().fold(pairs.fingerprint(), |a, &x| mix(a ^ x));
+    let fingerprint = settings.iter().chain(&config.categorical.bits()).fold(pairs.fingerprint(), |a, &x| mix(a ^ x));
     let mut work = if use_gpu { Work::lean() } else { Work::new(&store) };
     let mut pair_score = vec![0.0f64; pairs.count()];
     let (mut pair_g, mut pair_h) = if use_gpu { (Vec::new(), Vec::new()) } else { (vec![0.0f64; pairs.count()], vec![0.0f64; pairs.count()]) };
