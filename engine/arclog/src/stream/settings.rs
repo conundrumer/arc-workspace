@@ -59,6 +59,10 @@ pub struct DecodeSettings {
     /// guard stops it, as `docs/engine/synthesis.md#decode-settings` gives it.
     /// No result depends on it.
     pub effort_cap: u64,
+    /// The content one prefix check of the mask may count: the check of a
+    /// written `DET`'s admission stops there and admits its token, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it.
+    pub prefix_content_cap: u64,
     /// The bytes one request may hold at a time, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub request_byte_cap: u64,
@@ -123,6 +127,7 @@ impl Default for DecodeSettings {
             table_work_cap: 1 << 21,
             request_work_cap: REQUEST_WORK_CAP,
             effort_cap: crate::eval::EFFORT_CAP,
+            prefix_content_cap: crate::eval::PREFIX_CONTENT_CAP,
             request_byte_cap: REQUEST_BYTES_CAP,
             assignment_byte_cap: ASSIGNMENT_BYTES_CAP,
             candidate_byte_cap: CANDIDATE_BYTES_CAP,

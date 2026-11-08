@@ -125,14 +125,15 @@ const PARTS_KEPT: usize = 1 << 16;
 
 /// What the computation of a domain reads beside its key, the same for
 /// each walk of the task session: the task, the registry, the
-/// constructions, by their addresses, and the table work cap. The caps and
-/// the byte bound are the session's.
+/// constructions, by their addresses, the table work cap and the prefix
+/// content cap. The caps and the byte bound are the session's.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct Scope {
     pub(crate) task: usize,
     pub(crate) registry: usize,
     pub(crate) constructions: usize,
     pub(crate) table_work_cap: u64,
+    pub(crate) prefix_content_cap: u64,
 }
 
 /// The domains kept for the liveness walks of one task session.

@@ -375,6 +375,10 @@ impl<'a> Budget<'a> {
             self.limits.request.gauges().hit(Gauge::Rows, self.rows, cap);
             return Err(ReachedBound::Rows { cap });
         }
+        // The count of a prefix check stops an evaluation as it produces rows, not when it has held them all.
+        if let Some(work) = &self.limits.table_work {
+            work.check_rows(self.rows)?;
+        }
         // Rows accrue one at a time between the checks of a batch of bindings, so the bytes are checked here too.
         self.unchecked = self.unchecked.saturating_add(rows);
         if self.unchecked >= BATCH {

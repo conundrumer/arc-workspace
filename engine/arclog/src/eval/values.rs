@@ -421,6 +421,13 @@ pub const REQUEST_WORK_CAP: u64 = 1 << 30;
 /// which `request_stats()` gives as the gauge `effort`, sets it.
 pub const EFFORT_CAP: u64 = 1 << 34;
 
+/// The default cap on the content that one prefix check counts: the rows it
+/// reads and writes, and the rows its joins hold as they produce them. A
+/// check that passes it stops, and its token is admitted, since the cap
+/// establishes no property of the program: the form's end decides.
+/// Provisional until the cap audit; far below the request work cap.
+pub const PREFIX_CONTENT_CAP: u64 = 1 << 18;
+
 /// The fault of a request that passed its effort guard.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct EffortFault {
@@ -484,7 +491,7 @@ struct Effort {
 }
 
 /// The count of [`Gauge`]s.
-const GAUGES: usize = 19;
+const GAUGES: usize = 20;
 
 /// A capped quantity of a request, which [`Gauges`] keeps the largest value of
 /// and the hits at.
@@ -547,6 +554,10 @@ pub enum Gauge {
     /// ([`RequestWork::charge_effort`]), under the effort guard. A hit raises
     /// `arclog.EffortExhausted`.
     Effort,
+    /// The content that the prefix check of an admitted `DET` counted, under
+    /// the prefix content cap ([`PREFIX_CONTENT_CAP`]). A hit is a check left
+    /// open: the token is admitted and the form's end decides.
+    PrefixContent,
 }
 
 impl Gauge {
@@ -571,6 +582,7 @@ impl Gauge {
         Gauge::AssignmentBytes,
         Gauge::LabelingNodes,
         Gauge::Effort,
+        Gauge::PrefixContent,
     ];
 
     /// The gauge's name, which is stable.
@@ -595,6 +607,7 @@ impl Gauge {
             Gauge::AssignmentBytes => "assignment_bytes",
             Gauge::LabelingNodes => "labeling_nodes",
             Gauge::Effort => "effort",
+            Gauge::PrefixContent => "prefix_content",
         }
     }
 }
@@ -917,6 +930,9 @@ thread_local! {
 /// The mask of a decode runs its prefix checks in this scope: their work
 /// depends on the forms that the decode has finished, which are no part of the
 /// form that a count is the count of, so no count that cuts a result holds it.
+/// The one count that adds in the scope is the prefix check's own
+/// ([`TableWork::prefix`]), which caps the content of that check and whose
+/// stop admits the token.
 /// The scope passes to the tasks that [`super::pool::Pool::map`] runs.
 pub fn uncounted<T>(run: impl FnOnce() -> T) -> T {
     struct Close;
@@ -1101,7 +1117,7 @@ impl Cost {
     fn fits(&self, request: &RequestWork, table: Option<&TableWork>, assignment: Option<&TableWork>) -> bool {
         (is_uncounted() || request.count().saturating_add(self.request) <= request.cap())
             && request.fits_bytes(self.bytes.peak)
-            && (is_uncounted() || table.is_none_or(|table| table.fits(self.table)))
+            && table.is_none_or(|table| (is_uncounted() && !table.counts_uncounted()) || table.fits(self.table))
             && assignment.is_none_or(|work| work.fits_bytes(self.bytes.peak))
     }
 
@@ -1609,6 +1625,10 @@ pub struct TableWork {
     gauges: Arc<std::sync::OnceLock<Arc<Gauges>>>,
     /// The gauge that the count's notes and hits go to.
     gauge: Gauge,
+    /// Whether this is the count of a prefix check ([`TableWork::prefix`]),
+    /// which counts the content of its evaluation inside an [`uncounted`]
+    /// scope too.
+    prefix: bool,
 }
 
 /// The counts on the two sides of the charge that first took a count past
@@ -1623,7 +1643,22 @@ struct Crossing {
 impl TableWork {
     /// An observation with no work counted, under `cap`.
     pub fn new(cap: u64) -> Self {
-        TableWork { count: Arc::new(AtomicU64::new(0)), parent: None, bytes: None, cap, crossing: Arc::new(Crossing { set: AtomicBool::new(false), before: AtomicU64::new(0), after: AtomicU64::new(0) }), gauges: Arc::default(), gauge: Gauge::TableWork }
+        TableWork { count: Arc::new(AtomicU64::new(0)), parent: None, bytes: None, cap, crossing: Arc::new(Crossing { set: AtomicBool::new(false), before: AtomicU64::new(0), after: AtomicU64::new(0) }), gauges: Arc::default(), gauge: Gauge::TableWork, prefix: false }
+    }
+
+    /// The count of one prefix check: no content counted, under `cap`, with
+    /// the gauge [`Gauge::PrefixContent`] of `request`. Its charges count
+    /// inside an [`uncounted`] scope, where no other count does, and its stop
+    /// is a [`ReachedBound::TableWork`] that no cache stores.
+    pub fn prefix(cap: u64, request: &RequestWork) -> Self {
+        let work = Self::counted_as(cap, Gauge::PrefixContent, request);
+        TableWork { prefix: true, ..work }
+    }
+
+    /// Whether a charge to this count adds to it where the thread runs in an
+    /// [`uncounted`] scope.
+    fn counts_uncounted(&self) -> bool {
+        self.prefix
     }
 
     /// An observation with no work counted, under `cap`, whose count the
@@ -1647,7 +1682,7 @@ impl TableWork {
     /// ([`ReachedBound::is_assignment`]); the work it counts is added to this
     /// count too, which this count's cap does not check.
     pub fn scoped(&self, byte_cap: u64, byte_gauges: Arc<Gauges>) -> Self {
-        TableWork { count: Arc::new(AtomicU64::new(0)), parent: Some(Arc::clone(&self.count)), bytes: Some(Arc::new(AssignmentBytes { account: ByteAccount::default(), cap: byte_cap, gauges: byte_gauges })), cap: self.cap, crossing: Arc::new(Crossing { set: AtomicBool::new(false), before: AtomicU64::new(0), after: AtomicU64::new(0) }), gauges: Arc::clone(&self.gauges), gauge: self.gauge }
+        TableWork { count: Arc::new(AtomicU64::new(0)), parent: Some(Arc::clone(&self.count)), bytes: Some(Arc::new(AssignmentBytes { account: ByteAccount::default(), cap: byte_cap, gauges: byte_gauges })), cap: self.cap, crossing: Arc::new(Crossing { set: AtomicBool::new(false), before: AtomicU64::new(0), after: AtomicU64::new(0) }), gauges: Arc::clone(&self.gauges), gauge: self.gauge, prefix: self.prefix }
     }
 
     /// Holds `bytes` more in the assignment that owns this count, and gives
@@ -1740,7 +1775,7 @@ impl TableWork {
     /// Adds `bindings` to the count, and gives the stop once the count is past
     /// the cap. Each later call gives it too.
     pub fn charge(&self, bindings: u64) -> Result<(), ReachedBound> {
-        if is_uncounted() {
+        if is_uncounted() && !self.counts_uncounted() {
             return Ok(());
         }
         self.charge_parent(bindings);
@@ -1784,7 +1819,7 @@ impl TableWork {
     /// at the charge that [`TableWork::crossing`] gives, `before` and `after`
     /// bindings from the count now.
     pub fn charge_crossing(&self, bindings: u64, before: u64, after: u64) {
-        if is_uncounted() {
+        if is_uncounted() && !self.counts_uncounted() {
             return;
         }
         self.charge_parent(bindings);
@@ -1794,6 +1829,26 @@ impl TableWork {
         if from.saturating_add(before) <= self.cap && from.saturating_add(after) > self.cap {
             self.cross(from.saturating_add(before), from.saturating_add(after));
         }
+    }
+
+    /// For the count of a prefix check ([`TableWork::prefix`]), gives the stop
+    /// once `rows`, the rows that an evaluation holds as it produces them,
+    /// would take the count past the cap with what it counts when it ends.
+    /// It adds nothing to the count, so a join that produces rows stops
+    /// before it holds the rows that the cap leaves no room for. Any other
+    /// count gives no stop here.
+    pub fn check_rows(&self, rows: u64) -> Result<(), ReachedBound> {
+        if !self.prefix {
+            return Ok(());
+        }
+        let reached = self.count.load(Ordering::Relaxed).saturating_add(rows);
+        if reached > self.cap {
+            if let Some(gauges) = self.gauges.get() {
+                gauges.hit(self.gauge, reached, self.cap);
+            }
+            return Err(ReachedBound::TableWork { cap: self.cap, assignment: false });
+        }
+        Ok(())
     }
 
     /// Whether the count is past the cap: each batch of an evaluation that

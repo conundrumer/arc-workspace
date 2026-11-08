@@ -34,6 +34,7 @@ impl Decoder<'_> {
             registry: std::ptr::from_ref(self.context.registry) as usize,
             constructions: std::ptr::from_ref(self.constructions) as usize,
             table_work_cap: self.context.settings.table_work_cap,
+            prefix_content_cap: self.context.settings.prefix_content_cap,
         }
     }
 
@@ -43,7 +44,8 @@ impl Decoder<'_> {
         }
         let Some(closed) = after.det_admission_state(&self.state, &self.context) else { return Ok(()) };
         let work = self.request_work();
-        let compute = || self.det_liveness(&closed).map_err(Refusal::DetAdmission);
+        // The admission of a written `DET` is a prefix check: it runs in the scope where no count that cuts a result holds its work.
+        let compute = || crate::eval::uncounted(|| self.det_liveness(&closed)).map_err(Refusal::DetAdmission);
         let form = closed.program().value().forms.last().expect("a closed DET");
         match super::prefix_key::key(form, None) {
             Some(key) => {
@@ -188,9 +190,10 @@ impl Decoder<'_> {
     /// and the computations of entries from `carry` where it is given.
     #[allow(clippy::too_many_arguments)]
     fn live(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, session: &TaskSession, domains: Option<&dyn Domains>, carry: Option<Carry>) -> (u64, Result<(), DetRefusal>) {
-        let limits = Limits::new(None, Cancellation::default())
-            .in_request(self.request_work())
-            .counted_in(TableWork::new(self.context.settings.table_work_cap));
+        let request = self.request_work();
+        // The check counts its content under a cap of its own, inside the uncounted scope, where no other count adds.
+        let prefix = TableWork::prefix(self.context.settings.prefix_content_cap, &request);
+        let limits = Limits::new(None, Cancellation::default()).in_request(request).counted_in(prefix);
         let limits = match carry {
             Some(carry) => limits.carrying(carry),
             None => limits,

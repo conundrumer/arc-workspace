@@ -27,6 +27,7 @@ pub struct PyDecodeSettings {
     table_work_cap: u64,
     request_work_cap: u64,
     effort_cap: u64,
+    prefix_content_cap: u64,
     request_byte_cap: u64,
     assignment_byte_cap: u64,
     candidate_byte_cap: u64,
@@ -47,6 +48,7 @@ impl PyDecodeSettings {
             table_work_cap: settings.table_work_cap,
             request_work_cap: settings.request_work_cap,
             effort_cap: settings.effort_cap,
+            prefix_content_cap: settings.prefix_content_cap,
             request_byte_cap: settings.request_byte_cap,
             assignment_byte_cap: settings.assignment_byte_cap,
             candidate_byte_cap: settings.candidate_byte_cap,
@@ -66,6 +68,7 @@ impl PyDecodeSettings {
             table_work_cap: self.table_work_cap,
             request_work_cap: self.request_work_cap,
             effort_cap: self.effort_cap,
+            prefix_content_cap: self.prefix_content_cap,
             request_byte_cap: self.request_byte_cap,
             assignment_byte_cap: self.assignment_byte_cap,
             candidate_byte_cap: self.candidate_byte_cap,
@@ -116,7 +119,7 @@ impl PyDecodeSettings {
     }
 
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, mutation_node_cap=None, projection_cap=None, table_work_cap=None, request_work_cap=None, effort_cap=None, request_byte_cap=None, assignment_byte_cap=None, candidate_byte_cap=None, spill_resident_bytes=None, binding_cap=None, row_cap=None, rule_tests=None, static_pruning=None, grids_at_model_cap=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, mutation_node_cap=None, projection_cap=None, table_work_cap=None, request_work_cap=None, effort_cap=None, prefix_content_cap=None, request_byte_cap=None, assignment_byte_cap=None, candidate_byte_cap=None, spill_resident_bytes=None, binding_cap=None, row_cap=None, rule_tests=None, static_pruning=None, grids_at_model_cap=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
@@ -128,6 +131,7 @@ impl PyDecodeSettings {
         table_work_cap: Option<u64>,
         request_work_cap: Option<u64>,
         effort_cap: Option<u64>,
+        prefix_content_cap: Option<u64>,
         request_byte_cap: Option<u64>,
         assignment_byte_cap: Option<u64>,
         candidate_byte_cap: Option<u64>,
@@ -152,6 +156,7 @@ impl PyDecodeSettings {
             table_work_cap: table_work_cap.unwrap_or(base.table_work_cap),
             request_work_cap: request_work_cap.unwrap_or(base.request_work_cap),
             effort_cap: effort_cap.unwrap_or(base.effort_cap),
+            prefix_content_cap: prefix_content_cap.unwrap_or(base.prefix_content_cap),
             request_byte_cap: request_byte_cap.unwrap_or(base.request_byte_cap),
             assignment_byte_cap: assignment_byte_cap.unwrap_or(base.assignment_byte_cap),
             candidate_byte_cap: candidate_byte_cap.unwrap_or(base.candidate_byte_cap),
