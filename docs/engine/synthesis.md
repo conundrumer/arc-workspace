@@ -44,6 +44,7 @@ The step ends when each of these holds, or the difference is reported as a fault
         - `effort`: the bindings that the request's searches tried, under the effort guard. A hit is a fault: the call raises `arclog.EffortExhausted`.
         - `table_work`: the table work of an observation, or of one step in the walk of a table's assignments.
         - `prefix_content`: the content of one prefix check, under the prefix content cap. A hit is a check left open: its token is admitted.
+        - `column_search_work`: the work of the search for the order of the tied columns of one table at one assignment, which the TableHash takes ([`SEARCH_WORK_CAP`](../../engine/arclog-tables/src/summary/column_order.rs), 2^28 units, provisional: the largest work over the gold requests sets it). A cell hashed is a unit and a search node is 2^18 units. A search past the cap is a hit: the table at that assignment has no TableHash and its `unhashed_reason` is `ColumnSearch`. A table with no tied columns runs no search and notes nothing. The count is of the request that ran the search: a summary that the session's cache gives again is not searched again.
         - `bindings` and `rows`: the bindings and the rows of an evaluation.
         - `assignments`: the assignments of a walk. `models` and `nodes`: the models of an enumeration and the nodes of a constraint search.
         - `projection_rows` and `projection_steps`: the rows of a projection read and the steps of a completion search.

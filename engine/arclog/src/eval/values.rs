@@ -491,7 +491,7 @@ struct Effort {
 }
 
 /// The count of [`Gauge`]s.
-const GAUGES: usize = 20;
+const GAUGES: usize = 21;
 
 /// A capped quantity of a request, which [`Gauges`] keeps the largest value of
 /// and the hits at.
@@ -558,6 +558,13 @@ pub enum Gauge {
     /// the prefix content cap ([`PREFIX_CONTENT_CAP`]). A hit is a check left
     /// open: the token is admitted and the form's end decides.
     PrefixContent,
+    /// The work of the search for the order of the tied columns of one table at
+    /// one assignment, in units (a cell hashed is a unit, a search node is
+    /// 2^18), under the search work cap
+    /// (`arclog_tables::summary::SEARCH_WORK_CAP`). A search past the cap is a
+    /// hit: the table at that assignment has no TableHash, and its reason is
+    /// `ColumnSearch`. The count is of the request that ran the search.
+    ColumnSearch,
 }
 
 impl Gauge {
@@ -583,6 +590,7 @@ impl Gauge {
         Gauge::LabelingNodes,
         Gauge::Effort,
         Gauge::PrefixContent,
+        Gauge::ColumnSearch,
     ];
 
     /// The gauge's name, which is stable.
@@ -608,6 +616,7 @@ impl Gauge {
             Gauge::LabelingNodes => "labeling_nodes",
             Gauge::Effort => "effort",
             Gauge::PrefixContent => "prefix_content",
+            Gauge::ColumnSearch => "column_search_work",
         }
     }
 }

@@ -61,7 +61,7 @@ use std::sync::{Arc, Mutex};
 
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::join::Materializer;
-use arclog::eval::{ReachedBound, RelationValue};
+use arclog::eval::{Gauge, ReachedBound, RelationValue};
 use arclog::hash::{StableHash, StableHashMap, StableHasher};
 use arclog::judge::determination::Assignment;
 use arclog::read::spelling::{spelling, FACT_RELATIONS};
@@ -749,7 +749,15 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
     }
     let views: Vec<(u8, u32, &[Encoded])> = examples.iter().map(|(kind, index, distinct)| (*kind, *index, &distinct[..])).collect();
     // A table that no `DET` reads as a value needs a hash that tells its rows from those of its other assignments, and no other: it reads its rows once for each part.
-    let (found, _search_work) = if with_dets { table_hash(types, &views, &fulls.assemblies) } else { (Some((rows_hash_of_table(types, &views, &fulls.assemblies), vec![0; views.len()])), None) };
+    let (found, search_work) = if with_dets { table_hash(types, &views, &fulls.assemblies) } else { (Some((rows_hash_of_table(types, &views, &fulls.assemblies), vec![0; views.len()])), None) };
+    if let Some(work) = search_work {
+        let gauges = materializer.limits().request.gauges();
+        if found.is_none() {
+            gauges.hit(Gauge::ColumnSearch, work, SEARCH_WORK_CAP);
+        } else {
+            gauges.note(Gauge::ColumnSearch, work, SEARCH_WORK_CAP);
+        }
+    }
     // A search that passed its cap gives no TableHash, and no hash of an example.
     let (hash, hashes) = match found {
         Some(found) => found,
