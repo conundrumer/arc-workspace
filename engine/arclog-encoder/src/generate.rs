@@ -319,11 +319,6 @@ impl Generated {
         Generated::with_column_names_of(types, &columns, d, names, true, keep_text)
     }
 
-    /// As [`Generated::one_group`], with the columns under the names a program gives them.
-    pub fn one_group_with_names(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore, keep_text: bool) -> Generated {
-        Generated::with_column_names_of(types, column_names, d, names, true, keep_text)
-    }
-
     fn with_column_names_of(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore, one_group: bool, keep_text: bool) -> Generated {
         Generated::keyed_with_column_names_of(types, &[], column_names, d, names, one_group, keep_text)
     }
@@ -463,11 +458,6 @@ impl Generated {
         let t_names: Vec<String> = (0..t_types.len()).map(|at| format!("T{at}")).collect();
         let u_names: Vec<String> = (0..u_types.len()).map(|at| format!("T{}", t_types.len() + at)).collect();
         Generated::two_tables_keyed_with_names(t_types, t_keys, &t_names, u_types, u_keys, &u_names, "U", names, keep_text)
-    }
-
-    /// As [`Generated::of_two_tables`], with the columns under the names a program gives them, and U's text.
-    pub fn two_tables_with_names(t_types: &[ValueType], t_names: &[String], u_types: &[ValueType], u_names: &[String], u_text: &str, names: &NameStore, keep_text: bool) -> Generated {
-        Generated::two_tables_keyed_with_names(t_types, &[], t_names, u_types, &[], u_names, u_text, names, keep_text)
     }
 
     #[allow(clippy::too_many_arguments)]

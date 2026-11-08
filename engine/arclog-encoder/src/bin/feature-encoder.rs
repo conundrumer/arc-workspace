@@ -15,7 +15,6 @@
 //!   feature-encoder all-lists ROOT (TASK | TABLES_FILE)... --size D --tables-cmd COMMAND [--names DERANGEMENTS] [--threads N] [--wide-size D] [--families DIR] [--count-bounds]
 //!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
 //!   feature-encoder generate-check TABLES_FILE [--size D] [--tables EVERY]
-//!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
 //!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR] [--count-bounds]
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
 //!   feature-encoder family-names TYPE,TYPE,... [--size D]
@@ -52,7 +51,7 @@
 //! counts were on, and so does the first line of the file that `cap-hits` writes. A `term` line holds the
 //! term's text, so a run with the counts keeps the text of its terms, and reads and writes no saved family.
 //! The commands that read or print a term's text keep it always: `cap-hits`, `term-counts`,
-//! `generate-check`, `generate-check-solver` and `term-stats`.
+//! `generate-check` and `term-stats`.
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -1008,10 +1007,6 @@ impl CheckTally {
         self.started.elapsed().as_secs_f64() > self.budget
     }
 
-    fn restart_clock(&mut self) {
-        self.started = std::time::Instant::now();
-    }
-
     fn print(&self) {
         for (head, counts) in &self.counts {
             println!("{head}\tagree {}\tdiffer {}\trefused {}\tno value {}\ttypes {}\twith rows {}", counts[0], counts[1], counts[2], counts[3], counts[4], counts[5]);
@@ -1222,132 +1217,6 @@ fn run_generate_check(arguments: &Arguments, every: usize, file: &str) -> Result
                 Ok(EngineRows { names: value.row_names.clone(), types: value.types.clone(), examples: vec![rows] })
             };
             check_family(&family, &wide_leaves, 1, every, false, "&t", &wide, &mut tally, true)?;
-        }
-    }
-    tally.print();
-    Ok(())
-}
-
-/// The check on each table of a solver with one assignment and one model at each train pair, under the
-/// names that its program gives the table and its columns.
-fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) -> Result<(), String> {
-    use arclog_encoder::generate::{leaves_at, Generated, NameStore};
-    use arclog_encoder::stored::{column_order, Stored};
-    use arclog_encoder::table_vector::Grids;
-    let host = host(arguments, solver)?;
-    let (_, grids) = Grids::of_file(&arguments.tasks, solver, None)?;
-    let train = grids.train;
-    let store = NameStore::default();
-    let mut tally = CheckTally::new();
-    let engine = |expression: &str| -> Result<EngineRows, String> {
-        let value = match host.relation(expression, false) {
-            Evaluated::Value(value) => value,
-            Evaluated::Refused(message) | Evaluated::Fault(message) => return Err(message),
-        };
-        let [at] = value.at.as_slice() else { return Err(format!("{} assignments", value.at.len())) };
-        let mut examples: Vec<Option<Vec<Vec<u32>>>> = vec![None; train];
-        for (example, models) in &at.examples {
-            let [ModelValue::Rows(rows)] = models.as_slice() else { continue };
-            let held: Vec<Vec<u32>> = rows.iter().map(|row| row.iter().map(|cell| cell.encoding()).collect()).collect();
-            match example {
-                Some(example) if usize::from(example.index()) < train => examples[usize::from(example.index())] = Some(held),
-                Some(_) => {}
-                None => examples = vec![Some(held); train],
-            }
-        }
-        Ok(EngineRows { names: value.row_names.clone(), types: value.types.clone(), examples })
-    };
-    let mut checked_tables: Vec<(String, Stored, Vec<String>)> = Vec::new();
-    for (place, name) in host.table_names().iter().enumerate() {
-        if tally.out_of_time() {
-            break;
-        }
-        let Evaluated::Value(value) = host.relation(name, false) else { continue };
-        let [at] = value.at.as_slice() else { continue };
-        if value.types.is_empty() || value.types.len() > arclog_encoder::generate::MAX_TABLE_COLUMNS || value.types.iter().any(|ty| *ty == arclog::types::ValueType::Example) || value.row_names.iter().any(|column| column == "T") {
-            continue;
-        }
-        let mut rows: Vec<Vec<Vec<Vec<u32>>>> = vec![Vec::new(); train];
-        for (example, models) in &at.examples {
-            let held: Vec<Vec<Vec<u32>>> = models.iter().filter_map(|model| match model {
-                ModelValue::Rows(rows) => Some(rows.iter().map(|row| row.iter().map(|cell| cell.encoding()).collect()).collect()),
-                _ => None,
-            }).collect();
-            match example {
-                Some(example) if usize::from(example.index()) < train => rows[usize::from(example.index())] = held,
-                Some(_) => {}
-                None => rows = vec![held; train],
-            }
-        }
-        if rows.iter().any(|models| models.len() != 1) {
-            continue;
-        }
-        let stored = Stored::of_rows(&value.types, rows);
-        // An expression addresses a column by the schema's name, and a relation's rows name its labels.
-        // A read gives each column of the schema a label, so the label of a row's column finds the column's name.
-        let schema = arclog_encoder::schema::Tables::table(&host, name).ok_or("a table of the state has a schema")?;
-        let labels = arclog_encoder::schema::read_labels(&schema.columns);
-        let names: Vec<String> = column_order(&value.types).iter().map(|at| {
-            let label = &value.row_names[*at];
-            labels.iter().position(|held| held == label).map_or_else(|| label.clone(), |place| schema.columns[place].name.clone())
-        }).collect();
-        if std::env::var_os("GENERATE_FAMILY_SIZES").is_some() && std::env::var("GENERATE_ONLY_TABLE").is_ok_and(|only| only != *name) {
-            continue;
-        }
-        let family = if std::env::var_os("GENERATE_CHECK_ONE_GROUP").is_some() { Generated::one_group_with_names(&stored.types, &names, arguments.size.max(1), &store, true) } else { Generated::with_column_names(&stored.types, &names, arguments.size.max(1), &store, true) };
-        // With GENERATE_FAMILY_SIZES, a line of sizes for each table in place of its check, with the counts of product and project terms.
-        // GENERATE_ONLY_TABLE names the one table to size, and GENERATE_FAMILY_WALK also walks its family on the train pairs, for the seconds, the active entries and whether the walk passed its bound.
-        if std::env::var_os("GENERATE_FAMILY_SIZES").is_some() {
-            let (count, first) = family.counts();
-            let (mut products, mut projects) = (0usize, 0usize);
-            for at in first..count {
-                let text = family.term_info(at).0;
-                products += usize::from(text.starts_with("(product "));
-                projects += usize::from(text.starts_with("(project T "));
-            }
-            let words: Vec<String> = stored.types.iter().map(|ty| if matches!(ty, arclog::types::ValueType::Ident(_)) { "Ident".to_string() } else { format!("{ty:?}") }).collect();
-            println!("sizes\t{name}\tcolumns {}\ttypes {}\tterms {}\troots {}\tproduct terms {products}\tproject-of-T terms {projects}", stored.types.len(), words.join(","), count - first, family.roots);
-            if std::env::var_os("GENERATE_FAMILY_WALK").is_some() {
-                let example_of: Vec<usize> = (0..train).collect();
-                let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
-                let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
-                let mut walker = arclog_encoder::generate::Walker::new(&family);
-                let started = Instant::now();
-                let found = walker.walk(&leaves, train, false);
-                let (mut active, mut check) = (0usize, 0u64);
-                for (hash, at) in found.sorted_roots() {
-                    let at = at * found.stride;
-                    let live = &found.slots[at..at + found.stride];
-                    active += usize::from(live.iter().any(|slot| slot.state != arclog_encoder::generate::SlotState::Default));
-                    for (instance, slot) in live.iter().enumerate().filter(|(_, slot)| slot.state != arclog_encoder::generate::SlotState::Default) {
-                        check = check.wrapping_add(((hash as u64) ^ slot.digest.rotate_left(instance as u32)).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (u64::from(slot.state as u8) << 56) ^ u64::from(slot.undefined));
-                    }
-                }
-                println!("walk\t{name}\tseconds {:.1}\tactive entries {active}\tdigest {check:016x}\tpast the bound {}", started.elapsed().as_secs_f64(), walker.over_budget);
-            }
-            continue;
-        }
-        let example_of: Vec<usize> = (0..train).collect();
-        let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
-        let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
-        check_family(&family, &leaves, train, every, place == 0, name, &engine, &mut tally, false)?;
-        checked_tables.push((name.clone(), stored, names));
-    }
-    // Two tables of the state, each pair once, the later table first.
-    if std::env::var_os("GENERATE_CHECK_TWO_TABLES").is_some() {
-        tally.restart_clock();
-        'pairs: for (at, (name, stored, names)) in checked_tables.iter().enumerate() {
-            for (other_name, other, other_names) in &checked_tables[..at] {
-                if tally.out_of_time() {
-                    break 'pairs;
-                }
-                let family = Generated::two_tables_with_names(&stored.types, names, &other.types, other_names, other_name, &store, true);
-                let example_of: Vec<usize> = (0..train).collect();
-                let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
-                let mut leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
-                leaves.push(other.rows.iter().take(train).map(|models| models.first().cloned().map_or(arclog_encoder::native::Val::None, arclog_encoder::native::Val::of_table)).collect());
-                check_family(&family, &leaves, train, every, false, name, &engine, &mut tally, false)?;
-            }
         }
     }
     tally.print();
@@ -1915,7 +1784,6 @@ fn main() {
         }
         ("shape-count", files) if !files.is_empty() => run_shape_count(&arguments, files),
         ("shapes-refresh", [rows, task, out]) => run_shapes_refresh(&arguments, rows, task, out),
-        ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
         ("grid-values", [grids]) => run_grid_values(&arguments, grids),
         ("grid-vectors", [grids]) => run_grid_vectors(&arguments, grids),
