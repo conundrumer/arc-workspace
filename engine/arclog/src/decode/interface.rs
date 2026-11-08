@@ -576,7 +576,10 @@ impl<'a> Decoder<'a> {
         let sub = Clause { body: Node::new(Body { conjuncts: kept.into() }), columns, ..clause };
         let forms = finished.iter().cloned().chain([Form::Clause(Node::new(sub))]).collect();
         let resolved = resolve_last(&earlier, &Node::new(Program { forms }), registry);
-        let checked = self.checked(Arc::new(resolved), &form);
+        if let Some(fault) = scope_fault(&resolved.diagnostics, &form) {
+            return Err(fault);
+        }
+        let checked = self.checked(Arc::new(resolved.value), &form);
         checked.map(|program| {
             let relation = derived_at(&program, &form);
             let scope = scope_of(&program, &relation);
@@ -629,7 +632,11 @@ impl<'a> Decoder<'a> {
             let program = after.program();
             let form = NodePath::top(program.value().forms.len() as u32 - 1);
             let registry = self.context.registry;
-            let resolved = Arc::new(resolve_last(&before.resolved(registry), program, registry));
+            let resolved = resolve_last(&before.resolved(registry), program, registry);
+            if let Some(fault) = scope_fault(&resolved.diagnostics, &form) {
+                return Err(fault);
+            }
+            let resolved = Arc::new(resolved.value);
             after.checks().with(|cache| self.checked_with(before, resolved, &form, cache))
         })
     }
@@ -736,6 +743,14 @@ fn widen(list: Vec<Conjunct>, split: bool, reads: &dyn Fn(&Atom) -> bool, out: &
         next.extend(list[at + 1..].iter().cloned());
         widen(next, true, reads, out)
     })
+}
+
+/// The fault at `form` that the errors among `diagnostics`, those of a
+/// resolution, make; none where it gave no error. A program whose name
+/// resolves to nothing is no program to check or to evaluate.
+fn scope_fault(diagnostics: &[crate::diagnostic::Diagnostic], form: &NodePath) -> Option<RunFault> {
+    let errors: Vec<&str> = diagnostics.iter().filter(|diagnostic| diagnostic.severity == crate::diagnostic::Severity::Error).map(|diagnostic| &*diagnostic.message).collect();
+    (!errors.is_empty()).then(|| RunFault { message: format!("the resolution refuses the program: {}", errors.join("; ")).into(), form: form.clone() })
 }
 
 /// Whether each name that `conjunct` reads, at any depth, resolves in a

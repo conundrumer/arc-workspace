@@ -353,7 +353,7 @@ mod tests {
     fn last_form_types(program: &Node<Program>, state: Option<&Node<Program>>, registry: &Registry) -> Vec<(LabelId, LabelTypes)> {
         let (_, complete) = program.value().forms.split_last().expect("a partial form");
         let earlier = Arc::new(resolve(&Node::new(Program { forms: complete.into() }), None, &Default::default(), registry).value);
-        let resolved = resolve_last(&earlier, program, registry);
+        let resolved = resolve_last(&earlier, program, registry).value;
         let clauses = SolverClauses::of_program(resolved.clone());
         let cases = CaseInferences::new(&clauses, registry);
         let before = Inference::new(&earlier, &cases);

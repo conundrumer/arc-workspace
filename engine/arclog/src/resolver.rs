@@ -1151,7 +1151,11 @@ pub const MAX_LAYERS: usize = 16;
 /// a concept program or already stands on [`MAX_LAYERS`] layers, the result
 /// is [`resolve`]'s on `program`, which holds one layer. So the chain stays
 /// short, and a full resolution comes once for each `MAX_LAYERS` forms.
-pub fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
+///
+/// The diagnostics are those of [`resolve`] for the forms it resolved: a
+/// program whose name resolves to nothing holds a scope error here, and a
+/// caller that checks or evaluates the program takes them with it.
+pub fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> WithDiagnostics<ResolvedProgram> {
     let _timed = crate::stats::span(crate::stats::Phase::ResolveLast);
     crate::stats::units(crate::stats::Phase::ResolveLast, earlier.graph.nodes.len());
     build::resolve_last(earlier, program, registry)

@@ -162,7 +162,7 @@ impl FinishedResolution {
                     let complete = Node::new(Program { forms: complete.into() });
                     let before = before.get(&complete, registry);
                     if before.layers() + 1 < MAX_LAYERS {
-                        resolve_last(&before, program, registry)
+                        resolve_last(&before, program, registry).value
                     } else {
                         resolve(program, None, &SolverScope::default(), registry).value
                     }

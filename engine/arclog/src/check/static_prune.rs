@@ -58,8 +58,11 @@ pub(crate) fn replacement_admitted(
         return false;
     };
     let check = |program: &Node<Program>| {
-        let resolved =
-            std::sync::Arc::new(crate::resolver::resolve_last(earlier, program, registry));
+        let resolved = crate::resolver::resolve_last(earlier, program, registry);
+        if resolved.diagnostics.iter().any(|diagnostic| diagnostic.severity == crate::diagnostic::Severity::Error) {
+            return Err(resolved.diagnostics);
+        }
+        let resolved = std::sync::Arc::new(resolved.value);
         let clauses = super::SolverClauses::of_shared_program(std::sync::Arc::clone(&resolved));
         super::check_shared_program(
             resolved,

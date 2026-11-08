@@ -426,7 +426,7 @@ fn compare_retargets_with_inputs(arclog: &str, inputs: &Inputs) -> Retargets {
                 if !atom.sites.is_empty() {
                     continue;
                 }
-                let expected = resolve_last(&earlier, &program, registry);
+                let expected = resolve_last(&earlier, &program, registry).value;
                 let nodes = earlier.graph.nodes.len();
                 match resolved.as_mut() {
                     Some(held) => {
