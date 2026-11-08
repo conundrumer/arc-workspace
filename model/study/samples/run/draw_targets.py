@@ -2,18 +2,20 @@
 
 For each task's file of sampled-query records (PATH is a `draws.jsonl[.zst]` file, or a folder searched for such files), it counts the last steps by what `points_write.py --draws` does with
 their state (docs/sample-build/training-instances.md, "Sampled queries of the search"), from the task's skeleton file in DIR (`<task>.jsonl`). A last step's ground-truth part is the
-state's queries that are queries of the skeleton. It prints one JSON line a task, as it goes:
+state's queries that are queries of the skeleton. The targets at a state are those of its ground-truth part, less the queries that the state holds: the `target_queries` of the skeleton sample
+whose state that is, else the skeleton queries that the ground-truth part can be written over (they are not in it, their use closure and the queries they read are in it, and some graph table
+that they compute is not one that its queries compute). It prints one JSON line a task, as it goes:
 - `last steps`, with each repeat counted;
 - `matched`: the state is a skeleton sample's state;
-- `to add: last steps` and `to add: states`: the state is no sample's state, its ground-truth part is a sample's state, and that sample has a target query that the state has not written;
+- `to add: last steps` and `to add: states`: the state is no sample's state and has a target query; `to add: states by scan` counts those whose ground-truth part is no sample's state;
 - `to add: queries outside the union`: the distinct queries of those states that are no skeleton query (the queries that `points_write.py` writes a query record for);
-- the last steps that are not added, each for one reason (`GROUND_TRUTH`, `NO_HASH` and `NO_TARGET` of `points_write.py`, which are also the reasons in the headers).
+- the last steps that are not added, each for one reason (`NO_HASH` and `NO_TARGET` of `points_write.py`, which are also the reasons in the headers).
 
 With --points DIR (the folder of the plan's files that `points_write.py` wrote, `<task>.jsonl.zst`) it also compares the header's `draw_counts` of each task with those counts, and prints
 `OK` or the differences:
-- `matched`, and the counts of the three reasons above, must equal;
+- `matched`, and the counts of the two reasons above, must equal;
 - `added` plus the other `not added: <reason>` (a step that gives no query record, a sample that fails) must equal `to add: last steps`;
-- `added states` must be at most `to add: states`.
+- `added states` must be at most `to add: states`, and `added states by scan` at most `to add: states by scan`.
 The exit status is 1 where a task differs."""
 import argparse
 import collections
@@ -26,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # model/study
 import study_zst as Z  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # model/study/samples
-from points_write import GROUND_TRUTH, NO_HASH, NO_TARGET  # noqa: E402  (the reasons that the headers' draw_counts use)
+from points_write import NO_HASH, NO_TARGET  # noqa: E402  (the reasons that the headers' draw_counts use)
 
 
 def record_files(paths: list[str]) -> list[str]:
@@ -59,8 +61,18 @@ def last_steps(path: str) -> tuple[str, list[list]]:
 
 def count_task(task: str, steps: list[list], skeleton: Path) -> dict:
     records = [json.loads(line) for line in open(skeleton / f'{task}.jsonl') if '"record": "query"' in line or '"record": "sample"' in line]
-    union = {r['hash'] for r in records if r['record'] == 'query'}
+    queries = {r['hash']: (frozenset(r['closure']), frozenset(i['query'] for i in r['inputs'] if 'query' in i), frozenset(r['graph_tables'].values())) for r in records if r['record'] == 'query'}
     targets = {frozenset(r['state']['queries']): set(r['target_queries']) for r in records if r['record'] == 'sample'}
+    by_scan: dict[frozenset, set[str]] = {}
+
+    def targets_at(gold: frozenset) -> set[str]:
+        if gold in targets:
+            return targets[gold]
+        if gold not in by_scan:
+            built = set().union(*[queries[h][2] for h in gold])
+            by_scan[gold] = {h for h, (closure, reads, tables) in queries.items() if h not in gold and closure <= gold and reads <= gold and not tables <= built}
+        return by_scan[gold]
+
     c: collections.Counter = collections.Counter()
     added: set[frozenset] = set()
     for state, n in steps:
@@ -69,15 +81,14 @@ def count_task(task: str, steps: list[list], skeleton: Path) -> dict:
             c['matched'] += n
         elif None in state:
             c[NO_HASH] += n
-        elif frozenset(state & union) not in targets:
-            c[GROUND_TRUTH] += n
-        elif not targets[frozenset(state & union)] - state:
+        elif not targets_at(frozenset(h for h in state if h in queries)) - state:
             c[NO_TARGET] += n
         else:
             c['to add: last steps'] += n
             added.add(state)
     c['to add: states'] = len(added)
-    c['to add: queries outside the union'] = len({h for st in added for h in st} - union)
+    c['to add: states by scan'] = sum(frozenset(h for h in st if h in queries) not in targets for st in added)
+    c['to add: queries outside the union'] = len({h for st in added for h in st} - set(queries))
     return dict(c)
 
 
@@ -92,16 +103,17 @@ def compare(task: str, c: dict, points: Path) -> list[str]:
     if dc is None:
         return ['the header has no draw_counts']
     bad = []
-    for key, mine in (('matched', c.get('matched', 0)), ('not added: ' + GROUND_TRUTH, c.get(GROUND_TRUTH, 0)), ('not added: ' + NO_HASH, c.get(NO_HASH, 0)),
-                      ('not added: ' + NO_TARGET, c.get(NO_TARGET, 0))):
+    for key, mine in (('matched', c.get('matched', 0)), ('not added: ' + NO_HASH, c.get(NO_HASH, 0)), ('not added: ' + NO_TARGET, c.get(NO_TARGET, 0))):
         if dc.get(key, 0) != mine:
             bad.append(f'{key}: header {dc.get(key, 0)}, here {mine}')
-    fixed = {'not added: ' + r for r in (GROUND_TRUTH, NO_HASH, NO_TARGET)}
+    fixed = {'not added: ' + r for r in (NO_HASH, NO_TARGET)}
     other = {k: v for k, v in dc.items() if k.startswith('not added: ') and k not in fixed}
     if dc.get('added', 0) + sum(other.values()) != c.get('to add: last steps', 0):
         bad.append(f'added {dc.get("added", 0)} + other not added {sum(other.values())} != to add {c.get("to add: last steps", 0)}')
     if dc.get('added states', 0) > c.get('to add: states', 0):
         bad.append(f'added states {dc.get("added states", 0)} > to add {c.get("to add: states", 0)}')
+    if dc.get('added states by scan', 0) > c.get('to add: states by scan', 0):
+        bad.append(f'added states by scan {dc.get("added states by scan", 0)} > to add {c.get("to add: states by scan", 0)}')
     return bad
 
 

@@ -40,11 +40,11 @@ train by split.py is refused (exit 2) before any file is written.
 - A record is one line of a file, or {"repeat": d, "draw": n}, which adds 1 to the count of the record of number d of that file. A record that solves every train example gives no `drawn` count.
 - A record's last step is matched when its state (the set of its `state` QueryHashes) equals the state of a sample of the file (the samples that --samples-per-task keeps, and every skeleton
   sample whose state a record has); its other steps are used only to add a state. A record that matches several samples is walked, and counted, for each.
-- A last step whose state equals no such sample's state adds the state as a sample (plan_added), once whatever the count of records that reach it. Its targets are the target queries of the skeleton
-  sample whose state is the state's queries that are union queries (the queries of the skeleton), less the targets that the state holds. The state's other queries are written from the steps of a
+- A last step whose state equals no such sample's state adds the state as a sample (plan_added), once whatever the count of records that reach it. Its targets are the target queries at the state's
+  queries that are union queries (the queries of the skeleton), less the queries that the state holds: the target queries of the skeleton sample whose state that is, else scan_targets' (skeleton.py's rule over the query records). The state's other queries are written from the steps of a
   record: each one's text with its pool names as local labels, and its use closure from the names that the text reads (off_path_queries). The scope holds them as it holds the union's queries, so
   the engine gives their tables with `run.scope`, as it gives the union's. The sample's id is the skeleton's rule over the state's sorted QueryHashes. A state that cannot be added is counted
-  with its reason: a step has no QueryHash, a step does not give a query record, the ground-truth part is no sample's state, no target query is left, or the sample fails (the engine refused
+  with its reason: a step has no QueryHash, a step does not give a query record, no target query is left, or the sample fails (the engine refused
   the scope, or `error: <exception type>`; an exception of the engine that is no refusal is never counted as one).
 - The drawn query's names are the sample's: the last step's own name (`&fN`, the first name of its text) is `&r<len(scope)>`, as a target's own label is, and each other `&fN` (or a RIGID_DET part's
   `.fN` step) is the global label of the QueryHash of the step whose own name it is. Its token stream is decoded over the sample's scope as a target's is.
@@ -54,7 +54,7 @@ train by split.py is refused (exit 2) before any file is written.
   an id of the point it is counted (`not admitted`) and nothing is added. A path whose tokens are all positives gives nothing.
 - `point` then also has `drawn`: [[index into ids, count], ...]. The header is written when the file is closed and also has `draws` (the task's record files, each [path, sha256 of the text]) and
   `draw_counts`, in last steps with their repeats unless stated: `matched` (last steps whose state is a skeleton sample's), `added` (last steps whose state was added and written), `added states`
-  (the distinct states added and written), `not added: <reason>`, `solves` (of those, the records that solve every train example), and what became of the matched ones. The summary also has
+  (the distinct states added and written, and `added states by scan` of them with targets from scan_targets), `not added: <reason>`, `solves` (of those, the records that solve every train example), and what became of the matched ones. The summary also has
   `samples_added`.
 """
 import argparse
@@ -91,7 +91,6 @@ OUTD = Path('/Users/davidlu/code/arc-workspace/work/lm/data-study/samples')
 REPO = Path(__file__).resolve().parents[3]
 SCHEMA = 'points-1'
 # the reasons that count a state as not added in the header's draw_counts (`not added: <reason>`); run/draw_targets.py reads them from here
-GROUND_TRUTH = 'the ground-truth part is no sample\'s state'
 NO_HASH = 'a step has no QueryHash'
 NO_TARGET = 'no target query is left'
 VECTOR_COUNTS = ('point-scope columns that differ across ids', 'vector shape or names differ from the header')
@@ -408,13 +407,23 @@ def off_path_queries(earlier: tuple[tuple[str, str | None], ...], union: Mapping
     return out
 
 
+def scan_targets(gold: frozenset[str], union: Mapping[str, dict]) -> list[str]:
+    """The target queries at a state with no skeleton sample, from the skeleton's query records alone: the queries that the state's union queries (`gold`) can be written over, as skeleton.py
+    writes a sample's targets. A query is a target when it is not in the state, its use closure and the queries it reads are in the state, and some graph table that it computes is not
+    one that a query of the state computes (the progress rule; a graph query whose heads are all built is `no_progress_queries` there). A query that the engine refused at skeleton time has no
+    record, so it is not found. Where `gold` is a sample's state this gives the sample's `target_queries` for most samples; run/target_rule_check.py lists the others."""
+    built = {t for h in gold for t in union[h]['graph_tables'].values()}
+    return sorted(h for h, r in union.items() if h not in gold and set(r['closure']) <= gold and not any('query' in i and i['query'] not in gold for i in r['inputs'])
+                  and not set(r['graph_tables'].values()) <= built)
+
+
 def plan_added(task: str, draws: list[Draw], union: Mapping[str, dict], samples: list[dict], have: set[frozenset[str | None]]) -> tuple[list[dict], dict[str, dict[str, dict]], dict[frozenset[str | None], str]]:
     """The samples that the last steps' states off the samples add (docs/sample-build/training-instances.md, "States off the samples"): (the added samples, each state once, in the
     order of its first record; the query records of each added sample's queries that are no union query, by sample id; the reason for each state that cannot be added).
-    `samples` are all the skeleton's samples and `have` the states of those that the extractor writes. A state is added when its ground-truth part (its queries that are union queries)
-    is the state of a skeleton sample, and the sample has a target query that the state has not written. Its targets are those of that sample: no graph query reads a query outside
-    the union. A state with a step that has no QueryHash, with a ground-truth part that is no sample's state, with no target query left, or whose records all fail
-    `off_path_queries` (the first record that gives the queries is used) is not added, and has its reason in the third result."""
+    `samples` are all the skeleton's samples and `have` the states of those that the extractor writes. The targets of a state are those of its ground-truth part (its queries that are
+    union queries), less the queries that the state holds: no graph query reads a query outside the union. Where the ground-truth part is a skeleton sample's state they are that
+    sample's `target_queries`, which are skeleton.py's own; else `scan_targets` gives them. A state with a step that has no QueryHash, with no target query left, or whose records all
+    fail `off_path_queries` (the first record that gives the queries is used) is not added, and has its reason in the third result."""
     sample_of = {frozenset(s['state']['queries']): s for s in samples}
     by_state: dict[frozenset[str | None], list[Draw]] = {}
     for dr in draws:
@@ -422,18 +431,22 @@ def plan_added(task: str, draws: list[Draw], union: Mapping[str, dict], samples:
     added: list[dict] = []
     extra: dict[str, dict[str, dict]] = {}
     refused: dict[frozenset[str | None], str] = {}
+    scanned: dict[frozenset[str], list[str]] = {}  # a ground-truth part with no sample -> its targets
     for st, group in by_state.items():
         if st in have:
             continue
         if None in st:
             refused[st] = NO_HASH
             continue
-        gold = frozenset(h for h in st if h in union)
+        gold = frozenset(h for h in st if h is not None and h in union)
         base = sample_of.get(gold)
-        if base is None:
-            refused[st] = GROUND_TRUTH
-            continue
-        targets = sorted(t for t in base['target_queries'] if t not in st)
+        if base is not None:
+            found = base['target_queries']
+        else:
+            found = scanned.get(gold)
+            if found is None:
+                found = scanned[gold] = scan_targets(gold, union)
+        targets = sorted(t for t in found if t not in st)
         if not targets:
             refused[st] = NO_TARGET
             continue
@@ -449,7 +462,7 @@ def plan_added(task: str, draws: list[Draw], union: Mapping[str, dict], samples:
         refused.pop(st, None)
         members = sorted(h for h in st if h is not None)
         sid = hashlib.sha256((task + '\n' + '\n'.join(members)).encode()).hexdigest()[:32]
-        added.append(dict(record='sample', id=sid, task=task, state=dict(id=sid, queries=members), target_queries=targets, off_path=len(st) - len(gold)))
+        added.append(dict(record='sample', id=sid, task=task, state=dict(id=sid, queries=members), target_queries=targets, off_path=len(st) - len(gold), targets_from='sample' if base is not None else 'scan'))
         extra[sid] = got
     return added, extra, refused
 
@@ -883,6 +896,7 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
             if sample['id'] in added_ids:
                 tot.counts['samples added'] += 1
                 env.draw_counts['added states'] += 1
+                env.draw_counts['added states by scan'] += sample['targets_from'] == 'scan'
                 env.draw_counts['added'] += steps_of[state]
                 env.draw_counts['solves'] += solving_of[state]
         sink.close(dict(samples=tot.counts['samples'], samples_added=tot.counts['samples added'], points=tot.counts['points'],
