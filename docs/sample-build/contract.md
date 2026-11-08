@@ -364,12 +364,10 @@ A state and its target queries. There is one sample per state.
 The target queries of a state are decided by one rule, from the `TableHash`es of the parameterized tables of the state's members. A target query is a ground truth graph query g, written over the state's own members, that holds each of these:
 
 - It is not a member of the state.
-- It applies: each graph table that g reads is stood for by a member's parameterized table. A member's parameterized table stands for a graph table when the member's map {`Assignment` → `TableHash`} equals the graph table's map. Assignments are compared by their DET value hashes, so that equal DETs of two programs match. Where the two programs' DETs have equal `QueryHash`es, the (DET `QueryHash`, value hash) pairs are compared. Otherwise the compare first pairs each DET of one program with one DET of the other by equal sets of the TableHashes of their values; sorting the value hashes within a tuple would lose which DET holds which value. This is a measurement, not an identity.
+- It applies: each graph table that g reads is stood for by a member's parameterized table. A member's parameterized table stands for a graph table when the member's map {`Assignment` → `TableHash`} equals the graph table's map. Assignments are compared with each DET named by the digest of its values' `TableHash`es, so DETs of two programs with equal sets of value `TableHash`es match; two DETs of equal `QueryHash` have equal value sets, so they match too. A DET with one value is left out of the compare. This is a measurement, not an identity.
 - It makes progress: some graph table that g computes has, at some assignment, a `TableHash` that no member's parameterized table has there. A graph query whose computed graph tables all have, at each assignment, a `TableHash` of a member's parameterized table there does not make progress. It is not a target query and is not a step of a state sequence. It is counted in `no_progress_queries`.
 
 Where two members' parameterized tables stand for one graph table, g gives one target query for each choice of member. These are distinct `QueryHash`es whose parameterized tables have equal maps.
-
-A graph table is a map {`Assignment` → `TableHash`}, and table recall is per assignment. The union graph merges parameterized tables by the hash that `table_key` computes over all assignments today, so it must be rebuilt with a parameterized table per assignment and its map. That rebuild waits on the engine's export change.
 
 ## `StateSequence`
 
