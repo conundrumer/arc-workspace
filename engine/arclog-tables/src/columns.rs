@@ -1488,25 +1488,17 @@ pub(crate) fn sorted_rows_at(materializer:&Materializer<'_>,rows: &Relation, pla
 /// The places of the `count` rows of `cells` (`width` cells each) in the order of their cells, rows of
 /// equal cells in the order of their places.
 ///
-/// The cells that every row holds equally decide no order, so a sort key holds the first cell that a row
-/// holds otherwise, with the row's place in its low 32 bits. Where that cell is the row's last, the keys
-/// are the whole order. Otherwise a key compares first by the cell, and a tie by the rest of the row, so a
-/// compare reads the row's cells only for rows with an equal cell. The sort is stable, so ties stand in
-/// the order of the places.
+/// A row's sort key holds its place in the low bits and, above them, the leading cells of the row that
+/// differ between rows, each cell as its difference from the least cell of its column, in as many bits
+/// as the column's range takes. A column that every row holds equally takes none. Columns go into the
+/// key from the first on until the 128 bits are full; the last may go in by its high bits. Keys order
+/// the rows by the cells in the key. Where the key holds every column that differs, the keys alone give
+/// the order. Otherwise a tie of the key's cells is broken by the cells of the columns from the first
+/// that the key does not hold whole, and then by the place. So the compare of two keys reads a row's
+/// cells only for rows that tie in the key.
 fn row_order(cells: &[i32], width: usize, count: usize) -> Vec<usize> {
     let row = |at: usize| &cells[at * width..(at + 1) * width];
-    let mut lead = width;
-    if count > 1 {
-        let first = row(0);
-        for at in 1..count {
-            let this = row(at);
-            lead = this[..lead].iter().zip(first).position(|(a, b)| a != b).unwrap_or(lead);
-            if lead == 0 {
-                break;
-            }
-        }
-    }
-    if lead == width || count < 2 {
+    if count < 2 || width == 0 {
         return (0..count).collect();
     }
     if u32::try_from(count).is_err() {
@@ -1514,15 +1506,64 @@ fn row_order(cells: &[i32], width: usize, count: usize) -> Vec<usize> {
         order.sort_by(|&a, &b| row(a).cmp(row(b)));
         return order;
     }
-    // A cell in the order of its signed value, as an unsigned number.
-    let mut keys: Vec<u64> = (0..count).map(|at| u64::from(cells[at * width + lead] as u32 ^ 0x8000_0000) << 32 | at as u64).collect();
-    if lead + 1 == width {
-        keys.sort();
-    } else {
-        let rest = |key: u64| &cells[(key as u32 as usize) * width + lead + 1..(key as u32 as usize + 1) * width];
-        keys.sort_by(|&a, &b| (a >> 32).cmp(&(b >> 32)).then_with(|| rest(a).cmp(rest(b))));
+    if width == 1 {
+        // A cell in the order of its signed value, as an unsigned number.
+        let mut keys: Vec<u64> = (0..count).map(|at| u64::from(cells[at] as u32 ^ 0x8000_0000) << 32 | at as u64).collect();
+        keys.sort_unstable();
+        return keys.into_iter().map(|key| key as u32 as usize).collect();
     }
-    keys.into_iter().map(|key| key as u32 as usize).collect()
+    let mut low = row(0).to_vec();
+    let mut high = low.clone();
+    for at in 1..count {
+        for ((low, high), &cell) in low.iter_mut().zip(high.iter_mut()).zip(row(at)) {
+            *low = (*low).min(cell);
+            *high = (*high).max(cell);
+        }
+    }
+    let place_bits = usize::BITS - (count - 1).leading_zeros();
+    let budget = 128 - place_bits;
+    // The columns in the key: the column, its least cell, the bits of its range that the key drops, and the bits it holds.
+    let mut plan: Vec<(usize, i32, u32, u32)> = Vec::new();
+    let mut used = 0;
+    let mut rest = width;
+    for column in 0..width {
+        let range = (i64::from(high[column]) - i64::from(low[column])) as u64;
+        let bits = 64 - range.leading_zeros();
+        if bits == 0 {
+            continue;
+        }
+        if used + bits <= budget {
+            plan.push((column, low[column], 0, bits));
+            used += bits;
+        } else {
+            let fits = budget - used;
+            if fits > 0 {
+                plan.push((column, low[column], bits - fits, fits));
+            }
+            rest = column;
+            break;
+        }
+    }
+    if plan.is_empty() {
+        return (0..count).collect();
+    }
+    let mut keys: Vec<u128> = (0..count)
+        .map(|at| {
+            let mut key = 0u128;
+            for &(column, low, dropped, bits) in &plan {
+                key = key << bits | u128::from(((i64::from(cells[at * width + column]) - i64::from(low)) as u64) >> dropped);
+            }
+            key << place_bits | at as u128
+        })
+        .collect();
+    let place = |key: u128| key & ((1u128 << place_bits) - 1);
+    if rest == width {
+        keys.sort_unstable();
+    } else {
+        let tail = |key: u128| &cells[place(key) as usize * width + rest..(place(key) as usize + 1) * width];
+        keys.sort_unstable_by(|&a, &b| (a >> place_bits).cmp(&(b >> place_bits)).then_with(|| tail(a).cmp(tail(b))).then_with(|| place(a).cmp(&place(b))));
+    }
+    keys.into_iter().map(|key| place(key) as usize).collect()
 }
 
 /// The offset of the run of `count` rows with the cells `cells`: where
