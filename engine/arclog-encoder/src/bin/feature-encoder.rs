@@ -17,7 +17,6 @@
 //!   feature-encoder generate-check TABLES_FILE [--size D] [--tables EVERY]
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
 //!   feature-encoder refine-check TABLES_FILE [--size D]
-//!   feature-encoder time-heads TABLES_FILE... [--size D]
 //!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N]
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
 //!   feature-encoder family-names TYPE,TYPE,... [--size D]
@@ -1401,176 +1400,6 @@ fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) 
     Ok(())
 }
 
-/// Where a walk's time goes, over tables of stored files: `time-heads FILE... --size D`. It needs GENERATE_KEEP_TEXT=1, since a family drops its terms' text otherwise, and it also prints each table's 20 slowest terms, 30 in all. With TIME_TASK naming a task, each FILE is instead a rows file of that task, as `shapes-refresh` reads it. Each schema has one walker, as a run has. It prints each term head's terms, evaluations, those that
-/// gave rows, and time, and each table's time. With TIME_TABLES, at most that many tables of a file. With TIME_SHAPES naming a file of `gain<TAB>shape` lines, it then times only those
-/// shapes and the terms they read, with a new walker per table, and prints each shape's gain and its share of that time.
-fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String> {
-    use arclog_encoder::generate::{leaves_at, Generated, NameStore, Walker};
-    use arclog_encoder::native::hash_words;
-    use arclog_encoder::stored::Stored;
-    use arclog_encoder::table_vector::Grids;
-    use std::collections::BTreeMap;
-    let limit: usize = std::env::var("TIME_TABLES").ok().and_then(|text| text.parse().ok()).unwrap_or(12);
-    let wanted: Vec<(f64, String, u128)> = match std::env::var("TIME_SHAPES") {
-        Ok(path) => arclog_encoder::zio::read_text(&path)?.lines().filter_map(|line| {
-            let (gain, shape) = line.split_once('\t')?;
-            Some((gain.parse().ok()?, shape.to_string(), hash_words(shape.bytes().map(u64::from))))
-        }).collect(),
-        Err(_) => Vec::new(),
-    };
-    let index: LookupMap<u128, usize> = wanted.iter().enumerate().map(|(at, held)| (held.2, at)).collect();
-    let store = NameStore::default();
-    let empty = Vec::new();
-    let mut heads: BTreeMap<String, [u64; 4]> = BTreeMap::new();
-    let mut table_times: Vec<(f64, usize, usize, usize)> = Vec::new();
-    let mut chosen_times: Vec<(f64, usize, usize)> = Vec::new();
-    // The 20 terms of each table that took longest: nanoseconds, evaluations, those that gave rows, and the text.
-    let mut slowest_terms: Vec<(u64, u32, u32, String)> = Vec::new();
-    let mut shape_time: Vec<f64> = vec![0.0; wanted.len()];
-    let mut shape_seen: Vec<u64> = vec![0; wanted.len()];
-    let mut families: LookupMap<String, Generated> = LookupMap::new();
-    // With TIME_TASK, each file is a rows file of that task (see `shapes-refresh`) in place of a file of items.
-    let rows_task = std::env::var("TIME_TASK").ok();
-    for file in files {
-        let text = arclog_encoder::zio::read_text(file)?;
-        let (train, grids, mut tables): (usize, Grids, Box<dyn Iterator<Item = Option<Stored>>>) = match &rows_task {
-            Some(task_name) => {
-                let (task, grids) = Grids::of_file(&arguments.tasks, task_name, None)?;
-                let (train, test) = (task.train.len(), task.test.len());
-                let lines: Vec<serde_json::Value> = text.lines().filter(|line| !line.trim().is_empty()).map(|line| serde_json::from_str(line).map_err(|error| error.to_string())).collect::<Result<_, _>>()?;
-                (train, grids, Box::new(lines.into_iter().map(move |line| arclog_encoder::atom_lists::stored_of(&line["table"], train, test, &LookupMap::new()).ok().flatten())))
-            }
-            None => {
-                let data: serde_json::Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
-                let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
-                let train = data["train"].as_u64().ok_or("a file's train")? as usize;
-                let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
-                let items: Vec<serde_json::Value> = data["items"].as_array().unwrap_or(&empty).iter().flat_map(|item| {
-                    let mut out = vec![item["gold"].clone()];
-                    out.extend(item["mutants"].as_array().unwrap_or(&empty).iter().map(|mutant| mutant["table"].clone()));
-                    out
-                }).collect();
-                (train, grids, Box::new(items.into_iter().map(move |item| Stored::of_json(&item, train, 0))))
-            }
-        };
-        let mut seen: LookupSet<u128> = LookupSet::new();
-        let mut taken = 0;
-        for stored in &mut tables {
-            if taken >= limit {
-                break;
-            }
-            let Some(stored) = stored else { continue };
-            if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_TABLE_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
-                continue;
-            }
-            taken += 1;
-            let family = families.entry(stored.key.clone()).or_insert_with(|| Generated::of(&stored.types, arguments.size.max(1), &store));
-            let (count, first) = family.counts();
-            let example_of: Vec<usize> = (0..train).collect();
-            let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
-            let rows: usize = held.iter().flatten().map(|table| table.len).sum();
-            let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
-            let mut walker = Walker::new(family);
-            let times = walker.timed_terms(&leaves, train, None);
-            if count > first && family.term_info(first).0.is_empty() {
-                return Err("the family keeps no term text: run `time-heads` with GENERATE_KEEP_TEXT=1".to_string());
-            }
-            let mut total = 0;
-            let mut costly: Vec<(u64, usize)> = times.iter().enumerate().take(count).skip(first).map(|(at, time)| (time.0, at)).collect();
-            costly.sort_unstable_by(|a, b| b.cmp(a));
-            slowest_terms.extend(costly.iter().take(20).map(|(nanos, at)| (*nanos, times[*at].1, times[*at].2, family.term_info(*at).0.to_string())));
-            for (at, (nanos, evals, gave)) in times.iter().enumerate().take(count).skip(first) {
-                let text = family.term_info(at).0;
-                let head = text.trim_start_matches('(').split(' ').next().unwrap_or("").to_string();
-                let held = heads.entry(head).or_insert([0; 4]);
-                held[0] += 1;
-                held[1] += u64::from(*evals);
-                held[2] += u64::from(*gave);
-                held[3] += *nanos;
-                total += *nanos;
-            }
-            table_times.push((total as f64 / 1000.0, count - first, rows, stored.types.len()));
-            if !wanted.is_empty() {
-                // The terms that the chosen shapes read, and how many chosen shapes read each.
-                let mut needed = vec![false; count];
-                let mut shapes_of: Vec<Vec<usize>> = vec![Vec::new(); count];
-                for at in (first..count).rev() {
-                    let (roots, a, b) = family.term_links(at);
-                    for root in roots {
-                        if let Some(shape) = index.get(&root) {
-                            shapes_of[at].push(*shape);
-                            needed[at] = true;
-                        }
-                    }
-                    if needed[at] {
-                        let carried = shapes_of[at].clone();
-                        for parent in [a, b] {
-                            if parent != Generated::no_term() && (parent as usize) >= first {
-                                needed[parent as usize] = true;
-                                shapes_of[parent as usize].extend(carried.iter().copied());
-                            }
-                        }
-                    }
-                }
-                let mut walker = Walker::new(family);
-                let times = walker.timed_terms(&leaves, train, Some(&needed));
-                let mut total = 0;
-                let mut terms = 0;
-                let mut active: LookupSet<usize> = LookupSet::new();
-                for at in first..count {
-                    if needed[at] {
-                        terms += 1;
-                        total += times[at].0;
-                        shapes_of[at].sort_unstable();
-                        shapes_of[at].dedup();
-                        let share = times[at].0 as f64 / 1000.0 / shapes_of[at].len().max(1) as f64;
-                        for shape in &shapes_of[at] {
-                            shape_time[*shape] += share;
-                            active.insert(*shape);
-                        }
-                    }
-                }
-                for shape in active.into_sorted_vec() {
-                    shape_seen[shape] += 1;
-                }
-                chosen_times.push((total as f64 / 1000.0, terms, train));
-            }
-        }
-    }
-    let mut order: Vec<(&String, &[u64; 4])> = heads.iter().collect();
-    order.sort_by_key(|entry| std::cmp::Reverse(entry.1[3]));
-    let whole: u64 = order.iter().map(|entry| entry.1[3]).sum();
-    println!("head\tterms\tevaluations\twith rows\tmicroseconds\tshare\tns per evaluation");
-    for (head, held) in order {
-        println!("{head}\t{}\t{}\t{}\t{:.0}\t{:.3}\t{:.0}", held[0], held[1], held[2], held[3] as f64 / 1000.0, held[3] as f64 / whole.max(1) as f64, held[3] as f64 / held[1].max(1) as f64);
-    }
-    slowest_terms.sort_by(|a, b| b.0.cmp(&a.0));
-    if !slowest_terms.is_empty() {
-        println!("term\tmicroseconds\tshare\tevaluations\twith rows\ttext");
-        for (nanos, evals, gave, text) in slowest_terms.iter().take(30) {
-            println!("term\t{:.0}\t{:.4}\t{evals}\t{gave}\t{text}", *nanos as f64 / 1000.0, *nanos as f64 / whole.max(1) as f64);
-        }
-    }
-    table_times.sort_by(|a, b| a.0.total_cmp(&b.0));
-    if !table_times.is_empty() {
-        let at = |share: f64| table_times[((table_times.len() - 1) as f64 * share) as usize];
-        println!("tables {} ms at 10% {:.1} 50% {:.1} 90% {:.1} 100% {:.1}; terms at 50% {} rows at 50% {}", table_times.len(), at(0.1).0 / 1000.0, at(0.5).0 / 1000.0, at(0.9).0 / 1000.0, at(1.0).0 / 1000.0, at(0.5).1, at(0.5).2);
-    }
-    if !chosen_times.is_empty() {
-        chosen_times.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let at = |share: f64| chosen_times[((chosen_times.len() - 1) as f64 * share) as usize];
-        println!("chosen {} shapes on {} tables: ms at 10% {:.2} 50% {:.2} 90% {:.2} 100% {:.2}; terms at 50% {}", wanted.len(), chosen_times.len(), at(0.1).0 / 1000.0, at(0.5).0 / 1000.0, at(0.9).0 / 1000.0, at(1.0).0 / 1000.0, at(0.5).1);
-        println!("shape\tgain\ttables\tmicroseconds per table\tgain per microsecond");
-        let mut ranked: Vec<usize> = (0..wanted.len()).collect();
-        let cost = |at: usize| shape_time[at] / shape_seen[at].max(1) as f64;
-        ranked.sort_by(|a, b| (wanted[*b].0 / cost(*b).max(1e-3)).total_cmp(&(wanted[*a].0 / cost(*a).max(1e-3))));
-        for at in ranked {
-            println!("{}\t{:.1}\t{}\t{:.1}\t{:.2}", wanted[at].1, wanted[at].0, shape_seen[at], cost(at), wanted[at].0 / cost(at).max(1e-3));
-        }
-    }
-    Ok(())
-}
-
 fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
     use arclog_encoder::generate::{leaves_at, Generated, NameStore, Walker};
     use arclog_encoder::refine::{bit, Claim};
@@ -2288,7 +2117,6 @@ fn main() {
         }
         ("shape-count", files) if !files.is_empty() => run_shape_count(&arguments, files),
         ("refine-check", [file]) => run_refine_check(&arguments, file),
-        ("time-heads", files) => run_time_heads(&arguments, files),
         ("atom-lists", [input, out]) => run_atom_lists(&arguments, input, out),
         ("shapes-refresh", [rows, task, out]) => run_shapes_refresh(&arguments, rows, task, out),
         ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),

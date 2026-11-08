@@ -3129,6 +3129,7 @@ impl<'a> Walker<'a> {
             }
             // A term's charge is its own: the cells of each input it reads and of each output it gives, at each instance, each as rows times columns. It depends on the term's inputs and outputs alone, so that its value or stop does not depend on the terms walked before it, or on how an operator computes it.
             let mut spent = 0usize;
+            let begun = crate::bounds::enabled().then(std::time::Instant::now);
             let step_id = steps.ids[at];
             crate::bounds::clear_term();
             let first = std::mem::take(&mut ids[term.a as usize]);
@@ -3340,8 +3341,10 @@ impl<'a> Walker<'a> {
             }
             crate::bounds::note_term(at as u32);
             crate::bounds::note_cells(at as u32, spent as u64);
-            if crate::bounds::enabled() && spent > 5_000_000 {
-                eprintln!("term\t{}\textended {extended}\tcharged {spent}\tstopped {is_stopped}\theld {}", term.text.chars().take(160).collect::<String>(), self.held_cells);
+            // A term that is charged many cells or takes much time is named, with its time in the walk itself: its memo, its counts and its spill included.
+            let ms = begun.map_or(0, |at| at.elapsed().as_millis());
+            if crate::bounds::enabled() && (spent > 5_000_000 || ms >= 100) {
+                eprintln!("term\t{}\textended {extended}\tcharged {spent}\tstopped {is_stopped}\theld {}\tms {ms}", term.text.chars().take(160).collect::<String>(), self.held_cells);
             }
             ids[term.a as usize] = first;
             if term.b != NO_TERM {
@@ -3554,44 +3557,6 @@ impl Generated {
 impl Walker<'_> {
     /// The rows at each instance of each term that `chosen` picks, with what they read computed on
     /// the way, for a check against the expression a term stands for.
-    /// Each term's time in nanoseconds, its evaluations, and how many gave rows, for a study of where a walk's time goes. Where `needed` is given, only those terms run.
-    pub fn timed_terms(&mut self, leaves: &[Vec<Val>], train: usize, needed: Option<&[bool]>) -> Vec<(u64, u32, u32)> {
-        let family = self.family;
-        let pairs = leaves[0].len();
-        let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
-        for leaf in leaves {
-            let held: Vec<u32> = leaf.iter().map(|value| self.value_id(value.clone())).collect();
-            ids.push(held);
-        }
-        let mut out = vec![(0, 0, 0); family.terms.len()];
-        for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
-            let step = term.step.as_ref().expect("a term has a step");
-            let scope = if term.flags & READS_OUTPUT != 0 { train } else { pairs };
-            let mut own = Vec::with_capacity(pairs);
-            let run = needed.map_or(term.used || !term.roots.is_empty(), |needed| needed[at]);
-            for pair in 0..scope {
-                let id = if run {
-                    let a = ids[term.a as usize][pair];
-                    let b = if term.b == NO_TERM { NO_TERM } else { ids[term.b as usize][pair] };
-                    let begun = std::time::Instant::now();
-                    let value = self.apply(step, a, b);
-                    let id = self.value_id(value);
-                    let own_time = &mut out[at];
-                    own_time.0 += begun.elapsed().as_nanos() as u64;
-                    own_time.1 += 1;
-                    own_time.2 += u32::from(count_of(&self.values[id as usize]) > 0);
-                    id
-                } else {
-                    0
-                };
-                own.push(id);
-            }
-            own.resize(pairs, 0);
-            ids.push(own);
-        }
-        out
-    }
-
     pub fn term_values(&mut self, leaves: &[Vec<Val>], train: usize, chosen: &dyn Fn(usize) -> bool) -> Vec<(usize, Vec<Val>)> {
         let family = self.family;
         let pairs = leaves[0].len();
