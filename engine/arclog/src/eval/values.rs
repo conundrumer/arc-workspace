@@ -812,7 +812,7 @@ pub const REQUEST_BYTES_CAP: u64 = 1 << 32;
 
 /// The default budget of the bytes one assignment holds at a time
 /// ([`TableWork::charge_bytes`]). Provisional, as [`REQUEST_BYTES_CAP`] is.
-pub const ASSIGNMENT_BYTES_CAP: u64 = 1 << 31;
+pub const ASSIGNMENT_BYTES_CAP: u64 = 1 << 27;
 
 /// The default budget of the bytes the request of one candidate of a call holds
 /// at a time ([`RequestWork::candidate`]). Provisional, as [`REQUEST_BYTES_CAP`]
