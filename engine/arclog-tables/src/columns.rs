@@ -338,6 +338,10 @@ pub struct TableColumns {
     /// The tie of each column of each row, as `column_value_hashes` is given: 0 where no other column has its type key and value hash, 1 where another
     /// does and the columns that have them can be exchanged without changing the table, 2 where another does and that was not shown.
     pub column_ties: Vec<Vec<u32>>,
+    /// The order of the columns under which the TableHash of each row was computed: for each canonical place, the column at it, as an index into `column_names`. Empty where the
+    /// row's assignment has no TableHash. Two rows with equal TableHashes have, at each place, columns of equal `column_type_keys` and `column_value_hashes`, and under the map
+    /// that sends each column of one to the column at the same place of the other, each example's Set of TableRows is equal.
+    pub column_order: Vec<Vec<u32>>,
 }
 
 /// One row for each entry of a table on an example, in the order of the
@@ -1051,6 +1055,7 @@ fn by_assignment(mut columns:CaseColumns,summaries:&[TableSummary],queries:&[Opt
         tables.column_value_hashes.push(held.columns.iter().map(|key|key.hash.0).collect());
         tables.column_type_keys.push(held.columns.iter().map(|key|key.ty.clone()).collect());
         tables.column_ties.push(held.columns.iter().map(|key|key.tie).collect());
+        tables.column_order.push(held.column_order.to_vec());
         for (place,(det,primary)) in held.dets.iter().enumerate() {
             let value = if variant==0 {primary} else {&held.more[variant-1][place]};
             columns.assignments.table.push(row);

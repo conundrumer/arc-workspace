@@ -86,6 +86,14 @@ use pyo3::sync::PyOnceLock;
 ///   leaves the table as it is, so that any order among them gives the same table, and 2 where another does and that was not shown (the order
 ///   among them is open).
 ///
+/// `tables` also gives `column_order` in each result of `step_tables` and `successor_tables` (by assignment), with or without summaries: for
+/// each row, the order of the table's columns under which the row's `hash` was computed, as a list with one entry for each canonical place,
+/// the column at that place, as an index into `column_names`. It is an empty list where the row's assignment has no `hash`. Take two rows with
+/// equal `hash`es, and map each column of one to the column at the same place of the other. Each such pair of columns has equal
+/// `column_type_keys` and `column_value_hashes` (where the result gives them), and under the map each example's Set of TableRows is equal.
+/// This holds for a column with a `column_ties` of 2 whose tie the search ordered, as for a column with a `column_ties` of 0 or 1. Where a
+/// class of columns is exchangeable (`column_ties` 1), the order of its columns in the list is one of the orders that give the table.
+///
 /// `tables` also gives `column_slots` and `column_labels`, one entry per column in the order of
 /// `column_names`: the column's slot in the relation's own column order (-1 where the engine
 /// knows none) and the name of the label that the table's form writes at it (the empty string
@@ -502,6 +510,7 @@ impl PyCaseTables {
             t.list("column_value_hashes", &c.column_value_hashes)?;
             t.list("column_type_keys", &c.column_type_keys)?;
             t.list("column_ties", &c.column_ties)?;
+            t.list("column_order", &c.column_order)?;
         }
         let e = Part::new(py, "entries", &dtypes,&owned);
         let c = &columns.entries;

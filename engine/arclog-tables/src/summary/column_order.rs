@@ -43,6 +43,14 @@
 //! such class. So the two searches reach the same count of nodes and leaves
 //! and have the same least body hash.
 //!
+//! The order of the leaf with the least body hash is the order of the table's
+//! canonical places: [`Searched::found`] gives it, for each place, as the column
+//! at that place. Let two tables have one body hash. Each example's Set of
+//! TableRows is the same in both under the map that sends each column of one to
+//! the column at the same place of the other, as the body hash hashes the rows
+//! with the columns in that order. The leaves that tie in body hash may differ in
+//! order, and any of them has that property.
+//!
 //! The search counts its work, and the count depends on the table's content alone,
 //! by the same argument. Work is counted in units: a cell hashed is a unit, and a
 //! search node is [`NODE_WORK`] units. A search that passes the cap
@@ -62,9 +70,10 @@ const NODE_WORK: u64 = 1 << 18;
 
 /// The result of a search for the order of the columns of a table.
 pub(super) struct Searched {
-    /// The least body hash and the low 64 bits of the hash of each example's Set of
-    /// TableRows under the order that gives it; none where the search passed its cap.
-    pub found: Option<(u128, Vec<u64>)>,
+    /// The least body hash, the low 64 bits of the hash of each example's Set of
+    /// TableRows under the order that gives it, and that order: for each place of the
+    /// order, the column at it. None where the search passed its cap.
+    pub found: Option<(u128, Vec<u64>, Vec<usize>)>,
     /// The work of the search, in units.
     pub work: u64,
 }
@@ -113,7 +122,7 @@ impl Search<'_, '_> {
         !self.cut
     }
 
-    fn run(&mut self, start: &[u128]) -> Option<(u128, Vec<u64>)> {
+    fn run(&mut self, start: &[u128]) -> Option<(u128, Vec<u64>, Vec<usize>)> {
         let count = self.count;
         let tied = self.tied(start);
         // The pair hashes of the columns that tie, with every other column.
@@ -230,7 +239,7 @@ impl Search<'_, '_> {
     /// least body hash, and at any other node visits a child for each column of the
     /// target class that no column before it in the class is exchangeable with.
     /// Returns false where the search passed the cap.
-    fn visit(&mut self, mut colors: Vec<u128>, best: &mut Option<(u128, Vec<u64>)>) -> bool {
+    fn visit(&mut self, mut colors: Vec<u128>, best: &mut Option<(u128, Vec<u64>, Vec<usize>)>) -> bool {
         if !self.charge(NODE_WORK) {
             return false;
         }
@@ -246,8 +255,8 @@ impl Search<'_, '_> {
             let mut order: Vec<usize> = (0..self.count).collect();
             order.sort_by_key(|&column| (self.kinds[column], colors[column]));
             let (body, hashes) = self.cells.body_examples(&order);
-            if best.as_ref().is_none_or(|(held, _)| body < *held) {
-                *best = Some((body, hashes));
+            if best.as_ref().is_none_or(|(held, _, _)| body < *held) {
+                *best = Some((body, hashes, order));
             }
             return true;
         };

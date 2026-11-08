@@ -12,7 +12,9 @@
 //!   of one of them and the hash of its Set of TableRows;
 //! - the TableVector: the features of `arclog-features` on the Set of TableRows;
 //! - the key of each column: its type name, its value hash and its tie, which
-//!   order the columns by content ([`ColumnKey`]).
+//!   order the columns by content ([`ColumnKey`]);
+//! - the order of the columns under which the TableHash was computed
+//!   ([`AssignmentSummary::column_order`]).
 //!
 //! The summary reads the rows in the table, so a table that the export writes
 //! as Count entries (more rows than the projection cap) still has a hash.
@@ -74,6 +76,8 @@ use arclog_features::{Grid as FeatureGrid, Input, Pair, TableRows};
 
 mod column_hash;
 mod column_order;
+#[cfg(test)]
+mod tests;
 use column_hash::Cells;
 pub use column_hash::{ColumnKey, TIE_EXCHANGEABLE, TIE_NONE, TIE_OPEN};
 
@@ -137,6 +141,11 @@ pub struct AssignmentSummary {
     /// The key of each column of the table, in the order of the table's columns: its type name, its value hash and its tie ([`ColumnKey`]).
     /// Empty where the assignment has no TableHash, or the summary is not a full one.
     pub columns: Arc<Vec<ColumnKey>>,
+    /// The order of the table's columns under which the TableHash was computed: for each canonical place, the column at it, as an index into the table's
+    /// columns. Two tables with equal TableHashes have, at each place, columns of one type name whose value hashes are equal, and under the map that sends
+    /// each column of one to the column at the same place of the other, each example's Set of TableRows is equal. Empty where the assignment has no TableHash.
+    /// Unlike `columns`, a summary of [`summarize_hashes_cached`] holds it.
+    pub column_order: Arc<Vec<u32>>,
 }
 
 /// A table at each of its assignments, in the order of the walk, and at least
@@ -164,18 +173,18 @@ impl TableSummary {
     /// the table's examples walk.
     pub fn unhashed(table: &Table, reason: &str) -> Self {
         let Ok(contents) = &table.contents else { return TableSummary::faulted() };
-        let assignments = (0..assignment_count(contents)).map(|_| AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: reason.to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default() }).collect();
+        let assignments = (0..assignment_count(contents)).map(|_| AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: reason.to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default(), column_order: Arc::default() }).collect();
         TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: false }
     }
 
     fn faulted() -> Self {
-        TableSummary { assignments: vec![AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "TableFault".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default() }], capped: false, name: String::new(), hashes_only: false }
+        TableSummary { assignments: vec![AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "TableFault".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default(), column_order: Arc::default() }], capped: false, name: String::new(), hashes_only: false }
     }
 
     /// The summary of a table that [`summarize_hashes_cached`] leaves out: one
     /// assignment with no TableHash, for the reason `NotComputed`.
     fn not_computed(contents: &Contents) -> Self {
-        let held = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "NotComputed".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default() };
+        let held = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: "NotComputed".to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default(), column_order: Arc::default() };
         TableSummary { assignments: vec![held], capped: capped(contents), name: name_of(contents), hashes_only: true }
     }
 }
@@ -440,7 +449,7 @@ fn alone(
         None => scope.request.measure_holding(|| summary(&own), |_| 0),
     };
     match found {
-        Err(bound) if bound.is_assignment() => Ok((AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: bound_name(bound).to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default() }, cost)),
+        Err(bound) if bound.is_assignment() => Ok((AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: bound_name(bound).to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default(), column_order: Arc::default() }, cost)),
         found => found.map(|found| (found, cost)),
     }
 }
@@ -775,7 +784,7 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
     let views: Vec<(u8, u32, &[Encoded])> = examples.iter().map(|(kind, index, distinct)| (*kind, *index, &distinct[..])).collect();
     // A table that no `DET` reads as a value needs a hash that tells its rows from those of its other assignments, and no other: it reads its rows once for each part.
     let search_cap = materializer.limits().request.column_search_cap();
-    let (found, search_work) = if with_dets { table_hash(types, &views, &fulls.assemblies, search_cap) } else { (Some((rows_hash_of_table(types, &views, &fulls.assemblies), vec![0; views.len()])), None) };
+    let (found, search_work) = if with_dets { table_hash(types, &views, &fulls.assemblies, search_cap) } else { (Some((rows_hash_of_table(types, &views, &fulls.assemblies), vec![0; views.len()], (0..types.len()).collect())), None) };
     if let Some(work) = search_work {
         let gauges = materializer.limits().request.gauges();
         if found.is_none() {
@@ -785,11 +794,11 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
         }
     }
     // A search that passed its cap gives no TableHash, and no hash of an example.
-    let (hash, hashes) = match found {
+    let (hash, hashes, order) = match found {
         Some(found) => found,
         None => {
             reason.get_or_insert(COLUMN_SEARCH_BOUND);
-            (StableHash(0), vec![0; views.len()])
+            (StableHash(0), vec![0; views.len()], Vec::new())
         }
     };
     // The value hash of each distinct TableRows.
@@ -810,9 +819,11 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
         hasher.finish128()
     };
     let hash = reason.is_none().then_some(hash);
+    // The order of the columns under which the TableHash was computed, where there is a TableHash.
+    let column_order: Arc<Vec<u32>> = Arc::new(if hash.is_some() { order.iter().map(|&column| u32::try_from(column).expect("fewer than 2^32 columns")).collect() } else { Vec::new() });
     let columns = Arc::new(if with_dets && !hash_only && reason.is_none() { column_hash::column_keys(types, &views, &failed, &fulls.assemblies) } else { Vec::new() });
     if hash_only {
-        return Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default() });
+        return Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default(), column_order });
     }
     let models: Vec<Vec<Option<(u64, u128)>>> = places
         .iter()
@@ -852,7 +863,7 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
         .zip(hashes)
         .map(|((kind, index, rows), hash)| ExampleKey { kind: *kind, index: *index, distinct: rows.len() as u32, rows: rows.iter().map(|rows| rows.count).max().unwrap_or(0), hash })
         .collect();
-    Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::new(examples), models: Arc::new(models), features: Arc::new(features), shape_rows, columns })
+    Ok(AssignmentSummary { dets, more, hash, reason: reason.unwrap_or_default().to_owned(), examples: Arc::new(examples), models: Arc::new(models), features: Arc::new(features), shape_rows, columns, column_order })
 }
 
 /// A hash of the types of a table and of the keys of the TableRows of each of
@@ -1104,10 +1115,10 @@ fn pose_name(assembly: &AssemblyId, assemblies: &Assemblies) -> String {
 /// The TableHash of the Set of TableRows of each of `examples`, each as its kind,
 /// index and distinct TableRows, over columns of `types`, and the low 64 bits of
 /// the hash of each example's Set of TableRows under the order of the columns that
-/// gives the TableHash; none of them where the search for the order of the tied
+/// gives the TableHash, and that order: for each place of it, the column at it. None of them where the search for the order of the tied
 /// columns passed its cap. The second value is the work of that search in units,
 /// none where no columns tie and no search ran.
-fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblies: &Assemblies, search_cap: u64) -> (Option<(StableHash, Vec<u64>)>, Option<u64>) {
+fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblies: &Assemblies, search_cap: u64) -> (Option<(StableHash, Vec<u64>, Vec<usize>)>, Option<u64>) {
     let names = hashed_names(types, assemblies);
     let widths: Vec<usize> = types.iter().map(|ty| if ty.is_box() { 4 } else { 1 }).collect();
     let starts: Vec<usize> = widths.iter().scan(0, |at, width| { let start = *at; *at += width; Some(start) }).collect();
@@ -1138,9 +1149,10 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
         let searched = column_order::least_body(&cells, &names, &column_hashes, search_cap);
         (searched.found, Some(searched.work))
     } else {
-        (Some(cells.body_examples(&sorted)), None)
+        let (body, hashes) = cells.body_examples(&sorted);
+        (Some((body, hashes, sorted)), None)
     };
-    let Some((body, hashes)) = found else { return (None, work) };
+    let Some((body, hashes, order)) = found else { return (None, work) };
     let mut hasher = StableHasher::new();
     let mut sorted_names = names;
     sorted_names.sort();
@@ -1149,7 +1161,7 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
         hasher.write_u8(0);
     }
     hasher.write_u128(body);
-    (Some((hasher.finish128(), hashes)), work)
+    (Some((hasher.finish128(), hashes, order)), work)
 }
 
 /// The full values of the `DET`s of a stream, which a table that reads a `DET` through some of its columns stands for. The resolver keeps of a `DET`
