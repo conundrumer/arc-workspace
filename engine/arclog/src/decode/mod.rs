@@ -54,7 +54,7 @@ pub(crate) mod prefix_key;
 mod projection_search;
 mod projections;
 
-pub use batch::step_batch;
+pub use batch::{step_batch, BatchFault, BatchStep};
 pub use det_admission::DetRefusal;
 pub use interface::{BodyWidening, derived_at, open_clause, held_dets, relation_dets, walked_dets, Assigned, Consistency, LeftOut, OpenClause, Step, SubBody, SubBodyKey};
 pub use projections::{projections, Projection, Projections};

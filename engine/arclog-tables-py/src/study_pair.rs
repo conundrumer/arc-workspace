@@ -4,7 +4,7 @@ use arclog::decode::corpus::read_task_files;
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession};
 use arclog::study::StudyError;
-use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, constructions, refused, study_error};
+use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, check_effort, constructions, refused, study_error};
 use arclog_tables::columns::{case_columns_held_in,case_columns_in};
 use arclog::eval::join::Materializer;
 use arclog_tables::identity::identify;
@@ -47,6 +47,7 @@ fn evaluate_pair(
     let session=TaskSession::new(SessionBound {bytes:session_bytes},settings.caps);
     let mut result=py.detach(||study_pair::evaluate_pair(
         &gold.program,&point.inner,&mutant.inner,&read,&judged,&session,constructions,&settings));
+    check_effort(py)?;
     let evidence=evidence_tables(&read,Registry::get());
     let (g,m)=pack_pair(py,task,["gold","mutant"],settings.projection_cap,&study_pair::table_transport_ref(),[&gold.program,mutant.inner.program()],&mut result,|result,gold| {
         let materializer=Materializer::new(&session,&result.limits);
@@ -149,6 +150,7 @@ impl PyStudyTaskEvaluator {
             if cache.activate(&program.program) {self.session.results.clear();}
             Ok(study_pair::prefix::open(&program.program,&point,&self.task,&self.session,constructions,&self.settings,assignment_cap))
         })).map_err(|error| study_error(py,error))?;
+        check_effort(py)?;
         let (inner,mut report)=match opened {
             Ok(universe)=>{let report=universe.report.clone();(Some(universe),report)},
             Err(reason)=>{let mut report=reason.report();
@@ -227,6 +229,7 @@ impl PyStudyTaskEvaluator {
                 && result.report["table_coverage"].as_array().is_some_and(|rows|rows.iter().all(|r|r["complete"]==true))).into();
             Ok((result.report,columns))
         })).map_err(|error| study_error(py,error))?;
+        check_effort(py)?;
         let side=if mutant.is_some(){"mutant"}else{"gold"};
         Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),side.into(),false,self.settings.projection_cap,columns,None,None)?))
     }
@@ -347,6 +350,7 @@ impl PyStudyTaskEvaluator {
             report["native_columns_seconds"]=started.elapsed().seconds().into();
             Ok((report,columns))
         })).map_err(|error| study_error(py,error))?;
+        check_effort(py)?;
         Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?))
     }
 
@@ -359,13 +363,15 @@ impl PyStudyTaskEvaluator {
     fn gold_kept(&self,py:Python<'_>,program:&PyStudyProgram)->PyResult<String> {
         if program.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
-        py.detach(||self.with_cache("gold_kept",|cache| {
+        let kept=py.detach(||self.with_cache("gold_kept",|cache| {
             if cache.activate(&program.program) {self.session.results.clear();}
             let mut report=study_pair::gold_kept_cached(&program.program,&self.task,&self.judged,
                 &self.session,constructions,&self.settings,cache);
             report["task"]=self.task_name.clone().into();
             Ok(report.to_string())
-        })).map_err(|error| study_error(py,error))
+        })).map_err(|error| study_error(py,error));
+        check_effort(py)?;
+        kept
     }
 
     /// Fresh original-scope BODY evidence at the cached full gold choices.
@@ -397,6 +403,7 @@ impl PyStudyTaskEvaluator {
             result.report["body_table_packed"]=result.report["body_table"].as_u64().is_some_and(|i|(i as usize)<columns.tables.form.len()).into();
             Ok((result.report,columns))
         })).map_err(|error| study_error(py,error))?;
+        check_effort(py)?;
         Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?))
     }
 
@@ -407,6 +414,7 @@ impl PyStudyTaskEvaluator {
             if cache.activate(&gold.program) {self.session.results.clear();}
             Ok(study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.judged,&self.session,constructions,&self.settings,cache))
         })).map_err(|error| study_error(py,error))?;
+        check_effort(py)?;
         let (g,m)=pack_pair(py,&self.task_name,["gold","mutant"],self.settings.projection_cap,&self.ident_namespace,[&gold.program,mutant.inner.program()],&mut result,|result,gold| {
             self.with_cache("pack_pair_side",|cache| {
                 let materializer=Materializer::new(&self.session,&result.limits);

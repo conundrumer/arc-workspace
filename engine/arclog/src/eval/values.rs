@@ -110,6 +110,11 @@ pub enum ReachedBound {
     /// A variable of a search's order that no node of the clause gives values
     /// at any place of the order. The search has no relation to give.
     NoValues,
+    /// The effort guard of one request: the bindings that its searches tried
+    /// ([`RequestWork::charge_effort`]). It stops a runaway search and is a
+    /// fault of the call, never a result: the call raises
+    /// `arclog.EffortExhausted` ([`take_effort_fault`]).
+    Effort { cap: u64 },
 }
 
 impl ReachedBound {
@@ -124,7 +129,8 @@ impl ReachedBound {
             | Self::TableWork { cap, .. }
             | Self::RequestWork { cap }
             | Self::RequestBytes { cap }
-            | Self::AssignmentBytes { cap } => Some(cap),
+            | Self::AssignmentBytes { cap }
+            | Self::Effort { cap } => Some(cap),
             Self::Margin(_) | Self::Cancelled | Self::NoValues => None,
         }
     }
@@ -140,14 +146,15 @@ impl ReachedBound {
         match self {
             Self::Bindings { .. } | Self::Rows { .. } | Self::Margin(_) | Self::NoValues | Self::Models { .. } | Self::Nodes { .. } | Self::AssignmentBytes { .. } => true,
             Self::TableWork { assignment, .. } => assignment,
-            Self::Assignments { .. } | Self::RequestWork { .. } | Self::RequestBytes { .. } | Self::Cancelled => false,
+            Self::Assignments { .. } | Self::RequestWork { .. } | Self::RequestBytes { .. } | Self::Cancelled | Self::Effort { .. } => false,
         }
     }
 
-    /// Whether this bound is a budget of the request: its work cap or its
-    /// byte budget. Each charge after the request passes one stops too.
+    /// Whether this bound is a budget of the request: its work cap, its
+    /// byte budget or its effort guard. Each charge after the request passes
+    /// one stops too.
     pub fn is_request(self) -> bool {
-        matches!(self, Self::RequestWork { .. } | Self::RequestBytes { .. })
+        matches!(self, Self::RequestWork { .. } | Self::RequestBytes { .. } | Self::Effort { .. })
     }
 
     /// Whether this bound stops a query that grew past a cap on its size.
@@ -181,6 +188,7 @@ impl ReachedBound {
             | ReachedBound::RequestWork { .. }
             | ReachedBound::RequestBytes { .. }
             | ReachedBound::AssignmentBytes { .. }
+            | ReachedBound::Effort { .. }
             | ReachedBound::Cancelled => false,
         }
     }
@@ -200,6 +208,7 @@ impl ReachedBound {
             ReachedBound::AssignmentBytes { cap } => format!("the assignment byte budget of {cap} bytes held"),
             ReachedBound::Cancelled => "a cancellation".to_owned(),
             ReachedBound::NoValues => "a variable that no node gives values".to_owned(),
+            ReachedBound::Effort { cap } => format!("the effort guard of {cap} bindings tried"),
         }
     }
 }
@@ -377,8 +386,50 @@ const UNPOISONED: &str = "a store that no panic poisoned";
 /// gives how it is to be set from the work of the gold programs' requests.
 pub const REQUEST_WORK_CAP: u64 = 1 << 30;
 
+/// The default effort guard of a request, in bindings tried
+/// ([`RequestWork::charge_effort`]). It stops a runaway search and no result
+/// depends on it, so it stands far above the bindings that any gold program's
+/// request tries: 16 times the request work cap that the bindings once
+/// counted against. Provisional: the effort of the gold programs' requests,
+/// which `request_stats()` gives as the gauge `effort`, sets it.
+pub const EFFORT_CAP: u64 = 1 << 34;
+
+/// The fault of a request that passed its effort guard.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct EffortFault {
+    /// The gauge that passed its cap: [`Gauge::Effort`].
+    pub gauge: Gauge,
+    pub cap: u64,
+}
+
+/// Where the requests begun on one thread leave their effort fault, for the
+/// call on that thread to raise ([`take_effort_fault`]).
+type FaultSink = Mutex<Option<EffortFault>>;
+
+thread_local! {
+    /// The sink of the requests begun on this thread ([`RequestWork::begin_with`]).
+    static SINK: Arc<FaultSink> = Arc::default();
+}
+
+/// The effort fault that a request begun on this thread left since the last
+/// call of this function, and clears it. A call from Python into the engine
+/// asks after it ends, and raises `arclog.EffortExhausted` where this gives a
+/// fault, in place of giving the result of the call: the stop of the effort
+/// guard is a fault, never a result.
+pub fn take_effort_fault() -> Option<EffortFault> {
+    SINK.with(|sink| sink.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take())
+}
+
+/// The bindings tried by the searches of a request, and whether they passed
+/// the guard. The candidates of a call share them with the request.
+#[derive(Debug, Default)]
+struct Effort {
+    count: AtomicU64,
+    exhausted: AtomicBool,
+}
+
 /// The count of [`Gauge`]s.
-const GAUGES: usize = 18;
+const GAUGES: usize = 19;
 
 /// A capped quantity of a request, which [`Gauges`] keeps the largest value of
 /// and the hits at.
@@ -437,6 +488,10 @@ pub enum Gauge {
     /// ([`crate::program::canonical::LabelingBound`]). The count is of the
     /// process, from the begin of the latest request ([`ambient`]).
     LabelingNodes,
+    /// The bindings that the searches of the request tried
+    /// ([`RequestWork::charge_effort`]), under the effort guard. A hit raises
+    /// `arclog.EffortExhausted`.
+    Effort,
 }
 
 impl Gauge {
@@ -460,6 +515,7 @@ impl Gauge {
         Gauge::RequestBytes,
         Gauge::AssignmentBytes,
         Gauge::LabelingNodes,
+        Gauge::Effort,
     ];
 
     /// The gauge's name, which is stable.
@@ -483,6 +539,7 @@ impl Gauge {
             Gauge::RequestBytes => "request_bytes",
             Gauge::AssignmentBytes => "assignment_bytes",
             Gauge::LabelingNodes => "labeling_nodes",
+            Gauge::Effort => "effort",
         }
     }
 }
@@ -636,6 +693,11 @@ pub struct RequestWork {
     bytes: Arc<ByteAccount>,
     byte_caps: ByteCaps,
     gauges: Arc<Gauges>,
+    /// The bindings that the request's searches tried, and the guard on them.
+    effort: Arc<Effort>,
+    effort_cap: u64,
+    /// Where the request leaves its effort fault.
+    sink: Arc<FaultSink>,
 }
 
 /// The default budget of the bytes one request holds at a time
@@ -1086,7 +1148,13 @@ impl RequestWork {
     /// A count of no work and no bytes, under `cap` and the byte budgets
     /// `byte_caps`.
     pub fn with_byte_caps(cap: u64, byte_caps: ByteCaps) -> Self {
-        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default() }
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default(), effort: Arc::default(), effort_cap: EFFORT_CAP, sink: Arc::default() }
+    }
+
+    /// This count with the effort guard `effort_cap` in place of
+    /// [`EFFORT_CAP`].
+    pub fn with_effort_cap(self, effort_cap: u64) -> Self {
+        RequestWork { effort_cap, ..self }
     }
 
     /// A count of no work for a request that begins now, under `cap`, which
@@ -1098,7 +1166,7 @@ impl RequestWork {
 
     /// [`RequestWork::begin`], under the byte budgets `byte_caps`.
     pub fn begin_with(cap: u64, byte_caps: ByteCaps) -> Self {
-        let work = Self::with_byte_caps(cap, byte_caps);
+        let work = RequestWork { sink: SINK.with(Arc::clone), ..Self::with_byte_caps(cap, byte_caps) };
         ambient::reset();
         tally(|tally| tally.unbilled = 0);
         LATEST.with(|latest| *latest.borrow_mut() = Some(work.clone()));
@@ -1112,7 +1180,7 @@ impl RequestWork {
     /// candidate's charges are not added to this count, and its stop at a cap
     /// ends its own evaluations alone.
     pub fn candidate(&self) -> Self {
-        RequestWork { count: Arc::new(AtomicU64::new(0)), cap: self.cap, bytes: Arc::default(), byte_caps: ByteCaps { request: self.byte_caps.candidate, ..self.byte_caps }, gauges: Arc::clone(&self.gauges) }
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap: self.cap, bytes: Arc::default(), byte_caps: ByteCaps { request: self.byte_caps.candidate, ..self.byte_caps }, gauges: Arc::clone(&self.gauges), effort: Arc::clone(&self.effort), effort_cap: self.effort_cap, sink: Arc::clone(&self.sink) }
     }
 
     /// The request most recently begun on this thread, or `None` where none
@@ -1166,6 +1234,47 @@ impl RequestWork {
         } else {
             Ok(())
         }
+    }
+
+    /// Adds `bindings` to the effort of the request, and gives the stop once
+    /// the effort is past the guard. Each later call gives it too, whatever it
+    /// adds. The effort counts the bindings that searches try, and no result
+    /// depends on it: the guard stops a runaway, and its stop is a fault of
+    /// the call ([`take_effort_fault`]). A hit in a cache charges no effort,
+    /// since it tries no binding.
+    #[inline]
+    pub fn charge_effort(&self, bindings: u64) -> Result<(), ReachedBound> {
+        let cap = self.effort_cap;
+        if self.effort.exhausted.load(Ordering::Relaxed) {
+            return Err(ReachedBound::Effort { cap });
+        }
+        // Past 2^40 a charge is past the guard, and the clamp keeps the sum from wrapping.
+        let bindings = bindings.min(1 << 40);
+        let effort = if bindings == 0 { self.effort.count.load(Ordering::Relaxed) } else { self.effort.count.fetch_add(bindings, Ordering::Relaxed).saturating_add(bindings) };
+        if effort > cap {
+            if !self.effort.exhausted.swap(true, Ordering::Relaxed) {
+                self.gauges.hit(Gauge::Effort, effort, cap);
+                *self.sink.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(EffortFault { gauge: Gauge::Effort, cap });
+            }
+            return Err(ReachedBound::Effort { cap });
+        }
+        self.gauges.note(Gauge::Effort, effort, cap);
+        Ok(())
+    }
+
+    /// The bindings that the request's searches have tried.
+    pub fn effort(&self) -> u64 {
+        self.effort.count.load(Ordering::Relaxed)
+    }
+
+    /// The effort guard.
+    pub fn effort_cap(&self) -> u64 {
+        self.effort_cap
+    }
+
+    /// Whether the request has passed its effort guard.
+    pub fn is_effort_exhausted(&self) -> bool {
+        self.effort.exhausted.load(Ordering::Relaxed)
     }
 
     /// Holds `rows`, which an index build on this thread walked where no
@@ -1342,9 +1451,10 @@ impl RequestWork {
     }
 
     /// Whether the count is past the cap, or the bytes have been past the
-    /// byte budget.
+    /// byte budget, or the effort is past its guard: a result that a stop of
+    /// the request cut short is kept nowhere.
     pub fn is_past_cap(&self) -> bool {
-        self.count() > self.cap || self.bytes.is_stopped()
+        self.count() > self.cap || self.bytes.is_stopped() || self.is_effort_exhausted()
     }
 
     /// Whether the request has been past its byte budget.

@@ -130,6 +130,7 @@ pub enum Stop {
     AssignmentBytes,
     Cancelled,
     NoValues,
+    Effort,
 }
 
 impl From<ReachedBound> for Stop {
@@ -147,6 +148,7 @@ impl From<ReachedBound> for Stop {
             ReachedBound::AssignmentBytes { .. } => Stop::AssignmentBytes,
             ReachedBound::Cancelled => Stop::Cancelled,
             ReachedBound::NoValues => Stop::NoValues,
+            ReachedBound::Effort { .. } => Stop::Effort,
         }
     }
 }

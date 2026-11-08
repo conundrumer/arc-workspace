@@ -188,6 +188,7 @@ pub fn bound_name(bound: ReachedBound) -> &'static str {
         ReachedBound::AssignmentBytes { .. } => "AssignmentBytes",
         ReachedBound::Cancelled => "Cancelled",
         ReachedBound::NoValues => "NoValues",
+        ReachedBound::Effort { .. } => "Effort",
     }
 }
 

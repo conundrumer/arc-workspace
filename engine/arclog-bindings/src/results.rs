@@ -25,6 +25,7 @@ pub(crate) enum PyStopKind {
     AssignmentBytes,
     Cancelled,
     NoValues,
+    Effort,
 }
 
 impl From<Stop> for PyStopKind {
@@ -42,6 +43,7 @@ impl From<Stop> for PyStopKind {
             Stop::AssignmentBytes => PyStopKind::AssignmentBytes,
             Stop::Cancelled => PyStopKind::Cancelled,
             Stop::NoValues => PyStopKind::NoValues,
+            Stop::Effort => PyStopKind::Effort,
         }
     }
 }

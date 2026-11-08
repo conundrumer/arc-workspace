@@ -532,7 +532,7 @@ impl FormMemo {
 /// no kept walk may hold: a request cap stop depends on the work the request
 /// did before the walk.
 fn machine_bound(bound:ReachedBound)->bool {
-    matches!(bound,ReachedBound::RequestWork{..}|ReachedBound::RequestBytes{..}|ReachedBound::Cancelled)
+    matches!(bound,ReachedBound::RequestWork{..}|ReachedBound::RequestBytes{..}|ReachedBound::Effort{..}|ReachedBound::Cancelled)
 }
 
 /// The top-level forms that the stops of `examples` and `delta` stand at, or

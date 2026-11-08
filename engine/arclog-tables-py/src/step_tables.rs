@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use arclog_bindings::{budget_reached, labeling_bound_reached, PyDecoder};
+use arclog_bindings::{budget_reached, check_effort, labeling_bound_reached, PyDecoder};
 use arclog_tables::columns::{step_case_columns_by_assignment_hashed, step_case_columns_by_assignment_in, step_case_columns_by_assignment_with, step_case_columns_in};
 use arclog_tables::split::{self, Part};
 use arclog_tables::summary::{train_pairs, Assemblies, DetFulls, SummaryCache};
@@ -466,6 +466,8 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
 /// a table, so a result made of them could not be told from the result of a
 /// step that gives no table.
 fn complete(py: Python<'_>, columns: &CaseColumns) -> PyResult<()> {
+    // A request past its effort guard is a fault, whatever tables the columns hold.
+    check_effort(py)?;
     match (columns.left_out(), columns.packing_stop()) {
         ([], _) => Ok(()),
         (left_out, Some(stop)) if !matches!(stop.bound, ReachedBound::Cancelled) => Err(budget_reached(py, stop.bound, left_out)),
@@ -530,6 +532,7 @@ pub(crate) fn atom_tables<'py>(py: Python<'py>, decoder: PyRef<'py, PyDecoder>, 
                 let fulls = DetFulls::new(tables).with_assemblies(assemblies(engine)?);
                 Ok(arclog_tables::tables::atom_tables::atom_tables(&operation, &atoms, &materializer, &train, &fulls, by_program))
             }).map_err(|bound| labeling_bound_reached(py, bound))?);
+            check_effort(py)?;
             if let Some(key) = key {
                 memo.keep(key, std::sync::Arc::clone(&found));
             }

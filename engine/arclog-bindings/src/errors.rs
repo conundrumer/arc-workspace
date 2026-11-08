@@ -2,7 +2,7 @@
 //! to them.
 
 use arclog::diagnostic::Location;
-use arclog::eval::{Outcome, ReachedBound, RunFault};
+use arclog::eval::{take_effort_fault, EffortFault, Outcome, ReachedBound, RunFault};
 use arclog::program::canonical::LabelingBound;
 use arclog::study::StudyError;
 use arclog::trace::Stop;
@@ -25,7 +25,14 @@ create_exception!(
     Refusal,
     "A query has no hash: the search for the canonical labeling of a form that it reads passed its cap of search nodes, so the hash would depend on the written order. The same query is refused again. Attributes: `bound`, the name of the bound (`LabelingNodes`); `cap`, the bound's cap as an int."
 );
-create_exception!(arclog, Fault, PyRuntimeError, "A run of the engine faults.");
+create_exception!(arclog, EngineFault, PyRuntimeError, "The base of the faults of the engine: a call that raises one has no result, and the same call, run again, may raise it again. `Fault` and `EffortExhausted` are its subclasses.");
+create_exception!(arclog, Fault, EngineFault, "A run of the engine faults.");
+create_exception!(
+    arclog,
+    EffortExhausted,
+    EngineFault,
+    "A request passed its effort guard: the searches of the call tried more bindings than the guard allows (the gauge `effort` of `request_stats()`). It stops a runaway and is a fault of the call, never a result: no table, mask or count is given. Attributes: `gauge`, the name of the gauge that passed its cap (`effort`); `cap`, its cap as an int."
+);
 create_exception!(
     arclog,
     BudgetReached,
@@ -94,6 +101,28 @@ pub fn labeling_bound_reached(py: Python<'_>, bound: LabelingBound) -> PyErr {
     match value.setattr("bound", "LabelingNodes").and_then(|()| value.setattr("cap", bound.cap)) {
         Ok(()) => error,
         Err(failure) => failure,
+    }
+}
+
+/// The `EffortExhausted` that raises for `fault`: the error carries the name
+/// of the gauge as `gauge` and its cap as `cap`.
+pub(crate) fn effort_exhausted(py: Python<'_>, fault: EffortFault) -> PyErr {
+    let error = EffortExhausted::new_err(format!("the request passed its effort guard of {} bindings tried", fault.cap));
+    let value = error.value(py);
+    match value.setattr("gauge", fault.gauge.name()).and_then(|()| value.setattr("cap", fault.cap)) {
+        Ok(()) => error,
+        Err(failure) => failure,
+    }
+}
+
+/// `Ok` where no request begun on this thread passed its effort guard since
+/// the last check, and else the `EffortExhausted` that stands in place of the
+/// result of the call that ran the request. A call that begins a request
+/// asks it after the call ends, with its result in hand and unused.
+pub fn check_effort(py: Python<'_>) -> PyResult<()> {
+    match take_effort_fault() {
+        None => Ok(()),
+        Some(fault) => Err(effort_exhausted(py, fault)),
     }
 }
 

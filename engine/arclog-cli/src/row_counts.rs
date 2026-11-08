@@ -293,6 +293,7 @@ fn stopped(bound: ReachedBound) -> String {
         ReachedBound::AssignmentBytes { cap } => format!("assignment-bytes:{cap}"),
         ReachedBound::Cancelled => "cancelled".to_owned(),
         ReachedBound::NoValues => "no-values".to_owned(),
+        ReachedBound::Effort { cap } => format!("effort:{cap}"),
     };
     format!("stopped:{bound}")
 }

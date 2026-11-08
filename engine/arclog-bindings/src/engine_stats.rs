@@ -62,6 +62,8 @@ pub(crate) fn request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, 
     stats.set_item("cap", request.cap())?;
     stats.set_item("bytes", request.byte_count())?;
     stats.set_item("byte_cap", request.byte_cap())?;
+    stats.set_item("effort", request.effort())?;
+    stats.set_item("effort_cap", request.effort_cap())?;
     let gauges = PyDict::new(py);
     for (gauge, max, cap, hits) in request.gauges().each() {
         let slot = PyDict::new(py);

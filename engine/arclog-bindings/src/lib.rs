@@ -37,7 +37,7 @@ pub use names::Names;
 pub use results::PyConsistencyKind;
 pub use settings::PyDecodeSettings;
 pub use study::PyStudyProgram;
-pub use errors::{budget_reached, faulted, labeling_bound_reached, refused, study_error, BudgetReached, CheckRefused, LabelingBoundReached, RecordedIdentityError};
+pub use errors::{budget_reached, check_effort, faulted, labeling_bound_reached, refused, study_error, BudgetReached, CheckRefused, EffortExhausted, EngineFault, LabelingBoundReached, RecordedIdentityError};
 pub use mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 
 use arclog::eval::instance::Constructions;
@@ -76,7 +76,9 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.value("CheckRefused", module.py().get_type::<errors::CheckRefused>().into_any())?;
     names.value("LabelingBoundReached", module.py().get_type::<errors::LabelingBoundReached>().into_any())?;
     names.value("RecordedIdentityError", module.py().get_type::<errors::RecordedIdentityError>().into_any())?;
+    names.value("EngineFault", module.py().get_type::<errors::EngineFault>().into_any())?;
     names.value("Fault", module.py().get_type::<errors::Fault>().into_any())?;
+    names.value("EffortExhausted", module.py().get_type::<errors::EffortExhausted>().into_any())?;
     names.value("BudgetReached", module.py().get_type::<errors::BudgetReached>().into_any())?;
     names.function(wrap_pyfunction!(decoder::step_batch_py, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::engine_stats, module)?)?;
