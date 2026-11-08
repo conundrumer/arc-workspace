@@ -54,7 +54,11 @@ pub(crate) fn engine_stats<'py>(py: Python<'py>, reset: bool) -> PyResult<Bound<
 /// path of its form. It is no `RuntimeError`, which only a fault of the engine
 /// raises. The stop depends on the call's inputs and the settings
 /// (`request_work_cap`, `request_byte_cap`) alone, so the same call stops
-/// again, and a caller may drop what it asked for and go on. The session's byte
+/// again, and a caller may drop what it asked for and go on. A call that
+/// evaluates several candidates (`successor_tables`, `atom_tables`) gives the request of the
+/// call itself, which counts the work the candidates share and the work of no
+/// candidate; its gauges are shared by the candidates. A bound of that request
+/// raises `arclog.CallGuardExhausted`, a subclass of `arclog.EngineFault`. The session's byte
 /// bound is no budget of the request: the session evicts its caches at it and
 /// stops nothing.
 #[pyfunction]
