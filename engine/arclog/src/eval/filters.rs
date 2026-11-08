@@ -32,7 +32,7 @@ use crate::terms::TermId;
 /// Compiles a `NOT` at `path` into a [`super::ir::IrNode::Not`] of
 /// `builder`'s clause.
 pub fn compile_not(builder: &mut IrBuilder<'_>, negated: &Negated, path: &NodePath) -> Result<(), CompileFault> {
-    let mut inner = nested(builder)?;
+    let mut inner = nested(builder);
     match negated {
         Negated::Atom(atom) => inner.conjunct(&Conjunct::Atom(atom.clone()), path)?,
         Negated::Form(form) => inner.conjunct(form, &path.child(0))?,
@@ -56,16 +56,16 @@ pub fn compile_all(
 ) -> Result<(), CompileFault> {
     let (domain_path, body_path) = (path.child(0), path.child(1));
     let around = outer_labels(builder, path);
-    let mut fails = nested(builder)?;
+    let mut fails = nested(builder);
     fails.body(body.value(), &body_path)?;
     let (fails, fails_paths) = filter(variables_of(builder, &outer_labels(builder, &body_path)), fails);
-    let mut counterexample = nested(builder)?;
+    let mut counterexample = nested(builder);
     counterexample.body(domain.value(), &domain_path)?;
     counterexample.push(IrNode::Not(fails), NodePaths::Filter(Box::new(fails_paths)));
-    let mut members = nested(builder)?;
+    let mut members = nested(builder);
     members.body(domain.value(), &domain_path)?;
     let domain_outer = variables_of(builder, &outer_of(domain.value(), &around));
-    let mut empty = nested(builder)?;
+    let mut empty = nested(builder);
     let (members, members_paths) = filter(domain_outer.clone(), members);
     empty.push(IrNode::Not(members), NodePaths::Filter(Box::new(members_paths)));
     let (empty, empty_paths) = filter(domain_outer, empty);
@@ -88,7 +88,7 @@ pub fn compile_if(
 ) -> Result<(), CompileFault> {
     let (test_path, then_path, else_path) = (path.child(0), path.child(1), path.child(2));
     let around = outer_labels(builder, path);
-    let mut negated = nested(builder)?;
+    let mut negated = nested(builder);
     negated.body(test.value(), &test_path)?;
     let test_outer = variables_of(builder, &outer_of(test.value(), &around));
     let (test_filter, test_paths) = filter(test_outer, negated);
@@ -163,7 +163,7 @@ fn compile_union(
                 (0..list.value().conjuncts.len()).map(|i|path.child(i as u32))).collect(),
             columns: labels.intersection(&shared).copied().map(LabelId).collect(),
         };
-        let mut clause = IrBuilder::new(builder.program,builder.form.clone(),std::rc::Rc::new(compiled))?;
+        let mut clause = IrBuilder::new(builder.program,builder.form.clone(),std::rc::Rc::new(compiled));
         clause.canonical_order = builder.canonical_order;
         for (list, path) in &branch.lists {
             clause.body(list.value(), path)?;
@@ -226,10 +226,10 @@ pub fn probe(
 
 /// A builder of a clause nested in `builder`'s, over the variables of the
 /// same form.
-fn nested<'a>(builder: &IrBuilder<'a>) -> Result<IrBuilder<'a>, CompileFault> {
-    let mut inner = IrBuilder::new(builder.program, builder.form.clone(), builder.compiled.clone())?;
+fn nested<'a>(builder: &IrBuilder<'a>) -> IrBuilder<'a> {
+    let mut inner = IrBuilder::new(builder.program, builder.form.clone(), builder.compiled.clone());
     inner.canonical_order = builder.canonical_order;
-    Ok(inner)
+    inner
 }
 
 /// The filter over `outer` whose body is the clause of `body`, a relation

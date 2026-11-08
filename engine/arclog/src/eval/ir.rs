@@ -381,12 +381,10 @@ pub struct IrPaths {
 
 /// A body that the IR cannot hold: a safe subset of a body is
 /// required, and a subset that leaves a label unbound is refused with
-/// those labels; a form whose scope holds a label that the checked program
-/// gives no type is refused with that label.
+/// those labels.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum CompileFault {
     Unbound { labels: Box<[LabelId]> },
-    Untyped { label: LabelId },
 }
 
 /// What one compile takes: the path of each conjunct it compiles, and the
@@ -426,15 +424,26 @@ pub struct IrBuilder<'a> {
     current: Vec<u32>,
 }
 
+/// The type of a variable whose label the type check gives no type.
+///
+/// The type check gives a label a type from its sites and from the columns
+/// it stands at. No site gives `X` of `(= *X 0)` a type, so in a prefix of
+/// an `INIT` form whose head site for `X` is not yet written, `X` has none.
+/// The evaluator reads a variable's type to find a finite orientation
+/// domain, a Position or an Ident, and `Int` is none of them, so such a
+/// variable joins as a plain number. `0` is the same term for `Int` and for
+/// every other type that has a zero ([`ValueType::has_zero`]).
+const UNTYPED_LABEL_TYPE: ValueType = ValueType::Int;
+
 /// The key of a node that stands after the nodes of every conjunct: a node
 /// that a filter or a branch adds beside its conjuncts.
 const AFTER: [u32; 1] = [u32::MAX];
 
 impl<'a> IrBuilder<'a> {
     /// A builder over the body of the form at `form` of `program`, for a
-    /// compile that takes `compiled`, or the fault of a label of the form's
-    /// scope that `program` gives no type.
-    pub fn new(program: &'a CheckedProgram, form: NodePath, compiled: Rc<Compiled>) -> Result<Self, CompileFault> {
+    /// compile that takes `compiled`. A label of the form's scope that
+    /// `program` gives no type takes [`UNTYPED_LABEL_TYPE`].
+    pub fn new(program: &'a CheckedProgram, form: NodePath, compiled: Rc<Compiled>) -> Self {
         let (first, scope) = form.0.split_first().expect("the path of a form of the program");
         let top = &program.program.program.value().forms[first.0 as usize];
         let order = CanonicalOrder::of(top, &mut SearchBudget::new());
@@ -444,13 +453,13 @@ impl<'a> IrBuilder<'a> {
         let mut variables = vec![None; labels.len()];
         let mut held = vec![None; variables.len()];
         for &(label, position) in labels {
-            let ty = types.label(label).ok_or(CompileFault::Untyped { label })?.clone();
+            let ty = types.label(label).cloned().unwrap_or(UNTYPED_LABEL_TYPE);
             variables[position as usize] = Some(VariableInfo { ty });
             held[position as usize] = Some(label);
         }
         let variables = variables.into_iter().map(|info| info.expect("a label at each canonical position")).collect();
         let labels = held.into_iter().map(|label| label.expect("a label at each canonical position")).collect();
-        Ok(IrBuilder { program, form, compiled, order, canonical_order: false, variables, nodes: Vec::new(), labels, paths: Vec::new(), keys: Vec::new(), current: AFTER.to_vec() })
+        IrBuilder { program, form, compiled, order, canonical_order: false, variables, nodes: Vec::new(), labels, paths: Vec::new(), keys: Vec::new(), current: AFTER.to_vec() }
     }
 
     /// The variable of `label`: its canonical position in the form's scope.
@@ -893,7 +902,7 @@ fn compile_mapped(
         conjuncts: conjuncts.iter().map(|(_, path)| path.clone()).collect(),
         columns: columns.into(),
     };
-    let mut builder = IrBuilder::new(program, scope, Rc::new(compiled))?;
+    let mut builder = IrBuilder::new(program, scope, Rc::new(compiled));
     builder.canonical_order = order == NodeOrder::Canonical;
     let mut of_node = Vec::new();
     if let Some((read, key_paths, labels)) = key {
