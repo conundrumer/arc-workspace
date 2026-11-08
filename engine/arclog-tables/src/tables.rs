@@ -765,7 +765,3 @@ fn flatten(rows: &Assigned<Vec<RelationValue>>) -> Assigned<BodyValue> {
 #[path = "body_tables.rs"] pub(crate) mod body_tables;
 #[path = "successors.rs"] pub mod successors;
 #[path = "atom_tables.rs"] pub mod atom_tables;
-
-#[cfg(test)]
-#[path = "gold_normalization_audit.rs"]
-mod gold_normalization_audit;

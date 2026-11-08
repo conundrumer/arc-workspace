@@ -522,7 +522,6 @@ class Message(enum.IntEnum):
     REPLY = 2       # what the call gave
 
 
-TEST_ABORT = "ARCLOG_EXPORT_TEST_ABORT"     # `<task>:<n>`: the worker calls os.abort() on the first n runs of that task's call
 _threads = threading.local()                # the worker process of each thread of an export's queue
 _started, _stopping = [], threading.Event()  # every worker process started; set once `stop_workers` runs
 
@@ -614,14 +613,11 @@ def serve(handle):
     with `progress` an `arclog.ReplayProgress` whose `done` and `total` it sends each second while `handle` runs. Ends at the end of the requests."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)       # the export ends its workers itself
     requests, replies = Connection(int(sys.argv[-2]), writable=False), Connection(int(sys.argv[-1]), readable=False)
-    test_task, _, test_runs = os.environ.get(TEST_ABORT, "").partition(":")
     while True:
         try:
             task, attempt, payload = requests.recv()
         except EOFError:
             return
-        if task == test_task and attempt <= int(test_runs):
-            os.abort()
         progress, ended = arclog.ReplayProgress(), threading.Event()
 
         def send_progress():

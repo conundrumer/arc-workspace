@@ -50,7 +50,7 @@ VALUE_BYTES = 12
 ZERO = bytes(VALUE_BYTES)
 # The environment variables, by name and by prefix, that change the values of a build.
 VALUE_VARIABLES = ()
-VALUE_PREFIXES = ('GOLD_PRUNE_',)
+VALUE_PREFIXES = ()
 # The most encoder calls a refresh makes for the tables that the store holds in part. Past it, those tables are walked in one call,
 # with each shape that one of them lacks.
 MOST_GROUPS = 8

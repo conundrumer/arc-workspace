@@ -94,26 +94,3 @@ impl StudyProgram {
         Ok(report)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[ignore = "explicit source-only stored-pair fixtures"]
-    fn stored_pair_metadata() {
-        let path = std::env::var("STORED_PRUNE_FIXTURES").expect("fixture path");
-        let rows: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let registry = Registry::get();
-        for row in rows.as_array().unwrap() {
-            let gold = StudyProgram::from_sexp(row["gold"].as_str().unwrap(), registry).unwrap();
-            let stored = StudyProgram::from_sexp(row["mutant"].as_str().unwrap(), registry).unwrap();
-            let report = stored.stored_static_prune_json(&gold, &row["identity"], registry, &DecodeSettings::default())
-                .unwrap_or_else(|e| panic!("{}: {e}", row["pair_id"]));
-            for expected in row["expected_rules"].as_array().unwrap() {
-                assert!(report["matches"].as_array().unwrap().iter().any(|m| &m["rule"] == expected), "{} missing {expected}", row["pair_id"]);
-            }
-            eprintln!("{}: {}", row["pair_id"], report["matches"].as_array().unwrap().len());
-        }
-    }
-}

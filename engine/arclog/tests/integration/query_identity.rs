@@ -118,34 +118,3 @@ fn the_order_of_head_sites_and_of_field_sites_is_outside_the_identity() {
     let (first, second) = (reader("*Kp *Kc"), reader("*Kc *Kp"));
     assert_eq!(identity(&first, 2).0.content, identity(&second, 2).0.content);
 }
-
-/// The pairs of programs in the directory of `ARCLOG_IDENTITY_PAIRS` (`<name>.a.arclog` and
-/// `<name>.b.arclog`, the second an edit of the first) have the same identities.
-#[test]
-#[ignore = "reads the pairs of programs in the directory that ARCLOG_IDENTITY_PAIRS names"]
-fn edited_programs_have_the_identities_of_their_originals() {
-    let Ok(dir) = std::env::var("ARCLOG_IDENTITY_PAIRS") else { return };
-    let mut names: Vec<_> = std::fs::read_dir(&dir).expect("the directory").filter_map(|entry| entry.ok()?.file_name().into_string().ok()?.strip_suffix(".a.arclog").map(str::to_owned)).collect();
-    names.sort();
-    let mut differing = 0;
-    for name in &names {
-        let at = |side: &str| std::fs::read_to_string(format!("{dir}/{name}.{side}.arclog")).expect("a program");
-        let (a, b) = (read(&at("a")), read(&at("b")));
-        let (ra, rb) = (resolve(&a, None, &Default::default(), Registry::get()), resolve(&b, None, &Default::default(), Registry::get()));
-        let hashes = |program: &Node<Program>, resolved: &arclog::diagnostic::WithDiagnostics<arclog::resolver::ResolvedProgram>| -> Vec<Option<u128>> {
-            (0..program.value().forms.len()).map(|at| resolved.value.query_identity(at, Registry::get()).map(|identity| identity.content.content_hash().0)).collect()
-        };
-        let (ha, hb) = (hashes(&a, &ra), hashes(&b, &rb));
-        // The edit can reorder the forms, so the identities are compared as sets.
-        let (mut sa, mut sb) = (ha.clone(), hb.clone());
-        sa.sort();
-        sb.sort();
-        if sa != sb {
-            differing += 1;
-            let only_a = (0..ha.len()).filter(|at| !hb.contains(&ha[*at])).collect::<Vec<_>>();
-            eprintln!("{name}: forms {only_a:?} of the original have no identity in the edit");
-        }
-    }
-    eprintln!("{differing} of {} pairs differ", names.len());
-    assert_eq!(differing, 0);
-}

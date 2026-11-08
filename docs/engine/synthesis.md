@@ -88,8 +88,6 @@ The step ends when each of these holds, or the difference is reported as a fault
 - Environment variables that remain:
     - `ARCLOG_THREADS`: the thread count of a corpus run.
     - `ARCLOG_STATS`: the switch of the per-phase timing, which costs time.
-    - `GOLD_PRUNE_SCOPE`, `GOLD_PRUNE_PYTHON`, `GOLD_PRUNE_MANIFEST`, `GOLD_PRUNE_OUTPUT`, `GOLD_PRUNE_ACQUISITION_KEY`: the scope and the files of the gold normalization audit.
-    - `ARCLOG_IDENTITY_PAIRS`, `ARCLOG_TASKS`, `ARCLOG_PAIR_FILTER`, `ARCLOG_TABLE_WORK_CAP`, `ARCLOG_SHOW`, `ARCLOG_SHOW_TASK`, `STORED_PRUNE_FIXTURES`: the input paths and the filter of a test or audit.
     - `GENERATE_SPILL_DIR` and `GENERATE_RESIDENT_CELLS`: the folder of the `feature-encoder` tool's copies on disk and the cells that its walks keep in memory. Neither changes what the tool builds or prints.
     - `ARCLOG_MAP_SEED`: a check of the `feature-encoder` tool that no output follows the bucket order of a map.
 - Cargo features that remain: `extension-module` links the Python extension as maturin needs, and `admissible-reference` builds the exhaustive oracle that the admissible workload check compares with.
