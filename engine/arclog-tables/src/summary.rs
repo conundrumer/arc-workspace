@@ -945,13 +945,52 @@ fn digest(items: &[u128]) -> u128 {
 
 /// The hashes, sorted and without repeat, of the runs of the cells of `columns`, in that order, over the rows of `rows`:
 /// the hash of a run is that of its cells written one by one. A run of at most four cells is packed into one key, the
-/// keys are sorted and made distinct first, and only a distinct run is hashed. The rows of a column repeat its few values,
+/// distinct keys are found first, and only a distinct run is hashed. The rows of a column repeat its few values,
 /// so that is far fewer hashes to sort than one for each row.
 fn run_hashes(rows: &Encoded, width: usize, starts: &[usize], widths: &[usize], columns: &[usize]) -> Vec<u128> {
-    fn hashed<K: Ord + Copy>(count: usize, key: impl Fn(usize) -> K, cell: impl Fn(K, usize) -> i32, total: usize) -> Vec<u128> {
-        let mut keys: Vec<K> = (0..count).map(key).collect();
-        keys.sort_unstable();
-        keys.dedup();
+    /// The keys of the rows, each once, in the order they are first read. A table of open addressing holds, for each
+    /// key, 1 + its place in the result, so the keys of the rows are not copied and sorted. A row with the key of the row
+    /// before it reads no table.
+    fn distinct<K: Eq + Copy>(count: usize, key: impl Fn(usize) -> K, mix: impl Fn(K) -> u64) -> Vec<K> {
+        let mut found: Vec<K> = Vec::new();
+        let mut slots: Vec<u32> = vec![0; 64];
+        let mut previous: Option<K> = None;
+        for row in 0..count {
+            let this = key(row);
+            if previous == Some(this) {
+                continue;
+            }
+            previous = Some(this);
+            let mask = slots.len() - 1;
+            let mut at = mix(this) as usize & mask;
+            loop {
+                let slot = slots[at];
+                if slot == 0 {
+                    found.push(this);
+                    slots[at] = u32::try_from(found.len()).expect("fewer than 2^32 keys");
+                    if found.len() * 2 > slots.len() {
+                        slots = vec![0; slots.len() * 2];
+                        let mask = slots.len() - 1;
+                        for (number, &held) in found.iter().enumerate() {
+                            let mut at = mix(held) as usize & mask;
+                            while slots[at] != 0 {
+                                at = (at + 1) & mask;
+                            }
+                            slots[at] = number as u32 + 1;
+                        }
+                    }
+                    break;
+                }
+                if found[slot as usize - 1] == this {
+                    break;
+                }
+                at = (at + 1) & mask;
+            }
+        }
+        found
+    }
+    fn hashed<K: Eq + Copy>(count: usize, key: impl Fn(usize) -> K, mix: impl Fn(K) -> u64, cell: impl Fn(K, usize) -> i32, total: usize) -> Vec<u128> {
+        let keys = distinct(count, key, mix);
         let mut cells = [0i32; 4];
         keys.iter()
             .map(|&key| {
@@ -976,7 +1015,11 @@ fn run_hashes(rows: &Encoded, width: usize, starts: &[usize], widths: &[usize], 
             }
             key
         };
-        hashed(count, key, |key: u64, at| (key >> (32 * (total - 1 - at))) as u32 as i32, total)
+        let mix = |key: u64| {
+            let mixed = key.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            mixed ^ (mixed >> 29)
+        };
+        hashed(count, key, mix, |key: u64, at| (key >> (32 * (total - 1 - at))) as u32 as i32, total)
     } else if total <= 4 {
         let key = |row: usize| {
             let mut key = 0u128;
@@ -987,7 +1030,11 @@ fn run_hashes(rows: &Encoded, width: usize, starts: &[usize], widths: &[usize], 
             }
             key
         };
-        hashed(count, key, |key: u128, at| (key >> (32 * (total - 1 - at))) as u32 as i32, total)
+        let mix = |key: u128| {
+            let mixed = (key as u64 ^ ((key >> 64) as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            mixed ^ (mixed >> 29)
+        };
+        hashed(count, key, mix, |key: u128, at| (key >> (32 * (total - 1 - at))) as u32 as i32, total)
     } else {
         (0..count)
             .map(|row| {
