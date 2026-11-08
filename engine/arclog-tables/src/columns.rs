@@ -320,7 +320,7 @@ pub struct TableColumns {
     /// The TableHash, and whether the assignment has one (1) or not (0, with the hash 0).
     pub hash: Vec<u128>,
     pub hashed: Vec<u8>,
-    /// Why the assignment has no TableHash (`hashed` 0): the name of a machine-dependent bound that stopped an example (`Models`, `Nodes`, `Assignments`, `TableWork`, `RequestWork`, `RequestBytes`, `Cancelled`), or of the bound that stopped the summary, `RunFault`, `NoEntry`, `NoExamples` or `TableFault`. Empty where `hashed` is 1.
+    /// Why the assignment has no TableHash (`hashed` 0): the name of a machine-dependent bound that stopped an example (`Models`, `Nodes`, `Assignments`, `TableWork`, `RequestWork`, `RequestBytes`, `Cancelled`), or of the bound that stopped the summary, `RunFault`, `NoEntry`, `NoExamples`, `TableFault`, or `ColumnSearch`, where the search for the order of the table's tied columns passed its cap. Empty where `hashed` is 1.
     pub unhashed_reason: Vec<String>,
     /// Whether the walk of the table stopped at the assignment cap.
     pub capped: Vec<u8>,

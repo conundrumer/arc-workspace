@@ -14,8 +14,9 @@ It keeps each table of a finished query whose top-level form is the form of a go
 OUT is a zstd stream of JSON lines, flushed after each task, so a run that stops leaves the tasks it finished. A line has no table row and no grid:
     task      the task id
     queries   [[form, name], ...] of the gold queries
-    tables    [{step, form, name, slot, query, hash, hashed}, ...] in the order of the steps: `step` the index of the model's token, `form` the form's path,
-              `slot` the relation's slot, `query` the QueryHash and `hash` the TableHash as 32 hexadecimal digits, `hashed` 1 where the engine gave a TableHash
+    tables    [{step, form, name, slot, query, hash, hashed, reason, types}, ...] in the order of the steps: `step` the index of the model's token, `form` the form's path,
+              `slot` the relation's slot, `query` the QueryHash and `hash` the TableHash as 32 hexadecimal digits, `hashed` 1 where the engine gave a TableHash,
+              `reason` why it gave none (empty where it gave one), `types` the type name of each column
     ended     whether the decode ended
     stop      null, or {token, kind}: the index of the model token at which the decode stopped, and the class of the exception
     seconds   the task's wall time
@@ -83,6 +84,8 @@ def task_line(task, mutants, tasks_dir, world, cap):
         relation = cells(found["relation"], "i")
         has_query = cells(found["has_query"], "B")
         hashed = cells(found["hashed"], "B")
+        reasons = found["unhashed_reason"]
+        types = found["column_types"]
         for row, slot in enumerate(relation):
             top = top_form(found["form"][row])
             if slot < 0 or not has_query[row] or top not in forms:
@@ -96,6 +99,8 @@ def task_line(task, mutants, tasks_dir, world, cap):
                     "query": hex_run(found["query"], row),
                     "hash": hex_run(found["hash"], row),
                     "hashed": hashed[row],
+                    "reason": reasons[row],
+                    "types": list(types[row]),
                 }
             )
         step += 1

@@ -84,17 +84,74 @@ pub struct ColumnKey {
 }
 
 /// The cells of a table at one assignment, by example.
-struct Cells<'a> {
+pub(super) struct Cells<'a> {
     examples: &'a [(u8, u32, &'a [Encoded])],
     widths: Vec<usize>,
     starts: Vec<usize>,
     width: usize,
 }
 
+impl<'a> Cells<'a> {
+    /// The cells of the table of columns `types` whose examples are `examples`, each as its kind, index and distinct TableRows.
+    pub(super) fn new(types: &[ValueType], examples: &'a [(u8, u32, &'a [Encoded])]) -> Self {
+        let widths: Vec<usize> = types.iter().map(|ty| if ty.is_box() { 4 } else { 1 }).collect();
+        let starts: Vec<usize> = widths.iter().scan(0, |at, width| { let start = *at; *at += width; Some(start) }).collect();
+        let width: usize = widths.iter().sum();
+        Cells { examples, widths, starts, width }
+    }
+
+    /// The count of the table rows, over all the distinct TableRows of all the examples.
+    pub(super) fn table_rows(&self) -> u64 {
+        self.examples.iter().flat_map(|(_, _, distinct)| distinct.iter()).map(|rows| rows.count).sum()
+    }
+
+    /// The count of the cells, over all the distinct TableRows of all the examples, and at least one.
+    pub(super) fn cell_count(&self) -> u64 {
+        self.examples.iter().flat_map(|(_, _, distinct)| distinct.iter()).map(|rows| rows.cells.len() as u64).sum::<u64>().max(1)
+    }
+
+    /// The count of the cells that a row holds at `column`.
+    pub(super) fn width_of(&self, column: usize) -> usize {
+        self.widths[column]
+    }
+
+    /// [`Cells::body`], with the low 64 bits of the hash of each example's Set of TableRows, in the order of the examples.
+    pub(super) fn body_examples(&self, order: &[usize]) -> (u128, Vec<u64>) {
+        let mut hasher = StableHasher::new();
+        let mut hashes = Vec::with_capacity(self.examples.len());
+        for (kind, index, distinct) in self.examples {
+            let mut sets: Vec<u128> = distinct
+                .iter()
+                .map(|rows| {
+                    let mut row_hashes: Vec<u128> = (0..rows.count as usize)
+                        .map(|row| {
+                            let mut hasher = StableHasher::new();
+                            for &column in order {
+                                hasher.write_i32s(run_of(rows, self.width, self.starts[column], self.widths[column], row));
+                            }
+                            hasher.finish128().0
+                        })
+                        .collect();
+                    super::sort_hashes(&mut row_hashes);
+                    digest(&row_hashes)
+                })
+                .collect();
+            sets.sort_unstable();
+            sets.dedup();
+            let set = digest(&sets);
+            hasher.write_u8(*kind);
+            hasher.write_u32(*index);
+            hasher.write_u128(set);
+            hashes.push(set as u64);
+        }
+        (hasher.finish128().0, hashes)
+    }
+}
+
 impl Cells<'_> {
     /// The hash of the Set, over the examples, of the Sets of TableRows, each
     /// reduced to the Set of its runs of the cells of `columns` in that order.
-    fn runs(&self, columns: &[usize]) -> u128 {
+    pub(super) fn runs(&self, columns: &[usize]) -> u128 {
         let mut hasher = StableHasher::new();
         for (kind, index, distinct) in self.examples {
             let mut sets: Vec<u128> = distinct
@@ -125,32 +182,8 @@ impl Cells<'_> {
 
     /// The hash of the Set, over the examples, of the Sets of rows with the
     /// columns in `order`.
-    fn body(&self, order: &[usize]) -> u128 {
-        let mut hasher = StableHasher::new();
-        for (kind, index, distinct) in self.examples {
-            let mut sets: Vec<u128> = distinct
-                .iter()
-                .map(|rows| {
-                    let mut hashes: Vec<u128> = (0..rows.count as usize)
-                        .map(|row| {
-                            let mut hasher = StableHasher::new();
-                            for &column in order {
-                                hasher.write_i32s(run_of(rows, self.width, self.starts[column], self.widths[column], row));
-                            }
-                            hasher.finish128().0
-                        })
-                        .collect();
-                    super::sort_hashes(&mut hashes);
-                    digest(&hashes)
-                })
-                .collect();
-            sets.sort_unstable();
-            sets.dedup();
-            hasher.write_u8(*kind);
-            hasher.write_u32(*index);
-            hasher.write_u128(digest(&sets));
-        }
-        hasher.finish128().0
+    pub(super) fn body(&self, order: &[usize]) -> u128 {
+        self.body_examples(order).0
     }
 }
 

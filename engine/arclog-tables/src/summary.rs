@@ -27,10 +27,13 @@
 //!    column has cannot tie, and its hash is 0.
 //! 3. Sort the columns by type name and that hash. Columns equal in both form
 //!    a tied group.
-//! 4. For each order of the columns within the tied groups, up to
-//!    [`MAX_ORDERS`] orders and while the orders times the cells stay within
-//!    [`KEY_CELLS`], hash each example's Set of TableRows. The body hash is the least
-//!    over the orders.
+//! 4. Where no column is tied, hash each example's Set of TableRows with the
+//!    columns in that order: that is the body hash. Where columns are tied, the
+//!    body hash is the least over the orders that a search of the table's
+//!    content reaches, individualization-refinement as the module
+//!    `column_order` defines it. A table whose search passes
+//!    [`SEARCH_WORK_CAP`] has no TableHash, and its reason is
+//!    [`COLUMN_SEARCH_BOUND`].
 //! 5. The TableHash is the hash of the sorted type names and the body hash.
 //!
 //! A type name in the TableHash is the name that the export writes
@@ -70,18 +73,18 @@ use arclog::types::{AssemblyId, ValueType};
 use arclog_features::{Grid as FeatureGrid, Input, Pair, TableRows};
 
 mod column_hash;
+mod column_order;
+use column_hash::Cells;
 pub use column_hash::{ColumnKey, TIE_EXCHANGEABLE, TIE_NONE, TIE_OPEN};
+pub use column_order::SEARCH_WORK_CAP;
 
 use crate::columns::{row_width, sorted_rows, sorted_rows_at, type_names};
 use crate::shape_rows::{ShapeExample, ShapeModel, ShapeRows, SharedShapeRows};
 use crate::split::{self, Part};
 use crate::tables::{example_axis, Contents, Point, Table, TableDet, TableRelation};
 
-/// The most column orders that the TableHash tries.
-const MAX_ORDERS: usize = 720;
-
-/// The most cells that the column orders of a TableHash hash in all.
-const KEY_CELLS: usize = 1_400_000;
+/// The reason of an assignment with no TableHash because the search for the order of its tied columns passed [`SEARCH_WORK_CAP`].
+pub const COLUMN_SEARCH_BOUND: &str = "ColumnSearch";
 
 /// An example at one assignment of a table.
 #[derive(Clone, Debug)]
@@ -113,7 +116,8 @@ pub struct AssignmentSummary {
     pub hash: Option<StableHash>,
     /// Why there is no TableHash, empty where there is one: the variant name of the machine-dependent bound that stopped an example (as [`bound_name`]
     /// gives it), `RunFault` where an example has no entry because it faulted, `NoEntry` where an example has no entry at the assignment, `NoExamples`
-    /// where the table has no example, `TableFault` where the table has no contents, or the bound that stopped the summary itself.
+    /// where the table has no example, `TableFault` where the table has no contents, `ColumnSearch` ([`COLUMN_SEARCH_BOUND`]) where the search for the order of
+    /// its tied columns passed its cap, or the bound that stopped the summary itself.
     pub reason: String,
     /// One for each example of the table. Shared, so a summary that the cache gives again copies none of it.
     pub examples: Arc<Vec<ExampleKey>>,
@@ -745,7 +749,15 @@ fn at_assignment_with(materializer: &Materializer<'_>, contents: &Contents, type
     }
     let views: Vec<(u8, u32, &[Encoded])> = examples.iter().map(|(kind, index, distinct)| (*kind, *index, &distinct[..])).collect();
     // A table that no `DET` reads as a value needs a hash that tells its rows from those of its other assignments, and no other: it reads its rows once for each part.
-    let (hash, hashes) = if with_dets { table_hash(types, &views, &fulls.assemblies) } else { (rows_hash_of_table(types, &views, &fulls.assemblies), vec![0; views.len()]) };
+    let (found, _search_work) = if with_dets { table_hash(types, &views, &fulls.assemblies) } else { (Some((rows_hash_of_table(types, &views, &fulls.assemblies), vec![0; views.len()])), None) };
+    // A search that passed its cap gives no TableHash, and no hash of an example.
+    let (hash, hashes) = match found {
+        Some(found) => found,
+        None => {
+            reason.get_or_insert(COLUMN_SEARCH_BOUND);
+            (StableHash(0), vec![0; views.len()])
+        }
+    };
     // The value hash of each distinct TableRows.
     let sets: Vec<Vec<u128>> = if hash_only { Vec::new() } else { views.iter().map(|(_, _, distinct)| distinct.iter().map(|rows| if with_dets { value_hash_of(types, rows, &fulls.assemblies).0 } else { rows.key.0 }).collect()).collect() };
     failed.sort_unstable();
@@ -918,24 +930,13 @@ fn pose_name(assembly: &AssemblyId, assemblies: &Assemblies) -> String {
     }
 }
 
-/// The next order of `items` in the lexicographic order, or, where `items`
-/// is the last, the first, and false.
-fn next_permutation(items: &mut [usize]) -> bool {
-    let Some(pivot) = (1..items.len()).rev().find(|&at| items[at - 1] < items[at]).map(|at| at - 1) else {
-        items.reverse();
-        return false;
-    };
-    let swap = (pivot + 1..items.len()).rev().find(|&at| items[at] > items[pivot]).expect("an item after the pivot is greater");
-    items.swap(pivot, swap);
-    items[pivot + 1..].reverse();
-    true
-}
-
 /// The TableHash of the Set of TableRows of each of `examples`, each as its kind,
 /// index and distinct TableRows, over columns of `types`, and the low 64 bits of
 /// the hash of each example's Set of TableRows under the order of the columns that
-/// gives the TableHash.
-fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblies: &Assemblies) -> (StableHash, Vec<u64>) {
+/// gives the TableHash; none of them where the search for the order of the tied
+/// columns passed its cap. The second value is the work of that search in units,
+/// none where no columns tie and no search ran.
+fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblies: &Assemblies) -> (Option<(StableHash, Vec<u64>)>, Option<u64>) {
     let names = hashed_names(types, assemblies);
     let widths: Vec<usize> = types.iter().map(|ty| if ty.is_box() { 4 } else { 1 }).collect();
     let starts: Vec<usize> = widths.iter().scan(0, |at, width| { let start = *at; *at += width; Some(start) }).collect();
@@ -971,61 +972,15 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
         .collect();
     let mut sorted: Vec<usize> = (0..types.len()).collect();
     sorted.sort_by(|&a, &b| (&names[a], column_hashes[a]).cmp(&(&names[b], column_hashes[b])));
-    let mut tied: Vec<(usize, usize)> = Vec::new();
-    let mut start = 0;
-    while start < sorted.len() {
-        let key = |at: usize| (&names[sorted[at]], column_hashes[sorted[at]]);
-        let end = (start..sorted.len()).find(|&at| key(at) != key(start)).unwrap_or(sorted.len());
-        if end - start > 1 {
-            tied.push((start, end - start));
-        }
-        start = end;
-    }
-    let cells: usize = examples.iter().flat_map(|(_, _, distinct)| distinct.iter()).map(|rows| rows.cells.len()).sum::<usize>().max(1);
-    let mut orders = vec![sorted.clone()];
-    let mut current = sorted;
-    while orders.len() < MAX_ORDERS && (orders.len() + 1).saturating_mul(cells) <= KEY_CELLS {
-        let advanced = tied.iter().any(|&(start, len)| next_permutation(&mut current[start..start + len]));
-        if !advanced {
-            break;
-        }
-        orders.push(current.clone());
-    }
-    let mut least: Option<(u128, Vec<u64>)> = None;
-    for columns in &orders {
-        let mut body = StableHasher::new();
-        let mut hashes = Vec::with_capacity(examples.len());
-        for (kind, index, distinct) in examples {
-            let mut sets: Vec<u128> = distinct
-                .iter()
-                .map(|rows| {
-                    let mut row_hashes: Vec<u128> = (0..rows.count as usize)
-                        .map(|row| {
-                            let mut hasher = StableHasher::new();
-                            for &column in columns {
-                                hasher.write_i32s(run_of(rows, width, starts[column], widths[column], row));
-                            }
-                            hasher.finish128().0
-                        })
-                        .collect();
-                    sort_hashes(&mut row_hashes);
-                    digest(&row_hashes)
-                })
-                .collect();
-            sets.sort_unstable();
-            sets.dedup();
-            let set = digest(&sets);
-            body.write_u8(*kind);
-            body.write_u32(*index);
-            body.write_u128(set);
-            hashes.push(set as u64);
-        }
-        let body = body.finish128().0;
-        if least.as_ref().map_or(true, |(held, _)| body < *held) {
-            least = Some((body, hashes));
-        }
-    }
-    let (body, hashes) = least.expect("at least one order of the columns");
+    let ties = sorted.windows(2).any(|pair| (&names[pair[0]], column_hashes[pair[0]]) == (&names[pair[1]], column_hashes[pair[1]]));
+    let cells = Cells::new(types, examples);
+    let (found, work) = if ties {
+        let searched = column_order::least_body(&cells, &names, &column_hashes);
+        (searched.found, Some(searched.work))
+    } else {
+        (Some(cells.body_examples(&sorted)), None)
+    };
+    let Some((body, hashes)) = found else { return (None, work) };
     let mut hasher = StableHasher::new();
     let mut sorted_names = names;
     sorted_names.sort();
@@ -1034,7 +989,7 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
         hasher.write_u8(0);
     }
     hasher.write_u128(body);
-    (hasher.finish128(), hashes)
+    (Some((hasher.finish128(), hashes)), work)
 }
 
 /// The full values of the `DET`s of a stream, which a table that reads a `DET` through some of its columns stands for. The resolver keeps of a `DET`
