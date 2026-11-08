@@ -2794,6 +2794,21 @@ impl<'a> Walker<'a> {
         }
     }
 
+    /// Brings the stored value at `id` back into memory, if it is on disk only, as `value`, a value that has its hash. Rows of one hash are the same set of rows at the same columns, so `value` stands for the copy on disk and the copy is not read.
+    fn restore(&mut self, id: u32, value: Val) {
+        let Some(copy) = self.spilled.get_mut(&id) else { return };
+        if copy.here {
+            return;
+        }
+        if !matches!(value, Val::Rows(_)) {
+            self.fetch(id);
+            return;
+        }
+        copy.here = true;
+        self.held_cells += held_of(&value);
+        self.values[id as usize] = value;
+    }
+
     /// Brings back every stored value that a list of ids holds and that is on disk only.
     fn fetch_all(&mut self, list: &[u32]) {
         if self.spilled.is_empty() {
@@ -2806,8 +2821,8 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// Where the walk holds more than [`resident_cells`] cells of stored values that can move, moves to disk the values that the lists of `ids` hold and that the terms after `at` read last. `readers` has the terms that read each term, in order. The values of the leaves stay, since the caller holds them. A value is the same when it comes back, so no value of the walk changes. Run it after [`Walker::compact`], which leaves in `values` what the lists hold alone.
-    fn spill(&mut self, ids: &[Vec<u32>], readers: &[Vec<usize>], at: usize) {
+    /// Where the walk holds more than [`resident_cells`] cells of stored values that can move, moves to disk the values that the lists of `ids` hold and that the terms after `at` read last. `readers` has the terms that read each term, in order. `next` is the term that the walk walks after `at`, if any. The values of the leaves stay, since the caller holds them. The values that `next` reads stay in memory even where they pass the limit alone, since `next` brings back any of them that is on disk before it runs, so that the walk holds the same cells at `next` and does not write a value to disk and read it back with no term between. A value is the same when it comes back, so no value of the walk changes. Run it after [`Walker::compact`], which leaves in `values` what the lists hold alone.
+    fn spill(&mut self, ids: &[Vec<u32>], readers: &[Vec<usize>], at: usize, next: Option<usize>) {
         let limit = resident_cells();
         if self.held_cells <= limit {
             return;
@@ -2845,9 +2860,15 @@ impl<'a> Walker<'a> {
         // The value read last goes first, and of those the larger. The limit holds of the values that can move: what stays in memory whatever the walk does (small values, joined values) does not count against it, so that the values the next terms read can stay.
         candidates.sort_unstable_by(|a, b| b.cmp(a));
         let mut movable: usize = candidates.iter().map(|(_, cells, _)| *cells).sum();
+        // The values that `next` reads come last in that order. Where they hold more cells than the limit, a move of any of them would be read back at once, so they stay and every other value moves.
+        let next_reads: usize = candidates.iter().filter(|(read, _, _)| Some(*read) == next).map(|(_, cells, _)| *cells).sum();
+        let keep = limit.max(next_reads);
+        if next_reads > limit {
+            candidates.retain(|(read, _, _)| Some(*read) != next);
+        }
         let mut moved = false;
         for (_, cells, id) in candidates {
-            if movable <= limit {
+            if movable <= keep {
                 break;
             }
             if self.move_to_disk(id) {
@@ -2898,7 +2919,7 @@ impl<'a> Walker<'a> {
                 if let Some(found) = self.value_index.get(&hash).copied() {
                     // The value stored under the hash may be on disk only: it is the value that stands.
                     if !self.spilled.is_empty() {
-                        self.fetch(found);
+                        self.restore(found, value);
                     }
                     return found;
                 }
@@ -3379,7 +3400,8 @@ impl<'a> Walker<'a> {
             if self.held_cells + lazy > self.budget.0.max(floor + floor.min(resident_cells() / 2)) || entries > self.budget.1 {
                 let started = std::time::Instant::now();
                 self.compact(&mut ids);
-                self.spill(&ids, &readers, at);
+                let next = (at + 1..family.terms.len()).find(|n| mask.is_none_or(|mask| mask.needed[*n]));
+                self.spill(&ids, &readers, at, next);
                 self.spill_cost.compact_nanos += started.elapsed().as_nanos() as u64;
                 if crate::bounds::enabled() {
                     self.footprint();
