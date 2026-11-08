@@ -13,7 +13,7 @@ use std::sync::Arc;
 use arclog::task::Task;
 
 use crate::catalog_facts::GridFacts;
-use crate::generate::{constants_of, leaves_at, Generated, Generators, Number, RootOf, RootTable, ShapeMask, Slot, Walker, READS_OUTPUT, SLOT_DEFAULT, SLOT_NO_VALUE, SLOT_VALUE};
+use crate::generate::{constants_of, leaves_at, Generated, Generators, Number, RootOf, RootTable, ShapeMask, Slot, SlotState, Walker, READS_OUTPUT};
 use crate::native::Table;
 use crate::stored::Stored;
 
@@ -95,7 +95,7 @@ impl TableVector {
     pub fn stable(&self, shape: usize) -> bool {
         let at = self.at(shape);
         let scope = &at[..self.scope(shape)];
-        scope.first().is_some_and(|first| first.state == SLOT_VALUE && scope.iter().all(|slot| slot.state == SLOT_VALUE && slot.digest == first.digest))
+        scope.first().is_some_and(|first| first.state == SlotState::Value && scope.iter().all(|slot| slot.state == SlotState::Value && slot.digest == first.digest))
     }
 
     /// `:min`, `:mean` and `:max` of one of a shape's two numbers over its scope, and how many
@@ -105,12 +105,10 @@ impl TableVector {
         let at = self.at(shape);
         let (mut least, mut most, mut sum, mut count) = (f64::INFINITY, f64::NEG_INFINITY, 0.0, 0usize);
         for slot in &at[..self.scope(shape)] {
-            if slot.state == SLOT_NO_VALUE {
-                continue;
-            }
             let value = match slot.state {
-                SLOT_DEFAULT => 0.0,
-                _ => if second { slot.second.float() } else { slot.greatest.float() },
+                SlotState::NoValue => continue,
+                SlotState::Default => 0.0,
+                SlotState::Value => if second { slot.second.float() } else { slot.greatest.float() },
             };
             least = least.min(value);
             most = most.max(value);
@@ -162,14 +160,15 @@ fn combined(table: RootTable, example_of: &[usize], examples: usize, train: usiz
 
 /// A root's numbers at an ARC example: the mean over its tables, where a default counts as 0.
 fn mean_over_models(held: &[&Slot]) -> Slot {
+    // With no table, the slot is the default, which is 0.
     let Some(first) = held.first() else { return Slot::default() };
     if held.len() == 1 {
         return **first;
     }
-    if held.iter().any(|slot| slot.state == SLOT_NO_VALUE) {
-        return Slot { state: SLOT_NO_VALUE, ..Slot::default() };
+    if held.iter().any(|slot| slot.state == SlotState::NoValue) {
+        return Slot { state: SlotState::NoValue, ..Slot::default() };
     }
-    if held.iter().all(|slot| slot.state == SLOT_DEFAULT) {
+    if held.iter().all(|slot| slot.state == SlotState::Default) {
         return Slot::default();
     }
     let total = |read: &dyn Fn(&Slot) -> Number| -> Number {
@@ -212,7 +211,7 @@ fn mean_over_models(held: &[&Slot]) -> Slot {
         }
     };
     let digest = held.iter().fold(0u64, |sum, slot| sum.wrapping_add(slot.digest));
-    Slot { greatest: total(&|slot| slot.greatest), second: total(&|slot| slot.second), digest, state: SLOT_VALUE, undefined: 0 }
+    Slot { greatest: total(&|slot| slot.greatest), second: total(&|slot| slot.second), digest, state: SlotState::Value, undefined: 0 }
 }
 
 /// The vector of `table` over the first `examples` examples of `grids`.
@@ -338,11 +337,12 @@ pub fn assignment_vector(tables: &[(u128, &TableVector)], capped: bool) -> Assig
                     Ok(place) => {
                         let slot = &vector.at(place)[example];
                         match slot.state {
-                            SLOT_NO_VALUE => {}
-                            SLOT_DEFAULT => seen.push((0.0, 0.0)),
-                            _ => seen.push((slot.greatest.float(), slot.second.float())),
+                            SlotState::NoValue => {}
+                            SlotState::Default => seen.push((0.0, 0.0)),
+                            SlotState::Value => seen.push((slot.greatest.float(), slot.second.float())),
                         }
                     }
+                    // A table that has no such shape counts as 0, as a default does.
                     Err(_) => seen.push((0.0, 0.0)),
                 }
             }
