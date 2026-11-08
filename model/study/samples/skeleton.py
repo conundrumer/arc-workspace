@@ -31,7 +31,7 @@ from union_forms import Form, LineIndex, TaskGraph
 
 SCHEMA = 'skeleton-3'
 SOURCES = ('canon_text.py', 'column_map.py', 'column_names.py', 'query_hash.py', 'union_forms.py', 'skeleton.py')
-ROW_STORE_FIELDS = ('version', 'code', 'src', 'hash_version', 'query_hash_version', 'table_hash_version')
+ROW_STORE_FIELDS = ('version', 'code', 'src', 'hash_version', 'query_hash_version')
 type Table = tuple[str, str]  # (QueryHash, Name)
 
 

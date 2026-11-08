@@ -68,7 +68,7 @@ def rows_main(want, jobs, shard, only):
 
     def finished(r):
         h = RS.header_of('%s/%s.jsonl.gz' % (outdir, r['task'])) or {}
-        return h.get('src') == r['src'] and h.get('code') == code and h.get('hash_version') == 'engine@' + os.path.basename(SITE.rstrip('/')) and h.get('table_hash_version') == RS.DH.arclog.table_hash_version()  # a new wheel or a new TableHash version makes the file stale
+        return h.get('src') == r['src'] and h.get('code') == code and h.get('hash_version') == 'engine@' + os.path.basename(SITE.rstrip('/'))  # a new wheel makes the file stale
 
     recs = [r for r in recs if not finished(r)]
     recs.sort(key=lambda r: -sum(len(p['form_keys']) for p in r['programs']))  # the longest first, so they overlap the rest

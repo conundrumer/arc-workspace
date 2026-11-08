@@ -253,14 +253,14 @@ def run_task(sset: str, task: str, base: Path, out: Path, code: str) -> tuple[Co
     vers = {'skeleton': inp.header['query_hash_version'], 'row store': inp.rows_header.get('query_hash_version'), 'tables': inp.tab_header['query_hash_version']}
     if len(set(vers.values())) != 1:
         raise ValueError(f'hash versions differ: {vers}')
-    if inp.rows_header.get('hash_version') != inp.tab_header['hash_version'] or inp.rows_header.get('table_hash_version') != inp.tab_header.get('table_hash_version'):
+    if inp.rows_header.get('hash_version') != inp.tab_header['hash_version']:
         raise ValueError('table hash versions differ')
     if 'assignment_vector_names' not in inp.tab_header or set(BASE_NAMES) - set(inp.base_assignment_vecs):
         raise ValueError('the tables file has no AssignmentVectors: run build_tables')
     st: Counter[str] = Counter()
     lines, _ = build(task, inp, st)
     schemas = inp.tab_header['schema'].split('+')
-    prov = dict(versions={'query_hash': vers['skeleton'], 'table_hash': inp.tab_header['hash_version'], 'table_hash_definition': str(inp.tab_header.get('table_hash_version')), 'table_vector': schemas[0], 'query_vector': schemas[1], 'assignment_vector': schemas[2],
+    prov = dict(versions={'query_hash': vers['skeleton'], 'table_hash': inp.tab_header['hash_version'], 'table_vector': schemas[0], 'query_vector': schemas[1], 'assignment_vector': schemas[2],
                           'canon_text': inp.header['canon_version'], 'skeleton': inp.header['schema'], 'row_store': inp.rows_header.get('version', ''), 'sample_write': code},
                 inputs=inputs, task_inputs={task: inputs})
     header = dict(record='header', schema=SCHEMA, set=sset, task=task, split=inp.header['split'], provenance=prov, names=inp.tab_header['names'],

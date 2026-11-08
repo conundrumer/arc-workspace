@@ -232,7 +232,7 @@ def run_set(a):
 
     def finished(r):
         h = RS.header_of('%s/%s.jsonl.gz' % (outdir, r['task'])) or {}
-        return h.get('src') == r['src'] and h.get('code') == code and h.get('hash_version') == version and h.get('table_hash_version') == RS.DH.arclog.table_hash_version()  # a new wheel or a new TableHash version makes the file stale
+        return h.get('src') == r['src'] and h.get('code') == code and h.get('hash_version') == version  # a new wheel makes the file stale
 
     recs = [r for r in recs if not finished(r)]
     recs.sort(key=lambda r: -r['size'])  # the longest first, so they overlap the rest
