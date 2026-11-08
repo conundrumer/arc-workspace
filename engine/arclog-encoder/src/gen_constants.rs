@@ -6,7 +6,7 @@
 use std::sync::{Arc, OnceLock};
 
 use arclog::registry::Registry;
-use arclog::terms::{Color, Constant, Term, TermId};
+use arclog::terms::{Color, Constant, Term};
 use arclog::types::ValueType;
 
 use crate::catalog_facts::*;
@@ -35,14 +35,15 @@ pub fn encoding() -> &'static Encoding {
     })
 }
 
+/// The bits of a number: its low 32 bits, as the engine encodes a `number`.
 #[inline]
 pub fn number_bits(n: i64) -> Cell {
-    Term::encode_number(n as i32).encoding()
+    n as i32 as u32
 }
 
 #[inline]
 pub fn number_of(bits: Cell) -> i64 {
-    i64::from(Term::decode_number(TermId::from_encoding(bits)))
+    i64::from(bits as i32)
 }
 
 #[inline]
