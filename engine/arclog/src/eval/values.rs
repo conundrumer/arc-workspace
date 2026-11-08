@@ -792,6 +792,11 @@ pub struct RequestWork {
     bytes: Arc<ByteAccount>,
     byte_caps: ByteCaps,
     gauges: Arc<Gauges>,
+    /// The gauges of the evaluations that run on the request's held
+    /// assignments ([`RequestWork::held`]), which the request's `gauges` leave
+    /// out: a request that searches for assignments and then evaluates the
+    /// held ones counts the second apart from the first.
+    held: Arc<Gauges>,
     /// The bindings that the request's searches tried, and the guard on them.
     effort: Arc<Effort>,
     effort_cap: u64,
@@ -1289,7 +1294,7 @@ impl RequestWork {
     /// A count of no work and no bytes, under `cap` and the byte budgets
     /// `byte_caps`.
     pub fn with_byte_caps(cap: u64, byte_caps: ByteCaps) -> Self {
-        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default(), effort: Arc::default(), effort_cap: EFFORT_CAP, sink: current_sink() }
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default(), held: Arc::default(), effort: Arc::default(), effort_cap: EFFORT_CAP, sink: current_sink() }
     }
 
     /// This count with the effort guard `effort_cap` in place of
@@ -1326,7 +1331,7 @@ impl RequestWork {
     /// candidate's charges are not added to this count, and its stop at a cap
     /// ends its own evaluations alone.
     pub fn candidate(&self) -> Self {
-        RequestWork { count: Arc::new(AtomicU64::new(0)), cap: self.cap, bytes: Arc::default(), byte_caps: ByteCaps { request: self.byte_caps.candidate, ..self.byte_caps }, gauges: Arc::clone(&self.gauges), effort: Arc::clone(&self.effort), effort_cap: self.effort_cap, sink: Arc::clone(&self.sink) }
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap: self.cap, bytes: Arc::default(), byte_caps: ByteCaps { request: self.byte_caps.candidate, ..self.byte_caps }, gauges: Arc::clone(&self.gauges), held: Arc::clone(&self.held), effort: Arc::clone(&self.effort), effort_cap: self.effort_cap, sink: Arc::clone(&self.sink) }
     }
 
     /// The request most recently begun on this thread, or `None` where none
@@ -1629,9 +1634,37 @@ impl RequestWork {
         self.byte_caps.assignment
     }
 
-    /// The gauges of the request's other caps.
+    /// The gauges of the request's other caps, for the work that this count
+    /// takes: the request's work outside its held evaluations, and the held
+    /// evaluations' work in the count that [`RequestWork::held`] gives.
     pub fn gauges(&self) -> &Gauges {
         &self.gauges
+    }
+
+    /// This request for the evaluation of its held assignments: it shares the
+    /// work, the bytes and the effort of the request, so no charge, stop or
+    /// verdict changes, and notes the gauges of its caps in
+    /// [`RequestWork::held_gauges`] in place of [`RequestWork::gauges`].
+    pub fn held(&self) -> Self {
+        RequestWork { gauges: Arc::clone(&self.held), ..self.clone() }
+    }
+
+    /// The gauges of the evaluations that ran under [`RequestWork::held`]
+    /// alone, the same from the request and from the count that it gives.
+    pub fn held_gauges(&self) -> &Gauges {
+        &self.held
+    }
+
+    /// For each gauge, the largest value over the whole request, the held
+    /// evaluations included, the cap, and the hits of both.
+    pub fn all_gauges(&self) -> [(Gauge, u64, u64, u64); GAUGES] {
+        self.gauges.merged(&self.held)
+    }
+
+    /// Runs `run` with the quantities that no limits reach ([`ambient`]) noted
+    /// in the gauges of this count.
+    pub fn with_ambient_gauges<T>(&self, run: impl FnOnce() -> T) -> T {
+        with_ambient(Some(Arc::clone(&self.gauges)), run)
     }
 }
 

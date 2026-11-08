@@ -431,12 +431,17 @@ fn clause_tables(program:&StudyProgram,origin:&Arc<CheckedProgram>,body:&NodePat
 /// gold-only acquisition use this boundary, including recursive owner context.
 fn held_body_contents(program:&StudyProgram,origin:&Arc<CheckedProgram>,view:&arclog::eval::body_view::BodyView,
     slot:u32,dets:&[Det],decoder:&Decoder<'_>,fixed:&[Vec<Assignment>],earlier:&[&Table],completed:Option<&[ExampleRows]>)->Outcome<Contents> {
-    let work=decoder.query_work();
-    let limits=decoder.limits().counted_in(work.clone());
-    let receipt=HeldAssignments::new(Arc::clone(program.checked()),Arc::clone(origin),fixed)?;
-    let context=AssignmentContext::Held {receipt:&receipt,limits:&limits,work:&work};
-    let examples=super::body_tables::examples_reusing(decoder,program.checked(),view,dets,&work,context,completed);
-    super::body_tables::contents_with_context(decoder,program.checked(),view,slot,dets,examples,earlier,context)
+    // The evaluation of the held assignments counts its gauges apart from the search before it ([`arclog::eval::RequestWork::held`]).
+    let limits=decoder.limits();
+    let request=limits.request.held();
+    request.with_ambient_gauges(|| -> Outcome<Contents> {
+        let work=decoder.query_work();
+        let limits=limits.in_request(request.clone()).counted_in(work.clone());
+        let receipt=HeldAssignments::new(Arc::clone(program.checked()),Arc::clone(origin),fixed)?;
+        let context=AssignmentContext::Held {receipt:&receipt,limits:&limits,work:&work};
+        let examples=super::body_tables::examples_reusing(decoder,program.checked(),view,dets,&work,context,completed);
+        super::body_tables::contents_with_context(decoder,program.checked(),view,slot,dets,examples,earlier,context)
+    })
 }
 
 fn stopped(stop: &arclog::eval::Stop) -> Value {
