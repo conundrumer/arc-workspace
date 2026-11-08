@@ -143,7 +143,6 @@ class ReplayEvaluator:
         self._point_gold = None
         self._point_kept = None
         self._gold_kept_cache = {}
-        self._packing_attempt = None
 
     @contextmanager
     def fresh_session(self):
@@ -191,7 +190,6 @@ class ReplayEvaluator:
         self._point_gold=None
         self._point_kept=None
         self._gold_kept_cache.clear()
-        self._packing_attempt = None
 
     def validate_gold_observation(self, checked, report, task, *, schema='arclog-study-gold-kept-v1', require_fit=True):
         """One completion/program/settings/full-slot gate for native gold reports."""
@@ -285,7 +283,7 @@ class ReplayEvaluator:
         self._gold_kept_cache[key]=deepcopy(result)
         return result
 
-    def gold_tables(self, program, *, full_rows=False, full_rows_selector=None):
+    def gold_tables(self, program, *, full_rows=False):
         """Shared native execution; typed exporters opt into bounded full rows.
 
         The native flag changes packing only. It neither raises the projection
@@ -293,12 +291,6 @@ class ReplayEvaluator:
         """
         if type(full_rows) is not bool:
             raise ValueError('full_rows must be boolean')
-        if full_rows_selector is not None and (not full_rows or not callable(full_rows_selector)):
-            raise ValueError('full-row selector requires full_rows=True and a callable')
-        if full_rows_selector is not None:
-            # The engine gives the rows of every entry, with no mask, so the selector is not called.
-            self._packing_attempt = dict(strategy='unmasked full rows; legacy native API',
-                                         native_gold_tables_calls=1)
         status, tables = (self.ev.gold_tables(program, held_rows=True) if full_rows
                           else self.ev.gold_tables(program))
         report = json.loads(status) if isinstance(status, str) else status
@@ -448,7 +440,7 @@ class ReplayEvaluator:
                     other_assignment_entries=other,
                     rule='saved values on every table dependency slot; absent compatible entry is unknown')
 
-    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False,full_rows_selector=None,assignment_mode='kept',artifact_mode='entries',checked_program=None):
+    def replay_program(self, record, program, form, *, candidate=None,retain_all=False,retain_forms=None,full_rows=False,assignment_mode='kept',artifact_mode='entries',checked_program=None):
         """Canonical low-level API for tool and n-mech, no copied evaluator.
 
         Caller supplies the whole generated program including OUT and the
@@ -463,8 +455,6 @@ class ReplayEvaluator:
             raise ValueError('assignment_mode must be kept or derived')
         if type(full_rows) is not bool:
             raise ValueError('full_rows must be boolean')
-        if full_rows_selector is not None and (not full_rows or not callable(full_rows_selector)):
-            raise ValueError('full-row selector requires full_rows=True and a callable')
         if retain_forms is not None:
             count=len(self.legacy.split_forms(program))
             if (retain_all or not isinstance(retain_forms,(list,tuple))
@@ -474,7 +464,6 @@ class ReplayEvaluator:
             retain_forms=sorted(set(retain_forms))
         self.task_evaluator(record['task'])
         self.captures = []
-        self._packing_attempt = None
         start = time.monotonic()
         result = dict(schema='judgetool-replay-v1', verified=False,retain_all=retain_all,
                       full_rows=full_rows)
@@ -493,7 +482,7 @@ class ReplayEvaluator:
         else:
             try:
                 if full_rows:
-                    self.gold_tables(checked, full_rows=True, full_rows_selector=full_rows_selector)
+                    self.gold_tables(checked, full_rows=True)
                 else:
                     self.gold_tables(checked)
                 report = self.captures[-1]['report']
@@ -511,8 +500,6 @@ class ReplayEvaluator:
                             result['unknown'] = True
             except Exception as error:
                 result.update(engine='incomplete', reason=f'{type(error).__name__}: {error}')
-        if self._packing_attempt is not None:
-            result['packing_selection'] = deepcopy(self._packing_attempt)
         result['seconds'] = round(time.monotonic()-start, 3)
         result['form'] = form
         result['receipt'] = self.receipt
