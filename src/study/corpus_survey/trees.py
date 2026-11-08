@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from arclog_convert import lint_read, out
+from arclog_convert.readback import read_checked
 
 
 class Quoted(str):
@@ -30,8 +31,9 @@ def _plain(node: object) -> Node:
 
 
 def read(path: Path) -> list[Node]:
-    """The top-level forms of the file at `path`."""
-    return [_plain(x) for x in lint_read.read(path.read_text())]
+    """The top-level forms of the file at `path`, a file of a `gen/` directory, read through
+    `arclog_convert.readback.read_checked`."""
+    return [_plain(x) for x in lint_read.read(read_checked(path))]
 
 
 def stems(gen: Path) -> list[str]:
