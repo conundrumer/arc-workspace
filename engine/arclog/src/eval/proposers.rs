@@ -12,6 +12,7 @@ use super::driver::Driver;
 use super::join;
 use super::{Evaluation, Outcome, ParameterValues, RelationValue, RunFault, Stop};
 use crate::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
+use crate::diagnostic::{Diagnostic, Severity};
 use crate::hash::StableHashMap;
 use crate::layout::SourceFile;
 use crate::program::path::NodePath;
@@ -134,7 +135,10 @@ fn arclog_proposer(expr: &SExpr, registry: &Registry) -> (LibName, ArclogPropose
     let text = format!("(DET &proposer\n  {body})\n");
     let solver = read_solver("proposers", &text, "", &|_| None).unwrap_or_else(|error| panic!("the clause of `{name}` reads: {error:?}")).value;
     let case = solver.concept_case();
-    let resolved = crate::resolver::resolve(&case.program, None, &solver.derived_relations(), registry).value;
+    let resolved = crate::resolver::resolve(&case.program, None, &solver.derived_relations(), registry);
+    let errors: Vec<&Diagnostic> = resolved.diagnostics.iter().filter(|diagnostic| diagnostic.severity == Severity::Error).collect();
+    assert!(errors.is_empty(), "the resolver refuses the clause of `{name}`: {errors:?}");
+    let resolved = resolved.value;
     let program = check_program(resolved, &SolverClauses::of(&solver, registry), registry, &mut CheckCache::default())
         .unwrap_or_else(|refusals| panic!("the checker refuses the clause of `{name}`: {refusals:?}"));
     let form = NodePath::top(0);

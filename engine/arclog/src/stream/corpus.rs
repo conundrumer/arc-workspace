@@ -337,9 +337,14 @@ fn check_alone(case: &Case, cache: &mut CheckCache) -> Result<CheckedProgram, St
 }
 
 /// The program of `case` read alone, resolved, or the fault of
-/// [`rederived_read`]: the program that [`case_stream`] checks and writes.
+/// [`rederived_read`], or the scope errors of the resolution: the program that [`case_stream`] checks and writes.
 fn resolve_alone(case: &Case) -> Result<std::sync::Arc<ResolvedProgram>, String> {
-    let resolved = std::sync::Arc::new(resolve(case.program_alone(), None, &SolverScope::default(), Registry::get()).value);
+    let resolved = resolve(case.program_alone(), None, &SolverScope::default(), Registry::get());
+    let errors: Vec<&str> = resolved.diagnostics.iter().filter(|diagnostic| diagnostic.severity == crate::diagnostic::Severity::Error).map(|diagnostic| &*diagnostic.message).collect();
+    if !errors.is_empty() {
+        return Err(format!("the case program read alone is refused: {}", errors.join("; ")));
+    }
+    let resolved = std::sync::Arc::new(resolved.value);
     match rederived_read(case, &resolved) {
         Some(fault) => Err(fault),
         None => Ok(resolved),

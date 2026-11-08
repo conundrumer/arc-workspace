@@ -41,7 +41,14 @@ pub(crate) fn engine_stats<'py>(py: Python<'py>, reset: bool) -> PyResult<Bound<
 /// gauge `request_bytes` gives the most it held), and `gauges`, a
 /// dict from the name of each capped quantity to a dict of `max`, the largest
 /// value the request reached, `cap`, the cap it ran under (0 where it never
-/// gave one), and `hits`, how often it passed the cap. The count is the work
+/// gave one), and `hits`, how often it passed the cap. The gauges start empty
+/// at the begin of the request and hold the work of that request alone. A
+/// request that evaluates the held assignments of a gold program (`gold_body`
+/// and the study pairs) counts that evaluation apart: `held_gauges` hold the
+/// evaluations that ran on the held assignments and `search_gauges` the rest of
+/// the request, in the same form as `gauges`, which hold the whole request.
+/// `held_gauges` are all zero where the request made no such evaluation, as a
+/// `gold_tables` request does not. The count is the work
 /// the request did, with each entry that the result cache held charged the
 /// cost its entry recorded, and the bytes held are those of a request with
 /// empty caches. The read costs a few loads and changes nothing.
@@ -71,16 +78,23 @@ pub(crate) fn request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, 
     stats.set_item("byte_cap", request.byte_cap())?;
     stats.set_item("effort", request.effort())?;
     stats.set_item("effort_cap", request.effort_cap())?;
-    let gauges = PyDict::new(py);
-    for (gauge, max, cap, hits) in request.gauges().each() {
+    stats.set_item("gauges", gauges_dict(py, request.all_gauges())?)?;
+    stats.set_item("search_gauges", gauges_dict(py, request.gauges().each())?)?;
+    stats.set_item("held_gauges", gauges_dict(py, request.held_gauges().each())?)?;
+    Ok(Some(stats))
+}
+
+/// The dict from the name of each gauge to its `max`, `cap` and `hits`.
+fn gauges_dict<'py>(py: Python<'py>, gauges: impl IntoIterator<Item = (arclog::eval::Gauge, u64, u64, u64)>) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    for (gauge, max, cap, hits) in gauges {
         let slot = PyDict::new(py);
         slot.set_item("max", max)?;
         slot.set_item("cap", cap)?;
         slot.set_item("hits", hits)?;
-        gauges.set_item(gauge.name(), slot)?;
+        dict.set_item(gauge.name(), slot)?;
     }
-    stats.set_item("gauges", gauges)?;
-    Ok(Some(stats))
+    Ok(dict)
 }
 
 /// The registry text that the engine embeds as `REGISTRY_TEXT`

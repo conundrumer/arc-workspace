@@ -261,7 +261,7 @@ impl<'a> Builder<'a> {
 /// parameter that `earlier` does not keep is the one case that builds on
 /// `earlier.widened`, a resolution of the whole program that takes the content
 /// of the nodes it does not reach from `earlier` ([`resolve_reusing`]).
-fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry, demonstrated: bool, signed: bool, proposers: bool) -> Option<ResolvedProgram> {
+fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry, demonstrated: bool, signed: bool, proposers: bool) -> Option<WithDiagnostics<ResolvedProgram>> {
     let scope = SolverScope::default();
     let (last, complete) = program.value().forms.split_last()?;
     if earlier.concept().is_some() || earlier.layers() >= super::MAX_LAYERS || earlier.program.value().forms.len() != complete.len() {
@@ -307,28 +307,28 @@ fn layered(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &R
     if proposers {
         builder.proposers();
     }
-    Some(builder.finish(None).value)
+    Some(builder.finish(None))
 }
 
-pub(super) fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
-    layered(earlier, program, registry, false, true, true).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
+pub(super) fn resolve_last(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> WithDiagnostics<ResolvedProgram> {
+    layered(earlier, program, registry, false, true, true).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry))
 }
 
 pub(super) fn resolve_in_progress(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
-    layered(earlier, program, registry, true, true, true).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
+    layered(earlier, program, registry, true, true, true).map_or_else(|| resolve(program, None, &SolverScope::default(), registry).value, |resolved| resolved.value)
 }
 
 /// [`resolve_in_progress`] for the checks of a prefix: a layered resolution
 /// holds no signature of a read, which only the check of a finished program
 /// reads.
 pub(super) fn resolve_prefix(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
-    layered(earlier, program, registry, true, false, true).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
+    layered(earlier, program, registry, true, false, true).map_or_else(|| resolve(program, None, &SolverScope::default(), registry).value, |resolved| resolved.value)
 }
 
 /// [`resolve_prefix`] for the checks alone, which read no proposer's columns:
 /// a layered resolution holds none.
 pub(super) fn resolve_for_checks(earlier: &Arc<ResolvedProgram>, program: &Node<Program>, registry: &Registry) -> ResolvedProgram {
-    layered(earlier, program, registry, true, false, false).unwrap_or_else(|| resolve(program, None, &SolverScope::default(), registry).value)
+    layered(earlier, program, registry, true, false, false).map_or_else(|| resolve(program, None, &SolverScope::default(), registry).value, |resolved| resolved.value)
 }
 
 /// The grammar's decision at an open relation needs binding and sides,

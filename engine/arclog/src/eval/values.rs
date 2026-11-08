@@ -532,8 +532,8 @@ pub enum Gauge {
     ComparedRows,
     /// The largest margin of a Box that a term holds, as the bits it takes
     /// (a margin `m` takes `m` for `m >= 0` and `-m - 1` for `m < 0`), under
-    /// the 127 that a signed byte holds. The count is of the process, from
-    /// the begin of the latest request ([`ambient`]).
+    /// the 127 that a signed byte holds. The request counts the packs that
+    /// its own threads make ([`ambient`]).
     BoxMargin,
     /// The states that the walk of `Decoder::candidate_atoms` checked, under
     /// its `limit`.
@@ -547,8 +547,8 @@ pub enum Gauge {
     /// The search nodes of the canonical labeling of one label scope, under
     /// [`crate::program::canonical::SEARCH_NODE_CAP`]. A search past the cap
     /// is a hit, and refuses its form
-    /// ([`crate::program::canonical::LabelingBound`]). The count is of the
-    /// process, from the begin of the latest request ([`ambient`]).
+    /// ([`crate::program::canonical::LabelingBound`]). The request counts the
+    /// searches that its own threads run ([`ambient`]).
     LabelingNodes,
     /// The bindings that the searches of the request tried
     /// ([`RequestWork::charge_effort`]), under the effort guard. A hit raises
@@ -665,26 +665,68 @@ impl Gauges {
     /// [`Gauge::ALL`]. A cap of 0 is one that the request never gave.
     pub fn each(&self) -> [(Gauge, u64, u64, u64); GAUGES] {
         Gauge::ALL.map(|gauge| {
-            if gauge == Gauge::BoxMargin {
-                let (largest, hits) = ambient::margin();
-                return (gauge, largest, ambient::MARGIN_CAP, hits);
-            }
-            if gauge == Gauge::LabelingNodes {
-                let (largest, hits) = ambient::labeling();
-                return (gauge, largest, ambient::LABELING_CAP, hits);
-            }
             let slot = self.slot(gauge);
-            (gauge, slot.max.load(Ordering::Relaxed), slot.cap.load(Ordering::Relaxed), slot.hits.load(Ordering::Relaxed))
+            // The two ambient gauges run under a cap that no request gives.
+            let cap = match gauge {
+                Gauge::BoxMargin => ambient::MARGIN_CAP,
+                Gauge::LabelingNodes => ambient::LABELING_CAP,
+                _ => slot.cap.load(Ordering::Relaxed),
+            };
+            (gauge, slot.max.load(Ordering::Relaxed), cap, slot.hits.load(Ordering::Relaxed))
+        })
+    }
+
+    /// For each gauge, the larger of the largest values of `self` and `other`,
+    /// the cap that `self` gives (that of `other` where `self` gives none),
+    /// and the sum of the hits.
+    pub fn merged(&self, other: &Gauges) -> [(Gauge, u64, u64, u64); GAUGES] {
+        let (own, others) = (self.each(), other.each());
+        std::array::from_fn(|at| {
+            let (gauge, max, cap, hits) = own[at];
+            let (_, other_max, other_cap, other_hits) = others[at];
+            (gauge, max.max(other_max), if cap == 0 { other_cap } else { cap }, hits.saturating_add(other_hits))
         })
     }
 }
 
-/// The counters of caps that a computation meets where no [`Limits`] are at
-/// hand, which the process keeps from the begin of the latest request
-/// ([`RequestWork::begin`]) to the next. A request that runs while another
-/// begins, on another thread of the process, shares them with it.
+/// The gauges that the computations of this thread note where no [`Limits`]
+/// are at hand ([`ambient`]): those of the request most recently begun on the
+/// thread. A worker of the pool takes the gauges of the thread that starts
+/// its task ([`with_ambient`]).
+type AmbientGauges = Option<Arc<Gauges>>;
+
+thread_local! {
+    static AMBIENT: RefCell<AmbientGauges> = const { RefCell::new(None) };
+}
+
+/// The gauges that this thread notes the ambient quantities in, to hand to
+/// the workers that run its work.
+pub(super) fn ambient_gauges() -> AmbientGauges {
+    AMBIENT.with(|ambient| ambient.borrow().clone())
+}
+
+/// Runs `run` with the ambient quantities noted in `gauges` on this thread,
+/// and puts back the gauges that the thread had where `run` ends.
+pub(super) fn with_ambient<T>(gauges: AmbientGauges, run: impl FnOnce() -> T) -> T {
+    struct Restore(AmbientGauges);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let before = self.0.take();
+            let _ = AMBIENT.try_with(|ambient| *ambient.borrow_mut() = before);
+        }
+    }
+    let _restore = Restore(AMBIENT.with(|ambient| std::mem::replace(&mut *ambient.borrow_mut(), gauges)));
+    run()
+}
+
+/// The quantities that a computation meets where no [`Limits`] are at hand.
+/// Each goes to the gauges of the request most recently begun on the thread
+/// that computes ([`RequestWork::begin`]), so a request counts its own
+/// threads' work alone: a request on another thread, a computation outside
+/// every request and an earlier request have no part in it. A computation
+/// with no request begun on its thread notes nothing.
 pub mod ambient {
-    use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+    use super::{Gauge, AMBIENT};
 
     /// The largest margin extent that a signed byte holds, which the Box
     /// margin bound is ([`super::Gauge::BoxMargin`]).
@@ -694,52 +736,32 @@ pub mod ambient {
     /// ([`super::Gauge::LabelingNodes`]).
     pub const LABELING_CAP: u64 = crate::program::canonical::SEARCH_NODE_CAP as u64;
 
-    static LARGEST_MARGIN: AtomicU32 = AtomicU32::new(0);
-    static MARGIN_HITS: AtomicU64 = AtomicU64::new(0);
-    static LARGEST_LABELING: AtomicU32 = AtomicU32::new(0);
-    static LABELING_HITS: AtomicU64 = AtomicU64::new(0);
-
-    /// Records the margin `extent` of a Box that a term packs: two compares
-    /// while it is no new largest and holds.
+    /// Records `value` of `gauge` under `cap` in the gauges of this thread's
+    /// request: a load and a compare while it is no new largest and holds.
     #[inline]
-    pub fn note_margin(extent: u32) {
-        if extent > LARGEST_MARGIN.load(Ordering::Relaxed) {
-            LARGEST_MARGIN.fetch_max(extent, Ordering::Relaxed);
-        }
-        if u64::from(extent) > MARGIN_CAP {
-            MARGIN_HITS.fetch_add(1, Ordering::Relaxed);
-        }
+    fn note(gauge: Gauge, value: u64, cap: u64) {
+        let _ = AMBIENT.try_with(|ambient| {
+            if let Some(gauges) = ambient.borrow().as_ref() {
+                if value > cap {
+                    gauges.hit(gauge, value, cap);
+                } else {
+                    gauges.note(gauge, value, cap);
+                }
+            }
+        });
     }
 
-    /// The largest margin extent and the count of Boxes past the bound.
-    pub fn margin() -> (u64, u64) {
-        (u64::from(LARGEST_MARGIN.load(Ordering::Relaxed)), MARGIN_HITS.load(Ordering::Relaxed))
+    /// Records the margin `extent` of a Box that a term packs.
+    #[inline]
+    pub fn note_margin(extent: u32) {
+        note(Gauge::BoxMargin, u64::from(extent), MARGIN_CAP);
     }
 
     /// Records that a search for a canonical labeling visited `nodes` search
-    /// nodes: two compares while it is no new largest and holds.
+    /// nodes.
     #[inline]
     pub fn note_labeling(nodes: u32) {
-        if nodes > LARGEST_LABELING.load(Ordering::Relaxed) {
-            LARGEST_LABELING.fetch_max(nodes, Ordering::Relaxed);
-        }
-        if u64::from(nodes) > LABELING_CAP {
-            LABELING_HITS.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    /// The most search nodes of one labeling search and the count of searches
-    /// past the cap.
-    pub fn labeling() -> (u64, u64) {
-        (u64::from(LARGEST_LABELING.load(Ordering::Relaxed)), LABELING_HITS.load(Ordering::Relaxed))
-    }
-
-    /// Starts the counters again from zero.
-    pub fn reset() {
-        LARGEST_MARGIN.store(0, Ordering::Relaxed);
-        MARGIN_HITS.store(0, Ordering::Relaxed);
-        LARGEST_LABELING.store(0, Ordering::Relaxed);
-        LABELING_HITS.store(0, Ordering::Relaxed);
+        note(Gauge::LabelingNodes, u64::from(nodes), LABELING_CAP);
     }
 }
 
@@ -770,6 +792,11 @@ pub struct RequestWork {
     bytes: Arc<ByteAccount>,
     byte_caps: ByteCaps,
     gauges: Arc<Gauges>,
+    /// The gauges of the evaluations that run on the request's held
+    /// assignments ([`RequestWork::held`]), which the request's `gauges` leave
+    /// out: a request that searches for assignments and then evaluates the
+    /// held ones counts the second apart from the first.
+    held: Arc<Gauges>,
     /// The bindings that the request's searches tried, and the guard on them.
     effort: Arc<Effort>,
     effort_cap: u64,
@@ -1267,7 +1294,7 @@ impl RequestWork {
     /// A count of no work and no bytes, under `cap` and the byte budgets
     /// `byte_caps`.
     pub fn with_byte_caps(cap: u64, byte_caps: ByteCaps) -> Self {
-        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default(), effort: Arc::default(), effort_cap: EFFORT_CAP, sink: current_sink() }
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default(), held: Arc::default(), effort: Arc::default(), effort_cap: EFFORT_CAP, sink: current_sink() }
     }
 
     /// This count with the effort guard `effort_cap` in place of
@@ -1291,7 +1318,7 @@ impl RequestWork {
     /// [`RequestWork::begin_with`], under the effort guard `effort_cap`.
     pub fn begin_capped(cap: u64, byte_caps: ByteCaps, effort_cap: u64) -> Self {
         let work = Self::with_byte_caps(cap, byte_caps).with_effort_cap(effort_cap);
-        ambient::reset();
+        AMBIENT.with(|ambient| *ambient.borrow_mut() = Some(Arc::clone(&work.gauges)));
         tally(|tally| tally.unbilled = 0);
         LATEST.with(|latest| *latest.borrow_mut() = Some(work.clone()));
         work
@@ -1304,7 +1331,7 @@ impl RequestWork {
     /// candidate's charges are not added to this count, and its stop at a cap
     /// ends its own evaluations alone.
     pub fn candidate(&self) -> Self {
-        RequestWork { count: Arc::new(AtomicU64::new(0)), cap: self.cap, bytes: Arc::default(), byte_caps: ByteCaps { request: self.byte_caps.candidate, ..self.byte_caps }, gauges: Arc::clone(&self.gauges), effort: Arc::clone(&self.effort), effort_cap: self.effort_cap, sink: Arc::clone(&self.sink) }
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap: self.cap, bytes: Arc::default(), byte_caps: ByteCaps { request: self.byte_caps.candidate, ..self.byte_caps }, gauges: Arc::clone(&self.gauges), held: Arc::clone(&self.held), effort: Arc::clone(&self.effort), effort_cap: self.effort_cap, sink: Arc::clone(&self.sink) }
     }
 
     /// The request most recently begun on this thread, or `None` where none
@@ -1607,9 +1634,37 @@ impl RequestWork {
         self.byte_caps.assignment
     }
 
-    /// The gauges of the request's other caps.
+    /// The gauges of the request's other caps, for the work that this count
+    /// takes: the request's work outside its held evaluations, and the held
+    /// evaluations' work in the count that [`RequestWork::held`] gives.
     pub fn gauges(&self) -> &Gauges {
         &self.gauges
+    }
+
+    /// This request for the evaluation of its held assignments: it shares the
+    /// work, the bytes and the effort of the request, so no charge, stop or
+    /// verdict changes, and notes the gauges of its caps in
+    /// [`RequestWork::held_gauges`] in place of [`RequestWork::gauges`].
+    pub fn held(&self) -> Self {
+        RequestWork { gauges: Arc::clone(&self.held), ..self.clone() }
+    }
+
+    /// The gauges of the evaluations that ran under [`RequestWork::held`]
+    /// alone, the same from the request and from the count that it gives.
+    pub fn held_gauges(&self) -> &Gauges {
+        &self.held
+    }
+
+    /// For each gauge, the largest value over the whole request, the held
+    /// evaluations included, the cap, and the hits of both.
+    pub fn all_gauges(&self) -> [(Gauge, u64, u64, u64); GAUGES] {
+        self.gauges.merged(&self.held)
+    }
+
+    /// Runs `run` with the quantities that no limits reach ([`ambient`]) noted
+    /// in the gauges of this count.
+    pub fn with_ambient_gauges<T>(&self, run: impl FnOnce() -> T) -> T {
+        with_ambient(Some(Arc::clone(&self.gauges)), run)
     }
 }
 

@@ -1267,7 +1267,9 @@ type LookupKey = (u32, usize, usize, usize, Vec<usize>);
 impl<'a> Reads<'a> {
     fn materializer(&self)->Materializer<'_> {Materializer::new(self.session,&self.limits)}
 
-    fn new(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,contents:&Contents)->Self {
+    /// The count of an observation of the rows that `contents` holds: the table work cap
+    /// of the settings for each distinct assignment of its rows.
+    fn work_of(decoder:&Decoder<'a>,contents:&Contents)->TableWork {
         let mut assignments: Vec<&[Assignment]> = Vec::new();
         for (values, _) in contents.examples.iter().filter_map(|e|e.rows.as_ref().ok()).flat_map(|a|&a.at) {
             if !assignments.iter().any(|held| held.len() == values.len() && held.iter().zip(values).all(|((name, rows), (other, value))| name == other && arclog::session::same_rows(rows, value))) {
@@ -1275,8 +1277,11 @@ impl<'a> Reads<'a> {
             }
         }
         let assignments = (assignments.len() as u64).max(1);
-        let work = TableWork::new(decoder.settings().table_work_cap.saturating_mul(assignments));
-        Self::new_in(decoder,tables,form,decoder.limits(),work,None)
+        TableWork::new(decoder.settings().table_work_cap.saturating_mul(assignments))
+    }
+
+    fn new(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,contents:&Contents)->Self {
+        Self::new_in(decoder,tables,form,decoder.limits(),Self::work_of(decoder,contents),None)
     }
 
     fn new_in(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,limits:arclog::eval::Limits,work:TableWork,receipt:Option<&'a Arc<HeldAssignments>>)->Self {
@@ -1284,12 +1289,11 @@ impl<'a> Reads<'a> {
     }
 
     fn with_context(decoder:&Decoder<'a>,tables:&'a [&'a Table],form:&NodePath,context:AssignmentContext<'a>,contents:&Contents)->Self {
-        let mut reads = Self::new(decoder,tables,form,contents);
-        if let AssignmentContext::Held {receipt,limits,..} = context {
-            reads.receipt = Some(receipt);
-            reads.limits = limits.clone().counted_in(reads.work.clone());
+        match context {
+            // The count keeps the gauges of the first limits that count it, so a held assignment's count starts under the limits of the context.
+            AssignmentContext::Held {receipt,limits,..} => Self::new_in(decoder,tables,form,limits.clone(),Self::work_of(decoder,contents),Some(receipt)),
+            AssignmentContext::Search => Self::new(decoder,tables,form,contents),
         }
-        reads
     }
 
     fn query_context(&self)->AssignmentContext<'_> {
