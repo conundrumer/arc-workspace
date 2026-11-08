@@ -1049,22 +1049,11 @@ impl<'a> Decoder<'a> {
         let type_of = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);
         for index in prior..count {
             let prefix = crate::program::Body { conjuncts: body.conjuncts[..=index].into() };
-            let Some(found) = crate::program::static_prune::classify_prefix(&prefix, &type_of) else {
-                let keys = |relation: &RelationRef| relation_keys(self.context.registry, relation);
-                let binds = |atom: &crate::program::Atom, column: &crate::program::ColumnName| binds_column(self.context.registry, atom, column);
-                let rule = crate::program::static_prune::makes_earlier_redundant(&prefix)
-                    .or_else(|| crate::program::static_prune::reads_an_earlier_row(&prefix, &keys))
-                    .or_else(|| crate::program::static_prune::makes_membership_redundant(&prefix, &type_of, &binds));
-                if let Some(rule) = rule {
-                    return Err(Refusal::Grammar(crate::program::static_prune::rule_message(rule).expect("a message of each rule")));
-                }
-                continue;
-            };
             // A verdict of another class refuses nothing: whether no row
             // satisfies a test depends on the inputs, and a constant is a
             // different program from the binding that replaces it.
-            if found.class == crate::program::static_prune::Class::Valid {
-                return Err(Refusal::Grammar(crate::program::static_prune::rule_message(found.rule).unwrap_or("static prune: the completed atom repeats an existing test")));
+            if let Some(found) = crate::program::static_prune::refused_verdict(&prefix, &type_of) {
+                return Err(Refusal::Grammar(crate::program::static_prune::refusal_message(&found)));
             }
         }
         self.check_nested_static_prune(program, open, checks, memo)
@@ -1079,7 +1068,7 @@ impl<'a> Decoder<'a> {
     /// rows.
     fn check_nested_static_prune(&self, program: &Node<Program>, open: Option<&NodePath>, checks: &PrefixChecks<'_>, memo: &MaskMemo) -> Result<(), Refusal> {
         use crate::program::path::{node_at, NodeRef};
-        use crate::program::static_prune::{classify_prefix, makes_earlier_redundant, rule_message, Class};
+        use crate::program::static_prune::{refusal_message, refused_verdict};
         let before = memo.open_lists.get_or_init(|| {
             let (before, open) = self.state.partial()?;
             let form = before.value().forms.last()?;
@@ -1100,18 +1089,7 @@ impl<'a> Decoder<'a> {
             };
             for index in *prior..count.min(body.conjuncts.len()) {
                 let prefix = crate::program::Body { conjuncts: body.conjuncts[..=index].into() };
-                let message = match classify_prefix(&prefix, &type_of) {
-                    Some(found) => match found.class {
-                        Class::Valid => Some(rule_message(found.rule).unwrap_or("static prune: the completed atom repeats an existing test")),
-                        Class::Unsatisfiable | Class::Alias | Class::Constant => None,
-                    },
-                    None => makes_earlier_redundant(&prefix)
-                        .or_else(|| crate::program::static_prune::reads_an_earlier_row(&prefix, &|relation| relation_keys(self.context.registry, relation)))
-                        .or_else(|| {
-                            crate::program::static_prune::makes_membership_redundant(&prefix, &type_of, &|atom, column| binds_column(self.context.registry, atom, column))
-                        })
-                        .and_then(rule_message),
-                };
+                let message = refused_verdict(&prefix, &type_of).map(|found| refusal_message(&found));
                 if let Some(message) = message {
                     return Err(Refusal::Grammar(message));
                 }
@@ -1234,52 +1212,6 @@ struct MaskMemo {
     /// The forms of the state's program with the form in progress, and each
     /// list on the path of the form's open node, as [`open_lists`] gives.
     open_lists: std::cell::OnceCell<Option<(usize, Vec<(NodePath, usize)>)>>,
-}
-
-/// Whether `atom` can make the label at its site on `column`: its relation
-/// holds rows, as a fact, a program relation or a lib relation over a finite
-/// domain does, or one of its modes leaves `column` unbound and binds each
-/// column it needs by a site that joins a label or holds `0`.
-fn binds_column(registry: &Registry, atom: &crate::program::Atom, column: &crate::program::ColumnName) -> bool {
-    use crate::program::{LabelUse, SiteArg};
-    let RelationRef::Lib(name) = &atom.relation else { return true };
-    let Some(relation) = registry.algebra_relation(name) else { return true };
-    relation.modes.is_empty()
-        || relation.modes.iter().any(|mode| {
-            !mode.bound.contains(column)
-                && mode.bound.iter().all(|bound| {
-                    atom.sites.iter().any(|site| site.column == *bound && matches!(&site.value.args[..], [SiteArg::Label(LabelUse::Join(_) | LabelUse::Zero)]))
-                })
-        })
-}
-
-/// The keys of `relation` that the `(key ...)` items of its lib element's
-/// `refines` form give, each as its columns: those of a fact relation and of
-/// a lib relation. A relation of the program has none here.
-fn relation_keys(registry: &Registry, relation: &RelationRef) -> Vec<Vec<crate::program::ColumnName>> {
-    use crate::program::FactRelation;
-    use crate::read::SExpr;
-    let name: &str = match relation {
-        RelationRef::Fact(FactRelation::Input) => "input",
-        RelationRef::Fact(FactRelation::ExInput) => "ex_input",
-        RelationRef::Fact(FactRelation::ExOutput) => "ex_output",
-        RelationRef::Lib(name) => &name.0,
-        _ => return Vec::new(),
-    };
-    let symbol = |item: &SExpr| match item {
-        SExpr::Symbol { text, .. } => Some(text.clone()),
-        _ => None,
-    };
-    registry
-        .refines(name)
-        .iter()
-        .filter_map(|item| match item {
-            SExpr::List { items, .. } if items.first().and_then(symbol).as_deref() == Some("key") => {
-                items[1..].iter().map(|column| symbol(column).map(|text| crate::program::ColumnName::Written(text))).collect()
-            }
-            _ => None,
-        })
-        .collect()
 }
 
 /// Each list on `open`, the path of the open node of `form`: its path in

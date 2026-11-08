@@ -75,8 +75,24 @@ pub fn repeated_atom(earlier: &Atom, later: &Atom) -> Option<Verdict> {
         }
     }
     (earlier.relation == later.relation && earlier.sites.len() == later.sites.len()
+        && !drops_example_certificate(later, earlier)
         && unordered(&earlier.sites, &later.sites, site))
         .then(|| verdict(Class::Valid, "atom.repeated"))
+}
+
+/// Whether the read `later` joins, at its Example site, a label that the read
+/// `earlier` makes with `^`, where a case may lift the read. A positive
+/// `ex_output` atom of the body that holds the label certifies a lifted read
+/// as train-only where the read joins or makes the label with `*`, and not
+/// where `^` makes it (`binds_train_examples` in the resolver). So `later`
+/// can hold that certificate, and `earlier` cannot, and removing `later`
+/// removes the only certificate.
+fn drops_example_certificate(later: &Atom, earlier: &Atom) -> bool {
+    let example = crate::resolver::columns::example();
+    let made_by_key = earlier.sites.iter().any(|site| site.column == example && matches!(&site.value.args[..], [SiteArg::Label(LabelUse::Key(_))]));
+    // A fact and a lib relation are never lifted.
+    let may_lift = !matches!(earlier.relation, RelationRef::Fact(_) | RelationRef::Lib(_));
+    made_by_key && may_lift && later.sites.iter().any(|site| site.column == example)
 }
 
 /// Types of labels already bound in this lexical scope. This must not be
@@ -467,6 +483,23 @@ pub fn classify_prefix(
         .or_else(|| against_earlier(last, earlier))
 }
 
+/// The verdict of the static prune on the last conjunct of `body`, a flat
+/// decoder body, where the decoder refuses the conjunct: its class is
+/// [`Class::Valid`]. The decoder refuses on this verdict, and the gold
+/// normalizer deletes on it, so a normalized gold program has no conjunct
+/// that the decoder refuses.
+pub fn refused_verdict(
+    body: &Body,
+    column_type: &dyn Fn(&RelationRef, &ColumnName) -> Option<ValueType>,
+) -> Option<Verdict> {
+    classify_prefix(body, column_type).filter(|found| found.class == Class::Valid)
+}
+
+/// The message of the refusal that `verdict`, a verdict of [`refused_verdict`], gives.
+pub fn refusal_message(verdict: &Verdict) -> &'static str {
+    rule_message(verdict.rule).unwrap_or("static prune: the completed atom repeats an existing test")
+}
+
 /// The value of a site that holds one label: the label, a fresh one as the
 /// label it makes, or `0`.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -546,7 +579,9 @@ fn pair_outcomes(earlier: &Constraint, later: &Constraint) -> Option<(u8, u8)> {
 fn against_earlier(last: &Conjunct, earlier: &[Conjunct]) -> Option<Verdict> {
     match last {
         Conjunct::Atom(atom) => earlier.iter().find_map(|prior| match prior {
-            Conjunct::Atom(prior) if matched_by(atom.value(), prior.value()) => Some(verdict(Class::Valid, "atom.implied")),
+            Conjunct::Atom(prior) if matched_by(atom.value(), prior.value()) && !drops_example_certificate(atom.value(), prior.value()) => {
+                Some(verdict(Class::Valid, "atom.implied"))
+            }
             Conjunct::Not(Negated::Atom(prior)) if matched_by(prior.value(), atom.value()) => {
                 Some(verdict(Class::Unsatisfiable, "not.contradicted"))
             }
@@ -569,170 +604,6 @@ fn against_earlier(last: &Conjunct, earlier: &[Conjunct]) -> Option<Verdict> {
     }
 }
 
-/// The rule by which the last conjunct of a flat decoder body makes an
-/// earlier conjunct of it redundant, where it does: an atom that matches
-/// each site of an earlier atom of its relation that makes no label; a `NOT`
-/// that refuses each row an earlier `NOT` of its relation refuses; and a
-/// comparison of two operands that an earlier comparison compares, where
-/// the two keep fewer outcomes than the earlier one. The conjunction then
-/// equals one without the earlier conjunct, or with one comparison of the
-/// two operands, so a query that holds both has a twin that holds one, and
-/// refusing it in this order as in the other leaves its legality to the
-/// query, not to the order of its conjuncts. An earlier conjunct that makes
-/// a label is never the redundant one here: an atom that makes a label
-/// matches no later atom's sites, and a comparison that makes one keeps the
-/// outcome equal alone, which a later comparison of its operands keeps or
-/// contradicts.
-pub fn makes_earlier_redundant(body: &Body) -> Option<&'static str> {
-    let (last, earlier) = body.conjuncts.split_last()?;
-    match last {
-        Conjunct::Atom(atom) => earlier.iter().find_map(|prior| match prior {
-            Conjunct::Atom(prior) if matched_by(prior.value(), atom.value()) => Some("atom.implies_earlier"),
-            _ => None,
-        }),
-        Conjunct::Not(Negated::Atom(atom)) => earlier.iter().find_map(|prior| match prior {
-            Conjunct::Not(Negated::Atom(prior)) if matched_by(atom.value(), prior.value()) => Some("not.implies_earlier"),
-            _ => None,
-        }),
-        Conjunct::Constraint(constraint) => earlier.iter().find_map(|prior| {
-            let Conjunct::Constraint(prior) = prior else { return None };
-            let (first, second) = pair_outcomes(prior, constraint)?;
-            if first & second == 0 || first & !second == 0 {
-                None
-            } else if second & !first == 0 {
-                Some("comparison.implies_earlier")
-            } else {
-                Some("comparison.merges")
-            }
-        }),
-        _ => None,
-    }
-}
-
-/// The rule by which the last conjunct of a flat decoder body reads the row
-/// that an earlier atom of its relation reads, where it does: the two are
-/// positive atoms whose sites hold the same values at each column of a key of
-/// the relation, which `keys` gives. The relation has at most one row of each
-/// value of a key, so the two atoms match one row, and one atom with the
-/// sites of both reads it.
-pub fn reads_an_earlier_row(body: &Body, keys: &dyn Fn(&RelationRef) -> Vec<Vec<ColumnName>>) -> Option<&'static str> {
-    let (Conjunct::Atom(last), earlier) = body.conjuncts.split_last()? else { return None };
-    let last = last.value();
-    let later = held(last)?;
-    let keys = keys(&last.relation);
-    let at = |sites: &[(&ColumnName, Held, bool)], column: &ColumnName| sites.iter().find(|(c, _, _)| *c == column).map(|(_, value, _)| *value);
-    earlier.iter().find_map(|prior| {
-        let Conjunct::Atom(prior) = prior else { return None };
-        if prior.value().relation != last.relation {
-            return None;
-        }
-        let prior = held(prior.value())?;
-        keys.iter()
-            .any(|key| !key.is_empty() && key.iter().all(|column| at(&prior, column).is_some_and(|value| at(&later, column) == Some(value))))
-            .then_some("atom.same_row")
-    })
-}
-
-/// The rule by which the last conjunct of a flat decoder body makes an
-/// earlier membership atom of it redundant, where it does: the last atom
-/// reads, at a column whose type is at or below the membership's type, the
-/// label that the membership atom makes, `binds` says that it can make that
-/// label itself, and some order of the other conjuncts has the last atom make
-/// the label before each conjunct that reads it
-/// ([`last_can_make_before_uses`]). Each value at that column is then a
-/// member, so the conjunction equals one with no membership atom, where the
-/// label is made at that column. A membership atom that comes after such an
-/// atom is valid by `membership.subtype`, so a query that holds both is
-/// refused in each order.
-pub fn makes_membership_redundant(
-    body: &Body,
-    column_type: &dyn Fn(&RelationRef, &ColumnName) -> Option<ValueType>,
-    binds: &dyn Fn(&Atom, &ColumnName) -> bool,
-) -> Option<&'static str> {
-    let (last_conjunct, earlier) = body.conjuncts.split_last()?;
-    let Conjunct::Atom(last) = last_conjunct else { return None };
-    let last = last.value();
-    if matches!(&last.relation, RelationRef::Lib(name) if membership_type(&name.0).is_some()) {
-        return None;
-    }
-    let made_by_membership = |label: LabelId, ty: &ValueType| {
-        earlier.iter().any(|prior| {
-            let Conjunct::Atom(prior) = prior else { return false };
-            let prior = prior.value();
-            let RelationRef::Lib(name) = &prior.relation else { return false };
-            let Some(tested) = membership_type(&name.0) else { return false };
-            let makes = match &prior.sites[..] {
-                [only] => matches!(&only.value.args[..], [SiteArg::Label(LabelUse::Fresh(made))] if *made == label),
-                _ => false,
-            };
-            makes && ty.is_below(&tested)
-        })
-    };
-    last.sites.iter().find_map(|site| {
-        let [SiteArg::Label(LabelUse::Join(label))] = &site.value.args[..] else { return None };
-        let ty = column_type(&last.relation, &site.column)?;
-        let ty = if matches!(ty, ValueType::Pose(_)) { ValueType::D4 } else { ty };
-        (made_by_membership(*label, &ty) && binds(last, &site.column) && last_can_make_before_uses(earlier, last_conjunct, *label)).then_some("membership.implied_later")
-    })
-}
-
-/// Whether `conjunct` is a membership atom that makes `label`: a positive atom
-/// of a membership relation whose one site makes `label`.
-fn is_membership_maker(conjunct: &Conjunct, label: LabelId) -> bool {
-    let Conjunct::Atom(atom) = conjunct else { return false };
-    let atom = atom.value();
-    let RelationRef::Lib(name) = &atom.relation else { return false };
-    membership_type(&name.0).is_some()
-        && match &atom.sites[..] {
-            [only] => matches!(&only.value.args[..], [SiteArg::Label(LabelUse::Fresh(made))] if *made == label),
-            _ => false,
-        }
-}
-
-/// The labels that `conjunct` makes with `*` or `^`, then the labels it joins,
-/// at any depth.
-fn label_flow(conjunct: &Conjunct) -> (Vec<LabelId>, Vec<LabelId>) {
-    let body = Body { conjuncts: vec![conjunct.clone()].into() };
-    let (mut makes, mut joins) = (Vec::new(), Vec::new());
-    crate::safety::each_label_use(&body, &mut |use_| match use_ {
-        LabelUse::Fresh(label) | LabelUse::Key(label) => makes.push(label),
-        LabelUse::Join(label) => joins.push(label),
-        LabelUse::Zero => {}
-    });
-    (makes, joins)
-}
-
-/// Whether some order of the conjuncts of `earlier` and `last`, less the
-/// membership atom that makes `label`, has `last` make `label` before every
-/// conjunct that reads it, with each other label made before it is read.
-///
-/// The written order makes each other label before its readers. A new order
-/// puts `last` before each reader of `label`, so it needs `last` to follow
-/// the makers of the labels it joins, and a reader of `label` that `last`
-/// depends on, through those makers, rules every such order out. A conjunct
-/// that reads `label` between the membership atom and `last`, such as a `NOT`
-/// or an atom that cannot make it, moves after `last` where `last` does not
-/// depend on it.
-fn last_can_make_before_uses(earlier: &[Conjunct], last: &Conjunct, label: LabelId) -> bool {
-    let mut flows: Vec<(Vec<LabelId>, Vec<LabelId>)> =
-        earlier.iter().filter(|conjunct| !is_membership_maker(conjunct, label)).map(label_flow).collect();
-    flows.push(label_flow(last));
-    let at = flows.len() - 1;
-    let mut depends = vec![false; flows.len()];
-    let mut pending = vec![at];
-    while let Some(item) = pending.pop() {
-        for read in flows[item].1.iter().filter(|read| **read != label) {
-            for (maker, flow) in flows.iter().enumerate() {
-                if maker != item && !depends[maker] && flow.0.contains(read) {
-                    depends[maker] = true;
-                    pending.push(maker);
-                }
-            }
-        }
-    }
-    !flows.iter().enumerate().any(|(index, flow)| index != at && depends[index] && flow.1.contains(&label))
-}
-
 /// The refusal message of the static prune's rule `rule`, for the rules whose
 /// refusal names its rule.
 pub fn rule_message(rule: &str) -> Option<&'static str> {
@@ -740,13 +611,7 @@ pub fn rule_message(rule: &str) -> Option<&'static str> {
         "atom.implied" => "static prune: an earlier atom of the relation matches each site of the completed atom",
         "not.implied" => "static prune: an earlier `NOT` of the relation refuses each row the completed `NOT` refuses",
         "comparison.implied" => "static prune: an earlier comparison of the two operands implies the completed one",
-        "atom.implies_earlier" => "static prune: the completed atom matches each site of an earlier atom of its relation that makes no label",
-        "not.implies_earlier" => "static prune: the completed `NOT` refuses each row an earlier `NOT` of its relation refuses",
-        "comparison.implies_earlier" => "static prune: the completed comparison implies an earlier comparison of its two operands",
-        "comparison.merges" => "static prune: two comparisons of the same two operands are one comparison",
         "membership.subtype" => "static prune: the column that makes the label holds only members of the membership's type",
-        "membership.implied_later" => "static prune: the completed atom's column holds only members of the type that an earlier membership atom tests, and can make that atom's label",
-        "atom.same_row" => "static prune: by a key of its relation, the completed atom reads the row an earlier atom of the relation reads",
         _ => return None,
     })
 }
@@ -768,6 +633,36 @@ mod review_regressions {
                 })
                 .collect(),
         }))
+    }
+
+    fn read_of(relation: RelationRef, sites: &[(&str, LabelUse)]) -> Atom {
+        let Conjunct::Atom(made) = atom("x", sites) else { unreachable!() };
+        Atom { relation, sites: made.value().sites.clone() }
+    }
+
+    #[test]
+    fn a_read_that_joins_a_key_example_label_is_no_repeat() {
+        let case = RelationRef::Declared(RelationName(DeclaredName::Written("c".into())));
+        let (e, col) = (LabelId(0), LabelId(1));
+        let key = read_of(case.clone(), &[("E", LabelUse::Key(e)), ("Col", LabelUse::Fresh(col))]);
+        let fresh = read_of(case.clone(), &[("E", LabelUse::Fresh(e)), ("Col", LabelUse::Fresh(col))]);
+        let again = read_of(case.clone(), &[("E", LabelUse::Join(e)), ("Col", LabelUse::Join(col))]);
+        assert!(repeated_atom(&key, &again).is_none());
+        assert_eq!(repeated_atom(&fresh, &again).unwrap().class, Class::Valid);
+        // A read with no Example site, and a relation that no case lifts, repeat as before.
+        let no_example = read_of(case.clone(), &[("Col", LabelUse::Key(col))]);
+        let no_example_again = read_of(case, &[("Col", LabelUse::Join(col))]);
+        assert!(repeated_atom(&no_example, &no_example_again).is_some());
+        let lib_key = read_of(RelationRef::Lib(crate::registry::LibName("x".into())), &[("E", LabelUse::Key(e))]);
+        let lib_again = read_of(RelationRef::Lib(crate::registry::LibName("x".into())), &[("E", LabelUse::Join(e))]);
+        assert!(repeated_atom(&lib_key, &lib_again).is_some());
+        // The earlier-atom rule gives no verdict where `repeated_atom` gives none.
+        let key_only = Conjunct::Atom(Node::new(key));
+        let test = Conjunct::Atom(Node::new(read_of(
+            RelationRef::Declared(RelationName(DeclaredName::Written("c".into()))),
+            &[("E", LabelUse::Join(e))],
+        )));
+        assert!(against_earlier(&test, &[key_only]).is_none());
     }
 
     #[test]

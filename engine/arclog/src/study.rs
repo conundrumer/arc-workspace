@@ -369,7 +369,8 @@ impl StudyProgram {
     }
 
     /// Extend the existing classifier report with the case-normalization result.
-    /// Only valid tests are deleted; aliases and constants are not deletions.
+    /// Only the tests that the decoder's static prune refuses are deleted;
+    /// aliases and constants are not deletions.
     /// See program/static_prune/proofs.md, "Gold case normalization".
     pub fn static_prune_report(&self, registry: &Registry, normalize: bool) -> Result<serde_json::Value, String> {
         self.static_prune_report_with_settings(registry, normalize, &DecodeSettings::default())
@@ -393,8 +394,9 @@ impl StudyProgram {
         let mut report = crate::check::static_prune::report(&matches);
         if !normalize { return Ok((self.clone(), report)); }
         let mut edits = Vec::new();
-        for found in matches {
-            if found.verdict.class != crate::program::static_prune::Class::Valid { continue; }
+        // The conjuncts that the decoder refuses, and no others: the decoder
+        // admits the program without them, and refuses none of its conjuncts.
+        for found in crate::check::static_prune::refused_by_decoder(self.checked(), registry) {
             let node = crate::program::path::node_at(crate::program::path::NodeRef::Program(self.program().value()), &found.path)
                 .ok_or("valid atom path is absent")?;
             let mut binds = false;

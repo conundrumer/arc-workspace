@@ -320,6 +320,51 @@ pub(crate) fn matches(checked: &CheckedProgram, registry: &Registry) -> Result<V
     Ok(matches)
 }
 
+/// The conjuncts that the decoder's static prune refuses in the written order
+/// of `checked`, each with its verdict: the conjuncts of the lists that the
+/// decoder checks, which are the bodies of every form at any depth, that
+/// [`static_prune::refused_verdict`] gives a [`static_prune::Class::Valid`]
+/// verdict on the prefix of its list that the other kept conjuncts make. A
+/// conjunct that is refused is left out of the prefixes of the conjuncts after
+/// it, as it is in the program without it, so the program without every one of
+/// them has none. The column types are those of the finished forms before the
+/// form of the list, as the decoder reads them.
+pub(crate) fn refused_by_decoder(checked: &CheckedProgram, registry: &Registry) -> Vec<Match> {
+    let clauses = super::SolverClauses::of_shared_program(std::sync::Arc::clone(&checked.program));
+    let cases = super::inference::CaseInferences::new(&clauses, registry);
+    let inference = super::inference::Inference::new(&checked.program, &cases);
+    let known = std::cell::RefCell::new(Vec::<(RelationRef, crate::program::ColumnName, Option<ValueType>)>::new());
+    let column_type = |relation: &RelationRef, column: &crate::program::ColumnName| {
+        let cached = known.borrow().iter().find(|(r, c, _)| r == relation && c == column).map(|(_, _, ty)| ty.clone());
+        cached.unwrap_or_else(|| {
+            let ty = inference.fixed_column_type(relation, column);
+            known.borrow_mut().push((relation.clone(), column.clone(), ty.clone()));
+            ty
+        })
+    };
+    fn walk(node: NodeRef<'_>, at: &NodePath, column_type: &dyn Fn(&RelationRef, &crate::program::ColumnName) -> Option<ValueType>, out: &mut Vec<Match>) {
+        if let NodeRef::Body(body) = node {
+            let mut kept: Vec<Conjunct> = Vec::with_capacity(body.conjuncts.len());
+            for (index, conjunct) in body.conjuncts.iter().enumerate() {
+                kept.push(conjunct.clone());
+                let prefix = crate::program::Body { conjuncts: kept.as_slice().into() };
+                if let Some(verdict) = static_prune::refused_verdict(&prefix, column_type) {
+                    kept.pop();
+                    out.push(Match { path: at.child(index as u32), verdict });
+                }
+            }
+        }
+        for (index, child) in node.children().into_iter().enumerate() {
+            walk(child, &at.child(index as u32), column_type, out);
+        }
+    }
+    let mut out = Vec::new();
+    for (index, form) in checked.program.program.value().forms.iter().enumerate() {
+        walk(NodeRef::from(form), &NodePath::top(index as u32), &column_type, &mut out);
+    }
+    out
+}
+
 pub fn export(checked: &CheckedProgram, registry: &Registry) -> Result<Value, String> {
     Ok(report(&matches(checked, registry)?))
 }

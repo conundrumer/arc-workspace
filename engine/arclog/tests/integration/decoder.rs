@@ -15,6 +15,7 @@ use arclog::eval::values::Caps;
 use arclog::program::path::{node_at, NodePath, NodeRef, PathStep};
 use arclog::program::{FactRelation, Form, Node, Program};
 use arclog::read::read_solver;
+use arclog::study::StudyProgram;
 use arclog::registry::{LibName, Registry};
 use arclog::resolver::{resolve, SolverScope};
 use arclog::session::{SessionBound, TaskSession};
@@ -411,9 +412,15 @@ fn forced_is_the_forced_of_the_step_and_leaves_the_decode_as_it_was() {
 /// Source-only regression fixtures for the static-pruning grammar boundary.
 /// These use the native stream and checker; they perform no task evaluation.
 fn static_refusal(arclog: &str) -> Option<Token> {
+    static_refusal_of(&checked(arclog))
+}
+
+/// The first token of the stream of `program` that the decoder refuses by the
+/// static prune, where it does.
+fn static_refusal_of(program: &CheckedProgram) -> Option<Token> {
     let settings = DecodeSettings::default();
     let vocabulary = Vocabulary::new(Registry::get(), &settings);
-    let stream = token_stream(&checked(arclog), &vocabulary).expect("checked fixture stream");
+    let stream = token_stream(program, &vocabulary).expect("checked fixture stream");
     let inputs = inputs();
     let mut decoder = Decoder::new(&inputs.task, &inputs.session, Registry::get(), &inputs.constructions, &settings);
     for (token, emitter) in stream {
@@ -449,4 +456,54 @@ fn static_prune_review_changed_interface_keeps_alias_atom() {
     // A literal zero does not satisfy compose's Offset-labelled type-rule
     // premise. Its output is Box, whereas equality to input.P is Position.
     assert_eq!(static_refusal("(RULE &x (input *P) (compose (:A P) (:B 0) (:C *Q)))"), None);
+}
+
+/// The out form of a fixture; the fixture's rule is the program's own.
+const READER_OUT: &str = "(OUT (input ^P ^Col))\n";
+
+/// A gold program with the rule `rule`, as a study program.
+fn gold(rule: &str) -> StudyProgram {
+    let text = format!("{BG}{FG}{AXIS}{rule}\n{READER_OUT}");
+    StudyProgram::from_sexp(&text, Registry::get()).unwrap_or_else(|fault| panic!("{rule}: {fault}"))
+}
+
+/// A gold program that holds a conjunct that each rule of the class Valid
+/// refuses is refused by the decoder's static prune, and, normalized, steps
+/// with no refusal by it.
+#[test]
+fn normalized_gold_is_never_refused_by_the_static_prune() {
+    let rules = [
+        ("atom.repeated", "(RULE &r (input *P *Col) (input P Col))"),
+        ("atom.implied", "(RULE &r (input *P *Col) (input P))"),
+        ("not.implied", "(RULE &r (input *P *Col) (NOT (&bg (:C Col))) (NOT (&bg (:C Col))))"),
+        ("comparison.implied", "(RULE &r (&axis_len *B *N) (&axis_len (:B *B2) (:N *N2)) (< N N2) (<= N N2))"),
+        ("inside.same", "(RULE &r (input *P) (inside (:A P) (:B P)))"),
+        ("membership.subtype", "(RULE &r (input *P *Col) (dir_elem *D) (dir_elem D))"),
+    ];
+    let settings = DecodeSettings::default();
+    for (rule, text) in rules {
+        let program = gold(text);
+        assert!(static_refusal_of(program.checked()).is_some(), "{rule}: the gold program is refused");
+        let (normalized, report) = program.normalized_gold(Registry::get(), &settings).unwrap_or_else(|fault| panic!("{rule}: {fault}"));
+        let removed = report["removed_atom_paths"].as_array().map_or(0, Vec::len);
+        assert!(removed > 0, "{rule}: the normalizer deletes a conjunct");
+        assert_eq!(static_refusal_of(normalized.checked()), None, "{rule}: the normalized program is refused");
+    }
+}
+
+/// Two conjuncts of which one makes the other redundant, in a spelling that
+/// no rule of the class Valid refuses, are admitted: the prune refuses a
+/// repeat by the later conjunct alone.
+#[test]
+fn the_static_prune_does_not_refuse_a_second_spelling() {
+    let rules = [
+        ("atom.implies_earlier", "(RULE &r (&fg *P) (input P) (input P (:Col *Col)))"),
+        ("not.implies_earlier", "(RULE &pair (input *P *Col))\n(RULE &r (input *P *Col) (NOT (&pair P Col)) (NOT (&pair P)))"),
+        ("comparison.implies_earlier", "(RULE &r (&axis_len *B *N) (&axis_len (:B *B2) (:N *N2)) (<= N N2) (< N N2))"),
+        ("comparison.merges", "(RULE &r (&axis_len *B *N) (&axis_len (:B *B2) (:N *N2)) (<= N N2) (>= N N2))"),
+        ("atom.same_row", "(RULE &r (input (:P *B)) (frame_extent (:P B) (:A *A) (:N *N)) (frame_extent (:P B) (:A A) (:N *M)))"),
+    ];
+    for (rule, text) in rules {
+        assert_eq!(static_refusal_of(gold(text).checked()), None, "{rule}");
+    }
 }

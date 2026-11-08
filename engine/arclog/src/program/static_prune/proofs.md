@@ -118,9 +118,12 @@ study report; none of these conclusions authorizes editing gold.
 
 ## Gold case normalization
 
-The case-normalization pass uses the same source-order classifier and binding
-premises as the corpus report and Decoder. It deletes only `Valid`, never
-`Alias`, `Constant`, or `Unsatisfiable`. A valid atom is a predicate true of
+The case-normalization pass deletes each conjunct that the Decoder's static
+prune refuses, with the same function and the same binding premises as the
+Decoder (`refused_verdict`), in each list of each form, in source order, each
+conjunct against the prefix of the conjuncts it keeps. So the Decoder refuses
+no conjunct of a normalized program. It deletes only `Valid`, never `Alias`,
+`Constant`, or `Unsatisfiable`. A valid atom is a predicate true of
 every incoming row. Joining that predicate therefore preserves each row and
 its multiplicity (relations are sets). Under NOT the classifier complements
 only the proved valid/unsatisfiable conclusions, so the same argument applies.
@@ -237,13 +240,4 @@ These rules compare the last conjunct of a flat decoder body with one earlier co
 - `not.implied`: two `NOT`s of the same relation, the later N2 matching each site of the earlier N1. A row that N2 would refuse matches N1, which refuses it already, so N2 removes no row that N1 leaves.
 - `comparison.implied` and `comparison.contradicted`: two comparisons of the same two operands, in either operand order. Each keeps a set of the outcomes less, equal and greater of one operand against the other, and the two together keep the intersection. An empty intersection holds no row. An intersection equal to the earlier comparison's set leaves the later one nothing to remove.
 
-The decoder also refuses a conjunct that makes an earlier one redundant, by `makes_earlier_redundant`, so that a query that holds a redundant conjunct is refused in each order of its conjuncts, and its legality does not depend on that order. Each such query has a twin with one conjunct fewer, which the same rules admit:
-
-- `atom.implies_earlier`: the later atom matches each site of an earlier atom that makes no label, which the argument of `atom.implied` removes.
-- `not.implies_earlier`: the later `NOT` matches each site of an earlier one, which the argument of `not.implied` removes.
-- `comparison.implies_earlier` and `comparison.merges`: the two comparisons keep fewer outcomes than the earlier one, and more than none. Each set of one or two outcomes is the set of one operator, so the pair equals one comparison of the two operands.
-
-- `atom.same_row`: two positive atoms of one relation whose sites hold the same label or `0` at each column of a key of the relation. A key is a `(key ...)` item of the relation's `refines` form in the registry, for a fact relation or a lib relation: the relation has at most one row of each value of the key. The two atoms match that one row, so the conjunction equals one with a single atom of the relation, which holds the sites of both. A label that the later atom makes at a column where the earlier one holds a label joins that label in the twin, and two joined labels at one such column are equal in both. The twin's atom reads what both read, so it keeps their relation's definedness and, for `ex_output`, the certificate in the same body.
-- `membership.implied_later`: a membership atom such as `dir_elem` that makes its label, and a later atom that reads the label at a column whose type is at or below the membership's type. Each value of that column is a member, so the membership atom removes no row. The later atom can make the label itself where its relation holds rows, or where one of its modes leaves that column unbound and binds each column the mode needs by a site that joins a label or holds `0`; the twin makes the label there and holds no membership atom. The twin has the later atom make the label before each conjunct that reads it, so the rule needs an order of the other conjuncts in which the later atom follows the makers of the labels it joins and precedes each reader of the label. A conjunct that reads the label between the membership atom and the later atom, such as a `NOT`, moves after the later atom. Where the later atom joins a label that such a reader makes, directly or through other conjuncts, no order exists, a read before its make site is refused, and the membership atom is not redundant. In the other order the membership atom is valid by `membership.subtype`, so the decoder refuses the pair in both orders.
-
-An earlier conjunct that makes a label is never the redundant one, other than a membership atom, whose label the later atom then makes. The earlier atom of `atom.implies_earlier` makes no label, and a comparison that makes a label is an equality, whose one outcome a later comparison of its operands either keeps, which makes the later one valid, or drops, which leaves no row.
+A `^` that makes the Example label of a read that a case may lift gives the read no train-only certificate, since `binds_train_examples` counts `*` and a join and not `^`. A later read that joins that label can hold the certificate, where a positive `ex_output` atom of the body holds the label, and removing it removes the only certificate. So `atom.repeated` and `atom.implied` give no verdict on a later read of the Example label that an earlier read makes with `^`, unless the relation is a fact or a lib relation, which no case lifts.
