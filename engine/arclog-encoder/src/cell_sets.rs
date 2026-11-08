@@ -38,15 +38,54 @@ pub fn class_of(cells: &[(u8, u8)], turned: bool) -> Vec<(u8, u8)> {
     let (r0, c0, r1, c1) = frame_of(cells);
     let mut best: Vec<(u8, u8)> = Vec::new();
     let mut image: Vec<(u8, u8)> = Vec::with_capacity(cells.len());
+    // Cells that stand sorted without repeats make images that are written in order from the cells by row and the cells by column, with no sort.
+    let ordered = cells.windows(2).all(|pair| pair[0] < pair[1]);
+    let by_columns = if ordered && turned {
+        let mut by_columns = cells.to_vec();
+        by_columns.sort_unstable_by_key(|&(r, c)| (c, r));
+        by_columns
+    } else {
+        Vec::new()
+    };
     for which in 0..if turned { 8 } else { 1 } {
         image.clear();
-        image.extend(cells.iter().map(|(r, c)| turned_cell(which, r - r0, c - c0, r1, c1)));
-        image.sort_unstable();
+        if ordered {
+            write_ordered_image(which, cells, &by_columns, (r0, c0, r1, c1), &mut image);
+        } else {
+            image.extend(cells.iter().map(|(r, c)| turned_cell(which, r - r0, c - c0, r1, c1)));
+            image.sort_unstable();
+        }
         if which == 0 || image < best {
             std::mem::swap(&mut best, &mut image);
         }
     }
     best
+}
+
+/// Writes to `image` the sorted image of cells under element `which` of D4, as `class_of` makes it. `by_rows` holds the cells sorted by row then column without repeats, and `by_columns` holds them sorted by column then row. The images of 0 to 3 sort by the cells' rows and the images of 4 to 7 by their columns. Within each run of cells of one row, or of one column, a turn keeps the order or reverses it, and it keeps the order of the runs or reverses it.
+fn write_ordered_image(which: usize, by_rows: &[(u8, u8)], by_columns: &[(u8, u8)], (r0, c0, r1, c1): (u8, u8, u8, u8), image: &mut Vec<(u8, u8)>) {
+    let along_rows = which < 4;
+    let list = if along_rows { by_rows } else { by_columns };
+    let reverse_runs = matches!(which, 2 | 3 | 6 | 7);
+    let reverse_within = matches!(which, 1 | 3 | 5 | 7);
+    let write_run = |run: &[(u8, u8)], image: &mut Vec<(u8, u8)>| {
+        let turn = |&(r, c): &(u8, u8)| turned_cell(which, r - r0, c - c0, r1, c1);
+        if reverse_within {
+            image.extend(run.iter().rev().map(turn));
+        } else {
+            image.extend(run.iter().map(turn));
+        }
+    };
+    let runs = list.chunk_by(|a, b| if along_rows { a.0 == b.0 } else { a.1 == b.1 });
+    if reverse_runs {
+        for run in runs.rev() {
+            write_run(run, image);
+        }
+    } else {
+        for run in runs {
+            write_run(run, image);
+        }
+    }
 }
 
 /// A cell set moved so that its box starts at (0, 0), sorted.
