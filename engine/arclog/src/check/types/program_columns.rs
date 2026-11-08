@@ -123,15 +123,27 @@ pub(in crate::check) fn program_types(
     types
 }
 
-/// `types` with the column types of the relation of each of `nodes` typed
-/// again over `program`, a resolution of the program of `types` that keeps
-/// fewer columns of those nodes: a `DET` parameter or a chosen relation that
-/// clauses give, whose columns are decided by the reads that `program`
-/// counts. The types of the labels are those of `types`.
-pub(in crate::check) fn narrowed_types(program: &ResolvedProgram, types: &ProgramTypes, nodes: &[GraphNodeIndex]) -> ProgramTypes {
+/// `types` with the column types of each relation that clauses or a `CHOOSE`
+/// form give typed again over `program`, a resolution of the program of
+/// `types` that keeps other columns of some `DET` nodes. The columns of a
+/// relation stand at the positions that `program` gives them, which follow the
+/// columns that its `DET` reads keep, so a relation that reads a narrowed node
+/// has its columns in another order. A relation whose columns a clause with no
+/// columns of its own fixes keeps its types. The types of the labels are those
+/// of `types`.
+pub(in crate::check) fn narrowed_types(program: &ResolvedProgram, types: &ProgramTypes) -> ProgramTypes {
     let fixed: StableHashMap<(NodePath, Arc<[OutputStep]>), &[ValueType]> = StableHashMap::default();
+    let root = NodeRef::Program(program.program.value());
     let mut narrowed = types.clone();
-    for &node in nodes {
+    for index in 0..program.graph.nodes.len() as u32 {
+        let node = GraphNodeIndex(index);
+        if !matches!(program.graph.nodes[index as usize].kind, DependencyKind::Clause(_) | DependencyKind::Parameter(_) | DependencyKind::Chosen(_) | DependencyKind::Out(_)) {
+            continue;
+        }
+        let fixes = program.forms_of(node).iter().any(|form| matches!(crate::program::path::node_at(root, form), Some(NodeRef::Clause(clause)) if clause.columns.is_empty()));
+        if fixes {
+            continue;
+        }
         let relation = GraphRelation { node, output: None };
         match given_columns(program, types, &fixed, node) {
             Some(columns) => narrowed.insert_columns(relation, columns),

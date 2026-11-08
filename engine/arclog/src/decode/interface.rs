@@ -606,8 +606,8 @@ impl<'a> Decoder<'a> {
     /// `checked` over the columns of the use closure of its form at
     /// `position`, or `None` where the closure leaves it as it is.
     fn narrowed(&self, checked: &CheckedProgram, position: usize) -> Option<CheckedProgram> {
-        let (program, narrowed) = checked.program.narrowed_to_closure(position, self.context.registry)?;
-        Some(checked.over_narrowed(program, &narrowed))
+        let program = checked.program.narrowed_to_closure(position, self.context.registry)?;
+        Some(checked.over_narrowed(program))
     }
 
     /// [`Decoder::over_closure`] for the sub-body that `key` is the key of

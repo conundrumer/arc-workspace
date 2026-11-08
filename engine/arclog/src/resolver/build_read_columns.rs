@@ -141,11 +141,10 @@ fn columns_fixed(resolved: &ResolvedProgram, node: GraphNodeIndex) -> bool {
 /// The columns that the reads in the forms that `keep` marks, the top-level
 /// forms of a use closure, name for each read-named node of `resolved` that
 /// those reads read, with the columns that its marks name, by the node's
-/// relation, and the nodes whose columns those reads leave other than
-/// `resolved` keeps. `None` where there is no such node, so the closure's
-/// resolution is `resolved` itself. A node whose columns its clause fixes is
+/// relation. `None` where no node has other columns than `resolved` keeps,
+/// so the closure's resolution is `resolved` itself. A node whose columns its clause fixes is
 /// left out.
-pub(in crate::resolver) fn closure_columns(resolved: &ResolvedProgram, keep: &[bool]) -> Option<(Vec<(ProgramRelation, Vec<ColumnName>)>, Vec<GraphNodeIndex>)> {
+pub(in crate::resolver) fn closure_columns(resolved: &ResolvedProgram, keep: &[bool]) -> Option<Vec<(ProgramRelation, Vec<ColumnName>)>> {
     let mut named: BTreeMap<u32, Vec<ColumnName>> = BTreeMap::new();
     for (top, form) in resolved.program.value().forms.iter().enumerate() {
         if !keep.get(top).copied().unwrap_or(false) {
@@ -161,7 +160,7 @@ pub(in crate::resolver) fn closure_columns(resolved: &ResolvedProgram, keep: &[b
         }
     }
     let mut exact: Vec<(ProgramRelation, Vec<ColumnName>)> = Vec::new();
-    let mut narrowed = Vec::new();
+    let mut changed = false;
     for (node, mut columns) in named {
         let node = GraphNodeIndex(node);
         if columns_fixed(resolved, node) {
@@ -172,13 +171,11 @@ pub(in crate::resolver) fn closure_columns(resolved: &ResolvedProgram, keep: &[b
         // A node that no earlier form reads and that the last form reads with no site has no read columns in a layered
         // resolution and keeps every column, as `read_columns` leaves it, while a resolution of the whole program gives it none.
         let same = resolved.read_columns_of(node).is_some_and(|held| held.len() == columns.len() && columns.iter().all(|column| held.contains(column)));
-        if !same {
-            narrowed.push(node);
-        }
+        changed |= !same;
         match exact.iter_mut().find(|(relation, _)| *relation == found.relation) {
             Some((_, kept)) => add_columns(kept, &columns),
             None => exact.push((found.relation, columns)),
         }
     }
-    (!narrowed.is_empty()).then_some((exact, narrowed))
+    changed.then_some(exact)
 }
