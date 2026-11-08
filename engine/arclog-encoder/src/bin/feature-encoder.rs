@@ -17,7 +17,7 @@
 //!   feature-encoder generate-check TABLES_FILE [--size D] [--tables EVERY]
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
 //!   feature-encoder refine-check TABLES_FILE [--size D]
-//!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N]
+//!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR]
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
 //!   feature-encoder family-names TYPE,TYPE,... [--size D]
 //!   feature-encoder refine-explain CALL ARITY KEY_BITS
@@ -1384,14 +1384,21 @@ fn run_atom_lists(arguments: &Arguments, input: &str, out: &str) -> Result<(), S
     arclog_encoder::atom_lists::run(std::path::Path::new(input), std::path::Path::new(out), &arguments.tasks, &families, arguments.size.max(1), &orders, &orient, arguments.threads, idle)
 }
 
-/// The `shapes` records of a task's tables from their stored rows: `shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N]`. ROWS_FILE holds a line `{"hash": HEX, "table": T}` for each table, with `T` as `stored_of`
-/// reads it. With `--shapes`, the records hold the listed shapes alone, in the file's order. It prints a line of counts.
+/// The `shapes` records of a task's tables from their stored rows: `shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR]`. ROWS_FILE holds a line `{"hash": HEX, "table": T}` for each table, with `T` as `stored_of`
+/// reads it. With `--shapes`, the records hold the listed shapes alone, in the file's order. With `--families`, a family that the run builds is saved under DIR, and a later run of the same binary reads it. It prints a line of counts.
 fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) -> Result<(), String> {
     let only = match &arguments.shapes {
         Some(path) => Some(read_shape_hashes(path)?),
         None => None,
     };
-    let families = arclog_encoder::generate::Generators::default();
+    let mut families = arclog_encoder::generate::Generators::default();
+    if let Some(folder) = &arguments.families {
+        // A family's file name holds no size, so the folder does. The records hold no root names, so the names stay in memory and a family read from a file adds none.
+        let saved = folder.join(format!("shapes-refresh-{}", arclog_encoder::shapes_refresh::SIZE));
+        std::fs::create_dir_all(&saved).map_err(|error| format!("{}: {error}", saved.display()))?;
+        families.saved = Some(saved);
+        families.saved_limit = arclog_encoder::generate::CACHED_TERMS;
+    }
     let summary = arclog_encoder::shapes_refresh::run(std::path::Path::new(rows), std::path::Path::new(out), &arguments.tasks, task, only.as_deref(), arguments.threads, &families)?;
     eprintln!("{summary}");
     if arclog_encoder::bounds::enabled() {
