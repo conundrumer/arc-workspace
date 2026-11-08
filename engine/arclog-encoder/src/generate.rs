@@ -2806,8 +2806,8 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// Where the walk holds more than [`resident_cells`] cells of stored values that can move, moves to disk the values that the lists of `ids` hold and that the terms after `at` read last. `readers` has the terms that read each term, in order. The values of the leaves stay, since the caller holds them. A value is the same when it comes back, so no value of the walk changes. Run it after [`Walker::compact`], which leaves in `values` what the lists hold alone.
-    fn spill(&mut self, ids: &[Vec<u32>], readers: &[Vec<usize>], at: usize) {
+    /// Where the walk holds more than [`resident_cells`] cells of stored values that can move, moves to disk the values that the lists of `ids` hold and that the terms after `at` read last. `readers` has the terms that read each term, in order. `next` is the term that the walk walks after `at`, if any. The values of the leaves stay, since the caller holds them. The values that `next` reads stay in memory even where they pass the limit alone, since `next` brings back any of them that is on disk before it runs, so that the walk holds the same cells at `next` and does not write a value to disk and read it back with no term between. A value is the same when it comes back, so no value of the walk changes. Run it after [`Walker::compact`], which leaves in `values` what the lists hold alone.
+    fn spill(&mut self, ids: &[Vec<u32>], readers: &[Vec<usize>], at: usize, next: Option<usize>) {
         let limit = resident_cells();
         if self.held_cells <= limit {
             return;
@@ -2845,9 +2845,15 @@ impl<'a> Walker<'a> {
         // The value read last goes first, and of those the larger. The limit holds of the values that can move: what stays in memory whatever the walk does (small values, joined values) does not count against it, so that the values the next terms read can stay.
         candidates.sort_unstable_by(|a, b| b.cmp(a));
         let mut movable: usize = candidates.iter().map(|(_, cells, _)| *cells).sum();
+        // The values that `next` reads come last in that order. Where they hold more cells than the limit, a move of any of them would be read back at once, so they stay and every other value moves.
+        let next_reads: usize = candidates.iter().filter(|(read, _, _)| Some(*read) == next).map(|(_, cells, _)| *cells).sum();
+        let keep = limit.max(next_reads);
+        if next_reads > limit {
+            candidates.retain(|(read, _, _)| Some(*read) != next);
+        }
         let mut moved = false;
         for (_, cells, id) in candidates {
-            if movable <= limit {
+            if movable <= keep {
                 break;
             }
             if self.move_to_disk(id) {
@@ -3379,7 +3385,8 @@ impl<'a> Walker<'a> {
             if self.held_cells + lazy > self.budget.0.max(floor + floor.min(resident_cells() / 2)) || entries > self.budget.1 {
                 let started = std::time::Instant::now();
                 self.compact(&mut ids);
-                self.spill(&ids, &readers, at);
+                let next = (at + 1..family.terms.len()).find(|n| mask.is_none_or(|mask| mask.needed[*n]));
+                self.spill(&ids, &readers, at, next);
                 self.spill_cost.compact_nanos += started.elapsed().as_nanos() as u64;
                 if crate::bounds::enabled() {
                     self.footprint();
