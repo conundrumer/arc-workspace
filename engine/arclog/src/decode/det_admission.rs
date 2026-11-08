@@ -5,7 +5,7 @@ use super::det_memo::{part_key, PartWalk, ProbeMemo, Scope};
 use super::{Decoder, Refusal, State};
 use crate::check::CheckedProgram;
 use crate::eval::carry::Carry;
-use crate::eval::{Cancellation, Limits, ModelsEnd, ReachedBound, RelationValue, TableWork};
+use crate::eval::{Cancellation, Charged, Limits, ModelsEnd, ReachedBound, RelationValue, TableWork};
 use crate::judge::determination::{descend_unread, held_dets, written_dets, Det, Domains, End, EvaluationInputs};
 use crate::resolver::GraphNodeIndex;
 use crate::session::TaskSession;
@@ -136,13 +136,12 @@ impl Decoder<'_> {
         let key = acyclic.then(|| part_key(program, dets, picks, self.context.settings.caps.assignments)).flatten();
         let work = self.request_work();
         // A kept walk charges the cost of the walk that was kept, unless that cost would pass the request's cap, where the part is walked again and stops where it stops with empty caches.
-        if let Some((walk, cost)) = key.as_ref().and_then(|key| memo.part(scope, key))
-            && cost.fits(&work, None)
-        {
-            return match cost.charge(&work, None, self.session) {
-                Ok(()) => walk,
-                Err(_) => PartWalk::Stopped,
-            };
+        if let Some(hit) = key.as_ref().and_then(|key| memo.part(scope, key)) {
+            match hit.charge(&work, None, self.session) {
+                Charged::Value(walk) => return walk,
+                Charged::Stopped(..) => return PartWalk::Stopped,
+                Charged::Misfit => {}
+            }
         }
         let (walk, cost) = work.measure(|| match self.walked(program, dets, picks, root) {
             (leaves, Ok(())) => PartWalk::Ended { leaves, live: true },

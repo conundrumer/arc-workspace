@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use super::pool::InFlight;
-use super::{Cost, Limits, RelationValue, Stop};
+use super::{Charged, Cost, Limits, RelationValue, Stop};
 use crate::program::path::NodePath;
 use crate::relations::Relation;
 use super::ir::ClauseIr;
@@ -64,19 +64,17 @@ pub struct Found {
 /// as the entry's computation charged: the hit charges the entry's recorded
 /// cost, so the counts of the evaluation around it are those of one that
 /// computed the entry. `None` where the cache holds no entry, and where the
-/// cost would take a count past its cap ([`Cost::fits`]): the caller then
+/// cost would take a count past its cap ([`Charged::Misfit`]): the caller then
 /// computes the entry, and its charges stop where they stop with empty caches.
 pub fn lookup(session: &TaskSession, limits: &Limits, request: &EntryRequest<'_>, form: &NodePath) -> Option<Found> {
     let found = found_key(session, request.clause.owned(), request.reads, request.example, request.parameters).and_then(|key| session.results.get(&key));
-    session.results.record(|| Recorded::Lookup { key: RecordedKey::of(request), found: found.as_ref().map(|(value, _)| value.clone()) });
-    let (value, cost) = found?;
-    let table = limits.table_work.as_ref();
-    if !cost.fits(&limits.request, table) {
-        return None;
-    }
-    let value = match cost.charge(&limits.request, table, session) {
-        Ok(()) => value.map_stop(|bound| Stop { bound, form: form.clone() }),
-        Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+    session.results.record(|| Recorded::Lookup { key: RecordedKey::of(request), found: found.as_ref().map(|hit| hit.recorded().clone()) });
+    let hit = found?;
+    let cost = hit.cost();
+    let value = match hit.charge(&limits.request, limits.table_work.as_ref(), session) {
+        Charged::Value(value) => value.map_stop(|bound| Stop { bound, form: form.clone() }),
+        Charged::Stopped(_, bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+        Charged::Misfit => return None,
     };
     Some(Found { value, cost })
 }

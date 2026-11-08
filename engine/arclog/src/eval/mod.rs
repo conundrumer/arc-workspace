@@ -61,7 +61,7 @@ pub use driver::FormBodies;
 pub use lookup::{input_relation, output_relation, relation_of};
 pub use models::ModelsEnd;
 pub(crate) use values::{tally_counts, tally_gauges, tally_table};
-pub use values::{ambient, BodyValue, Caps, Cancellation, Cost, Gauge, Gauges, GridValue, Limits, Outcome, ReachedBound, RelationValue, RequestWork, RowReserve, RunFault, Stop, TableWork, REQUEST_WORK_CAP};
+pub use values::{ambient, BodyValue, Caps, Cancellation, Charged, Cost, Gauge, Gauges, GridValue, Hit, Limits, Outcome, ReachedBound, RelationValue, RequestWork, RowReserve, RunFault, Stop, TableWork, REQUEST_WORK_CAP};
 
 use crate::check::CheckedProgram;
 use crate::hash::StableHashMap;

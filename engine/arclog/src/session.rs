@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use crate::eval::pool::InFlight;
-use crate::eval::{Caps, Cost, ReachedBound, RelationValue};
+use crate::eval::{Caps, Cost, Hit, ReachedBound, RelationValue};
 use crate::hash::{StableHash, StableHashMap};
 use crate::relations::{Relation, RelationPart, SharedRows, StorageTag};
 use crate::program::FactRelation;
@@ -78,8 +78,8 @@ pub struct RelationId(u32);
 pub type CachedValue = RelationValue<ReachedBound>;
 
 /// What an entry's computation gives the threads that wait for it: the value
-/// and the cost of the computation.
-pub type Costed = (CachedValue, Cost);
+/// and the cost of the computation, which charging the hit charges again.
+pub type Costed = Hit<CachedValue>;
 
 /// The memo table of evaluated relations, keyed by content, bounded by bytes.
 /// Several threads read and write it at once through a shared reference.
@@ -616,7 +616,7 @@ impl CacheState {
         let view = self.view;
         let entry = self.entries.get_mut(key).filter(|entry| entry.found_under(view))?;
         let last = std::mem::replace(&mut entry.used, tick);
-        let value = (entry.value.clone(), entry.cost);
+        let value = Hit::new(entry.value.clone(), entry.cost);
         let key = self.recency.remove(&last).expect("a recency tick for each entry");
         self.recency.insert(tick, key);
         Some(value)

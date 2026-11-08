@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use super::Context;
 use crate::check::{CheckCache, CheckedProgram, SolverClauses};
-use crate::eval::Outcome;
+use crate::eval::{Hit, Outcome};
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{
     written_inputs, Atom, Body, Choose, Clause, ClauseKeyword, ColumnName, Conjunct, Constraint, ConstraintLabel, ConstraintOp, DeclaredName,
@@ -205,13 +205,13 @@ struct PrefixMemo {
 }
 
 impl PrefixMemo {
-    fn get(&mut self, key: &(PrefixKind, Vec<u8>)) -> Option<Verdict> {
-        if let Some(verdict) = self.entries.get(key) {
-            return Some(verdict.clone());
+    fn get(&mut self, key: &(PrefixKind, Vec<u8>)) -> Option<Hit<Result<(), super::Refusal>>> {
+        if let Some((verdict, cost)) = self.entries.get(key) {
+            return Some(Hit::new(verdict.clone(), *cost));
         }
-        let verdict = self.older.remove(key)?;
-        self.insert(key.clone(), verdict.clone());
-        Some(verdict)
+        let held = self.older.remove(key)?;
+        self.insert(key.clone(), held.clone());
+        Some(Hit::new(held.0, held.1))
     }
 
     fn insert(&mut self, key: (PrefixKind, Vec<u8>), verdict: Verdict) {
@@ -564,9 +564,9 @@ impl State {
         let single = (PrefixKind::SingleCheck, key);
         // The oracle of the mask reads each verdict apart.
         #[cfg(not(feature = "admissible-reference"))]
-        if let Some((verdict, _)) = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&single) {
+        if let Some(hit) = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&single) {
             crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
-            return verdict;
+            return hit.without_request();
         }
         self.cached_verdict(PrefixKind::Check, single.1, &|| true, None, compute)
     }
@@ -579,7 +579,7 @@ impl State {
         let mask = (PrefixKind::Check, key);
         // The oracle of the mask reads each verdict apart.
         #[cfg(not(feature = "admissible-reference"))]
-        if let Some((Ok(()), _)) = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&mask) {
+        if let Some(Ok(())) = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&mask).map(Hit::without_request) {
             crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
             return Ok(());
         }
@@ -604,19 +604,19 @@ impl State {
     fn cached_verdict(&self, kind: PrefixKind, key: Vec<u8>, keep: &dyn Fn() -> bool, charged: Option<(&crate::eval::RequestWork, &crate::session::TaskSession)>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
         let key = (kind, key);
         let held = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&key);
-        if let Some((verdict, cost)) = held {
+        if let Some(hit) = held {
             match charged {
                 None => {
                     crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
-                    return verdict;
+                    return hit.without_request();
                 }
                 // A hit whose cost would pass the request's cap is no hit: the verdict is computed again, and the computation stops where it stops with empty caches.
-                Some((work, session)) if cost.fits(work, None) => {
-                    crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
-                    let _ = cost.charge(work, None, session);
-                    return verdict;
+                Some((work, session)) => {
+                    if let Some(verdict) = hit.charge(work, None, session).value() {
+                        crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
+                        return verdict;
+                    }
                 }
-                Some(_) => {}
             }
         }
         crate::stats::tick(crate::stats::Phase::DecodePrefixMiss);

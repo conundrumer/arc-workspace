@@ -76,7 +76,7 @@ use crate::check::CheckedProgram;
 use crate::eval::cache::{relation_estimate, replay, replay_recorded, Recorded, RecordedKey};
 use crate::eval::carry::{kept_relation, Carry, CarryStore};
 use crate::eval::determinations::det_relation;
-use crate::eval::{Cost, Domain, DomainSize, Evaluation, Outcome, Stop};
+use crate::eval::{Charged, Cost, Domain, DomainSize, Evaluation, Hit, Outcome, Stop};
 use crate::hash::{StableHash, StableHashMap, StableHasher};
 use crate::judge::determination::{Assignment, Det, Domains};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
@@ -291,9 +291,9 @@ impl ProbeMemo {
     }
 
     /// What the walk of `key` gave under `scope`, where the memo keeps it.
-    pub(crate) fn part(&self, scope: Scope, key: &PartKey) -> Option<(PartWalk, Cost)> {
+    pub(crate) fn part(&self, scope: Scope, key: &PartKey) -> Option<Hit<PartWalk>> {
         let parts = self.parts.lock().expect("the kept walks are not poisoned");
-        (scope == self.scope).then(|| parts.get(key).copied()).flatten()
+        (scope == self.scope).then(|| parts.get(key).copied()).flatten().map(|(walk, cost)| Hit::new(walk, cost))
     }
 
     /// Keeps `walk`, what the walk of `key` gave under `scope`, with the `cost`
@@ -439,6 +439,11 @@ impl Tier {
 }
 
 impl Computed {
+    /// `value`, as a hit that charges the cost of this computation.
+    fn hit<T>(&self, value: T) -> Hit<T> {
+        Hit::new(value, self.cost)
+    }
+
     /// This computation with each relation it holds replaced by `one` of it.
     fn with_relations(&self, one: &mut impl FnMut(&Arc<Relation>) -> Arc<Relation>) -> Computed {
         let given = match &self.given {
@@ -641,11 +646,10 @@ impl Domains for ProbeDomains<'_> {
         let limits = evaluation.limits;
         for computed in memo.computed(self.probe.generation, &key) {
             let Some(domain) = computed.given.values() else { continue };
-            if computed.cost.fits(&limits.request, Some(work)) && replay(session, &computed.events) {
-                return Ok(match computed.cost.charge(&limits.request, Some(work), session) {
-                    Ok(()) => domain.clone(),
-                    Err(bound) => Domain::Stopped(Stop { bound, form: evaluation.program.program.form_of(node).clone() }),
-                });
+            match computed.hit(domain).charge_if(&limits.request, Some(work), session, || replay(session, &computed.events)) {
+                Charged::Value(domain) => return Ok(domain.clone()),
+                Charged::Stopped(_, bound) => return Ok(Domain::Stopped(Stop { bound, form: evaluation.program.program.form_of(node).clone() })),
+                Charged::Misfit => {}
             }
         }
         let capture = session.results.begin_capture();
@@ -680,11 +684,10 @@ impl Domains for ProbeDomains<'_> {
         let memo = self.probe.memo;
         let limits = evaluation.limits;
         for computed in memo.computed(self.probe.generation, &key) {
-            if computed.cost.fits(&limits.request, Some(work)) && replay(session, &computed.events) {
-                return Ok(match computed.cost.charge(&limits.request, Some(work), session) {
-                    Ok(()) => computed.given.size(),
-                    Err(bound) => DomainSize::Stopped(Stop { bound, form: evaluation.program.program.form_of(node).clone() }),
-                });
+            match computed.hit(&computed.given).charge_if(&limits.request, Some(work), session, || replay(session, &computed.events)) {
+                Charged::Value(given) => return Ok(given.size()),
+                Charged::Stopped(_, bound) => return Ok(DomainSize::Stopped(Stop { bound, form: evaluation.program.program.form_of(node).clone() })),
+                Charged::Misfit => {}
             }
         }
         let capture = session.results.begin_capture();
@@ -815,11 +818,10 @@ impl Domains for SessionDomains<'_> {
                 }
                 _ => replay_recorded(session, &computed.events),
             };
-            if computed.cost.fits(&limits.request, Some(work)) && replayed() {
-                return Ok(match computed.cost.charge(&limits.request, Some(work), session) {
-                    Ok(()) => domain.clone(),
-                    Err(bound) => Domain::Stopped(Stop { bound, form: evaluation.program.program.form_of(node).clone() }),
-                });
+            match computed.hit(domain).charge_if(&limits.request, Some(work), session, replayed) {
+                Charged::Value(domain) => return Ok(domain.clone()),
+                Charged::Stopped(_, bound) => return Ok(Domain::Stopped(Stop { bound, form: evaluation.program.program.form_of(node).clone() })),
+                Charged::Misfit => {}
             }
         }
         let Some(recording) = session.results.record_on_thread() else {

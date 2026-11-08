@@ -98,7 +98,7 @@ use super::cache::{self, relation_estimate, EntryRequest, Recorded, RecordedKey}
 use super::ir::{ClauseIr, CompiledBody};
 use super::join::Part;
 use super::plan::VariableOrder;
-use super::{Cost, Limits, Outcome, ReachedBound, RelationValue, Stop, TableWork};
+use super::{Charged, Cost, Hit, Limits, Outcome, ReachedBound, RelationValue, Stop, TableWork};
 use crate::program::path::NodePath;
 use crate::hash::{StableHash, StableHashMap, StableHashSet, StableHasher};
 use crate::relations::{ColumnIndex, Relation};
@@ -140,28 +140,26 @@ impl Carry {
         let work = limits.table_work.as_ref()?;
         let request = &limits.request;
         for (carried, older) in self.store.carried(key) {
-            let within = carried.cost.fits(request, None)
-                && match carried.crossing {
-                    None => work.fits(carried.cost.table),
-                    Some(crossing) => crossing.at(work),
-                };
-            if within && cache::replay_recorded(session, &carried.events) {
-                let charged = match carried.crossing {
-                    None => carried.cost.charge(request, Some(work), session),
-                    Some(Crossing { before, after }) => {
-                        work.charge_crossing(carried.cost.table, before, after);
-                        carried.cost.charge(request, None, session)
-                    }
-                };
-                if older {
-                    self.store.promote(key, &carried);
-                }
-                let value = match charged {
-                    Ok(()) => given(carried.value.clone(), form),
-                    Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
-                };
-                return Some((value, carried.cost));
+            // A kept computation that stopped at the table work cap charges its table work as the crossing gives it, so the count is not checked against the cap here.
+            let crossing = carried.crossing;
+            let table = crossing.is_none().then_some(work);
+            let admit = || crossing.is_none_or(|crossing| crossing.at(work)) && cache::replay_recorded(session, &carried.events);
+            let charged = Hit::new(&carried.value, carried.cost).charge_if(request, table, session, admit);
+            if matches!(charged, Charged::Misfit) {
+                continue;
             }
+            if let Some(Crossing { before, after }) = crossing {
+                work.charge_crossing(carried.cost.table, before, after);
+            }
+            if older {
+                self.store.promote(key, &carried);
+            }
+            let value = match charged {
+                Charged::Value(value) => given(value.clone(), form),
+                Charged::Stopped(_, bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+                Charged::Misfit => unreachable!("a misfit continues the loop"),
+            };
+            return Some((value, carried.cost));
         }
         None
     }

@@ -655,7 +655,7 @@ impl Cost {
     /// fit is no hit: the caller computes the entry again, and the
     /// computation stops at the charge that a computation with empty caches
     /// stops at.
-    pub fn fits(&self, request: &RequestWork, table: Option<&TableWork>) -> bool {
+    fn fits(&self, request: &RequestWork, table: Option<&TableWork>) -> bool {
         request.count().saturating_add(self.request) <= request.cap() && table.is_none_or(|table| table.fits(self.table))
     }
 
@@ -663,7 +663,7 @@ impl Cost {
     /// `table`, and the counts to the gauges of `request` and to `session`.
     /// The rows of index builds that wait for a charge stay waiting for the
     /// next one, as they do around a computation.
-    pub fn charge(&self, request: &RequestWork, table: Option<&TableWork>, session: &TaskSession) -> Result<(), ReachedBound> {
+    fn charge(&self, request: &RequestWork, table: Option<&TableWork>, session: &TaskSession) -> Result<(), ReachedBound> {
         let held = tally(|tally| std::mem::take(&mut tally.unbilled));
         tally_table(self.table);
         let charged = request.charge(self.request).and_then(|()| table.map_or(Ok(()), |table| table.charge(self.table)));
@@ -674,6 +674,85 @@ impl Cost {
         session.record_counts(self.counts);
         tally(|tally| tally.unbilled = tally.unbilled.saturating_add(held));
         charged
+    }
+}
+
+/// A value that a cache holds, with the [`Cost`] that its computation charged.
+///
+/// The value comes out of a hit only through [`Hit::charge`] or
+/// [`Hit::charge_if`], which charge the cost again, so a caller cannot use a
+/// cached value and leave its cost out of the counts. `Cost::fits` and
+/// `Cost::charge` are private to this module for the same reason. A caller
+/// that has no request to charge says so with [`Hit::without_request`].
+#[derive(Clone, Debug)]
+pub struct Hit<T> {
+    value: T,
+    cost: Cost,
+}
+
+/// What charging a [`Hit`] gave.
+#[derive(Debug)]
+pub enum Charged<T> {
+    /// The cost fit under the caps and was charged: the value.
+    Value(T),
+    /// The cost was charged and took a count past its cap: the value, and the
+    /// stop.
+    Stopped(T, ReachedBound),
+    /// The cost would take a count past its cap, or the entry could not be
+    /// replayed, so the hit is no hit and nothing was charged: the caller
+    /// computes the entry, and its charges stop where they stop with every
+    /// cache empty.
+    Misfit,
+}
+
+impl<T> Charged<T> {
+    /// The value, where the hit was charged, whether or not the charge took a
+    /// count past its cap, and `None` for a misfit.
+    pub fn value(self) -> Option<T> {
+        match self {
+            Charged::Value(value) | Charged::Stopped(value, _) => Some(value),
+            Charged::Misfit => None,
+        }
+    }
+}
+
+impl<T> Hit<T> {
+    /// `value`, whose computation charged `cost`.
+    pub fn new(value: T, cost: Cost) -> Self {
+        Hit { value, cost }
+    }
+
+    /// What the computation of the value charged.
+    pub fn cost(&self) -> Cost {
+        self.cost
+    }
+
+    /// The value held, for the record of a lookup that charges no cost.
+    pub(crate) fn recorded(&self) -> &T {
+        &self.value
+    }
+
+    /// Charges the cost to `request`, to `table` where there is one, and to
+    /// `session`, as [`Cost::charge`] does, where the cost fits under the caps.
+    pub fn charge(self, request: &RequestWork, table: Option<&TableWork>, session: &TaskSession) -> Charged<T> {
+        self.charge_if(request, table, session, || true)
+    }
+
+    /// [`Hit::charge`] where the cost fits and `admit`, which runs after the
+    /// fit is known and before the charge, gives true.
+    pub fn charge_if(self, request: &RequestWork, table: Option<&TableWork>, session: &TaskSession, admit: impl FnOnce() -> bool) -> Charged<T> {
+        if !self.cost.fits(request, table) || !admit() {
+            return Charged::Misfit;
+        }
+        match self.cost.charge(request, table, session) {
+            Ok(()) => Charged::Value(self.value),
+            Err(bound) => Charged::Stopped(self.value, bound),
+        }
+    }
+
+    /// The value, for a lookup made where no request counts work.
+    pub fn without_request(self) -> T {
+        self.value
     }
 }
 

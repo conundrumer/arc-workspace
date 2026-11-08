@@ -13,7 +13,7 @@ use super::join::{self, Budget, JoinInputs, NodeInput, Part};
 use super::models::{self, Choice, Entry, Factor};
 use super::determinations::{self, Domain};
 use super::{cache, carry, init_form, instance, plan, proposers, rigid};
-use super::{Cost, Evaluation, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
+use super::{Charged, Cost, Evaluation, Hit, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
 use crate::hash::{StableHash, StableHashMap};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Clause, ParamValue, ProgramRelation, RelationRef};
@@ -513,20 +513,17 @@ impl<'e, 'a> Driver<'e, 'a> {
                 Some(found) => (Ok(found.value), found.cost),
                 None => evaluate(),
             };
-            let shared = value.as_ref().ok().and_then(cache::cached).map(|value| (value, cost));
+            let shared = value.as_ref().ok().and_then(cache::cached).map(|value| Hit::new(value, cost));
             own = Some(value);
             shared
         });
         own.unwrap_or_else(|| {
-            let (value, cost) = shared.expect("a value from the computation another thread ended");
-            let table = limits.table_work.as_ref();
-            if !cost.fits(&limits.request, table) {
-                return evaluate().0;
+            let hit = shared.expect("a value from the computation another thread ended");
+            match hit.charge(&limits.request, limits.table_work.as_ref(), session) {
+                Charged::Value(value) => Ok(value.map_stop(|bound| Stop { bound, form: form.clone() })),
+                Charged::Stopped(_, bound) => Ok(RelationValue::Stopped(Stop { bound, form: form.clone() })),
+                Charged::Misfit => evaluate().0,
             }
-            Ok(match cost.charge(&limits.request, table, session) {
-                Ok(()) => value.map_stop(|bound| Stop { bound, form: form.clone() }),
-                Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
-            })
         })
     }
 

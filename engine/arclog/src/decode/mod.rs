@@ -69,7 +69,7 @@ use crate::hash::StableHashMap;
 use crate::eval::instance::Constructions;
 use crate::eval::copies::{CopyViolation, CopyViolations};
 use crate::eval::values::HeldStops;
-use crate::eval::{Cancellation, RequestWork, TableWork};
+use crate::eval::{Cancellation, Hit, RequestWork, TableWork};
 use crate::judge::candidates::PairCandidates;
 use crate::program::path::NodePath;
 use crate::program::{ProgramRelation, RelationRef};
@@ -169,6 +169,14 @@ struct Mask {
     cost: crate::eval::Cost,
 }
 
+impl Mask {
+    /// The mask with the cost that a call of [`Decoder::admissible`] charges
+    /// for it.
+    fn hit(&self) -> Hit<TokenMask> {
+        Hit::new(self.mask.clone(), self.cost)
+    }
+}
+
 /// The [`Mask`] of a decoder's state, once computed. A clone holds none, so
 /// a fork, and a checkpoint of a replay, hold no states.
 #[derive(Default)]
@@ -216,13 +224,13 @@ pub(crate) struct PathMasks {
 }
 
 impl PathMasks {
-    fn get(&mut self, key: u128) -> Option<(TokenMask, crate::eval::Cost)> {
-        if let Some(mask) = self.entries.get(&key) {
-            return Some(mask.clone());
+    fn get(&mut self, key: u128) -> Option<Hit<TokenMask>> {
+        if let Some((mask, cost)) = self.entries.get(&key) {
+            return Some(Hit::new(mask.clone(), *cost));
         }
-        let mask = self.older.remove(&key)?;
-        self.insert(key, mask.clone());
-        Some(mask)
+        let held = self.older.remove(&key)?;
+        self.insert(key, held.clone());
+        Some(Hit::new(held.0, held.1))
     }
 
     fn insert(&mut self, key: u128, mask: (TokenMask, crate::eval::Cost)) {
@@ -402,11 +410,10 @@ impl<'a> Decoder<'a> {
         if let Some(held) = self.held.0.get() {
             // The mask charges what its computation charged, so a second call at a state counts as the first did.
             let work = self.request_work();
-            if !held.cost.fits(&work, None) {
-                return self.compute_mask().mask;
-            }
-            let _ = held.cost.charge(&work, None, self.session);
-            return held.mask.clone();
+            return match held.hit().charge(&work, None, self.session).value() {
+                Some(mask) => mask,
+                None => self.compute_mask().mask,
+            };
         }
         let mask = self.path_mask();
         if self.request_work().is_past_cap() {
@@ -794,11 +801,11 @@ impl<'a> Decoder<'a> {
         let Some(key) = self.path_key() else { return measured() };
         let kept = self.session.path_masks.lock().expect("the masks are not poisoned").get(key);
         // A mask from the session charges what its computation charged, unless that would pass the request's cap, where the mask is computed here and stops where it stops with empty caches.
-        if let Some((mask, cost)) = kept
-            && cost.fits(&work, None)
-        {
-            let _ = cost.charge(&work, None, self.session);
-            return Mask { mask, steps: StableHashMap::default(), cost };
+        if let Some(hit) = kept {
+            let cost = hit.cost();
+            if let Some(mask) = hit.charge(&work, None, self.session).value() {
+                return Mask { mask, steps: StableHashMap::default(), cost };
+            }
         }
         let mask = measured();
         // A mask that a stop at the request cap cut short is the mask of no state.
