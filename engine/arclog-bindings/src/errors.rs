@@ -47,11 +47,14 @@ pub fn budget_reached(py: Python<'_>, bound: ReachedBound, left_out: &[String]) 
 }
 
 /// The Python error for `error`, which the engine gives for a program or a
-/// stream that it refuses: a `CheckRefused` for a refusal of a check, with the
-/// attributes `check`, `at`, `line` and `column` of the first refusal in it,
-/// and a `Refusal` for any other reason.
+/// stream: a `CheckRefused` for a refusal of a check, with the attributes
+/// `check`, `at`, `line` and `column` of the first refusal in it, a `Fault`
+/// for a failure inside the engine, and a `Refusal` for any other reason.
 pub fn study_error(py: Python<'_>, error: StudyError) -> PyErr {
     let message = error.to_string();
+    if matches!(error, StudyError::Fault(_)) {
+        return Fault::new_err(message);
+    }
     let Some((check, diagnostic)) = error.first_check_error() else {
         return Refusal::new_err(message);
     };
@@ -73,6 +76,17 @@ pub fn study_error(py: Python<'_>, error: StudyError) -> PyErr {
         Ok(()) => refused,
         Err(failure) => failure,
     }
+}
+
+/// The `Refusal` for the message of an engine call that refuses its input.
+pub fn refused(message: String) -> PyErr {
+    Refusal::new_err(message)
+}
+
+/// The `Fault` for the message of an engine call that fails inside the
+/// engine.
+pub fn faulted(message: String) -> PyErr {
+    Fault::new_err(message)
 }
 
 /// The value of `outcome`, or the `Fault` that its fault raises.

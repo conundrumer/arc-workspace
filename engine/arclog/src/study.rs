@@ -39,7 +39,7 @@ pub struct StudyProgram {
     display_names_cache: Arc<OnceLock<(usize, Arc<crate::write::LabelNames>)>>,
     render_cache: Arc<OnceLock<(usize, Result<serde_json::Value,String>)>>,
     source_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyProgram,String>)>>,
-    stream_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyStream,String>)>>,
+    stream_cache: Arc<OnceLock<(usize,DecodeSettings,Result<StudyStream,StudyError>)>>,
     written_cache: Arc<OnceLock<(usize,DecodeSettings,Result<Arc<WrittenStream>,Diagnostic>)>>,
     mutation_checks: Arc<OnceLock<Result<Arc<CheckCache>,String>>>,
     typed_sites_cache: Arc<OnceLock<(usize,Result<Arc<crate::check::render_sites::TypedSiteExport>,String>)>>,
@@ -72,6 +72,8 @@ pub enum StudyError {
     /// Any other reason the engine refuses the program or the stream, as
     /// text.
     Other(String),
+    /// A failure inside the engine, as text: the input is no reason for it.
+    Fault(String),
 }
 
 impl StudyError {
@@ -93,7 +95,7 @@ impl StudyError {
                 DiagnosticKind::Check(check) if d.severity == Severity::Error => Some((check, d)),
                 _ => None,
             }),
-            StudyError::Other(_) => None,
+            StudyError::Other(_) | StudyError::Fault(_) => None,
         }
     }
 }
@@ -106,7 +108,7 @@ impl std::fmt::Display for StudyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StudyError::Refused(diagnostics) => f.write_str(&diagnostics_text(diagnostics)),
-            StudyError::Other(message) => f.write_str(message),
+            StudyError::Other(message) | StudyError::Fault(message) => f.write_str(message),
         }
     }
 }
@@ -425,6 +427,18 @@ impl StudyProgram {
         registry: &Registry,
         settings: &DecodeSettings,
     ) -> Result<StudyStream, String> {
+        self.try_decode_stream(registry, settings).map_err(String::from)
+    }
+
+    /// [`StudyProgram::decode_stream`], with the error typed: a program that
+    /// is outside the requested decode vocabulary is a [`StudyError::Other`],
+    /// and a token that the writer emits outside the vocabulary is a
+    /// [`StudyError::Fault`].
+    pub fn try_decode_stream(
+        &self,
+        registry: &Registry,
+        settings: &DecodeSettings,
+    ) -> Result<StudyStream, StudyError> {
         let key=registry as *const Registry as usize;
         let cached=self.stream_cache.get_or_init(||(key,*settings,self.write_stream(registry,settings)));
         if cached.0==key && cached.1==*settings {cached.2.clone()} else {self.write_stream(registry,settings)}
@@ -440,9 +454,9 @@ impl StudyProgram {
         if cached.0==key && cached.1==*settings {cached.2.clone()} else {write()}
     }
 
-    fn write_stream(&self,registry:&Registry,settings:&DecodeSettings)->Result<StudyStream,String> {
+    fn write_stream(&self,registry:&Registry,settings:&DecodeSettings)->Result<StudyStream,StudyError> {
         let vocabulary = Vocabulary::new(registry, settings);
-        let written = self.written_stream(registry,settings).map_err(|d| diagnostics_text(&[d]))?;
+        let written = self.written_stream(registry,settings).map_err(|d| StudyError::of_diagnostics(&[d]))?;
         let mut stream = StudyStream {
             ids: Vec::new(),
             model: Vec::new(),
@@ -450,7 +464,7 @@ impl StudyProgram {
         };
         for (token, emitter) in &written.tokens {
             stream.ids.push(vocabulary.id(token).ok_or_else(|| {
-                format!("writer emitted a token outside the vocabulary: {token}")
+                StudyError::Fault(format!("writer emitted a token outside the vocabulary: {token}"))
             })?);
             stream.model.push(u8::from(*emitter == Emitter::Model));
         }

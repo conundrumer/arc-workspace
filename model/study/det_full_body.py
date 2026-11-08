@@ -139,7 +139,7 @@ def acquire_det_full_body_train_point(ev,record,adapter,ntrain,ntest,side='mutan
     cache_root.mkdir(parents=True,exist_ok=True);path=cache_root/(_sha(key)+'.json.gz');ledger=[]
     try:
         packet=stored();kind='stored_raw'
-    except (ValueError,OSError) as error:
+    except (ev.arclog.Refusal,ValueError,OSError) as error:
         ledger.append(dict(source='stored_raw',status='unavailable',reason=str(error)))
         if path.exists():
             with gzip.open(path,'rt') as stream:envelope=json.load(stream)

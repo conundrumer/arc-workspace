@@ -3,7 +3,8 @@ use crate::case_tables::PyCaseTables;
 use arclog::decode::corpus::read_task_files;
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession};
-use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, constructions};
+use arclog::study::StudyError;
+use arclog_bindings::{Names, PyMutationPoint, PyStudyProgram, PyValidMutant, constructions, refused, study_error};
 use arclog_tables::columns::{case_columns_held_in,case_columns_in};
 use arclog::eval::join::Materializer;
 use arclog_tables::identity::identify;
@@ -98,15 +99,15 @@ impl PyStudyTaskEvaluator {
     /// Catch native unwinds while the guard itself remains in scope, so a
     /// packing assertion becomes a Python exception without poisoning the
     /// task mutex. Failed case observations are discarded, never reused.
-    fn with_cache<T>(&self,operation:&str,run:impl FnOnce(&mut study_pair::PairCache)->Result<T,String>)->Result<T,String> {
-        let mut cache=self.cache.lock().map_err(|_|"task evaluator cache was poisoned; call finish_case to discard the failed case".to_owned())?;
+    fn with_cache<T>(&self,operation:&str,run:impl FnOnce(&mut study_pair::PairCache)->Result<T,String>)->Result<T,StudyError> {
+        let mut cache=self.cache.lock().map_err(|_|StudyError::Fault("task evaluator cache was poisoned; call finish_case to discard the failed case".to_owned()))?;
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(||run(&mut cache))) {
-            Ok(result)=>result,
+            Ok(result)=>result.map_err(StudyError::Other),
             Err(payload)=>{
                 let reason=arclog::decode::corpus::replay_panic(&*payload);
                 cache.finish_case();
                 self.session.results.clear();
-                Err(format!("native {operation} panicked; failed case discarded: {reason}"))
+                Err(StudyError::Fault(format!("native {operation} panicked; failed case discarded: {reason}")))
             }
         }
     }
@@ -147,7 +148,7 @@ impl PyStudyTaskEvaluator {
         let opened=py.detach(||self.with_cache("prefix_universe",|cache| {
             if cache.activate(&program.program) {self.session.results.clear();}
             Ok(study_pair::prefix::open(&program.program,&point,&self.task,&self.session,constructions,&self.settings,assignment_cap))
-        })).map_err(PyValueError::new_err)?;
+        })).map_err(|error| study_error(py,error))?;
         let (inner,mut report)=match opened {
             Ok(universe)=>{let report=universe.report.clone();(Some(universe),report)},
             Err(reason)=>{let mut report=reason.report();
@@ -225,7 +226,7 @@ impl PyStudyTaskEvaluator {
             result.report["complete"]=(packing_complete && maps_complete && result.report["status"]=="complete"
                 && result.report["table_coverage"].as_array().is_some_and(|rows|rows.iter().all(|r|r["complete"]==true))).into();
             Ok((result.report,columns))
-        })).map_err(PyValueError::new_err)?;
+        })).map_err(|error| study_error(py,error))?;
         let side=if mutant.is_some(){"mutant"}else{"gold"};
         Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),side.into(),false,self.settings.projection_cap,columns,None,None)?))
     }
@@ -234,22 +235,28 @@ impl PyStudyTaskEvaluator {
     fn from_stream(&self,py:Python<'_>,ids:Vec<u32>,model:Vec<u8>)->PyResult<PyStudyProgram> {
         if ids.len()!=model.len() || model.iter().any(|f|*f>1) {return Err(PyValueError::new_err("expected equal-length ids/model and flags 0 or 1"));}
         let constructions=constructions()?;
-        let program=py.detach(|| self.with_cache("from_stream",|cache| {
+        // The outer error is the call's own failure, a panic or a poisoned cache; the
+        // inner one is the stream's refusal.
+        let program=py.detach(|| self.with_cache("from_stream",|cache| -> Result<Result<arclog::study::StudyProgram,StudyError>,String> {
             // A new ingestion starts a case even if decoding subsequently faults.
             cache.finish_case();
             self.session.results.clear();
             let mut decoder=arclog::decode::Decoder::new(&self.task,&self.session,Registry::get(),constructions,&self.settings);
             let mut i=0;
             while i<ids.len() {
-                if model[i]!=1 {return Err(format!("unexpected engine token at {i}"));}
-                let token=decoder.vocabulary().token(ids[i]).ok_or_else(||format!("token outside vocabulary at {i}"))?.clone();
-                let step=decoder.step_untested(token).map_err(|e|format!("replay at {i}: {e:?}"))?;
+                if model[i]!=1 {return Ok(Err(format!("unexpected engine token at {i}").into()));}
+                let Some(token)=decoder.vocabulary().token(ids[i]).cloned() else {return Ok(Err(format!("token outside vocabulary at {i}").into()));};
+                let step=match decoder.step_untested(token) {
+                    Ok(step)=>step,
+                    Err(refusal)=>return Ok(Err(format!("replay at {i}: {refusal:?}").into())),
+                };
                 let end=i+1+step.forced.len();
-                if end>ids.len() || model[i+1..end].iter().any(|f|*f!=0) || step.forced.iter().zip(&ids[i+1..end]).any(|(t,id)|decoder.vocabulary().id(t)!=Some(*id)) {return Err(format!("engine echo mismatch at {i}"));}
+                if end>ids.len() || model[i+1..end].iter().any(|f|*f!=0) || step.forced.iter().zip(&ids[i+1..end]).any(|(t,id)|decoder.vocabulary().id(t)!=Some(*id)) {return Ok(Err(format!("engine echo mismatch at {i}").into()));}
                 i=end;
             }
-            arclog::study::StudyProgram::from_decoded(decoder.program().clone(),Registry::get())
-        })).map_err(PyValueError::new_err)?;
+            // The decoder has checked each prefix, so a refusal of the finished program is a failure of the engine.
+            Ok(arclog::study::StudyProgram::from_decoded(decoder.program().clone(),Registry::get()).map_err(StudyError::Fault))
+        })).map_err(|error| study_error(py,error))?.map_err(|error| study_error(py,error))?;
         Ok(PyStudyProgram {program,settings:self.settings})
     }
 
@@ -262,7 +269,7 @@ impl PyStudyTaskEvaluator {
         let mutant=py.detach(|| {
             let spec=gold.program.replay_spec(&identity,Registry::get(),&self.settings)?;
             gold.program.construct(&spec).map_err(str::to_owned)
-        }).map_err(PyValueError::new_err)?;
+        }).map_err(refused)?;
         Ok((PyMutationPoint {inner:mutant.point().clone()},PyValidMutant {inner:mutant,settings:self.settings}))
     }
 
@@ -339,7 +346,7 @@ impl PyStudyTaskEvaluator {
             report["program_sexp"]=gold.program.sexp(Registry::get()).into();
             report["native_columns_seconds"]=started.elapsed().seconds().into();
             Ok((report,columns))
-        })).map_err(PyValueError::new_err)?;
+        })).map_err(|error| study_error(py,error))?;
         Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?))
     }
 
@@ -358,7 +365,7 @@ impl PyStudyTaskEvaluator {
                 &self.session,constructions,&self.settings,cache);
             report["task"]=self.task_name.clone().into();
             Ok(report.to_string())
-        })).map_err(PyValueError::new_err)
+        })).map_err(|error| study_error(py,error))
     }
 
     /// Fresh original-scope BODY evidence at the cached full gold choices.
@@ -389,7 +396,7 @@ impl PyStudyTaskEvaluator {
             result.report["packed_table_count"]=columns.tables.form.len().into();
             result.report["body_table_packed"]=result.report["body_table"].as_u64().is_some_and(|i|(i as usize)<columns.tables.form.len()).into();
             Ok((result.report,columns))
-        })).map_err(PyValueError::new_err)?;
+        })).map_err(|error| study_error(py,error))?;
         Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?))
     }
 
@@ -399,14 +406,14 @@ impl PyStudyTaskEvaluator {
         let mut result=py.detach(|| self.with_cache("evaluate_pair",|cache| {
             if cache.activate(&gold.program) {self.session.results.clear();}
             Ok(study_pair::evaluate_pair_cached(&gold.program,&point.inner,&mutant.inner,&self.task,&self.judged,&self.session,constructions,&self.settings,cache))
-        })).map_err(PyValueError::new_err)?;
+        })).map_err(|error| study_error(py,error))?;
         let (g,m)=pack_pair(py,&self.task_name,["gold","mutant"],self.settings.projection_cap,&self.ident_namespace,[&gold.program,mutant.inner.program()],&mut result,|result,gold| {
             self.with_cache("pack_pair_side",|cache| {
                 let materializer=Materializer::new(&self.session,&result.limits);
                 Ok(study_pair::pair_side_columns_cached(&materializer,&self.evidence,result,gold,self.task.train.len(),cache))
-            })
+            }).map_err(String::from)
         })?;
-        result.report["cache"]=self.with_cache("cache_stats",|cache|Ok(cache.stats())).map_err(PyValueError::new_err)?;
+        result.report["cache"]=self.with_cache("cache_stats",|cache|Ok(cache.stats())).map_err(|error| study_error(py,error))?;
         result.report["cache"]["session_result_bytes"]=self.session.results.bytes().into();
         Ok((result.report.to_string(),g,m))
     }
@@ -526,7 +533,7 @@ fn pack_pair<R:PackingReport+Send+Sync>(
         let (columns,elapsed)=py.detach(|| {
             let started=arclog::clock::Stopwatch::start();
             pack(result,index==0).map(|columns|(columns,started.elapsed().seconds()))
-        }).map_err(PyValueError::new_err)?;
+        }).map_err(refused)?;
         seconds+=elapsed;
         stops.extend(columns.packing_stop().cloned());
         let mut binding=table_binding(&columns,sides[index],result.packing_report(),ident_namespace);

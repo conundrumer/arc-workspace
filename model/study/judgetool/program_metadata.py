@@ -120,7 +120,7 @@ def export_named_program(ev, program, names):
     naming = names if isinstance(names, str) else json.dumps(names)
     try:
         return json.loads(ev.arclog.study_program_export_json(program, naming))
-    except ValueError as error:
+    except ev.arclog.Refusal as error:
         if 'relation source-name map does not preserve native slot identity' not in str(error):
             raise
     # This is proof validation, never the export consumed by table binders.

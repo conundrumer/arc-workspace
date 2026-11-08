@@ -143,12 +143,13 @@ def construct_body(member,tasks):
 def _same_native_program(member,rec,tasks):
     """Only text mismatches need this check (e.g. repaired writer names)."""
     if not member.get('identity') or not rec.get('mutant_stream'):return False
+    import arclog
     try:
         _,gold=_identity_gold(member['task'],member['case'],canonical(member['gold']),str(tasks))
         mutant=gold.construct_identity(canonical(member['identity']))
         ids,model,paths=mutant.decode_stream();old=rec['mutant_stream']
         return ids==old['ids'] and list(model)==old['model'] and paths==old['paths']
-    except (ValueError,KeyError,TypeError,RuntimeError):return False
+    except (arclog.Refusal,ValueError,KeyError,TypeError,RuntimeError):return False
 
 
 def accept(db,pair,member,rec,locator):

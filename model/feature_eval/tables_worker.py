@@ -172,7 +172,7 @@ def worker(root, task):
         form = p.clause_path[0]
         try:
             specs, _ = gold.draw_specs(p, 1, 5000, 0, operation='mixed', source_revision=SEED, task=task, case=c.case)
-        except ValueError:
+        except arclog.Refusal:
             continue
         by_form.setdefault(form, []).extend(specs)
         points.setdefault(form, set()).add(p.kind)

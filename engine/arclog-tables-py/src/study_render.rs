@@ -1,7 +1,6 @@
 //! Native renderer provenance API, alongside the table implementation it reads.
 use arclog::registry::Registry;
-use arclog_bindings::{Names, PyStudyProgram, PyValidMutant};
-use pyo3::exceptions::PyValueError;
+use arclog_bindings::{refused, Names, PyStudyProgram, PyValidMutant};
 use pyo3::prelude::*;
 
 #[pyfunction]
@@ -14,7 +13,7 @@ fn study_frame_sources_json(py: Python<'_>, program: &PyStudyProgram) -> PyResul
         )
         .map(|v| v.to_string())
     })
-    .map_err(PyValueError::new_err)
+    .map_err(refused)
 }
 
 fn complete_export(program:&arclog::study::StudyProgram,settings:&arclog::stream::DecodeSettings)->Result<serde_json::Value,String> {
@@ -48,7 +47,7 @@ fn study_program_export_json(py:Python<'_>,program:&PyStudyProgram,relation_sour
         }
         Ok::<_,String>(export.to_string())
     })
-        .map_err(PyValueError::new_err)
+        .map_err(refused)
 }
 
 #[pyfunction]
@@ -70,7 +69,7 @@ fn study_mutant_export_json(py:Python<'_>,mutant:&PyValidMutant,relation_source_
         export["mutation_identity"]=mutant.inner.identity();
         export["source_path_correspondence"]=mutant.inner.source_paths();
         Ok::<_,String>(export.to_string())
-    }).map_err(PyValueError::new_err)
+    }).map_err(refused)
 }
 
 pub fn register(names: &Names<'_, '_>) -> PyResult<()> {

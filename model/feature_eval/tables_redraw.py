@@ -68,7 +68,7 @@ def worker(old_root, new_root, task):
         if any(query['form'] == form for query in lost):
             try:
                 specs, _ = gold.draw_specs(point, 1, 5000, 0, operation='mixed', source_revision=SEED, task=task, case=case.case)
-            except ValueError:
+            except arclog.Refusal:
                 continue
             specs_of.setdefault(form, []).extend(specs)
     gold_forms = parse_forms(case.arclog)

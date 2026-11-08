@@ -2,9 +2,9 @@
 use arclog::mutation::{MutationPoint, MutationSpec, ValidMutant};
 use arclog::registry::Registry;
 use arclog::stream::DecodeSettings;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::errors::{faulted, refused};
 use crate::study::PyStudyProgram;
 
 #[pyclass(name = "MutationPoint", frozen, module = "arclog")]
@@ -76,7 +76,7 @@ impl PyValidMutant {
     #[pyo3(signature = (*, survey=false))]
     fn static_prune_json(&self, py: Python<'_>, survey: bool) -> PyResult<String> {
         py.detach(||self.inner.static_prune_json(Registry::get(),survey))
-            .map(|v|v.to_string()).map_err(PyValueError::new_err)
+            .map(|v|v.to_string()).map_err(refused)
     }
 
     /// Includes the original-to-mutant AST path correspondence.
@@ -86,7 +86,7 @@ impl PyValidMutant {
             value["mutation_identity"]=self.inner.identity();
             value["source_path_correspondence"]=self.inner.source_paths();
             Ok(value.to_string())
-        }).map_err(|error:String|PyValueError::new_err(error))
+        }).map_err(|error: String| faulted(error))
     }
 
     fn sexp(&self) -> String {
@@ -99,7 +99,7 @@ impl PyValidMutant {
         let stream = self
             .inner
             .decode_stream(Registry::get(), &self.settings)
-            .map_err(PyValueError::new_err)?;
+            .map_err(faulted)?;
         Ok((
             stream.ids,
             stream.model,
@@ -120,6 +120,6 @@ impl PyValidMutant {
         self.inner
             .audit()
             .map(|v| v.to_string())
-            .map_err(PyValueError::new_err)
+            .map_err(faulted)
     }
 }

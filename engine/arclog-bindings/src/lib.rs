@@ -37,7 +37,7 @@ pub use names::Names;
 pub use results::PyConsistencyKind;
 pub use settings::PyDecodeSettings;
 pub use study::PyStudyProgram;
-pub use errors::{budget_reached, study_error, BudgetReached, CheckRefused, RecordedIdentityError};
+pub use errors::{budget_reached, faulted, refused, study_error, BudgetReached, CheckRefused, RecordedIdentityError};
 pub use mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 
 use arclog::eval::instance::Constructions;

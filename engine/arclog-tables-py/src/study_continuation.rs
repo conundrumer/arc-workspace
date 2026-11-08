@@ -14,7 +14,7 @@ fn study_continuation(py:Python<'_>,evaluator:&PyStudyTaskEvaluator,gold:&PyStud
     let mut result=py.detach(|| evaluator.with_cache("study_continuation",|cache| {
         study_pair::continuation::evaluate(&gold.program,&mutant.inner,&evaluator.task,
             &evaluator.judged,&evaluator.session,constructions,&evaluator.settings,cache,expected.as_ref())
-    })).map_err(PyValueError::new_err)?;
+    })).map_err(|error| study_error(py,error))?;
     let (g,m)=pack_pair(py,&evaluator.task_name,["gold-continuation","mutant-continuation"],evaluator.settings.projection_cap,&evaluator.ident_namespace,[&gold.program,mutant.inner.program()],&mut result,|result,gold| {
         let materializer=Materializer::new(&evaluator.session,&result.limits);
         Ok(case_columns_in(&materializer,&evaluator.evidence,if gold {&result.gold} else {&result.mutant},evaluator.task.train.len(),None))

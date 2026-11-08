@@ -13,7 +13,7 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyTuple};
 
-use crate::errors::study_error;
+use crate::errors::{faulted, refused, study_error};
 use crate::mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 use crate::session::PySession;
 use crate::settings::PyDecodeSettings;
@@ -104,8 +104,8 @@ impl PyStudyProgram {
             })
             .map_err(|error| study_error(py, error))?;
         program
-            .decode_stream(Registry::get(), &settings)
-            .map_err(|error| study_error(py, error.into()))?;
+            .try_decode_stream(Registry::get(), &settings)
+            .map_err(|error| study_error(py, error))?;
         Ok(Self { program, settings })
     }
 
@@ -133,7 +133,7 @@ impl PyStudyProgram {
                 });
                 let ast = reader.read(&ids, &model)?;
                 let program = StudyProgram::read_decoded_cached(ast, Registry::get(), &mut cached.checks)?;
-                let written = program.decode_stream(Registry::get(), &settings)?;
+                let written = program.try_decode_stream(Registry::get(), &settings)?;
                 if written.ids != ids || written.model != model {
                     return Err(
                         "parsed program does not reproduce its exact input stream".into()
@@ -149,14 +149,14 @@ impl PyStudyProgram {
     #[pyo3(signature = (*, normalize=false))]
     fn static_prune_json(&self, py: Python<'_>, normalize: bool) -> PyResult<String> {
         py.detach(|| self.program.static_prune_report_with_settings(Registry::get(), normalize, &self.settings))
-            .map(|value| value.to_string()).map_err(PyValueError::new_err)
+            .map(|value| value.to_string()).map_err(refused)
     }
 
     /// The actual checked normalized gold and its source-correspondence report.
     /// This grants no evaluation equivalence or historical table reuse.
     fn normalized_gold(&self, py: Python<'_>) -> PyResult<(Self, String)> {
         let (program, report) = py.detach(|| self.program.normalized_gold(Registry::get(), &self.settings))
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok((Self { program, settings: self.settings }, report.to_string()))
     }
 
@@ -199,20 +199,20 @@ impl PyStudyProgram {
     /// Full held DET choices and exact body-read subsets, decoded by Term::decode.
     fn choice_evidence_json(&self, py: Python<'_>, kept_json: &str) -> PyResult<String> {
         py.detach(|| arclog::study::render_choices::export_json(&self.program, kept_json, Registry::get()))
-            .map(|v| v.to_string()).map_err(PyValueError::new_err)
+            .map(|v| v.to_string()).map_err(refused)
     }
 
     /// Exact OUT key projection onto native body columns and original label paths.
     fn out_bindings_json(&self, py: Python<'_>) -> PyResult<String> {
         py.detach(|| arclog::study::render_out::export(&self.program))
-            .map(|v| v.to_string()).map_err(PyValueError::new_err)
+            .map(|v| v.to_string()).map_err(faulted)
     }
 
     /// Relation names from the original case writer, guarded by exact stream identity.
     fn relation_source_names_json(&self, py: Python<'_>, corpus: &str, task: &str, case: &str) -> PyResult<String> {
         py.detach(|| arclog::study::render_names::from_case(self.program.checked(), &self.settings,
             std::path::Path::new(corpus), task, case).map(|v|v.to_string()))
-            .map_err(PyValueError::new_err)
+            .map_err(refused)
     }
 
     fn render_json(&self, py: Python<'_>) -> PyResult<String> {
@@ -221,7 +221,7 @@ impl PyStudyProgram {
                 .render_json(Registry::get())
                 .map(|v| v.to_string())
         })
-        .map_err(PyValueError::new_err)
+        .map_err(faulted)
     }
 
     /// The hash of the resolver's content of the query at `index`: free
@@ -324,7 +324,7 @@ impl PyStudyProgram {
                     Registry::get(),
                 )
             })
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok((
             specs
                 .into_iter()
@@ -337,7 +337,7 @@ impl PyStudyProgram {
     /// Direct source-conjunct inventory; unsupported connectives remain visible.
     fn substitution_occurrences_json(&self, point: &PyMutationPoint) -> PyResult<String> {
         self.program.substitution_occurrences(&point.inner)
-            .map(|value| value.to_string()).map_err(PyValueError::new_err)
+            .map(|value| value.to_string()).map_err(refused)
     }
 
     /// New occurrence-proportional population; does not change draw_specs.
@@ -352,7 +352,7 @@ impl PyStudyProgram {
         let origin = arclog::mutation::Source { revision:source_revision, task, case };
         let (specs, stats) = py.detach(|| self.program.draw_substitutes_at(&point.inner,
             &at, count, seed, origin, &self.settings, Registry::get()))
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok((specs.into_iter().map(|inner| PyMutationSpec { inner }).collect(), stats.json().to_string()))
     }
 
@@ -368,7 +368,7 @@ impl PyStudyProgram {
         let origin = arclog::mutation::Source { revision:source_revision, task, case };
         let (specs, stats) = py.detach(|| self.program.draw_added_substitutes_at(&point.inner,
             &at, count, seed, origin, &self.settings, Registry::get()))
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok((specs.into_iter().map(|inner| PyMutationSpec { inner }).collect(), stats.json().to_string()))
     }
 
@@ -384,7 +384,7 @@ impl PyStudyProgram {
         let origin = arclog::mutation::Source { revision:source_revision, task, case };
         let (specs, stats) = py.detach(|| self.program.draw_block_substitutes_at(&point.inner,
             &at, count, seed, origin, &self.settings, Registry::get()))
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok((specs.into_iter().map(|inner| PyMutationSpec { inner }).collect(), stats.json().to_string()))
     }
 
@@ -422,7 +422,7 @@ impl PyStudyProgram {
                 )
                 .map(|v| v.to_string())
         })
-        .map_err(PyValueError::new_err)
+        .map_err(refused)
     }
 
     /// Read-only stored-form classification; recorded edits locate sites only.
@@ -430,12 +430,12 @@ impl PyStudyProgram {
         if self.settings != gold.settings {return Err(PyValueError::new_err("stored_settings: gold and stored settings differ"));}
         let identity=arclog::study::render::parse_json(identity_json).map_err(PyValueError::new_err)?;
         py.detach(||self.program.stored_static_prune_json(&gold.program,&identity,Registry::get(),&self.settings))
-            .map(|v|v.to_string()).map_err(PyValueError::new_err)
+            .map(|v|v.to_string()).map_err(refused)
     }
 
     /// Rehydrate and verify a stored identity without drawing its domain.
     fn decode_source(&self, py:Python<'_>)->PyResult<Self> {
-        let program=py.detach(|| self.program.decode_source(Registry::get(),&self.settings)).map_err(PyValueError::new_err)?;
+        let program=py.detach(|| self.program.decode_source(Registry::get(),&self.settings)).map_err(faulted)?;
         Ok(Self {program,settings:self.settings})
     }
 
@@ -462,7 +462,7 @@ impl PyStudyProgram {
         let stream=body_stream.map(arclog::study::render::parse_json).transpose().map_err(PyValueError::new_err)?;
         let origin=arclog::mutation::Source{revision:source_revision,task,case};
         let inner=py.detach(||self.program.construct_body_replacement(&at,program_text,stream.as_ref(),origin,Registry::get(),&self.settings))
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok(PyValidMutant{inner,settings:self.settings})
     }
 
@@ -474,7 +474,7 @@ impl PyStudyProgram {
                 self.program
                     .construct_identity(&identity, Registry::get(), &self.settings)
             })
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok(PyValidMutant {
             inner,
             settings: self.settings,
@@ -492,14 +492,14 @@ impl PyStudyProgram {
                 else {self.program.decode_source(Registry::get(),&self.settings)?};
             arclog::study::render::render_pair(&source, &mutant, Registry::get()).map(|v| v.to_string())
         })
-        .map_err(|error: String| PyValueError::new_err(error))
+        .map_err(refused)
     }
 
     fn construct(&self, spec: &PyMutationSpec) -> PyResult<PyValidMutant> {
         let inner = self
             .program
             .construct(&spec.inner)
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok(PyValidMutant {
             inner,
             settings: self.settings,
@@ -507,11 +507,11 @@ impl PyStudyProgram {
     }
 
     /// (ids, model flags, AST path per token), under this handle's settings.
-    fn decode_stream(&self) -> PyResult<Stream> {
+    fn decode_stream(&self, py: Python<'_>) -> PyResult<Stream> {
         let stream = self
             .program
-            .decode_stream(Registry::get(), &self.settings)
-            .map_err(PyValueError::new_err)?;
+            .try_decode_stream(Registry::get(), &self.settings)
+            .map_err(|error| study_error(py, error))?;
         Ok((
             stream.ids,
             stream.model,
