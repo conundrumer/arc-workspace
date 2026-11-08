@@ -652,6 +652,9 @@ impl Gauges {
         if slot.cap.load(Ordering::Relaxed) != cap {
             slot.cap.store(cap, Ordering::Relaxed);
         }
+        if is_carried(gauge) {
+            tally_note(gauge, value, cap, 0);
+        }
     }
 
     /// Records that `gauge` reached `value`, which passes `cap`: a hit.
@@ -659,6 +662,19 @@ impl Gauges {
     pub fn hit(&self, gauge: Gauge, value: u64, cap: u64) {
         self.note(gauge, value, cap);
         self.slot(gauge).hits.fetch_add(1, Ordering::Relaxed);
+        if is_carried(gauge) {
+            tally_note(gauge, value, cap, 1);
+        }
+    }
+
+    /// Records again what a computation noted in `gauge`: its largest value
+    /// `max` under `cap`, and `hits` hits ([`Note`]).
+    fn replay(&self, gauge: Gauge, max: u64, cap: u64, hits: u32) {
+        self.note(gauge, max, cap);
+        if hits > 0 {
+            self.slot(gauge).hits.fetch_add(u64::from(hits), Ordering::Relaxed);
+            tally_note(gauge, max, cap, hits);
+        }
     }
 
     /// The largest value, the cap and the hits of each gauge, in the order of
@@ -1018,6 +1034,109 @@ pub fn is_effort_unmetered() -> bool {
     UNMETERED.with(|depth| depth.get() > 0)
 }
 
+/// Whether a cost carries what the evaluations note in `gauge`. The gauges
+/// that other parts of a cost carry stand out: the work and the effort of the
+/// request, the bindings and rows ([`Cost`]'s own fields), the bytes, the
+/// session's own ledger, and the counts of an observation, which a hit
+/// charges again where it charges the observation ([`TableWork`]).
+const fn is_carried(gauge: Gauge) -> bool {
+    !matches!(
+        gauge,
+        Gauge::RequestWork
+            | Gauge::TableWork
+            | Gauge::Bindings
+            | Gauge::Rows
+            | Gauge::SessionBytes
+            | Gauge::RequestBytes
+            | Gauge::AssignmentBytes
+            | Gauge::Effort
+            | Gauge::PrefixContent
+            | Gauge::StudyRowWork
+            | Gauge::PairComparisons
+    )
+}
+
+/// What the evaluations of a computation noted in one gauge: the largest
+/// value, the cap it was under, and the hits.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+struct Note {
+    /// The place of the gauge in [`Gauge::ALL`].
+    gauge: u8,
+    max: u64,
+    cap: u64,
+    hits: u32,
+}
+
+/// The notes of a cost, as the place of one set of notes in the process's
+/// table. A cost with no notes is 0.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct NoteId(u32);
+
+/// The sets of notes that costs carry, each once. A set stands for as long as
+/// the process does.
+#[derive(Default)]
+struct NoteTable {
+    ids: StableHashMap<Arc<[Note]>, u32>,
+    sets: Vec<Arc<[Note]>>,
+}
+
+fn note_table() -> &'static Mutex<NoteTable> {
+    static TABLE: std::sync::OnceLock<Mutex<NoteTable>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(Mutex::default)
+}
+
+/// The place of `notes`, a set that the table holds once.
+fn intern_notes(mut notes: Vec<Note>) -> NoteId {
+    if notes.is_empty() {
+        return NoteId(0);
+    }
+    notes.sort_unstable_by_key(|note| note.gauge);
+    let notes: Arc<[Note]> = notes.into();
+    let mut table = note_table().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(&id) = table.ids.get(&notes) {
+        return NoteId(id);
+    }
+    let id = u32::try_from(table.sets.len() + 1).expect("fewer than 2^32 sets of notes");
+    table.sets.push(Arc::clone(&notes));
+    table.ids.insert(notes, id);
+    NoteId(id)
+}
+
+/// The notes that `id` stands for.
+fn notes_of(id: NoteId) -> Arc<[Note]> {
+    match id.0 {
+        0 => Arc::from([]),
+        at => Arc::clone(&note_table().lock().unwrap_or_else(std::sync::PoisonError::into_inner).sets[at as usize - 1]),
+    }
+}
+
+/// Adds to `into` the notes `from`: the larger value of each gauge, the
+/// cap of `from`, and the sum of the hits.
+fn merge_notes(into: &mut Vec<Note>, from: &[Note]) {
+    for note in from {
+        match into.iter_mut().find(|held| held.gauge == note.gauge) {
+            Some(held) => {
+                held.max = held.max.max(note.max);
+                held.cap = note.cap;
+                held.hits = held.hits.saturating_add(note.hits);
+            }
+            None => into.push(*note),
+        }
+    }
+}
+
+/// Notes in the innermost open measurement that `gauge` reached `value` under
+/// `cap`, with `hits` more hits.
+fn tally_note(gauge: Gauge, value: u64, cap: u64, hits: u32) {
+    let _ = TALLY.try_with(|tally| {
+        if let Ok(mut tally) = tally.try_borrow_mut()
+            && let Some(top) = tally.frames.last_mut()
+        {
+            merge_notes(&mut top.notes, &[Note { gauge: gauge as u8, max: value, cap, hits }]);
+        }
+    });
+}
+
 /// What a thread has charged, for the cost of an entry ([`Cost`]).
 ///
 /// An entry is computed on one thread, which runs no task of the pool while
@@ -1044,6 +1163,9 @@ struct Frame {
     /// The identity of the effort count that the measurement counts the
     /// charges to, which the candidates of a call share with their request.
     effort: usize,
+    /// What the evaluations in the measurement noted in the gauges that a cost
+    /// carries ([`is_carried`]).
+    notes: Vec<Note>,
     /// The rows that were unbilled when the measurement began, which belong
     /// to the work around it.
     held: u64,
@@ -1134,8 +1256,9 @@ impl ByteSpan {
 
 /// What the computation of an entry charged, which a hit on the entry charges
 /// again: the units in the request, the bindings in the observation's count,
-/// the effort in the request, the bytes it held, and the largest counts that
-/// its evaluations noted. A cost includes the costs of the entries that the
+/// the effort in the request, the bytes it held, the largest counts that its
+/// evaluations noted, and what they noted in the gauges that no other part of
+/// the cost carries. A cost includes the costs of the entries that the
 /// computation read, so it is the cost of the computation with every cache
 /// empty. It is a function of the entry alone. A hit holds the bytes that the
 /// entry's value holds ([`ByteSpan::net`]), after it checks the budgets
@@ -1162,6 +1285,9 @@ pub struct Cost {
     rows: u64,
     /// The largest counts that the session recorded.
     counts: Counts,
+    /// What the computation noted in the gauges that no other part of the cost
+    /// carries ([`is_carried`]), which a hit notes again.
+    notes: NoteId,
 }
 
 impl Cost {
@@ -1223,6 +1349,9 @@ impl Cost {
         request.gauges().note(Gauge::Rows, self.rows, caps.rows);
         tally_gauges(self.bindings, self.rows);
         session.record_counts(self.counts);
+        for note in notes_of(self.notes).iter() {
+            request.gauges().replay(Gauge::ALL[usize::from(note.gauge)], note.max, note.cap, note.hits);
+        }
         tally(|tally| tally.unbilled = tally.unbilled.saturating_add(held));
         charged
     }
@@ -1677,7 +1806,7 @@ impl RequestWork {
     pub fn measure_holding<T>(&self, run: impl FnOnce() -> T, held_by: impl FnOnce(&T) -> u64) -> (T, Cost) {
         tally(|tally| {
             let held = std::mem::take(&mut tally.unbilled);
-            tally.frames.push(Frame { request: self.key(), effort: self.effort_key(), held, assignment: None, cost: Cost::default() });
+            tally.frames.push(Frame { request: self.key(), effort: self.effort_key(), notes: Vec::new(), held, assignment: None, cost: Cost::default() });
         });
         let mut open = Unwind(true);
         let value = run();
@@ -1685,7 +1814,7 @@ impl RequestWork {
         let _ = self.charge(0);
         open.0 = false;
         let kept = held_by(&value);
-        let (cost, freed, assignment) = tally(|tally| {
+        let (mut cost, notes, freed, assignment) = tally(|tally| {
             let mut frame = tally.frames.pop().expect("the measurement this call opened");
             tally.unbilled = tally.unbilled.saturating_add(frame.held);
             let freed = frame.cost.bytes.net.saturating_sub(kept);
@@ -1693,12 +1822,14 @@ impl RequestWork {
             if let Some(outer) = tally.frames.last_mut() {
                 let same_request = frame.request == outer.request;
                 outer.cost.absorb(&frame.cost, same_request, frame.effort == outer.effort);
+                merge_notes(&mut outer.notes, &frame.notes);
                 if let Some(account) = &frame.assignment {
                     outer.assignment.get_or_insert_with(|| Arc::clone(account));
                 }
             }
-            (frame.cost, freed, frame.assignment)
+            (frame.cost, frame.notes, freed, frame.assignment)
         });
+        cost.notes = intern_notes(notes);
         self.bytes.release(freed);
         if let Some(account) = assignment {
             account.account.release(freed);
@@ -1711,7 +1842,9 @@ impl RequestWork {
     pub fn spent(&self) -> Cost {
         let _ = self.charge(0);
         let key = self.key();
-        tally(|tally| tally.frames.last().filter(|frame| frame.request == key).map_or_else(Cost::default, |frame| frame.cost))
+        let (mut cost, notes) = tally(|tally| tally.frames.last().filter(|frame| frame.request == key).map_or_else(Default::default, |frame| (frame.cost, frame.notes.clone())));
+        cost.notes = intern_notes(notes);
+        cost
     }
 
     /// The work counted so far.
