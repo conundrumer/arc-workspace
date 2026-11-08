@@ -100,6 +100,12 @@ pub struct State {
     /// program, made on its first read and shared by every clone of the state
     /// until a form finishes.
     evaluated_last: Arc<std::sync::OnceLock<Outcome<CheckedProgram>>>,
+    /// The sub-bodies over the columns of their use closures, by the key of
+    /// the sub-body ([`super::prefix_key::evaluated_key`]), where the closure
+    /// narrows a `DET` ([`State::narrowed_bodies`]); none for a sub-body that
+    /// it leaves as it is. Shared by the states and forks with the same
+    /// finished forms.
+    narrowed_bodies: Arc<std::sync::Mutex<crate::hash::StableHashMap<Vec<u8>, Option<CheckedProgram>>>>,
     /// The check cache of the whole-program checks of programs that hold
     /// the finished forms, shared by the states and forks with the same
     /// finished forms.
@@ -543,7 +549,7 @@ pub(super) struct OpenProjection {
 
 impl State {
     pub(super) fn new() -> State {
-        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::new(FinishedResolution::first()), held_resolutions: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), atom_verdicts: Arc::default(), checked_last: Arc::default(), evaluated_last: Arc::default(), checks: Arc::default(), earlier_forms: Arc::default(), opened: None }
+        State { program: Node::new(Program { forms: Arc::from([]) }), declared: Arc::from([]), finished_slots: 0, labels: 0, stack: Vec::new(), resolved: Arc::new(FinishedResolution::first()), held_resolutions: Arc::default(), clauses: Arc::default(), fixed_columns: Arc::default(), prefixes: Arc::default(), atom_verdicts: Arc::default(), checked_last: Arc::default(), evaluated_last: Arc::default(), narrowed_bodies: Arc::default(), checks: Arc::default(), earlier_forms: Arc::default(), opened: None }
     }
 
     /// The fixed scalar type of `column` of `relation` ([`ValueType::is_scalar`]),
@@ -701,6 +707,12 @@ impl State {
     /// closure of the last form, as [`State::evaluated_last`] holds it.
     pub(super) fn evaluated_last(&self) -> &std::sync::OnceLock<Outcome<CheckedProgram>> {
         &self.evaluated_last
+    }
+
+    /// The sub-bodies over the columns of their use closures, as
+    /// [`State::narrowed_bodies`] holds them.
+    pub(super) fn narrowed_bodies(&self) -> &std::sync::Mutex<crate::hash::StableHashMap<Vec<u8>, Option<CheckedProgram>>> {
+        &self.narrowed_bodies
     }
 
     /// The check cache of the programs that hold the finished forms.
@@ -1186,6 +1198,7 @@ impl State {
         self.atom_verdicts = Arc::default();
         self.checked_last = Arc::default();
         self.evaluated_last = Arc::default();
+        self.narrowed_bodies = Arc::default();
         self.checks = Arc::new(SharedChecks::after(&self.checks));
         self.earlier_forms = Arc::default();
         self.labels = 0;

@@ -184,6 +184,9 @@ impl BodyWidening<'_, '_> {
     }
 }
 
+/// The most sub-bodies whose narrowing a state keeps ([`State::narrowed_bodies`]).
+const NARROWED_BODIES: usize = 256;
+
 /// The most bodies that [`BodyWidening::clause`] gives for one clause.
 pub const WIDENED_BODIES: usize = 32;
 
@@ -574,6 +577,7 @@ impl<'a> Decoder<'a> {
         let columns = crate::read::columns::slot_columns(labels(&kept), 0);
         let count = u32::try_from(kept.len()).expect("fewer than 2^32 conjuncts");
         let sub = Clause { body: Node::new(Body { conjuncts: kept.into() }), columns, ..clause };
+        let key = super::prefix_key::evaluated_key(&sub);
         let forms = finished.iter().cloned().chain([Form::Clause(Node::new(sub))]).collect();
         let resolved = resolve_last(&earlier, &Node::new(Program { forms }), registry);
         if let Some(fault) = scope_fault(&resolved.diagnostics, &form) {
@@ -581,7 +585,7 @@ impl<'a> Decoder<'a> {
         }
         let checked = self.checked(Arc::new(resolved.value), &form);
         checked.map(|program| {
-            let program = self.over_closure(program, finished.len());
+            let program = self.body_over_closure(program, finished.len(), key);
             let relation = derived_at(&program, &form);
             let scope = scope_of(&program, &relation);
             SubBody { program, form, kept: (0..count).collect(), scope }
@@ -596,10 +600,36 @@ impl<'a> Decoder<'a> {
     /// where the reads of the closure name every column that its resolution
     /// keeps.
     fn over_closure(&self, checked: CheckedProgram, position: usize) -> CheckedProgram {
-        match checked.program.narrowed_to_closure(position, self.context.registry) {
-            Some((program, narrowed)) => checked.over_narrowed(program, &narrowed),
-            None => checked,
-        }
+        self.narrowed(&checked, position).unwrap_or(checked)
+    }
+
+    /// `checked` over the columns of the use closure of its form at
+    /// `position`, or `None` where the closure leaves it as it is.
+    fn narrowed(&self, checked: &CheckedProgram, position: usize) -> Option<CheckedProgram> {
+        let (program, narrowed) = checked.program.narrowed_to_closure(position, self.context.registry)?;
+        Some(checked.over_narrowed(program, &narrowed))
+    }
+
+    /// [`Decoder::over_closure`] for the sub-body that `key` is the key of
+    /// ([`super::prefix_key::evaluated_key`]): the closure and its resolution
+    /// are made once for each sub-body of the finished forms, whichever
+    /// request asks for it.
+    fn body_over_closure(&self, checked: CheckedProgram, position: usize, key: Vec<u8>) -> CheckedProgram {
+        let memo = self.state.narrowed_bodies();
+        let held = memo.lock().expect("the narrowed bodies are not poisoned").get(&key).cloned();
+        let narrowed = match held {
+            Some(narrowed) => narrowed,
+            None => {
+                let narrowed = self.narrowed(&checked, position);
+                let mut memo = memo.lock().expect("the narrowed bodies are not poisoned");
+                if memo.len() >= NARROWED_BODIES {
+                    memo.clear();
+                }
+                memo.insert(key, narrowed.clone());
+                narrowed
+            }
+        };
+        narrowed.unwrap_or(checked)
     }
 
     /// The program that `resolved` resolves, checked, or a fault at `form`
