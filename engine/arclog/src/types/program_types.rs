@@ -133,11 +133,6 @@ impl ProgramTypes {
         self.columns.insert(relation, columns);
     }
 
-    /// Leaves `relation` with no column types.
-    pub(crate) fn remove_columns(&mut self, relation: &GraphRelation) {
-        self.columns.remove(relation);
-    }
-
     /// Whether `relation` has an Example column, as the checker decides it
     /// by [`crate::check::reads::example_relations`].
     pub fn has_example_column(&self, relation: &GraphRelation) -> bool {

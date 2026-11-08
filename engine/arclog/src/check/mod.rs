@@ -49,7 +49,7 @@ use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{Form, LabelId, PortName};
 use crate::solver::{Case, FileOwner, Solver};
 use crate::registry::Registry;
-use crate::resolver::{DependencyGraph, GraphNodeIndex, ResolvedContent, ResolvedProgram, Signature};
+use crate::resolver::{DependencyGraph, ResolvedContent, ResolvedProgram, Signature};
 use crate::stats::{self, Phase};
 use crate::types::{ProgramTypes, ValueType};
 
@@ -546,20 +546,6 @@ struct Derived {
 }
 
 impl CheckedProgram {
-    /// This program over `program`, a resolution of the same forms that keeps
-    /// fewer columns of the `DET` nodes `nodes` than the resolution of this
-    /// one ([`ResolvedProgram::narrowed_to_closure`] gives it), which is to be
-    /// evaluated and not checked: the types of the labels are those of this
-    /// program, which the checks of its forms gave, and the types of the
-    /// columns of `nodes` and the nodes with an Example column are those
-    /// that `program` has. What the evaluator derives from the program is
-    /// made again.
-    pub(crate) fn over_narrowed(&self, program: Arc<ResolvedProgram>, nodes: &[GraphNodeIndex]) -> CheckedProgram {
-        let mut types = types::narrowed_types(&program, &self.types, nodes);
-        types.set_example_nodes(reads::example_relations(&program));
-        CheckedProgram { program, types, derived: Arc::default() }
-    }
-
     /// The result of `compile_body` for the conjuncts at `kept` of the body
     /// of the clause at `clause`, compiled on the first ask, with the nodes
     /// in the order the conjuncts are written.

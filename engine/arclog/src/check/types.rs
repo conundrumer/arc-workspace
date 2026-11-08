@@ -26,7 +26,7 @@ mod program_columns;
 mod within;
 
 pub use form_check::{infer_form, ScopeTypes, TypesCheck};
-pub(super) use program_columns::{narrowed_types, program_types, FormScopes};
+pub(super) use program_columns::{program_types, FormScopes};
 use form_check::{inferred_scopes, scope_forms_within};
 
 /// The signatures of the clauses that the type check of `form`, a
