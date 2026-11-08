@@ -144,7 +144,22 @@ fn tuple_place(tuples: &[Cell], key: &[u16], row: &[Cell], near: usize) -> Optio
     if count == 0 {
         return None;
     }
-    let order = |at: usize| -> Ordering { tuples[at * stride..(at + 1) * stride].iter().zip(key).map(|(cell, column)| cell.cmp(&row[usize::from(*column)])).find(|order| order.is_ne()).unwrap_or(Ordering::Equal) };
+    // A key of at most four columns is read from the row once.
+    let mut small: [Cell; 4] = [0; 4];
+    let short = stride <= small.len();
+    if short {
+        for (slot, column) in small.iter_mut().zip(key) {
+            *slot = row[usize::from(*column)];
+        }
+    }
+    let order = |at: usize| -> Ordering {
+        let tuple = &tuples[at * stride..(at + 1) * stride];
+        if short {
+            tuple.cmp(&small[..stride])
+        } else {
+            tuple.iter().zip(key).map(|(cell, column)| cell.cmp(&row[usize::from(*column)])).find(|order| order.is_ne()).unwrap_or(Ordering::Equal)
+        }
+    };
     let near = near.min(count - 1);
     // The places from `low` on, up to `high`, hold the first tuple that is not below the row's, if there is one.
     let (mut low, mut high) = match order(near) {
@@ -995,14 +1010,14 @@ impl Joined {
         let wide = if key.is_empty() {
             Table::new(width, vec![0; width])
         } else {
-            // The key stands in order, so the rows stand in order.
+            // The tuples ascend and the key stands in order, so the rows ascend.
             let mut out: Vec<Cell> = vec![0; tuples.len * width];
             for (row, tuple) in out.chunks_exact_mut(width).zip(tuples.rows()) {
                 for (column, cell) in key.iter().zip(tuple) {
                     row[usize::from(*column)] = *cell;
                 }
             }
-            Table::new(width, out)
+            Table::ascending(width, out)
         };
         let cells = wide.cell_count();
         let mut kept = self.sketches.lock().expect("a sketch lock");
@@ -1360,8 +1375,8 @@ impl Joined {
         let mut total = 0u64;
         if let Step::Part(part) = step {
             if part.row_columns().is_none() {
-                let counts: Vec<u64> = wide.rows().map(&weight_of).collect::<Option<_>>()?;
-                let kept = part.step().kept_rows(&wide, &counts)?;
+                // The rows of the wide table ascend, as the tuples do, so row number `at` stands for `weights[at]` rows.
+                let kept = part.step().kept_rows(&wide, weights)?;
                 for row in kept.chunks_exact(width) {
                     total = total.saturating_add(weight_of(row)?);
                 }

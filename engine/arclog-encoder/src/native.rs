@@ -342,6 +342,11 @@ impl Table {
         Table::assemble(arity, sorted_rows(arity, cells, true), std::sync::OnceLock::from(None))
     }
 
+    /// The table of `cells`, whose rows are distinct and ascend.
+    pub fn ascending(arity: usize, cells: Vec<Cell>) -> Arc<Table> {
+        Table::assemble(arity, cells, std::sync::OnceLock::from(None))
+    }
+
     /// The table of no columns, with one row where `holds`.
     pub fn unit(holds: bool) -> Arc<Table> {
         let len = usize::from(holds);
