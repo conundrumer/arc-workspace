@@ -104,7 +104,7 @@ impl Counted {
     }
 }
 
-/// The most cells that the answers a thread keeps for later reads hold in all.
+/// The most cells that the answers a thread keeps for later reads hold in all. Once it holds that many, it keeps the answers it has until `clear_shared`, and adds no more.
 const SHARED_CELLS: usize = 8_000_000;
 
 /// What the reads of the joins on one thread keep for later reads, by the join's hash and the key. It holds the answers that a join does not keep itself, because they pass `SKETCH_KEPT`, so that a second read of the same join at the same columns does not group the join's rows again.
@@ -124,20 +124,17 @@ pub fn clear_shared() {
     SHARED.with(|shared| *shared.borrow_mut() = Shared::default());
 }
 
-/// Keeps `sketch`, which is at `at`, for later reads and counts `cells` more cells held, where `cells` pass no more than the most that a thread keeps. Where the thread has kept that much already, it drops all it kept first.
+/// Keeps `sketch`, which is at `at`, for later reads, and counts `cells` more cells held, where the thread then holds no more than the most it keeps. Otherwise it keeps nothing more, and gives false.
 fn share_sketch(at: u128, sketch: &Arc<Sketch>, cells: usize) -> bool {
-    if cells > SHARED_CELLS {
-        return false;
-    }
     SHARED.with(|shared| {
         let mut shared = shared.borrow_mut();
         if shared.cells + cells > SHARED_CELLS {
-            *shared = Shared::default();
+            return false;
         }
         shared.cells += cells;
         shared.sketches.insert(at, sketch.clone());
-    });
-    true
+        true
+    })
 }
 
 /// The place of the tuple that `row` holds at the columns `key` among `tuples`, which stand in order, `key.len()` cells each. The search starts at place `near` and runs on from it, so that rows asked in order of their tuples find theirs after a few steps, and a row asked out of order is found all the same.
@@ -968,16 +965,14 @@ impl Joined {
         let (tuples, weights) = self.grouped(key, true)?;
         let cells = tuples.len() + weights.len() * (2 + self.width());
         let found = Arc::new(Counted { tuples, weights, wide: OnceLock::new() });
-        if cells <= SHARED_CELLS {
-            SHARED.with(|shared| {
-                let mut shared = shared.borrow_mut();
-                if shared.cells + cells > SHARED_CELLS {
-                    *shared = Shared::default();
-                }
+        // What would pass the most a thread keeps is not kept, and a later read groups the rows again.
+        SHARED.with(|shared| {
+            let mut shared = shared.borrow_mut();
+            if shared.cells + cells <= SHARED_CELLS {
                 shared.cells += cells;
                 shared.counted.insert(at, found.clone());
-            });
-        }
+            }
+        });
         Some(found)
     }
 
