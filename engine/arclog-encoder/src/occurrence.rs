@@ -3,7 +3,7 @@
 //! A pattern is a sorted list of (row, column, color) with no repeats. A translation takes it into a grid where each
 //! of its cells lands on a cell of the grid of the same color.
 
-use crate::lookup::InsertionMap;
+use crate::lookup::LookupMap;
 use std::hash::Hash;
 
 /// A cell of a pattern: (row, column, color).
@@ -90,9 +90,10 @@ pub fn each_turned_image(pattern: &[PatternCell], extent: (i32, i32), frame_matt
     false
 }
 
-/// The distinct patterns among the patterns of groups, each as sorted cells without repeats, and for each group the place of its pattern among them.
+/// The distinct patterns among the patterns of groups, each as sorted cells without repeats and the patterns in sorted order, and for each group the place of its pattern among them.
 pub fn distinct_patterns<T: Ord + Hash>(groups: Vec<Vec<T>>) -> (Vec<Vec<T>>, Vec<u32>) {
-    let mut seen: InsertionMap<Vec<T>, u32> = InsertionMap::default();
+    // Each pattern gets a number as it comes, and the numbers are then replaced by the places of the patterns in sorted order.
+    let mut seen: LookupMap<Vec<T>, u32> = LookupMap::default();
     let mut of_group = Vec::with_capacity(groups.len());
     for mut pattern in groups {
         pattern.sort_unstable();
@@ -100,9 +101,14 @@ pub fn distinct_patterns<T: Ord + Hash>(groups: Vec<Vec<T>>) -> (Vec<Vec<T>>, Ve
         let next = seen.len() as u32;
         of_group.push(*seen.entry(pattern).or_insert(next));
     }
-    let mut distinct: Vec<Vec<T>> = (0..seen.len()).map(|_| Vec::new()).collect();
-    for (pattern, at) in seen {
-        distinct[at as usize] = pattern;
+    let mut place = vec![0u32; seen.len()];
+    let mut distinct = Vec::with_capacity(seen.len());
+    for (at, (pattern, number)) in seen.into_sorted_vec().into_iter().enumerate() {
+        place[number as usize] = at as u32;
+        distinct.push(pattern);
+    }
+    for which in &mut of_group {
+        *which = place[*which as usize];
     }
     (distinct, of_group)
 }

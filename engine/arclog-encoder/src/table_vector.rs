@@ -133,14 +133,13 @@ impl TableVector {
 
 fn combined(table: RootTable, example_of: &[usize], examples: usize, train: usize, over_budget: bool) -> TableVector {
     let instances = example_of.len();
-    let mut order: Vec<(u64, usize)> = table.index.iter().map(|(hash, at)| (*hash as u64, *at as usize)).collect();
-    order.sort_unstable();
+    let order = table.sorted_roots();
     let single = instances == examples;
     let mut slots = Vec::with_capacity(order.len() * examples);
     let mut shapes = Vec::with_capacity(order.len());
     let mut meta = Vec::with_capacity(order.len());
-    for (shape, at) in order {
-        shapes.push(shape);
+    for (hash, at) in order {
+        shapes.push(hash as u64);
         meta.push(table.meta[at]);
         let own = &table.slots[at * instances..(at + 1) * instances];
         if single {
@@ -394,10 +393,9 @@ pub fn task_wide_vector(table: &Stored, grids: &Grids, families: &Generators, d:
         vec![crate::native::Val::None],
     ];
     let found = walker.walk(&leaves, 1, only_output);
-    let mut order: Vec<(u64, usize)> = found.index.iter().map(|(hash, at)| (*hash as u64, *at as usize)).collect();
-    order.sort_unstable();
+    let order = found.sorted_roots();
     Some(TaskWideVector {
-        shapes: order.iter().map(|held| held.0).collect(),
+        shapes: order.iter().map(|held| held.0 as u64).collect(),
         meta: order.iter().map(|held| found.meta[held.1]).collect(),
         slots: order.iter().map(|held| found.slots[held.1]).collect(),
     })
