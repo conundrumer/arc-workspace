@@ -517,11 +517,20 @@ struct Counted {
 pub struct Materializer<'a> {
     session: &'a TaskSession,
     limits: &'a Limits,
+    /// The limits of the export of the task's evidence tables, where that export has a request of its own.
+    evidence: Option<&'a Limits>,
 }
 
 impl<'a> Materializer<'a> {
     /// Uses the caller's current operation, without starting another timer.
-    pub fn new(session:&'a TaskSession, limits:&'a Limits)->Self { Self {session,limits} }
+    pub fn new(session:&'a TaskSession, limits:&'a Limits)->Self { Self {session,limits,evidence:None} }
+
+    /// This operation, with the export of the evidence tables running under `evidence`, the limits of a request of its own
+    /// ([`crate::eval::RequestWork::side`]).
+    pub fn with_evidence(self, evidence:&'a Limits)->Self { Self {evidence:Some(evidence),..self} }
+
+    /// The operation that exports the evidence tables: the one under the evidence limits where there are some, and this one otherwise.
+    pub fn for_evidence(&self)->Self { Self {limits:self.evidence.unwrap_or(self.limits),..*self} }
 
     /// The session whose limits this operation runs under.
     pub fn session(&self) -> &'a TaskSession {

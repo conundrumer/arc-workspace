@@ -950,6 +950,8 @@ thread_local! {
     static UNCOUNTED: Cell<u32> = const { Cell::new(0) };
     /// The request most recently begun on this thread ([`RequestWork::begin`]).
     static LATEST: RefCell<Option<RequestWork>> = const { RefCell::new(None) };
+    /// The request of the export of a task's evidence tables, begun after [`LATEST`] ([`RequestWork::side`]); none once another request begins.
+    static SIDE: RefCell<Option<RequestWork>> = const { RefCell::new(None) };
     /// What this thread charges, for the costs of entries ([`Tally`]).
     static TALLY: RefCell<Tally> = const { RefCell::new(Tally { frames: Vec::new(), unbilled: 0 }) };
 }
@@ -1321,7 +1323,22 @@ impl RequestWork {
         AMBIENT.with(|ambient| *ambient.borrow_mut() = Some(Arc::clone(&work.gauges)));
         tally(|tally| tally.unbilled = 0);
         LATEST.with(|latest| *latest.borrow_mut() = Some(work.clone()));
+        SIDE.with(|side| *side.borrow_mut() = None);
         work
+    }
+
+    /// A count of no work and no bytes under this request's caps, with gauges of its own, for the export of the task's evidence tables, which belongs to
+    /// the task and not to the query whose first step exports it. [`RequestWork::latest`] still gives the request that began last, and
+    /// [`RequestWork::latest_side`] gives this one until another request begins on the thread.
+    pub fn side(&self) -> Self {
+        let work = Self::with_byte_caps(self.cap, self.byte_caps).with_effort_cap(self.effort_cap);
+        SIDE.with(|side| *side.borrow_mut() = Some(work.clone()));
+        work
+    }
+
+    /// The request that [`RequestWork::side`] began after the latest request on this thread, or `None` where there is none.
+    pub fn latest_side() -> Option<RequestWork> {
+        SIDE.with(|side| side.borrow().clone())
     }
 
     /// A count of no work and no bytes for one candidate of a call that

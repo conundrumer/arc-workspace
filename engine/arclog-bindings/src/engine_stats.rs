@@ -79,6 +79,25 @@ pub(crate) fn engine_stats<'py>(py: Python<'py>, reset: bool, collect: Option<bo
 #[pyfunction]
 pub(crate) fn request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
     let Some(request) = arclog::eval::RequestWork::latest() else { return Ok(None) };
+    request_dict(py, &request).map(Some)
+}
+
+/// The work and the gauges of the request that exported the task's evidence
+/// tables in the call that returned last, in the form of [`request_stats`], or
+/// `None` where that call exported none. The first model step of a decode
+/// (`step_tables`, `successor_tables` with no `before`) holds the evidence
+/// tables beside its own, and that export counts in a request of its own, so
+/// the request that [`request_stats`] gives holds the step's work alone. The
+/// export belongs to the task, not to the query whose step comes first. The
+/// read gives the latest such request on the thread, and `None` once another
+/// request begins.
+#[pyfunction]
+pub(crate) fn evidence_request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+    let Some(request) = arclog::eval::RequestWork::latest_side() else { return Ok(None) };
+    request_dict(py, &request).map(Some)
+}
+
+fn request_dict<'py>(py: Python<'py>, request: &arclog::eval::RequestWork) -> PyResult<Bound<'py, PyDict>> {
     let stats = PyDict::new(py);
     stats.set_item("work", request.count())?;
     stats.set_item("cap", request.cap())?;
@@ -89,7 +108,7 @@ pub(crate) fn request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, 
     stats.set_item("gauges", gauges_dict(py, request.all_gauges())?)?;
     stats.set_item("search_gauges", gauges_dict(py, request.gauges().each())?)?;
     stats.set_item("held_gauges", gauges_dict(py, request.held_gauges().each())?)?;
-    Ok(Some(stats))
+    Ok(stats)
 }
 
 /// The dict from the name of each gauge to its `max`, `cap` and `hits`.

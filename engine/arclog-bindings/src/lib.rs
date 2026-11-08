@@ -84,6 +84,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.function(wrap_pyfunction!(decoder::step_batch_py, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::engine_stats, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::request_stats, module)?)?;
+    names.function(wrap_pyfunction!(engine_stats::evidence_request_stats, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::work_total, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::registry_text, module)?)?;
     names.class::<PyReplayProgress>()?;

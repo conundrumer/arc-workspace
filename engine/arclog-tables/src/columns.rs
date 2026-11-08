@@ -820,7 +820,7 @@ fn step_columns(materializer:&Materializer<'_>,before:Option<&StreamTables>,evid
             before.count as usize
         }
         None => {
-            push_tables(materializer,&mut columns, &mut names, &mut runs, 0, evidence.iter().map(|table| (0, table)), train, None,row_export);
+            push_tables(&materializer.for_evidence(),&mut columns, &mut names, &mut runs, 0, evidence.iter().map(|table| (0, table)), train, None,row_export);
             evidence.len()
         }
     };
@@ -933,10 +933,12 @@ fn by_assignment_columns(materializer:&Materializer<'_>,before:Option<&StreamTab
     let summaries: Vec<TableSummary> = {
         // The full `DET`s of the stream so far, which a table that reads one through some of its columns stands for each full value of.
         let fulls = DetFulls::new(before.into_iter().flat_map(|before|before.tables.iter().map(|table|&**table)).chain(tables.iter().map(|(_,table)|table)).collect()).with_assemblies(assemblies);
-        held.iter().chain(tables.iter().map(|(_,table)|table)).zip(keys).map(|(table,key)|(if hashed {summarize_hashes_cached(materializer,table,train,&fulls,cache,key)} else {summarize_cached(materializer,table,train,&fulls,cache,key)}).unwrap_or_else(|bound|{
+        // The evidence tables belong to the task: their summaries count in the request of the evidence export, where it has one, and not in the request of the step.
+        let evidence_materializer = materializer.for_evidence();
+        held.iter().chain(tables.iter().map(|(_,table)|table)).zip(keys).enumerate().map(|(at,(table,key))|{let materializer = if at<held.len() {&evidence_materializer} else {materializer}; (if hashed {summarize_hashes_cached(materializer,table,train,&fulls,cache,key)} else {summarize_cached(materializer,table,train,&fulls,cache,key)}).unwrap_or_else(|bound|{
             stop.get_or_insert(Stop {bound,form:table.form.clone()});
             TableSummary::unhashed(table, bound_name(bound))
-        })).collect()
+        })}).collect()
     };
     let (columns, mut stream) = {
         let _timed = split::span(Part::StepColumns);

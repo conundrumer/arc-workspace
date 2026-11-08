@@ -134,7 +134,10 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
             }
             None => Vec::new(),
         };
+        // The first model step exports the evidence tables, which belong to the task: that export counts in a request of its own, with gauges of its own (`evidence_request_stats`).
+        let evidence_limits = earlier.is_none().then(|| limits.clone().in_request(limits.request.side()));
         let materializer=Materializer::new(engine.evaluation_inputs().1,&limits);
+        let materializer=match &evidence_limits { Some(evidence) => materializer.with_evidence(evidence), None => materializer };
         let (columns, stream) = if by_assignment {
             // The QueryHash of each table: the `query_hash` of its finished query; a body table has none.
             let query_of = |table: &Table| query_of_table(engine, table);
@@ -382,7 +385,10 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
         // The export of a successor's tables counts in the request of the successor's own, as its evaluation does.
         let columns_of = |tables: Vec<(usize, Table)>, queries: Vec<Option<arclog::hash::StableHash>>, program: &Decoder<'_>, own: &Limits| -> Result<(CaseColumns, StreamTables), LabelingBound> {
             let _timed = split::span(Part::SuccessorColumns);
+            // The export of the evidence tables at the first model step counts in a request of its own.
+            let evidence_limits = stream.is_none().then(|| own.clone().in_request(own.request.side()));
             let materializer = Materializer::new(engine.evaluation_inputs().1, own);
+            let materializer = match &evidence_limits { Some(evidence) => materializer.with_evidence(evidence), None => materializer };
             Ok(step_case_columns_by_assignment_with(&materializer, stream, &evidence_tables, tables, &train, queries, rows, &summaries, assemblies(program)?))
         };
         let current = found.current.as_ref().map(|table| columns_of(vec![(now.unwrap_or(0), table.clone())], vec![None], engine, &limits).map(|made| made.0)).transpose()?;
