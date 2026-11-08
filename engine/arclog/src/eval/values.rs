@@ -54,9 +54,7 @@ impl Caps {
     /// The binding cap and the row cap are each the least power of two at or
     /// above twice the largest count of one query, finished or in progress, at
     /// an assignment that solves the train pairs, over the concept cases of
-    /// `work/arclog/gen/`. Over the train tasks, `corpus_tables` with `bodies`
-    /// gave on 2026-11-04 3 276 242 bindings tried and 3 240 000 rows held, of
-    /// `&mirror_mismatch` of `47996f11` in progress. Past the train tasks, a
+    /// `work/arclog/gen/`. Past the train tasks, a
     /// finished query of `a395ee82` reaches 13 832 382 bindings tried, which
     /// sets the binding cap. Over the train tasks, a finished query reaches
     /// 851 286 bindings tried, of `50846271`, and 360 576 rows held, of
