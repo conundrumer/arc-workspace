@@ -492,14 +492,14 @@ type KeyCells = (Vec<Vec<(u8, u8)>>, Vec<Vec<Cell>>);
 /// What the parts of one table read alike, held while its walks go on, up to [`HELD_GROUP_CELLS`] of its cells in all.
 #[derive(Default)]
 struct Groups {
-    groupings: FastMap<(u64, u128), Arc<Grouping>>,
-    cells: FastMap<(u64, u128), Arc<KeyCells>>,
-    frames: FastMap<(u64, u128), bool>,
-    boxes: FastMap<(u64, u128), BoxFeatures>,
-    margins: FastMap<(u64, u128), Arc<[Vec<i32>; 4]>>,
-    colors: FastMap<(u64, u128), Arc<BTreeMap<Cell, Vec<Cell>>>>,
-    in_frames: FastMap<(u64, u128), usize>,
-    fronts: FastMap<(u64, u128), Arc<Vec<[i32; 4]>>>,
+    groupings: FastMap<(u128, u128), Arc<Grouping>>,
+    cells: FastMap<(u128, u128), Arc<KeyCells>>,
+    frames: FastMap<(u128, u128), bool>,
+    boxes: FastMap<(u128, u128), BoxFeatures>,
+    margins: FastMap<(u128, u128), Arc<[Vec<i32>; 4]>>,
+    colors: FastMap<(u128, u128), Arc<BTreeMap<Cell, Vec<Cell>>>>,
+    in_frames: FastMap<(u128, u128), usize>,
+    fronts: FastMap<(u128, u128), Arc<Vec<[i32; 4]>>>,
     held: usize,
 }
 
@@ -538,7 +538,7 @@ fn places_word(keys: &[u16], p: Option<u16>) -> u128 {
 
 /// The dense id of each row's key, and the first row at each key.
 pub fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Arc<Grouping>, Vec<&'t [Cell]>) {
-    let key = (table.id, places_word(keys, None));
+    let key = (table.hash(), places_word(keys, None));
     let found = GROUPS.with(|groups| groups.borrow().groupings.get(&key).cloned());
     let grouping = found.unwrap_or_else(|| {
         let built = grouping_of(table, keys);
@@ -867,7 +867,7 @@ fn is_cell(m: &[i32; 4]) -> bool {
 
 /// Each key's cells, as (row, column) places of cells with no margin below 0.
 fn cells_by_key(table: &Table, keys: &[u16], p: u16) -> Arc<KeyCells> {
-    let key = (table.id, places_word(keys, Some(p)));
+    let key = (table.hash(), places_word(keys, Some(p)));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().cells.get(&key).cloned()) {
         return found;
     }
@@ -900,7 +900,7 @@ fn cells_by_key(table: &Table, keys: &[u16], p: u16) -> Arc<KeyCells> {
 /// Whether each key's cells at a column stand on one frame. The parts that read a cell as a row and
 /// a column have no native value on any other column.
 fn on_one_frame(table: &Table, keys: &[u16], p: u16) -> bool {
-    let key = (table.id, places_word(keys, Some(p)));
+    let key = (table.hash(), places_word(keys, Some(p)));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().frames.get(&key).copied()) {
         return found;
     }
@@ -1028,8 +1028,8 @@ struct OccurPatterns {
 /// What the occurs parts share, held while a table's walks go on, up to [`HELD_GROUP_CELLS`] of cells in all.
 #[derive(Default)]
 struct OccurHeld {
-    patterns: FastMap<(u64, u128), Arc<OccurPatterns>>,
-    moves: FastMap<(u64, u128, u128), Arc<Vec<Vec<Cell>>>>,
+    patterns: FastMap<(u128, u128), Arc<OccurPatterns>>,
+    moves: FastMap<(u128, u128, u128), Arc<Vec<Vec<Cell>>>>,
     held: usize,
 }
 
@@ -1039,7 +1039,7 @@ thread_local! {
 
 /// The patterns of the key groups of a table, whose rows give a cell at column `p` and its color at column `v`. `ids` is each row's group, and `word` hashes the keys and columns.
 fn occur_patterns(table: &Table, ids: &[u32], groups: usize, (p, v): (u16, u16), word: u128) -> Arc<OccurPatterns> {
-    let key = (table.id, word);
+    let key = (table.hash(), word);
     if let Some(found) = OCCURS.with(|held| held.borrow().patterns.get(&key).cloned()) {
         return found;
     }
@@ -1070,7 +1070,7 @@ fn occur_patterns(table: &Table, ids: &[u32], groups: usize, (p, v): (u16, u16),
 }
 
 /// The offsets that move each distinct pattern onto the grid as it stands, for a table, columns and grid that `key` names.
-fn occur_moves(patterns: &OccurPatterns, grid: &GridView, key: (u64, u128, u128)) -> Arc<Vec<Vec<Cell>>> {
+fn occur_moves(patterns: &OccurPatterns, grid: &GridView, key: (u128, u128, u128)) -> Arc<Vec<Vec<Cell>>> {
     if let Some(found) = OCCURS.with(|held| held.borrow().moves.get(&key).cloned()) {
         return found;
     }
@@ -1226,7 +1226,7 @@ fn frame_of_rows(value: &Val, f: u16) -> Option<(i32, i32)> {
 }
 
 fn box_features_of(table: &Table, b: u16, h: i32, w: i32) -> BoxFeatures {
-    let key = (table.id, places_word(&[], Some(b)) ^ (u128::from(h as u32) << 96) ^ (u128::from(w as u32) << 64));
+    let key = (table.hash(), places_word(&[], Some(b)) ^ (u128::from(h as u32) << 96) ^ (u128::from(w as u32) << 64));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().boxes.get(&key).copied()) {
         return found;
     }
@@ -1312,7 +1312,7 @@ fn box_features(set: &[[i32; 4]], h: i32, w: i32) -> BoxFeatures {
 
 /// The boxes of a column that decide whether a box lies inside one of them, or holds one: the ones no other box is beyond on every margin. Past 64 of them, every box. Held with the table.
 fn box_front(table: &Table, b: u16, inside: bool) -> Arc<Vec<[i32; 4]>> {
-    let key = (table.id, places_word(&[], Some(b)) ^ u128::from(inside));
+    let key = (table.hash(), places_word(&[], Some(b)) ^ u128::from(inside));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().fronts.get(&key).cloned()) {
         return found;
     }
@@ -1346,7 +1346,7 @@ fn box_front(table: &Table, b: u16, inside: bool) -> Arc<Vec<[i32; 4]>> {
 
 /// How many of a column's distinct cells lie in a frame of `h` rows and `w` columns, counted once for all that ask.
 fn cells_in_frame(table: &Table, at: u16, h: i32, w: i32, cells: &[Cell], in_frame: &dyn Fn(&Cell) -> bool) -> usize {
-    let key = (table.id, places_word(&[], Some(at)) ^ (u128::from(h as u32) << 96) ^ (u128::from(w as u32) << 64));
+    let key = (table.hash(), places_word(&[], Some(at)) ^ (u128::from(h as u32) << 96) ^ (u128::from(w as u32) << 64));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().in_frames.get(&key).copied()) {
         return found;
     }
@@ -1359,7 +1359,7 @@ fn cells_in_frame(table: &Table, at: u16, h: i32, w: i32, cells: &[Cell], in_fra
 
 /// The distinct values of one column at each value of another, held with the table.
 fn colors_by_cell(table: &Table, cell: u16, color: u16) -> Arc<BTreeMap<Cell, Vec<Cell>>> {
-    let key = (table.id, places_word(&[cell], Some(color)));
+    let key = (table.hash(), places_word(&[cell], Some(color)));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().colors.get(&key).cloned()) {
         return found;
     }
@@ -1385,7 +1385,7 @@ fn colors_by_cell(table: &Table, cell: u16, color: u16) -> Arc<BTreeMap<Cell, Ve
 
 /// The distinct margins of a column of boxes on each edge, in order, held with the table.
 fn margin_sets(table: &Table, b: u16) -> Arc<[Vec<i32>; 4]> {
-    let key = (table.id, places_word(&[], Some(b)));
+    let key = (table.hash(), places_word(&[], Some(b)));
     if let Some(found) = GROUPS.with(|groups| groups.borrow().margins.get(&key).cloned()) {
         return found;
     }
@@ -2056,7 +2056,7 @@ impl PartStep {
                 let word = hash_words(keys.iter().map(|at| u64::from(*at)).chain([u64::MAX, u64::from(*p), u64::from(*v)]));
                 let patterns = occur_patterns(t, &grouping.0, first.len(), (*p, *v), word);
                 // The moves of the patterns themselves are shared by the part with and without the turns.
-                let plain = occur_moves(&patterns, &grid, (t.id, word, children[1].hash()));
+                let plain = occur_moves(&patterns, &grid, (t.hash(), word, children[1].hash()));
                 let turned_moves;
                 let moves: &[Vec<Cell>] = if *turned {
                     turned_moves = patterns.distinct.iter().zip(plain.iter()).map(|(pattern, held)| turned_moves_of(pattern, &grid, held)).collect::<Vec<_>>();
