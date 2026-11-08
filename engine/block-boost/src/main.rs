@@ -863,6 +863,10 @@ trait Items: Sync {
     fn rows(&self, item: u32) -> usize;
     /// The item that stands for the row.
     fn item_of_row(&self, row: u32) -> u32;
+    /// The map in whose blocks the item numbers go up (a block's items stand together), if there is one.
+    fn sorted_map(&self) -> Option<usize> {
+        None
+    }
 }
 
 /// Each row is an item.
@@ -895,9 +899,12 @@ impl Items for RowItems<'_> {
     }
 }
 
-/// The distinct tuples of a row's blocks, one in each map, in ascending order of the tuple (the first map's block first), and which rows have each.
+/// The distinct tuples of a row's blocks, one in each map, in ascending order of the tuple (the block in the map with the most blocks first, and a row with
+/// no block in that map last), and which rows have each.
 struct Pairs {
     maps: usize,
+    /// The map whose blocks order the pairs: pair numbers go up with the block in this map.
+    primary: usize,
     /// Pair p has block `block[p * maps + m]` in map m.
     block: Vec<u32>,
     /// Pair p has the rows `rows[start[p]..start[p + 1]]`, in ascending order.
@@ -913,9 +920,14 @@ impl Pairs {
         assert!(maps >= 1, "a store has a map");
         assert!(store.rows < u32::MAX as usize, "a row number has 32 bits");
         let rows = store.rows;
-        let first = &store.maps[0];
-        // The rows with no block in the first map stand in the last bucket.
-        let buckets = first.iter().filter(|&&b| b != NONE).map(|&b| b as usize + 1).max().unwrap_or(0) + 1;
+        // The map with the most blocks orders the pairs: a leaf's items then go through that map's blocks in ascending order, which a pass over the
+        // blocks' entries reads in memory order.
+        let block_counts: Vec<usize> = store.maps.iter().map(|map| map[..].par_iter().filter(|&&b| b != NONE).map(|&b| b as usize + 1).max().unwrap_or(0)).collect();
+        let primary = (0..maps).max_by_key(|&m| (block_counts[m], std::cmp::Reverse(m))).unwrap();
+        let others: Vec<usize> = (0..maps).filter(|&m| m != primary).collect();
+        let first = &store.maps[primary];
+        // The rows with no block in that map stand in the last bucket.
+        let buckets = block_counts[primary] + 1;
         let bucket_of = |row: usize| if first[row] == NONE { buckets - 1 } else { first[row] as usize };
         let mut offset = vec![0u32; buckets + 1];
         for row in 0..rows {
@@ -934,80 +946,108 @@ impl Pairs {
             }
         }
         // In each bucket the rows go in ascending order of their blocks in the other maps, then of their numbers. A run of equal blocks is a pair, and
-        // a bucket's record lists each run as its place in the bucket and the blocks in the other maps.
-        let mut slices: Vec<&mut [u32]> = Vec::with_capacity(buckets);
-        let mut rest = sorted.as_mut_slice();
-        for b in 0..buckets {
-            let (here, after) = rest.split_at_mut((offset[b + 1] - offset[b]) as usize);
-            slices.push(here);
-            rest = after;
-        }
-        let records: Vec<Vec<u32>> = slices
-            .par_iter_mut()
-            .map(|here| {
-                let n = here.len();
-                let mut record = Vec::new();
-                if n == 0 {
-                    return record;
-                }
-                if maps == 1 {
-                    record.push(0);
-                    return record;
-                }
-                let k = maps - 1;
-                let keys: Vec<u32> = here.iter().flat_map(|&r| (1..maps).map(move |m| store.maps[m][r as usize])).collect();
-                let mut order: Vec<u32> = (0..n as u32).collect();
-                order.sort_unstable_by(|&a, &b| keys[a as usize * k..][..k].cmp(&keys[b as usize * k..][..k]).then(a.cmp(&b)));
-                let sorted_here: Vec<u32> = order.iter().map(|&i| here[i as usize]).collect();
-                here.copy_from_slice(&sorted_here);
-                let mut previous: Option<&[u32]> = None;
-                for (place, &i) in order.iter().enumerate() {
-                    let key = &keys[i as usize * k..][..k];
-                    if previous != Some(key) {
-                        record.push(place as u32);
-                        record.extend_from_slice(key);
-                        previous = Some(key);
+        // the record of a group of buckets lists each run as its place in its bucket and its blocks in the other maps; `runs` gives the count of runs of
+        // each bucket.
+        const GROUP: usize = 1024;
+        let groups = buckets.div_ceil(GROUP);
+        let group_range = |g: usize| (g * GROUP, ((g + 1) * GROUP).min(buckets));
+        let results: Vec<(Vec<u32>, Vec<u32>)> = {
+            let mut slices: Vec<&mut [u32]> = Vec::with_capacity(groups);
+            let mut rest = sorted.as_mut_slice();
+            for g in 0..groups {
+                let (low, high) = group_range(g);
+                let (here, after) = rest.split_at_mut((offset[high] - offset[low]) as usize);
+                slices.push(here);
+                rest = after;
+            }
+            slices
+                .par_iter_mut()
+                .enumerate()
+                .map(|(g, slice)| {
+                    let (low, high) = group_range(g);
+                    let (mut record, mut runs) = (Vec::new(), Vec::with_capacity(high - low));
+                    let (mut keys, mut order, mut ordered) = (Vec::new(), Vec::new(), Vec::new());
+                    let k = others.len();
+                    for b in low..high {
+                        let here = &mut slice[(offset[b] - offset[low]) as usize..(offset[b + 1] - offset[low]) as usize];
+                        let n = here.len();
+                        if n == 0 {
+                            runs.push(0);
+                            continue;
+                        }
+                        if k == 0 {
+                            record.push(0);
+                            runs.push(1);
+                            continue;
+                        }
+                        keys.clear();
+                        keys.extend(here.iter().flat_map(|&r| others.iter().map(move |&m| store.maps[m][r as usize])));
+                        order.clear();
+                        order.extend(0..n as u32);
+                        if n > 1 {
+                            order.sort_unstable_by(|&a, &b| keys[a as usize * k..][..k].cmp(&keys[b as usize * k..][..k]).then(a.cmp(&b)));
+                            ordered.clear();
+                            ordered.extend(order.iter().map(|&i| here[i as usize]));
+                            here.copy_from_slice(&ordered);
+                        }
+                        let mut count = 0u32;
+                        let mut previous: Option<&[u32]> = None;
+                        for (place, &i) in order.iter().enumerate() {
+                            let key = &keys[i as usize * k..][..k];
+                            if previous != Some(key) {
+                                record.push(place as u32);
+                                record.extend_from_slice(key);
+                                previous = Some(key);
+                                count += 1;
+                            }
+                        }
+                        runs.push(count);
                     }
-                }
-                record
-            })
-            .collect();
-        let mut first_pair = vec![0usize; buckets + 1];
-        for b in 0..buckets {
-            first_pair[b + 1] = first_pair[b] + records[b].len() / maps;
+                    (record, runs)
+                })
+                .collect()
+        };
+        let mut first_pair = vec![0usize; groups + 1];
+        for g in 0..groups {
+            first_pair[g + 1] = first_pair[g] + results[g].0.len() / maps;
         }
-        let count = first_pair[buckets];
+        let count = first_pair[groups];
         assert!(count < u32::MAX as usize, "a pair number has 32 bits");
         let mut block = vec![0u32; count * maps];
         let mut start = vec![0u32; count + 1];
         let mut row_pair = vec![0u32; rows];
         {
             let (block_out, start_out, row_out) = (Disjoint(block.as_mut_ptr()), Disjoint(start.as_mut_ptr()), Disjoint(row_pair.as_mut_ptr()));
-            let (offset, first_pair, sorted, records) = (&offset, &first_pair, &sorted, &records);
-            (0..buckets).into_par_iter().for_each(|b| {
-                let record = &records[b];
-                let runs = record.len() / maps;
-                let here = &sorted[offset[b] as usize..offset[b + 1] as usize];
-                for i in 0..runs {
-                    let p = first_pair[b] + i;
-                    let at = record[i * maps] as usize;
-                    let to = if i + 1 < runs { record[(i + 1) * maps] as usize } else { here.len() };
-                    // Each bucket writes the pairs and the rows of its own.
-                    unsafe {
-                        *start_out.at(p) = offset[b] + at as u32;
-                        *block_out.at(p * maps) = if b == buckets - 1 { NONE } else { b as u32 };
-                        for m in 1..maps {
-                            *block_out.at(p * maps + m) = record[i * maps + m];
+            let (offset, first_pair, sorted, results, others) = (&offset, &first_pair, &sorted, &results, &others);
+            (0..groups).into_par_iter().for_each(|g| {
+                let (low, high) = group_range(g);
+                let (record, runs) = (&results[g].0, &results[g].1);
+                let (mut p, mut at) = (first_pair[g], 0usize);
+                for b in low..high {
+                    let n = (offset[b + 1] - offset[b]) as usize;
+                    let count = runs[b - low] as usize;
+                    for i in 0..count {
+                        let place = record[(at + i) * maps] as usize;
+                        let to = if i + 1 < count { record[(at + i + 1) * maps] as usize } else { n };
+                        // Each group writes the pairs and the rows of its own.
+                        unsafe {
+                            *start_out.at(p) = offset[b] + place as u32;
+                            *block_out.at(p * maps + primary) = if b == buckets - 1 { NONE } else { b as u32 };
+                            for (j, &m) in others.iter().enumerate() {
+                                *block_out.at(p * maps + m) = record[(at + i) * maps + 1 + j];
+                            }
+                            for &row in &sorted[offset[b] as usize + place..offset[b] as usize + to] {
+                                *row_out.at(row as usize) = p as u32;
+                            }
                         }
-                        for &row in &here[at..to] {
-                            *row_out.at(row as usize) = p as u32;
-                        }
+                        p += 1;
                     }
+                    at += count;
                 }
             });
         }
         start[count] = rows as u32;
-        Pairs { maps, block, start, rows: sorted, row_pair }
+        Pairs { maps, primary, block, start, rows: sorted, row_pair }
     }
 
     fn count(&self) -> usize {
@@ -1057,6 +1097,9 @@ impl Items for PairItems<'_> {
     fn item_of_row(&self, row: u32) -> u32 {
         self.pairs.row_pair[row as usize]
     }
+    fn sorted_map(&self) -> Option<usize> {
+        Some(self.pairs.primary)
+    }
 }
 
 /// The sums of each pair's rows' gradients and Hessians, in ascending order of the rows.
@@ -1092,6 +1135,34 @@ struct Work {
     /// For each use, what the latest split's column holds at each of its blocks (see `SplitTest`).
     memo: Vec<Vec<AtomicU32>>,
     stamp: u32,
+    /// The columns are in `groups` runs of columns, `group_of[k]` being the run of column k. For each use, where each of its blocks' entries cross from one
+    /// run to the next, as offsets from the block's first entry: `groups + 1` of them a block. None where a block holds more entries than a u16 counts.
+    group_of: Vec<u8>,
+    groups: usize,
+    offsets: Vec<Option<Vec<u16>>>,
+    /// The seconds spent in `partition`, in adding blocks, in filling histograms from them, and in `best_split`.
+    time: [f64; 4],
+}
+
+/// Where each block of a use crosses from one run of columns to the next (see `Work`): `bounds` are the first bins of the runs, and the bins end.
+fn group_offsets(data: &UseData, bounds: &[u32]) -> Option<Vec<u16>> {
+    let blocks = data.ptr.len().saturating_sub(1);
+    let width = bounds.len();
+    if (0..blocks).into_par_iter().any(|b| data.ptr[b + 1] - data.ptr[b] > u16::MAX as u64) {
+        return None;
+    }
+    let mut out = vec![0u16; blocks * width];
+    out.par_chunks_mut(width * 4096).enumerate().for_each(|(chunk, part)| {
+        for (i, offsets) in part.chunks_mut(width).enumerate() {
+            let b = chunk * 4096 + i;
+            let entries = &data.bid[data.ptr[b] as usize..data.ptr[b + 1] as usize];
+            for (r, &low) in bounds[..width - 1].iter().enumerate() {
+                offsets[r] = if low == 0 { 0 } else { entries.partition_point(|&x| x < low) as u16 };
+            }
+            offsets[width - 1] = entries.len() as u16;
+        }
+    });
+    Some(out)
 }
 
 impl Work {
@@ -1105,7 +1176,19 @@ impl Work {
             })
             .collect();
         let memo = store.uses.iter().map(|_| Vec::new()).collect();
-        Work { sums, pool: Vec::new(), seen: vec![false; store.bins], parts: Vec::new(), indices: Vec::new(), scratch: Vec::new(), flags: Vec::new(), memo, stamp: 0 }
+        // About `GROUPS` runs of columns of equal counts.
+        const GROUPS: usize = 32;
+        let groups = store.kept.clamp(1, GROUPS);
+        let first_column: Vec<usize> = (0..=groups).map(|i| store.kept * i / groups).collect();
+        let mut group_of = vec![0u8; store.kept];
+        for i in 0..groups {
+            for k in first_column[i]..first_column[i + 1] {
+                group_of[k] = i as u8;
+            }
+        }
+        let bounds: Vec<u32> = first_column.iter().map(|&k| store.col_start[k]).collect();
+        let offsets = store.uses.iter().map(|data| group_offsets(data, &bounds)).collect();
+        Work { sums, pool: Vec::new(), seen: vec![false; store.bins], parts: Vec::new(), indices: Vec::new(), scratch: Vec::new(), flags: Vec::new(), memo, stamp: 0, group_of, groups, offsets, time: [0.0; 4] }
     }
 
     /// A histogram of zeros.
@@ -1125,6 +1208,63 @@ impl Work {
         }
         self.pool.push(hist);
     }
+}
+
+/// `add_blocks` for a map whose blocks only go up along `here`: a block's items stand together, so one pass over chunks of runs adds them, in their
+/// order, and the blocks of a chunk are above the blocks of the chunks before it. Chunks start where a run starts.
+fn add_sorted<I: Items>(sums: &mut Sums, items: &I, m: usize, here: &[u32]) {
+    const CHUNK: usize = 1 << 16;
+    let n = here.len();
+    let block_at = |j: usize| items.block(m, here[j]);
+    let chunks = n.div_ceil(CHUNK);
+    let bounds: Vec<usize> = (0..=chunks)
+        .into_par_iter()
+        .map(|c| {
+            if c == 0 {
+                return 0;
+            }
+            // The items of the block that stands before the chunk go to the chunk before it.
+            let j = c * CHUNK;
+            if j >= n {
+                return n;
+            }
+            let before = block_at(j - 1);
+            (j + here[j..].partition_point(|&item| items.block(m, item) <= before)).min(n)
+        })
+        .collect();
+    let (g, h, seen) = (Disjoint(sums.g.as_mut_ptr()), Disjoint(sums.h.as_mut_ptr()), Disjoint(sums.seen.as_mut_ptr()));
+    let lists: Vec<Vec<u32>> = (0..chunks)
+        .into_par_iter()
+        .map(|c| {
+            let mut mine = Vec::new();
+            let (mut j, end) = (bounds[c], bounds[c + 1]);
+            while j < end {
+                let block = block_at(j);
+                if block == NONE {
+                    // The items with no block come last.
+                    j = end;
+                    continue;
+                }
+                debug_assert!(mine.last().is_none_or(|&last| last < block), "the blocks go up");
+                let (mut sum_g, mut sum_h) = (0.0f64, 0.0f64);
+                while j < end && block_at(j) == block {
+                    let (item_g, item_h) = items.weight(here[j]);
+                    sum_g += item_g;
+                    sum_h += item_h;
+                    j += 1;
+                }
+                // A run lies in one chunk, and a block in one run, so no two chunks write one block's sums.
+                unsafe {
+                    *g.at(block as usize) = sum_g;
+                    *h.at(block as usize) = sum_h;
+                    *seen.at(block as usize) = true;
+                }
+                mine.push(block);
+            }
+            mine
+        })
+        .collect();
+    sums.touched.extend(lists.into_iter().flatten());
 }
 
 /// Adds each item's gradient and Hessian to its block's sums, one map to a thread. `touched` lists the blocks in ascending order. A block's sums add its
@@ -1148,6 +1288,10 @@ fn add_blocks<I: Items>(work: &mut Work, items: &I, range: std::ops::Range<usize
                 sums.h[b] += h;
             }
             sums.touched.sort_unstable();
+            return;
+        }
+        if items.sorted_map() == Some(m) {
+            add_sorted(sums, items, m, here);
             return;
         }
         // The items go to the owner of their block, which adds them in their order, so no two owners write one block's sums. Three passes over the
@@ -1260,6 +1404,21 @@ fn add_entries<const TRACK: bool>(slice: &mut [Bin], marks: &mut [bool], local: 
     }
 }
 
+/// Adds the blocks of part `j` of `parts`, of each use, to `buffer`.
+#[inline(never)]
+fn fill_part(store: &Store, sums: &[Sums], j: usize, parts: usize, buffer: &mut [Bin]) {
+    let (mut no_marks, mut no_list): (Vec<bool>, Vec<u32>) = (Vec::new(), Vec::new());
+    for data in &store.uses {
+        let held = &sums[data.map];
+        let n = held.touched.len();
+        for &block in &held.touched[n * j / parts..n * (j + 1) / parts] {
+            let b = block as usize;
+            let entries = &data.bid[data.ptr[b] as usize..data.ptr[b + 1] as usize];
+            add_entries::<false>(buffer, &mut no_marks, &mut no_list, entries, 0, held.g[b], held.h[b]);
+        }
+    }
+}
+
 /// Adds each touched block's sums to the bins of its entries. With `track`, gives each bin that the rows' entries make non-zero, once. (A row with a
 /// gradient has a Hessian above 0, so a bin with an entry of such a row has a sum other than 0. A row with a Hessian of 0 and a gradient other than 0
 /// would break this, because a bin could sum to 0 and still need its parent's value to be taken from it.)
@@ -1267,7 +1426,10 @@ fn add_entries<const TRACK: bool>(slice: &mut [Bin], marks: &mut [bool], local: 
 /// A leaf with few blocks adds them in one thread, in ascending order of block. A leaf with many splits its blocks into parts of ascending blocks,
 /// adds each part to a private histogram, and then adds the private histograms to `hist`, bin by bin, in the order of the parts.
 fn fill_histogram<I: Items>(work: &mut Work, store: &Store, items: &I, range: std::ops::Range<usize>, hist: &mut [Bin], track: bool) -> Vec<u32> {
+    let began = Instant::now();
     add_blocks(work, items, range);
+    work.time[1] += began.elapsed().as_secs_f64();
+    let began = Instant::now();
     let total: usize = store.uses.iter().map(|data| work.sums[data.map].touched.len()).sum();
     let most_parts = (PART_BYTES / (store.bins.max(1) * std::mem::size_of::<Bin>())).clamp(1, MAX_PARTS);
     let parts = (total / BLOCKS_PER_PART).min(most_parts);
@@ -1298,18 +1460,7 @@ fn fill_histogram<I: Items>(work: &mut Work, store: &Store, items: &I, range: st
         }
         {
             let sums = &work.sums;
-            buffers[..parts].par_iter_mut().enumerate().for_each(|(j, buffer)| {
-                let (mut no_marks, mut no_list): (Vec<bool>, Vec<u32>) = (Vec::new(), Vec::new());
-                for data in &store.uses {
-                    let held = &sums[data.map];
-                    let n = held.touched.len();
-                    for &block in &held.touched[n * j / parts..n * (j + 1) / parts] {
-                        let b = block as usize;
-                        let entries = &data.bid[data.ptr[b] as usize..data.ptr[b + 1] as usize];
-                        add_entries::<false>(buffer, &mut no_marks, &mut no_list, entries, 0, held.g[b], held.h[b]);
-                    }
-                }
-            });
+            buffers[..parts].par_iter_mut().enumerate().for_each(|(j, buffer)| fill_part(store, sums, j, parts, buffer));
         }
         // Each span of bins is added from the private histograms, which it clears, by one thread.
         const SPAN: usize = 4096;
@@ -1343,6 +1494,7 @@ fn fill_histogram<I: Items>(work: &mut Work, store: &Store, items: &I, range: st
         lists.concat()
     };
     clear_blocks(work);
+    work.time[2] += began.elapsed().as_secs_f64();
     touched
 }
 
@@ -1521,6 +1673,10 @@ struct SplitTest<'a, I: Items> {
     has_nan: bool,
     default_left: bool,
     mask: u64,
+    /// `Work::offsets`, and the width of a block's offsets and the run of the split's column.
+    offsets: &'a [Option<Vec<u16>>],
+    width: usize,
+    group: usize,
 }
 
 impl<I: Items> SplitTest<'_, I> {
@@ -1541,7 +1697,7 @@ impl<I: Items> SplitTest<'_, I> {
             let code = if seen >> 2 == self.stamp {
                 seen & 3
             } else {
-                let code = self.code(data, b);
+                let code = self.code(data, place, b);
                 cell.store(self.stamp << 2 | code, Ordering::Relaxed);
                 code
             };
@@ -1553,8 +1709,13 @@ impl<I: Items> SplitTest<'_, I> {
     }
 
     /// What the use's block `b` says: no entry in the column, or the side its entry goes to.
-    fn code(&self, data: &UseData, b: usize) -> u32 {
+    fn code(&self, data: &UseData, place: usize, b: usize) -> u32 {
         let entries = &data.bid[data.ptr[b] as usize..data.ptr[b + 1] as usize];
+        // The column's entries lie in its run of columns.
+        let entries = match &self.offsets[place] {
+            Some(offsets) => &entries[offsets[b * self.width + self.group] as usize..offsets[b * self.width + self.group + 1] as usize],
+            None => entries,
+        };
         let at = entries.partition_point(|&x| x < self.start);
         if at < entries.len() && entries[at] < self.end {
             let bid = entries[at];
@@ -1571,9 +1732,40 @@ impl<I: Items> SplitTest<'_, I> {
     }
 }
 
+/// Tests the items of one chunk, writes each item's flag, and gives the count of items that go left and of the rows they stand for.
+#[inline(never)]
+fn test_chunk<I: Items>(test: &SplitTest<I>, items: &I, flags: &mut [bool], here: &[u32]) -> (usize, usize) {
+    let (mut count, mut rows) = (0usize, 0usize);
+    for (flag, &item) in flags.iter_mut().zip(here) {
+        let left = test.left(item);
+        *flag = left;
+        if left {
+            count += 1;
+            rows += items.rows(item);
+        }
+    }
+    (count, rows)
+}
+
+/// Writes the items of one chunk to `out`, the left ones from `l` on and the right ones from `r` on, in their order.
+#[inline(never)]
+fn scatter_chunk(out: &Disjoint<u32>, flags: &[bool], here: &[u32], mut l: usize, mut r: usize) {
+    for (&flag, &item) in flags.iter().zip(here) {
+        // Chunks write to places that no other chunk writes to.
+        if flag {
+            unsafe { *out.at(l) = item };
+            l += 1;
+        } else {
+            unsafe { *out.at(r) = item };
+            r += 1;
+        }
+    }
+}
+
 /// Stably partitions the leaf's items `work.indices[start..start + len]` by whether they go left at `split`. It returns the count of items that go left
 /// and the count of rows they stand for.
 fn partition<I: Items>(work: &mut Work, store: &Store, items: &I, start: usize, len: usize, column: u32, pos: u32, default_left: bool) -> (usize, usize) {
+    let began = Instant::now();
     let k = column as usize;
     let mask = store.col_uses[k];
     work.stamp += 1;
@@ -1599,30 +1791,19 @@ fn partition<I: Items>(work: &mut Work, store: &Store, items: &I, start: usize, 
         has_nan: store.has_nan[k] != 0,
         default_left,
         mask,
+        offsets: &work.offsets,
+        width: work.groups + 1,
+        group: work.group_of[k] as usize,
     };
     work.flags.resize(len, false);
-    {
-        let here = &work.indices[start..start + len];
-        work.flags.par_iter_mut().zip(here.par_iter()).with_min_len(1024).for_each(|(flag, &item)| {
-            *flag = test.left(item);
-        });
-    }
-    // Each chunk's left items go to the front of `scratch` after the left items of the chunks before it, and its right items after all left items.
-    const CHUNK: usize = 1 << 16;
+    // The items go in chunks. A chunk's left items go to the front of `scratch` after the left items of the chunks before it, and its right items after
+    // all left items.
+    const CHUNK: usize = 1 << 14;
     let lefts: Vec<(usize, usize)> = work
         .flags
-        .par_chunks(CHUNK)
+        .par_chunks_mut(CHUNK)
         .zip(work.indices[start..start + len].par_chunks(CHUNK))
-        .map(|(flags, here)| {
-            let (mut count, mut rows) = (0usize, 0usize);
-            for (&flag, &item) in flags.iter().zip(here) {
-                if flag {
-                    count += 1;
-                    rows += items.rows(item);
-                }
-            }
-            (count, rows)
-        })
+        .map(|(flags, here)| test_chunk(&test, items, flags, here))
         .collect();
     let left_len: usize = lefts.iter().map(|x| x.0).sum();
     let left_rows: usize = lefts.iter().map(|x| x.1).sum();
@@ -1643,25 +1824,16 @@ fn partition<I: Items>(work: &mut Work, store: &Store, items: &I, start: usize, 
         let here = &work.indices[start..start + len];
         let flags = &work.flags;
         (0..lefts.len()).into_par_iter().for_each(|i| {
-            let (mut l, mut r) = (left_at[i], right_at[i]);
             let from = i * CHUNK;
-            for j in from..(from + CHUNK).min(len) {
-                // Chunks write to places that no other chunk writes to.
-                if flags[j] {
-                    unsafe { *out.at(l) = here[j] };
-                    l += 1;
-                } else {
-                    unsafe { *out.at(r) = here[j] };
-                    r += 1;
-                }
-            }
+            let to = (from + CHUNK).min(len);
+            scatter_chunk(&out, &flags[from..to], &here[from..to], left_at[i], right_at[i]);
         });
     }
     let scratch = &work.scratch;
     work.indices[start..start + len].par_chunks_mut(CHUNK).zip(scratch[..len].par_chunks(CHUNK)).for_each(|(to, from)| to.copy_from_slice(from));
+    work.time[0] += began.elapsed().as_secs_f64();
     (left_len, left_rows)
 }
-
 
 /// Adds each leaf's value to the score of each row the leaf holds. A row stands in one leaf, so no two workers write one score.
 fn add_leaf_values(score: &mut [f64], indices: &[u32], places: &[(usize, usize)], values: &[f64]) {
@@ -1705,7 +1877,9 @@ fn grow<I: Items>(work: &mut Work, store: &Store, config: &Config, items: &I, ac
     let total_rows: usize = active.par_iter().map(|&item| items.rows(item)).sum();
     let mut hist = work.take(store);
     fill_histogram(work, store, items, 0..active.len(), &mut hist, false);
+    let began = Instant::now();
     let (best, open) = best_split(store, used, &hist, (g, h, total_rows as f64), config, active);
+    work.time[3] += began.elapsed().as_secs_f64();
     let mut leaves = vec![Leaf { start: 0, len: active.len(), rows: total_rows, g, h, hist: Some(hist), touched: None, best, open, parent: -1, is_left: false }];
     let mut tree = Tree::default();
     while leaves.len() < config.num_leaves {
@@ -1769,8 +1943,10 @@ fn grow<I: Items>(work: &mut Work, store: &Store, config: &Config, items: &I, ac
         };
         let (left_hist, left_touched, right_hist, right_touched) = if left_len < right_len { (smaller, Some(small_touched), larger, large_touched) } else { (larger, large_touched, smaller, Some(small_touched)) };
         let open = std::mem::take(&mut leaves[at].open);
+        let began = Instant::now();
         let (left_best, left_open) = best_split(store, &open, &left_hist, (left_g, left_h, left_rows as f64), config, &work.indices[start..start + left_len]);
         let (right_best, right_open) = best_split(store, &open, &right_hist, (right_g, right_h, right_rows as f64), config, &work.indices[start + left_len..start + len]);
+        work.time[3] += began.elapsed().as_secs_f64();
         leaves[at] = Leaf { start, len: left_len, rows: left_rows, g: left_g, h: left_h, hist: None, touched: None, best: left_best, open: left_open, parent: node, is_left: true };
         if left_best.is_some() {
             leaves[at].hist = Some(left_hist);
@@ -2582,6 +2758,7 @@ fn softmax(file: &Path) {
     // The seconds of the rounds so far in the gradient, in the pairs' sums, in growing the tree, and in the rest (the score, the model and the checkpoint).
     let mut seconds = [0.0f64; 4];
     let mut last_checkpoint: Option<PathBuf> = None;
+    work.time = [0.0; 4];
     for round in resumed + 1..=config.max_rounds {
         let mut train_loss = 0.0;
         let phase = Instant::now();
@@ -2662,7 +2839,7 @@ fn softmax(file: &Path) {
                 let done = (round - resumed) as f64;
                 let rate = done / elapsed;
                 println!(
-                    "round {round} of {} train loss {train_loss:.4}{} max |leaf| so far {biggest_leaf:.1} {rate:.2} rounds/s eta {:.0}s rss {:.2} GiB; a round: gradient {:.2}s pair sums {:.2}s tree {:.2}s rest {:.2}s",
+                    "round {round} of {} train loss {train_loss:.4}{} max |leaf| so far {biggest_leaf:.1} {rate:.2} rounds/s eta {:.0}s rss {:.2} GiB; a round: gradient {:.2}s pair sums {:.2}s tree {:.2}s (partition {:.2}s gather {:.2}s fill {:.2}s best split {:.2}s other {:.2}s) rest {:.2}s",
                     config.max_rounds,
                     if empty { " (no split)" } else { "" },
                     (config.max_rounds - round) as f64 / rate,
@@ -2670,6 +2847,11 @@ fn softmax(file: &Path) {
                     seconds[0] / done,
                     seconds[1] / done,
                     seconds[2] / done,
+                    work.time[0] / done,
+                    work.time[1] / done,
+                    work.time[2] / done,
+                    work.time[3] / done,
+                    (seconds[2] - work.time.iter().sum::<f64>()) / done,
                     seconds[3] / done
                 );
             }
