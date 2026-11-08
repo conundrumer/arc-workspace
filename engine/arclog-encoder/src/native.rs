@@ -24,6 +24,7 @@ use arclog::terms::{Constant, Term, TermId};
 use arclog::types::ValueType;
 
 use crate::bounds::Bound;
+use crate::columns::Columns;
 use crate::expression::Op;
 use crate::lookup::InsertionMap;
 
@@ -455,21 +456,44 @@ pub struct LibRelation {
 /// An operator over the values of its children, each column by its position.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Step {
-    Project { columns: Box<[u16]> },
+    Project { columns: Columns },
     Select { at: u16, op: Op, other: Option<u16>, drop: Option<u16> },
     Join { left: Box<[u16]>, right: Box<[u16]>, kept: Box<[u16]>, left_arity: u16 },
-    Antijoin { left: Box<[u16]>, right: Box<[u16]> },
-    Semijoin { left: Box<[u16]>, right: Box<[u16]> },
+    Antijoin { left: Box<[u16]>, right: Columns },
+    Semijoin { left: Box<[u16]>, right: Columns },
     /// The outer columns' values at which the first relation has a row, and each of its rows
     /// there has a match in the second. With no outer column, a relation of no columns.
-    All { left: Box<[u16]>, right: Box<[u16]>, outer: Box<[u16]> },
-    Part(Box<crate::gen_parts::PartStep>),
+    /// `reads` holds the `left_len` columns of the first relation that are matched, then its outer
+    /// columns.
+    All { reads: Columns, left_len: u16, right: Columns },
+    Part(Box<crate::gen_parts::PartTerm>),
     Union { map: Box<[Option<u16>]> },
     LibJoin { relation: u32, bound: Box<[Option<u16>]>, left_arity: u16 },
     Component { instance: u32, port: u16 },
 }
 
 impl Step {
+    /// A `project` at `columns`; a panic that names `text`, the term's text, where one stands twice.
+    pub fn project(columns: &[u16], text: &str) -> Step {
+        Step::Project { columns: Columns::of_term(columns, text) }
+    }
+
+    /// A `semijoin` of rows matched at `left` against the second relation's `right`.
+    pub fn semijoin(left: &[u16], right: &[u16], text: &str) -> Step {
+        Step::Semijoin { left: left.into(), right: Columns::of_term(right, text) }
+    }
+
+    /// An `antijoin` of rows matched at `left` against the second relation's `right`.
+    pub fn antijoin(left: &[u16], right: &[u16], text: &str) -> Step {
+        Step::Antijoin { left: left.into(), right: Columns::of_term(right, text) }
+    }
+
+    /// An `all` of rows matched at `left` against the second relation's `right`, over the `outer` columns of the first.
+    pub fn all(left: &[u16], right: &[u16], outer: &[u16], text: &str) -> Step {
+        let reads: Vec<u16> = left.iter().chain(outer).copied().collect();
+        Step::All { reads: Columns::of_term(&reads, text), left_len: left.len() as u16, right: Columns::of_term(right, text) }
+    }
+
     /// Whether the value is empty where its one or first child is empty.
     pub fn empty_on_empty(&self) -> bool {
         matches!(self, Step::Project { .. } | Step::Select { .. } | Step::Join { .. } | Step::Antijoin { .. } | Step::LibJoin { .. } | Step::Semijoin { .. } | Step::All { .. } | Step::Part(_))
@@ -622,7 +646,10 @@ impl<'a> Evaluator<'a> {
             Step::Join { left, right, kept, left_arity } => join(children[0], children[1], left, right, kept, *left_arity).unwrap_or(Val::None),
             Step::Antijoin { left, right } => antijoin(children[0], children[1], left, right).unwrap_or(Val::None),
             Step::Semijoin { left, right } => semijoin(children[0], children[1], left, right).unwrap_or(Val::None),
-            Step::All { left, right, outer } => all(children[0], children[1], left, right, outer).unwrap_or(Val::None),
+            Step::All { reads, left_len, right } => {
+                let (left, outer) = reads.split(*left_len);
+                all(children[0], children[1], left, right, outer).unwrap_or(Val::None)
+            }
             Step::Part(part) => part.apply(children),
             Step::Union { map } => union(children[0], children[1], map).unwrap_or(Val::None),
             Step::LibJoin { relation, bound, left_arity } => self.lib_join(children[0], *relation, bound, *left_arity),

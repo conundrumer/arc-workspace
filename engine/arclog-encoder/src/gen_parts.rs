@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::columns::Columns;
 use crate::cell_sets::{grid_pieces, relation, shape_hash, symmetry_count, Walk, STEPS};
 pub use crate::cell_sets::SetRelation;
 use crate::gen_constants::{box_bits, encoding, margins_of, number_bits, number_of};
@@ -1499,6 +1500,76 @@ fn set_relation<K: Ord>(own: &[K], theirs: &[K], fill: Option<(usize, usize)>) -
     relation(shared < own.len(), shared < theirs.len(), shared > 0, fill.is_some_and(|(area, there)| area == own.len() + there))
 }
 
+/// A part with the columns that it reads of its relations, which are listed once when the part is made.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(into = "PartStep", try_from = "PartStep")]
+pub struct PartTerm {
+    step: PartStep,
+    set: Option<Columns>,
+    second: Option<Columns>,
+}
+
+impl PartTerm {
+    /// The part `step`; a panic that shows it where a list of columns that it reads has one column twice.
+    pub fn new(step: PartStep) -> Box<PartTerm> {
+        Box::new(PartTerm::try_from(step).unwrap_or_else(|message| panic!("{message}")))
+    }
+
+    pub fn step(&self) -> &PartStep {
+        &self.step
+    }
+
+    /// The columns of the first relation that the part reads, where what it gives depends on the distinct tuples of the rows at those columns alone: the other columns of a row play no part, and a row that repeats makes no difference.
+    pub(crate) fn set_columns(&self) -> Option<&Columns> {
+        self.set.as_ref()
+    }
+
+    /// The columns of the second relation that the part reads, where what it gives depends on the distinct tuples of the rows at those columns alone.
+    pub(crate) fn second_columns(&self) -> Option<&Columns> {
+        self.second.as_ref()
+    }
+
+    /// Whether the part takes what it needs from the rows of `inside` as their boxes, where the relation has `width` columns.
+    pub(crate) fn reads_boxes(&self, width: u16) -> bool {
+        self.step.reads_boxes(width, self.set.is_some())
+    }
+
+    /// What the part gives over the rows of `inside`, where `reads_boxes` holds of it.
+    pub(crate) fn read_boxes(&self, boxes: &crate::boxes::Boxes, children: &[&Val]) -> Option<Val> {
+        self.step.read_boxes(boxes, children, self.set.as_ref())
+    }
+}
+
+impl std::ops::Deref for PartTerm {
+    type Target = PartStep;
+
+    fn deref(&self) -> &PartStep {
+        &self.step
+    }
+}
+
+impl std::fmt::Debug for PartTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.step, f)
+    }
+}
+
+impl From<PartTerm> for PartStep {
+    fn from(part: PartTerm) -> PartStep {
+        part.step
+    }
+}
+
+impl TryFrom<PartStep> for PartTerm {
+    type Error = String;
+
+    fn try_from(step: PartStep) -> Result<PartTerm, String> {
+        let list = |list: Option<Vec<u16>>| list.map(|list| Columns::new(list.as_slice()).map_err(|repeat| format!("{repeat} in the columns {list:?} that the part {step:?} reads"))).transpose();
+        let (set, second) = (list(step.set_list())?, list(step.second_list())?);
+        Ok(PartTerm { step, set, second })
+    }
+}
+
 impl PartStep {
     /// The keys of a part whose count of rows reads them only through how they group the rows: its
     /// output has one distinct head per group, so two keys that group the rows alike give one count.
@@ -1519,7 +1590,7 @@ impl PartStep {
     }
 
     /// The columns of the part's first relation that it reads, where what it gives depends on the distinct tuples of the rows at those columns alone: the other columns of a row play no part, and a row that repeats makes no difference.
-    pub(crate) fn set_columns(&self) -> Option<Vec<u16>> {
+    fn set_list(&self) -> Option<Vec<u16>> {
         let with = |keys: &[u16], more: &[u16]| Some(keys.iter().chain(more).copied().collect());
         match self {
             PartStep::Pieces { keys, p, .. } | PartStep::BoxOf { keys, p } | PartStep::RelBox { keys, p } | PartStep::ShapeClass { keys, p, .. } | PartStep::Holes { keys, p } | PartStep::Symmetry { keys, p } | PartStep::TouchesEdge { keys, p } | PartStep::FillsBox { keys, p } | PartStep::BoxSides { keys, p } | PartStep::BoxMargins { keys, p } | PartStep::LineCounts { keys, p } | PartStep::CellCount { keys, p } | PartStep::GroupGap { keys, p } | PartStep::Straight { keys, p } | PartStep::StraightAxis { keys, p } | PartStep::FullLines { keys, p } | PartStep::DiffGroupsOff { keys, p, .. } => with(keys, &[*p]),
@@ -1533,24 +1604,24 @@ impl PartStep {
     }
 
     /// The columns of the part's second relation that it reads, where what it gives depends on the distinct tuples of the rows at those columns alone.
-    pub(crate) fn second_columns(&self) -> Option<Vec<u16>> {
+    fn second_list(&self) -> Option<Vec<u16>> {
         match self {
             PartStep::DeterminesFlag { b, .. } => Some(vec![*b]),
             _ => None,
         }
     }
 
-    /// Whether the part takes what it needs from the rows of `inside` as their boxes, where the relation has `width` columns: it reads the columns of the relation alone and counts a row once for each cell of its box, or it reads `set_columns`.
-    pub(crate) fn reads_boxes(&self, width: u16) -> bool {
+    /// Whether the part takes what it needs from the rows of `inside` as their boxes, where the relation has `width` columns: it reads the columns of the relation alone and counts a row once for each cell of its box, or it reads a set of columns (`has_set`).
+    fn reads_boxes(&self, width: u16, has_set: bool) -> bool {
         match self {
             PartStep::Count { keys } => keys.iter().all(|key| *key < width),
             PartStep::MostFrequentRows { keys, v } | PartStep::SecondFrequentRows { keys, v } => *v < width && keys.iter().all(|key| *key < width),
-            _ => self.set_columns().is_some(),
+            _ => has_set,
         }
     }
 
-    /// What the part gives over the rows of `inside`, where `reads_boxes` holds of it: a count of rows counts the cells of each box.
-    pub(crate) fn read_boxes(&self, boxes: &crate::boxes::Boxes, children: &[&Val]) -> Option<Val> {
+    /// What the part gives over the rows of `inside`, where `reads_boxes` holds of it: a count of rows counts the cells of each box. `set` is the part's set of columns of the first relation.
+    fn read_boxes(&self, boxes: &crate::boxes::Boxes, children: &[&Val], set: Option<&Columns>) -> Option<Val> {
         match self {
             PartStep::Count { keys } => {
                 let t = boxes.support();
@@ -1578,8 +1649,8 @@ impl PartStep {
                 Some(boxes.with_rows(&Table::new(t.arity, out)))
             }
             _ => {
-                let columns = self.set_columns()?;
-                Some(match boxes.rows_at(&columns) {
+                let columns = set?;
+                Some(match boxes.rows_at(columns) {
                     Some(t) => self.run(&t, children).unwrap_or(Val::None),
                     None => Val::None,
                 })

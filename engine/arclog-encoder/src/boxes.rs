@@ -11,6 +11,7 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
+use crate::columns::Columns;
 use crate::gen_constants::{box_bits, margins_of};
 use crate::gen_parts::GridView;
 use crate::native::{all, antijoin, hash_words, project, select, semijoin, Cell, FastMap, Step, Table, Val, CELL_CAP};
@@ -167,7 +168,7 @@ impl Boxes {
     }
 
     /// A table in which the rows of `inside` stand at `columns`: the relation's rows whose box has a cell in the grid where every column is the relation's, and otherwise `sketch`.
-    pub fn rows_at(&self, columns: &[u16]) -> Option<Arc<Table>> {
+    pub fn rows_at(&self, columns: &Columns) -> Option<Arc<Table>> {
         if columns.iter().all(|column| *column < self.width()) {
             return Some(self.support());
         }
@@ -175,10 +176,9 @@ impl Boxes {
     }
 
     /// The distinct tuples of the rows of `inside` at `columns`, as rows of the arity of `inside` with 0 at each other column: no value where they pass `CELL_CAP` cells. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
-    fn sketch(&self, columns: &[u16]) -> Option<Arc<Table>> {
+    fn sketch(&self, columns: &Columns) -> Option<Arc<Table>> {
         let mut key: Vec<u16> = columns.to_vec();
         key.sort_unstable();
-        key.dedup();
         let key = key.into_boxed_slice();
         let held = self.sketches.lock().expect("a sketch lock").1.get(&key).cloned();
         let built = match held {
@@ -312,7 +312,7 @@ impl Boxes {
     /// The relation that `step` reads in place of these boxes as its second relation, where `reads_second` holds of it: no value where the rows pass `CELL_CAP` cells.
     pub fn read_second(&self, step: &Step) -> Option<Val> {
         let columns = second_columns(step)?;
-        Some(self.rows_at(&columns).map_or(Val::None, Val::of_table))
+        Some(self.rows_at(columns).map_or(Val::None, Val::of_table))
     }
 
     /// The boxes of the relation's rows that `value` holds, where `value` gives a set of them whole.
@@ -360,9 +360,9 @@ impl Boxes {
                 let kept = antijoin(&Val::of_table(self.support()), children[1], left, right);
                 self.kept(kept.unwrap_or(Val::None))
             }
-            Step::All { left, right, outer } => {
-                let columns: Vec<u16> = left.iter().chain(outer.iter()).copied().collect();
-                Some(match self.rows_at(&columns) {
+            Step::All { reads, left_len, right } => {
+                let (left, outer) = reads.split(*left_len);
+                Some(match self.rows_at(reads) {
                     Some(table) => all(&Val::of_table(table), children[1], left, right, outer).unwrap_or(Val::None),
                     None => Val::None,
                 })
@@ -374,9 +374,9 @@ impl Boxes {
 }
 
 /// The columns of `step`'s second relation that it reads, where what it gives depends on the distinct tuples of the rows at those columns alone.
-pub(crate) fn second_columns(step: &Step) -> Option<Vec<u16>> {
+pub(crate) fn second_columns(step: &Step) -> Option<&Columns> {
     match step {
-        Step::Semijoin { right, .. } | Step::Antijoin { right, .. } | Step::All { right, .. } => Some(right.to_vec()),
+        Step::Semijoin { right, .. } | Step::Antijoin { right, .. } | Step::All { right, .. } => Some(right),
         Step::Part(part) => part.second_columns(),
         _ => None,
     }

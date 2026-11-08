@@ -46,6 +46,7 @@ pub mod catalog_run;
 pub mod catalog_vector;
 pub mod cell_sets;
 pub mod closed;
+pub mod columns;
 pub mod encoder;
 pub mod enumerate;
 pub mod expand;
