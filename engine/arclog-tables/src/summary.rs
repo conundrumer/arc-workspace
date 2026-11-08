@@ -874,11 +874,14 @@ fn rows_hash_of_table(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], a
 }
 
 /// Sorts `items` as `sort_unstable` does. Items that are hashes stand evenly over their high bits, so
-/// one pass copies each item to the place of its bucket of the high 11 bits in another vector, and each bucket, which is
-/// small, is sorted on its own. The copies are independent of each other.
+/// one pass copies each item to the place of its bucket of the high 11 bits in another vector. A bucket of more
+/// than 32 items is split by the next 8 bits in a second pass, in the cache, and each part, which is a few items,
+/// is sorted on its own. The copies are independent of each other.
 fn sort_hashes(items: &mut [u128]) {
     const BITS: u32 = 11;
     const BUCKETS: usize = 1 << BITS;
+    const PART_BITS: u32 = 8;
+    const PARTS: usize = 1 << PART_BITS;
     if items.len() < 1 << 16 {
         items.sort_unstable();
         return;
@@ -898,8 +901,36 @@ fn sort_hashes(items: &mut [u128]) {
         sorted[next[at]] = item;
         next[at] += 1;
     }
+    let part = |item: u128| ((item >> (128 - BITS - PART_BITS)) as usize) & (PARTS - 1);
+    let mut scratch: Vec<u128> = Vec::new();
     for at in 0..BUCKETS {
-        sorted[starts[at]..starts[at + 1]].sort_unstable();
+        let held = &mut sorted[starts[at]..starts[at + 1]];
+        if held.len() <= 32 {
+            held.sort_unstable();
+            continue;
+        }
+        let mut ends = [0usize; PARTS + 1];
+        for &item in held.iter() {
+            ends[part(item) + 1] += 1;
+        }
+        for at in 0..PARTS {
+            ends[at + 1] += ends[at];
+        }
+        let mut next = [0usize; PARTS];
+        next.copy_from_slice(&ends[..PARTS]);
+        scratch.clear();
+        scratch.resize(held.len(), 0);
+        for &item in held.iter() {
+            let at = part(item);
+            scratch[next[at]] = item;
+            next[at] += 1;
+        }
+        for at in 0..PARTS {
+            if ends[at + 1] - ends[at] > 1 {
+                scratch[ends[at]..ends[at + 1]].sort_unstable();
+            }
+        }
+        held.copy_from_slice(&scratch);
     }
     items.copy_from_slice(&sorted);
 }
