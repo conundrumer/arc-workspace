@@ -212,6 +212,10 @@ A native proposer takes these forms as a proposer written in arclog does. The ot
 
 So `0` and "no value" differ. `cardinality` gives `0` on no rows. A ground expression has no value where its binding was refused, which means it does not exist, where a bound stopped it, where a relation it reads has no value, where it is task-wide over a parameterized table with several constraint models, or, for a `ratio`, where the second relation has no rows.
 
+### The budget of a term
+
+A walk gives each term a budget of 100,000,000 cells. The environment variable `GENERATE_WALK_CELLS` sets another. At each ARC example, a term is charged the cells of each relation it reads and the cells of the relation it gives. The cells of a relation are the count of its rows times the count of its columns, whether the relation stands as written rows or as the relations it comes from. The charge depends on the relations alone, and not on how an operator computes the term. A term is charged its inputs before it is evaluated, so a term whose inputs pass the budget is not evaluated, and it is charged its output as it is written, or by its count of rows where the rows stay unwritten. A term whose charges, added over its ARC examples, pass the budget has no value at any of them, and so has each term that reads it. A term that reads a relation which alone passes the budget has no value in the same way.
+
 ## Vectors
 
 The [sample contract](../sample-build/contract.md) defines the vectors and their levels. This section gives their holes and how a shape stands for an entry.

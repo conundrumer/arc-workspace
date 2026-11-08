@@ -2,7 +2,7 @@
 //!
 //! A [`Joined`] holds tables, the nodes, and equalities between a column of one node and a column of another. Its rows are every choice of one row from each node that agrees on each equality. The nodes and the node pairs that the equalities name form a tree, and each node after the first has a parent. A node pair holds all its equalities as one key. A `join` of two tables is two nodes and the pairs of its columns. A `join` or a `select` over a [`Joined`] adds nodes, equalities or a filter of one node's rows, and never the rows themselves.
 //!
-//! The count of the rows is the sum, over the rows of the first node, of the product over its children of the sum over their rows at its key, and so on down the tree. A count of rows grouped by some columns, and the distinct tuples of the rows at some columns, are read from the nodes that hold the columns and the nodes that join them: a node with no column asked for tells only whether a row has a partner. An operator whose value depends on the distinct tuples of the rows at some columns reads those tuples. Any other operator reads the rows written out, once, up to `CELL_CAP` cells.
+//! The count of the rows is the sum, over the rows of the first node, of the product over its children of the sum over their rows at its key, and so on down the tree. A count of rows grouped by some columns, and the distinct tuples of the rows at some columns, are read from the nodes that hold the columns and the nodes that join them: a node with no column asked for tells only whether a row has a partner. An operator whose value depends on the distinct tuples of the rows at some columns reads those tuples. Any other operator reads the rows written out, once.
 //!
 //! A relation's rows are a set, so the rows of the join are distinct: each row holds a row of every node, and each column of a node is a column of the join or equals one.
 
@@ -66,7 +66,7 @@ pub struct Joined {
     hash: u128,
     /// The count of rows of the join.
     rows: u64,
-    /// The rows, once written: no value where they pass `CELL_CAP` cells.
+    /// The rows, once written: no value where they pass the output limit.
     written: OnceLock<Val>,
     /// For each node, whether each of its rows stands in a row of the join.
     live: OnceLock<Vec<Vec<bool>>>,
@@ -500,12 +500,12 @@ impl Joined {
         self.nodes.iter().map(|table| table.cells.len()).sum::<usize>() + self.links.iter().map(|link| link.ids.len() + link.parent_ids.len() + 2 * link.weights.len()).sum::<usize>()
     }
 
-    /// Whether the rows of the join can be written out, in at most `CELL_CAP` cells.
+    /// Whether the rows of the join can be written out, in at most the output limit of cells.
     pub fn fits(&self) -> bool {
-        self.rows.saturating_mul(self.width() as u64) <= CELL_CAP as u64
+        self.rows.saturating_mul(self.width() as u64) <= crate::native::output_limit() as u64
     }
 
-    /// The rows of the join written out, or no value where they pass `CELL_CAP` cells.
+    /// The rows of the join written out, or no value where they pass the output limit.
     pub fn written(&self) -> Val {
         let held = self.written.get_or_init(|| {
             let value = self.write();
@@ -513,7 +513,7 @@ impl Joined {
             value
         });
         if matches!(held, Val::None) {
-            crate::bounds::mark(Bound::JoinOutput);
+            crate::bounds::mark(Bound::Walk);
         }
         held.clone()
     }
@@ -582,8 +582,8 @@ impl Joined {
         key.iter().map(|column| self.places.get(usize::from(*column)).copied()).collect()
     }
 
-    /// The distinct tuples of the rows of the join at the columns `key`, which stand sorted and distinct, each with the count of rows of the join that hold it: no value where the tuples a node passes to its parent pass `CELL_CAP` cells at `per_row` cells a tuple. The tuples stand in order, the cells of each in the order of `key`. Without `weighted`, the counts are not the rows' counts.
-    fn grouped(&self, key: &[u16], per_row: usize, weighted: bool) -> Option<(Vec<Cell>, Vec<u64>)> {
+    /// The distinct tuples of the rows of the join at the columns `key`, which stand sorted and distinct, each with the count of rows of the join that hold it. The tuples stand in order, the cells of each in the order of `key`. Without `weighted`, the counts are not the rows' counts.
+    fn grouped(&self, key: &[u16], weighted: bool) -> Option<(Vec<Cell>, Vec<u64>)> {
         let count = self.nodes.len();
         let at = self.at(key)?;
         let children = self.children();
@@ -636,9 +636,6 @@ impl Joined {
                 });
                 total = total.saturating_add(product);
             }
-            if total.saturating_mul(per_row) > CELL_CAP {
-                return None;
-            }
             let mut tuples: Vec<Cell> = Vec::with_capacity(total * stride);
             let mut tuple_counts: Vec<u64> = Vec::with_capacity(total);
             let mut head: Vec<Cell> = Vec::with_capacity(stride);
@@ -675,7 +672,7 @@ impl Joined {
         key.iter().filter_map(|column| self.places.get(usize::from(*column))).filter(|place| place.node == node).map(|place| place.at).collect()
     }
 
-    /// A table in which the distinct tuples of the rows of the join stand at `columns`, as rows of the join's width with 0 at each other column: no value where they pass `CELL_CAP` cells. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
+    /// A table in which the distinct tuples of the rows of the join stand at `columns`, as rows of the join's width with 0 at each other column. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
     pub fn rows_at(&self, columns: &Columns) -> Option<Arc<Table>> {
         let mut key: Vec<u16> = columns.to_vec();
         key.sort_unstable();
@@ -694,9 +691,6 @@ impl Joined {
                 built
             }
         };
-        if built.is_none() {
-            crate::bounds::mark(Bound::JoinOutput);
-        }
         built
     }
 
@@ -706,7 +700,7 @@ impl Joined {
         if key.is_empty() {
             return Some(Table::new(width, vec![0; width]));
         }
-        let (tuples, _) = self.grouped(key, width, false)?;
+        let (tuples, _) = self.grouped(key, false)?;
         let mut out: Vec<Cell> = vec![0; tuples.len() / key.len() * width];
         for (row, tuple) in out.chunks_exact_mut(width).zip(tuples.chunks_exact(key.len())) {
             for (column, cell) in key.iter().zip(tuple) {
@@ -731,7 +725,7 @@ impl Joined {
         if let Some(count) = self.tree_count(&key) {
             return Some(count);
         }
-        match self.grouped(&key, key.len(), false) {
+        match self.grouped(&key, false) {
             Some((tuples, _)) => Some((tuples.len() / key.len()) as u64),
             None => {
                 crate::bounds::mark(Bound::CountOutput);
@@ -890,7 +884,7 @@ impl Joined {
         if self.at(&unique).is_none() {
             return Val::None;
         }
-        let Some((tuples, weights)) = self.grouped(&unique, keys.len() + 1, true) else {
+        let Some((tuples, weights)) = self.grouped(&unique, true) else {
             crate::bounds::mark(Bound::CountOutput);
             return Val::None;
         };
@@ -929,7 +923,7 @@ impl Joined {
         matches!(step, Step::Join { .. } | Step::Select { .. })
     }
 
-    /// The relation that `step` reads in place of the join as its second relation, where `reads_second` holds of it: no value where the tuples pass `CELL_CAP` cells.
+    /// The relation that `step` reads in place of the join as its second relation, where `reads_second` holds of it.
     pub fn read_second(&self, step: &Step) -> Option<Val> {
         let columns = second_columns(step)?;
         Some(self.rows_at(columns).map_or(Val::None, Val::of_table))

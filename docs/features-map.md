@@ -27,6 +27,7 @@ Where each thing about features over tables is defined. One document defines eac
 ## Code
 
 - The encoder and the generated shapes: `engine/arclog-encoder`.
+- The budget of cells that stops a term in a walk, and the charge against it: [The budget of a term](feature-spec/feature-spec.md#the-budget-of-a-term). The code is `Walker::walk_of` in `engine/arclog-encoder/src/generate.rs`.
 - The named parts: `engine/lib/features.arclog`.
 - The scripts that score features: `model/feature_eval`.
 - The trainer those scripts run: `engine/block-boost`.

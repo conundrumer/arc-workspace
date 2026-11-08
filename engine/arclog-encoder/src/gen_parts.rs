@@ -431,10 +431,7 @@ pub fn flat(value: &Val) -> Option<Arc<Table>> {
     if let Some(found) = FLATS.with(|flats| flats.borrow().0.get(&key).cloned()) {
         return Some(found);
     }
-    let Some(built) = flat_product(value, parts, arity) else {
-        crate::bounds::mark(crate::bounds::Bound::Flat);
-        return None;
-    };
+    let built = flat_product(value, parts, arity)?;
     FLATS.with(|flats| {
         let mut flats = flats.borrow_mut();
         flats.1 += built.cells.len();
@@ -454,7 +451,7 @@ thread_local! {
 
 fn flat_product(value: &Val, parts: &[crate::native::Part], arity: usize) -> Option<Arc<Table>> {
     if parts.iter().any(|part| part.table.arity == 0) {
-        let rows = value.rows(arity, 1 << 18)?;
+        let rows = value.rows(arity, usize::MAX)?;
         let mut cells = Vec::with_capacity(rows.len() * arity);
         for row in &rows {
             cells.extend_from_slice(row);
@@ -463,9 +460,7 @@ fn flat_product(value: &Val, parts: &[crate::native::Part], arity: usize) -> Opt
     }
     // The product, whose first part varies slowest, written straight into place.
     let total = parts.iter().try_fold(1usize, |total, part| total.checked_mul(part.table.len))?;
-    if total > 1 << 18 {
-        return None;
-    }
+    total.checked_mul(arity)?;
     let mut cells: Vec<Cell> = vec![0; total * arity];
     let mut stride = 1usize;
     for part in parts.iter().rev() {

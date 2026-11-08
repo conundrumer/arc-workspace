@@ -18,36 +18,16 @@ use crate::lookup::LookupMap;
 pub enum Bound {
     /// `inside-boxes` and `boxes-holding`: the rows of the left side times the boxes of the right side pass 4,000,000.
     BoxesGuard,
-    /// A side of a `join`, as a product of parts, passes `CELL_CAP` cells. No step marks it: a `join` reads the parts of a side in place, or joins them one at a time.
-    JoinSide,
-    /// The rows of a `join` that an operator reads, written out or as the tuples at the columns it names, pass `CELL_CAP` cells.
-    JoinOutput,
-    /// The product of the parts of an `antijoin`'s left that hold its paired columns passes `CELL_CAP` cells. One part is read in place at any size.
-    AntijoinSide,
-    /// The pairs of rows that a `select` keeps from two parts, where it compares a column of one with a column of the other, pass `CELL_CAP` cells.
-    SelectSide,
-    /// A side or the output of a `union` passes `CELL_CAP` cells.
-    Union,
-    /// The groups that a count over a `join` stands for pass `CELL_CAP` cells, or the work of counting the distinct tuples of its rows passes its bound.
+    /// The work of counting the distinct tuples of the rows of a `join` passes its bound.
     CountOutput,
-    /// A product of parts that `flat` writes passes 2^18 rows.
-    Flat,
-    /// A term has passed its budget of cells of values, which includes the rows of `inside` that it writes out, or one write of such rows passes that budget.
+    /// A term has passed its budget of cells: the cells of the inputs it reads plus the cells of its outputs, each as rows times columns, at each instance. An operator that writes an output past the budget calls [`mark`] with it as well.
     Walk,
     /// `complement` reads a box of more than 4096 cells.
     ComplementArea,
-    /// A lib join passes `CELL_CAP` cells, on a side or as its output.
-    LibJoin,
-    /// The rows that a component takes as input pass `CELL_CAP` cells.
-    Projected,
-    /// The rows that a component gives pass `CELL_CAP` cells.
-    ComponentOutput,
 }
 
 /// The name of each bound, in the order of [`Bound`].
-const NAMES: [&str; 13] = [
-    "boxes-guard", "cap-join-side", "cap-join-output", "cap-antijoin-side", "cap-select-side", "cap-union", "cap-count-output", "flat", "walk", "complement-area", "cap-lib-join", "cap-projected", "cap-component-output",
-];
+const NAMES: [&str; 4] = ["boxes-guard", "cap-count-output", "walk", "complement-area"];
 
 /// The slot of the evaluations in a head's counts, and of those whose input already had no value.
 const EVALUATIONS: usize = NAMES.len();

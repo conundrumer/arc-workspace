@@ -8,8 +8,8 @@
 //! tuple of the relation's columns. An operator that keeps rows whole, over the relation's
 //! columns, keeps the relation's rows, and gives boxes again. A `select` that compares the cell
 //! column or the color column writes only the pairs of a row and a cell that pass. Any other
-//! operator reads the rows written out, once. A write that passes the walker's budget of cells for
-//! one term ([`walk_cells`]) gives no value.
+//! operator reads the rows written out, once. The pairs that a `select` keeps, where they pass the
+//! output limit of cells, give no value.
 
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -17,7 +17,6 @@ use crate::columns::Columns;
 use crate::gen_constants::{box_bits, margins_of};
 use crate::gen_parts::GridView;
 use crate::expression::Op;
-use crate::generate::walk_cells;
 use crate::native::{all, antijoin, hash_words, holds, project, select, semijoin, Cell, FastMap, Step, Table, Val};
 
 /// Marks the hash of a [`Boxes`], which no other value's hash has.
@@ -38,7 +37,7 @@ pub struct Boxes {
     rows: u64,
     /// The rows of the relation whose box has a cell in the grid.
     support: OnceLock<Arc<Table>>,
-    /// The rows of `inside`, once written: no value where they pass one term's budget of cells.
+    /// The rows of `inside`, once written: no value where they pass the output limit.
     written: OnceLock<Val>,
     /// The tables of `sketch`, by their columns, and the cells that they hold.
     sketches: Mutex<(usize, FastMap<Box<[u16]>, Option<Arc<Table>>>)>,
@@ -116,12 +115,12 @@ impl Boxes {
         }).clone()
     }
 
-    /// Whether the rows of `inside` can be written out, in at most one term's budget of cells.
+    /// Whether the rows of `inside` can be written out, in at most the output limit of cells.
     pub fn fits(&self) -> bool {
-        self.rows.saturating_mul(self.table.arity as u64 + 2) <= walk_cells() as u64
+        self.rows.saturating_mul(self.table.arity as u64 + 2) <= crate::native::output_limit() as u64
     }
 
-    /// The rows of `inside` written out, or no value where they pass one term's budget of cells.
+    /// The rows of `inside` written out, or no value where they pass the output limit.
     pub fn written(&self) -> Val {
         let held = self.written.get_or_init(|| {
             let started = crate::bounds::started();
@@ -191,7 +190,7 @@ impl Boxes {
         self.sketch(columns)
     }
 
-    /// The distinct tuples of the rows of `inside` at `columns`, as rows of the arity of `inside` with 0 at each other column: no value where they pass one term's budget of cells. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
+    /// The distinct tuples of the rows of `inside` at `columns`, as rows of the arity of `inside` with 0 at each other column. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
     fn sketch(&self, columns: &Columns) -> Option<Arc<Table>> {
         let mut key: Vec<u16> = columns.to_vec();
         key.sort_unstable();
@@ -212,9 +211,6 @@ impl Boxes {
                 built
             }
         };
-        if built.is_none() {
-            crate::bounds::mark(crate::bounds::Bound::Walk);
-        }
         built
     }
 
@@ -282,9 +278,6 @@ impl Boxes {
             };
             let held = cells_of(&union);
             if want_p {
-                if (out.len() / arity + held.len()).saturating_mul(arity) > walk_cells() {
-                    return None;
-                }
                 for place in held {
                     let (r, c) = ((place as i32) / grid.w, (place as i32) % grid.w);
                     row[width] = box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c);
@@ -298,9 +291,6 @@ impl Boxes {
                 colors.extend(held.iter().map(|place| grid.colors[*place]));
                 colors.sort_unstable();
                 colors.dedup();
-                if (out.len() / arity + colors.len()).saturating_mul(arity) > walk_cells() {
-                    return None;
-                }
                 for color in &colors {
                     row[width + 1] = *color;
                     out.extend_from_slice(&row);
@@ -327,7 +317,7 @@ impl Boxes {
         second_columns(step).is_some()
     }
 
-    /// The relation that `step` reads in place of these boxes as its second relation, where `reads_second` holds of it: no value where the rows pass one term's budget of cells.
+    /// The relation that `step` reads in place of these boxes as its second relation, where `reads_second` holds of it.
     pub fn read_second(&self, step: &Step) -> Option<Val> {
         let columns = second_columns(step)?;
         Some(self.rows_at(columns).map_or(Val::None, Val::of_table))
@@ -371,7 +361,7 @@ impl Boxes {
         Boxes::of(&table, moved, self.grid.clone(), self.grid_hash)
     }
 
-    /// The rows of `inside` that pass a `select`, written out: no value where they pass one term's budget of cells. A row of the relation passes with the cells of its box that the comparison keeps. A comparison of the cell column with a column of the relation keeps one cell at most, which is found from the box's extent.
+    /// The rows of `inside` that pass a `select`, written out: no value where they pass the output limit. A row of the relation passes with the cells of its box that the comparison keeps. A comparison of the cell column with a column of the relation keeps one cell at most, which is found from the box's extent.
     fn select_pairs(&self, at: u16, op: Op, other: Option<u16>, drop: Option<u16>) -> Val {
         let grid = &self.grid;
         let width = usize::from(self.width());
@@ -441,8 +431,8 @@ impl Boxes {
                     }
                 }
             }
-            if out.len() > walk_cells() {
-                crate::bounds::mark(crate::bounds::Bound::Walk);
+            if out.len() > crate::native::output_limit() {
+                crate::native::passed_output_limit();
                 crate::bounds::wrote("pairs", out.len(), started);
                 return Val::None;
             }

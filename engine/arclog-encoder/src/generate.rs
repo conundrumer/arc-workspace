@@ -2453,16 +2453,16 @@ pub struct Walker<'a> {
     eval: Evaluator<'a>,
     values: Vec<Val>,
     value_index: FastMap<u128, u32>,
-    memo: FastMap<(u32, u32, u32), (u32, Forced)>,
-    counts: FastMap<(u32, u32, u32), (u32, u32, Forced)>,
+    memo: FastMap<(u32, u32, u32), u32>,
+    counts: FastMap<(u32, u32, u32), (u32, u32)>,
     /// How keys group a value's rows: a hash of the grouping, and the count of groups.
     groupings: FastMap<(u32, u32), (u128, u32)>,
     /// A part's count of rows at a grouping of its first value, with its second value.
-    group_counts: FastMap<(u32, u32, u128, u32), (u32, Forced)>,
+    group_counts: FastMap<(u32, u32, u128, u32), u32>,
     /// The cells that `values` holds.
     held_cells: usize,
-    /// For a lazy value by id, the id of its written rows and their cells.
-    written_of: FastMap<u32, (u32, usize)>,
+    /// For a lazy value by id, the id of its written rows.
+    written_of: FastMap<u32, u32>,
     /// The stored values that have a copy on disk, by id.
     spilled: FastMap<u32, Spilled>,
     /// The folder of those copies, once made.
@@ -2475,10 +2475,8 @@ pub struct Walker<'a> {
     pub examples: u32,
     /// The cells and the memo entries it holds at most between walks.
     budget: (usize, usize),
-    /// Whether the last walk stopped a term that passed [`walk_cells`] cells of its own, so that the term, and every term that reads it, have no value.
+    /// Whether the last walk stopped a term that was charged more than [`walk_cells`] cells, so that the term, and every term that reads it, have no value.
     pub over_budget: bool,
-    /// The next id that stands for the charge of the rows an evaluation reads from a lazy value, counting down from the greatest id, which no value has.
-    read_charge: u32,
 }
 
 /// What a walker's copies on disk have cost: the values and cells written and read back, and the time of each.
@@ -2500,17 +2498,14 @@ struct Spilled {
     here: bool,
 }
 
-/// The lazy values that an evaluation forced, by id, with the cells of the rows written out for each.
-type Forced = Option<Arc<[(u32, usize)]>>;
-
 /// What a walker holds at most between walks.
 const HELD_CELLS: usize = 3_000_000;
 const HELD_MEMO: usize = 250_000;
-/// The cells that one term's evaluation can give in a walk, counted at each instance, with the cells of the rows of each lazy value it forces once, by default ([`walk_cells`]).
+/// The cells that one term can be charged in a walk, by default ([`walk_cells`]): those of each input it reads and of each output it gives, at each instance, each as rows times columns.
 const WALK_CELLS: usize = 100_000_000;
 
-/// The cells that one term's evaluation can give in a walk: `GENERATE_WALK_CELLS` where it is set, else [`WALK_CELLS`].
-pub(crate) fn walk_cells() -> usize {
+/// The cells that one term can be charged in a walk: `GENERATE_WALK_CELLS` where it is set, else [`WALK_CELLS`].
+fn walk_cells() -> usize {
     static LIMIT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *LIMIT.get_or_init(|| std::env::var("GENERATE_WALK_CELLS").ok().and_then(|text| text.parse().ok()).unwrap_or(WALK_CELLS))
 }
@@ -2537,6 +2532,11 @@ fn rows_of(value: &Val) -> Option<u64> {
         Val::Joined(joined) => Some(joined.rows()),
         Val::Rows(parts) => Some(parts.iter().fold(1u64, |count, part| count.saturating_mul(part.table.len as u64))),
     }
+}
+
+/// The cells of `rows` rows of `arity` columns, as a set. No rows are no cells.
+fn set_cells(rows: Option<u64>, arity: usize) -> usize {
+    rows.map_or(0, |rows| usize::try_from(rows.saturating_mul(arity as u64)).unwrap_or(usize::MAX))
 }
 
 fn count_of(value: &Val) -> u32 {
@@ -2599,74 +2599,6 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Root
     }
 }
 
-/// What one term's evaluation has charged against its budget. The evaluation owns it and passes it to what it calls, a walk makes a new one for each term, and nothing else adds to it: the cells of the results the term keeps, and the cells of the rows of each lazy value it forces, each once.
-#[derive(Default)]
-struct Spent {
-    results: usize,
-    written: usize,
-    /// Whether an evaluation charges the cells of the rows it reads from a lazy value, which a term that keeps no results does not otherwise count.
-    charge_reads: bool,
-    /// The lazy values charged so far, by id.
-    charged: LookupSet<u32>,
-    /// The lazy values, with the cells of their written rows, that the evaluations in progress have forced, in order.
-    forced: Vec<(u32, usize)>,
-}
-
-impl Spent {
-    /// The cells charged.
-    fn total(&self) -> usize {
-        self.results + self.written
-    }
-
-    /// The term keeps a result of `cells`.
-    fn keep(&mut self, cells: usize) {
-        self.results += cells;
-    }
-
-    /// An evaluation forces the lazy value at `id`: the term charges its `cells` if it has not, and the evaluation records it.
-    fn force(&mut self, id: u32, cells: usize) {
-        self.forced.push((id, cells));
-        if self.charged.insert(id) {
-            self.written += cells;
-            if crate::bounds::enabled() {
-                crate::bounds::tally("charge", "cells charged, each lazy value once per term".to_string(), cells as u64);
-            }
-        } else if crate::bounds::enabled() {
-            crate::bounds::tally("charge", "cells that a repeated force would have charged".to_string(), cells as u64);
-        }
-    }
-
-    /// Where the record of forced values stands, for [`Spent::since`] and [`Spent::end`].
-    fn mark(&self) -> usize {
-        self.forced.len()
-    }
-
-    /// The lazy values that the evaluations since `mark` forced.
-    fn since(&self, mark: usize) -> Forced {
-        if self.forced.len() == mark {
-            return None;
-        }
-        let mut list = self.forced[mark..].to_vec();
-        list.sort_unstable();
-        list.dedup();
-        Some(list.into())
-    }
-
-    /// The evaluation since `mark` is over: its record goes. The cells it charged stay.
-    fn end(&mut self, mark: usize) {
-        self.forced.truncate(mark);
-    }
-
-    /// A memo hit forces the lazy values that its evaluation forced when it ran, as a fresh evaluation does.
-    fn replay(&mut self, forced: &Forced) {
-        if let Some(list) = forced {
-            for &(id, cells) in list.iter() {
-                self.force(id, cells);
-            }
-        }
-    }
-}
-
 /// The folder of a walker's copies on disk, which goes when the walker does.
 struct SpillDir(std::path::PathBuf);
 
@@ -2678,7 +2610,7 @@ impl Drop for SpillDir {
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_of: FastMap::default(), spilled: FastMap::default(), spill_dir: None, spill_serial: 0, spill_cost: SpillCost::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false, read_charge: u32::MAX }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_of: FastMap::default(), spilled: FastMap::default(), spill_dir: None, spill_serial: 0, spill_cost: SpillCost::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
     }
 
     /// A walker that holds more between walks than [`Walker::new`], for many related tables.
@@ -2960,50 +2892,39 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// The id of the value at `id` with the rows of `inside` or of a `join` written out, unless `step` takes what it needs from the relations they come from, as its first relation or, where `first` is false, its second: the id of no value where they pass their bound (`CELL_CAP` cells for a `join`, one term's budget of cells for `inside`). A term charges the cells of a lazy value's written rows once, however many evaluations of it force the value.
-    fn written_id(&mut self, spent: &mut Spent, step: &Step, id: u32, first: bool) -> u32 {
+    /// The id of the value at `id` with the rows of `inside` or of a `join` written out, unless `step` takes what it needs from the relations they come from, as its first relation or, where `first` is false, its second.
+    fn written_id(&mut self, step: &Step, id: u32, first: bool) -> u32 {
         let held = &self.values[id as usize];
         if !held.is_lazy() || held.lazy_reads(step, first) {
             return id;
         }
-        let (written, cells) = match self.written_of.get(&id) {
-            Some(&found) => found,
-            None => {
-                let value = self.values[id as usize].written();
-                // The cells of the written rows count whether or not an earlier walk left them held, so a stop does not depend on what was walked before.
-                let cells = match &value {
-                    Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
-                    _ => 0,
-                };
-                let written = self.value_id(value);
-                self.written_of.insert(id, (written, cells));
-                (written, cells)
-            }
-        };
-        spent.force(id, cells);
+        if let Some(&written) = self.written_of.get(&id) {
+            return written;
+        }
+        let value = self.values[id as usize].written();
+        let written = self.value_id(value);
+        self.written_of.insert(id, written);
         written
     }
 
-    /// Whether the value at `id` is a lazy value that `step` cannot read as its first relation and that passes its bound written out: a bound cuts it off.
-    fn cut_by_cap(&self, step: &Step, id: u32) -> bool {
-        let held = &self.values[id as usize];
-        held.is_lazy() && !held.lazy_takes(step, true) && !held.lazy_fits()
+    /// The cells of the value at `id` as a set: its rows times the `arity` of the term that gives it, whether the rows stand written or as the relations they come from. A relation with no value has none.
+    fn charge_of(&self, id: u32, arity: usize) -> usize {
+        set_cells(rows_of(&self.values[id as usize]), arity)
     }
 
-    /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` or of a `join` that `step` would write out past its bound.
-    fn has_no_value(&self, step: &Step, id: u32) -> bool {
-        matches!(self.values[id as usize], Val::None) || self.cut_by_cap(step, id)
+    /// Whether the value at `id` alone passes the budget of a term, so that no term reads it.
+    fn cut_by_cap(&self, id: u32, arity: usize) -> bool {
+        self.charge_of(id, arity) > walk_cells()
     }
 
-    /// Whether the value at `id` gives `step` no value as its second relation: no value, or the rows of `inside` or of a `join` that `step` would write out past its bound.
-    fn second_has_no_value(&self, step: &Step, id: u32) -> bool {
-        let held = &self.values[id as usize];
-        matches!(held, Val::None) || (held.is_lazy() && !held.lazy_takes(step, false) && !held.lazy_fits())
+    /// Whether the value at `id` gives a term no value as a relation it reads: no value, or cells that pass the budget of a term.
+    fn has_no_value(&self, id: u32, arity: usize) -> bool {
+        matches!(self.values[id as usize], Val::None) || self.cut_by_cap(id, arity)
     }
 
-    /// The count of rows that an idle term gives at one instance, as the evaluation gives it: no value where the first relation has none, or the second has none. Any other idle term has no rows.
-    fn idle_rows(&self, step: &Step, first: u32, second: Option<u32>) -> u32 {
-        if self.has_no_value(step, first) || second.is_some_and(|second| self.second_has_no_value(step, second)) {
+    /// The count of rows that an idle term gives at one instance, as the evaluation gives it: no value where the first relation has none, or the second has none. Any other idle term has no rows. A relation is given as its id and the arity of the term that gives it.
+    fn idle_rows(&self, first: (u32, usize), second: Option<(u32, usize)>) -> u32 {
+        if self.has_no_value(first.0, first.1) || second.is_some_and(|(id, arity)| self.has_no_value(id, arity)) {
             NO_COUNT
         } else {
             0
@@ -3023,14 +2944,14 @@ impl<'a> Walker<'a> {
         crate::joined::extend(step, first, second)
     }
 
-    fn apply(&mut self, spent: &mut Spent, step: &Step, a: u32, b: u32) -> Val {
+    fn apply(&mut self, step: &Step, a: u32, b: u32) -> Val {
         crate::bounds::begin();
         if let Some(value) = self.lazy_extension(step, a, b) {
             crate::bounds::end(a == 0 || (b != NO_TERM && b == 0));
             return value;
         }
-        let a = self.written_id(spent, step, a, true);
-        let b = if b == NO_TERM { b } else { self.written_id(spent, step, b, false) };
+        let a = self.written_id(step, a, true);
+        let b = if b == NO_TERM { b } else { self.written_id(step, b, false) };
         let first = self.values[a as usize].clone();
         let value = if b == NO_TERM {
             self.eval.apply(step, &[&first])
@@ -3039,28 +2960,18 @@ impl<'a> Walker<'a> {
             self.eval.apply(step, &[&first, &second])
         };
         crate::bounds::end(a == 0 || (b != NO_TERM && b == 0));
-        // The rows that an evaluation takes from a lazy value as they are count against the term, as the rows written out do.
-        if spent.charge_reads && (first.is_lazy() || (b != NO_TERM && self.values[b as usize].is_lazy())) {
-            let cells = crate::native::cells_of(&value);
-            if cells > 0 {
-                self.read_charge -= 1;
-                let id = self.read_charge;
-                spent.force(id, cells);
-            }
-        }
         value
     }
 
     /// A term's count of rows and, for a number root, its number, with what can be left unbuilt left so.
-    fn count_only(&mut self, spent: &mut Spent, step: &Step, at: usize, id: u32, b: u32, number: bool, steps: &StepIds) -> (u32, u32) {
-        if let Some((found, forced)) = self.memo.get(&(steps.ids[at], id, b)).cloned() {
+    fn count_only(&mut self, step: &Step, at: usize, id: u32, b: u32, number: bool, steps: &StepIds) -> (u32, u32) {
+        if let Some(found) = self.memo.get(&(steps.ids[at], id, b)).copied() {
             crate::bounds::recall((0, steps.ids[at], id, 0, b));
-            spent.replay(&forced);
             let value = &self.values[found as usize];
             return (count_of(value), if number { number_word(value) } else { 0 });
         }
         // A part that reads cells of `inside` runs on the rows written out, once per grouping. Rows of `inside` that the part takes as boxes group as the relation's rows do, where its keys are the relation's.
-        let written = if steps.grouped[at].is_some() { self.written_id(spent, step, id, true) } else { id };
+        let written = if steps.grouped[at].is_some() { self.written_id(step, id, true) } else { id };
         if let Some((part, keys)) = steps.grouped[at] {
             let table = match &self.values[written as usize] {
                 Val::Rows(parts) => match parts.as_slice() {
@@ -3077,17 +2988,16 @@ impl<'a> Walker<'a> {
                     return (groups, 0);
                 }
                 let key = (part, written, grouping, b);
-                if let Some((found, forced)) = self.group_counts.get(&key).cloned() {
+                if let Some(found) = self.group_counts.get(&key).copied() {
                     crate::bounds::recall((2, key.0, key.1, key.2, key.3));
-                    spent.replay(&forced);
                     return (found, 0);
                 }
-                let mark = spent.mark();
                 let bounds_before = crate::bounds::enter();
-                let found = count_of(&self.apply(spent, step, written, b));
+                let found = count_of(&self.apply(step, written, b));
                 crate::bounds::leave((2, key.0, key.1, key.2, key.3), bounds_before);
-                let forced = spent.since(mark);
-                self.group_counts.insert(key, (found, forced));
+                if !crate::native::passed_output_limit_pending() {
+                    self.group_counts.insert(key, found);
+                }
                 return (found, 0);
             }
         }
@@ -3112,8 +3022,8 @@ impl<'a> Walker<'a> {
                 crate::bounds::end(id == 0 || b == 0);
                 return (count_of(&value), 0);
             }
-            let first_id = self.written_id(spent, step, id, true);
-            let second_id = self.written_id(spent, step, b, false);
+            let first_id = self.written_id(step, id, true);
+            let second_id = self.written_id(step, b, false);
             let first = self.values[first_id as usize].clone();
             let second = self.values[second_id as usize].clone();
             if let Some(found) = self.eval.count(step, &[&first, &second]) {
@@ -3121,7 +3031,7 @@ impl<'a> Walker<'a> {
                 return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
             }
         }
-        let value = self.apply(spent, step, id, b);
+        let value = self.apply(step, id, b);
         (count_of(&value), if number { number_word(&value) } else { 0 })
     }
 
@@ -3141,6 +3051,8 @@ impl<'a> Walker<'a> {
     fn walk_of(&mut self, leaves: &[Vec<Val>], train: usize, only_output: bool, mask: Option<&ShapeMask>) -> RootTable {
         self.keep_within_budget();
         self.over_budget = false;
+        crate::native::set_output_limit(walk_cells());
+        crate::native::take_passed_output_limit();
         let family = self.family;
         let steps = family.step_ids();
         let instances = leaves[0].len();
@@ -3190,8 +3102,8 @@ impl<'a> Walker<'a> {
             if let Some(head) = family.bound_heads.get(at) {
                 crate::bounds::set_head(*head);
             }
-            // A term's cost is its own: the cells of its results and of the rows of each lazy value it forces, charged to what this evaluation owns, so that its value or stop does not depend on the terms walked before it.
-            let mut spent = Spent::default();
+            // A term's charge is its own: the cells of each input it reads and of each output it gives, at each instance, each as rows times columns. It depends on the term's inputs and outputs alone, so that its value or stop does not depend on the terms walked before it, or on how an operator computes it.
+            let mut spent = 0usize;
             let step_id = steps.ids[at];
             crate::bounds::clear_term();
             let first = std::mem::take(&mut ids[term.a as usize]);
@@ -3204,22 +3116,21 @@ impl<'a> Walker<'a> {
             let scope = if reads_output { train.min(instances) } else { instances };
             let wanted = (term.flags & READS_TABLE != 0 || family.over_grids) && (reads_output || !only_output);
             let extended = term.used;
-            spent.charge_reads = !extended;
+            let (arity_a, arity_b, columns) = (family.terms[term.a as usize].columns.len(), if term.b == NO_TERM { 0 } else { family.terms[term.b as usize].columns.len() }, term.columns.len());
             let mut own = Vec::new();
             let on_no_rows = matches!(step, Step::Part(part) if part.gives_rows_on_no_rows());
-            // A term whose first relation is empty, or whose second relation of a `join` or a `semijoin` is, has no rows. One whose first relation has no value, or is the rows of `inside` or of a `join` that `step` cannot write, has no value.
+            // A term whose first relation is empty, or whose second relation of a `join` or a `semijoin` is, has no rows. One whose first relation has no value, or has more cells than a term's budget, has no value.
             let first_empty = !on_no_rows && first[..scope].iter().all(|id| *id == 1);
-            let first_cut = first[..scope].iter().all(|id| self.has_no_value(step, *id));
+            let first_cut = first[..scope].iter().all(|id| self.has_no_value(*id, arity_a));
             let second_empty = matches!(step, Step::Join { .. } | Step::Semijoin { .. }) && second[..scope].iter().all(|id| *id == 1);
             let idle = first_empty || first_cut || second_empty;
-            // A first relation that a bound cut off, at an instance, leaves the term with no value there: a stop, which spreads to the terms that read it.
-            let cut_by_bound = first_cut && first[..scope].iter().any(|id| self.cut_by_cap(step, *id));
-            // A term whose first relation is rows that `step` cannot write has no value, and no evaluation counts it.
+            // A first relation with more cells than a term's budget, at an instance, leaves the term with no value there: a stop, which spreads to the terms that read it.
+            let cut_by_bound = first_cut && first[..scope].iter().any(|id| self.cut_by_cap(*id, arity_a));
+            // A term whose first relation has more cells than a term's budget has no value, and no evaluation counts it.
             if idle && scope > 0 && crate::bounds::enabled() {
                 for id in &first[..scope] {
-                    let held = &self.values[*id as usize];
-                    if held.is_lazy() && !held.lazy_takes(step, true) && !held.lazy_fits() {
-                        crate::bounds::mark_term(if matches!(held, Val::Joined(_)) { crate::bounds::Bound::JoinOutput } else { crate::bounds::Bound::Walk });
+                    if self.cut_by_cap(*id, arity_a) {
+                        crate::bounds::mark_term(crate::bounds::Bound::Walk);
                     }
                 }
             }
@@ -3228,36 +3139,40 @@ impl<'a> Walker<'a> {
             if extended {
                 own.reserve(instances);
                 for pair in 0..scope {
-                    // Past the bound, what a term gives has no value, so a walk's memory stays bounded.
-                    if spent.total() > walk_cells() {
+                    let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
+                    let key = (step_id, first[pair], b);
+                    // The inputs are charged before the evaluation: a term whose inputs pass the budget is not evaluated, and what it gives has no value, so a walk's memory stays bounded.
+                    spent = spent.saturating_add(self.charge_of(first[pair], arity_a)).saturating_add(if b == NO_TERM { 0 } else { self.charge_of(b, arity_b) });
+                    if spent > walk_cells() {
                         past_bound = true;
                         self.over_budget = true;
                         crate::bounds::skipped(crate::bounds::Bound::Walk, (scope - pair) as u64);
                         break;
                     }
-                    let b = if term.b == NO_TERM { NO_TERM } else { second[pair] };
-                    let key = (step_id, first[pair], b);
-                    // A memo hit charges the lazy values that the evaluation forced when it ran, as a fresh evaluation does, those that the term has not charged.
-                    let mark = spent.mark();
-                    let id = match self.memo.get(&key).cloned() {
-                        Some((found, forced)) => {
+                    crate::native::take_passed_output_limit();
+                    let id = match self.memo.get(&key).copied() {
+                        Some(found) => {
                             crate::bounds::recall((0, key.0, key.1, 0, key.2));
-                            spent.replay(&forced);
                             found
                         }
                         None => {
                             let bounds_before = crate::bounds::enter();
-                            let value = self.apply(&mut spent, step, first[pair], b);
+                            let value = self.apply(step, first[pair], b);
                             crate::bounds::leave((0, key.0, key.1, 0, key.2), bounds_before);
                             let id = self.value_id(value);
-                            let forced = spent.since(mark);
-                            self.memo.insert(key, (id, forced));
+                            if !crate::native::passed_output_limit_pending() {
+                                self.memo.insert(key, id);
+                            }
                             id
                         }
                     };
-                    spent.end(mark);
-                    if let Val::Rows(parts) = &self.values[id as usize] {
-                        spent.keep(parts.iter().map(|part| part.table.cells.len()).sum::<usize>());
+                    // The output is charged as it stands, written or as the relations it comes from. An operator that stopped at the budget wrote no output, and the term is over it.
+                    spent = spent.saturating_add(set_cells(rows_of(&self.values[id as usize]), columns));
+                    if crate::native::take_passed_output_limit() || spent > walk_cells() {
+                        past_bound = true;
+                        self.over_budget = true;
+                        crate::bounds::skipped(crate::bounds::Bound::Walk, (scope - pair) as u64);
+                        break;
                     }
                     own.push(id);
                 }
@@ -3292,39 +3207,48 @@ impl<'a> Walker<'a> {
                     }
                 }
                 for pair in 0..scope {
-                    // A term that no result is kept for is bounded by the rows of the lazy values it writes out, as an extended one is by its results and those.
-                    if !extended && !idle && spent.total() > walk_cells() {
-                        cut_off = true;
-                        self.over_budget = true;
-                        crate::bounds::skipped(crate::bounds::Bound::Walk, (scope - pair) as u64);
-                        break;
-                    }
                     let (id, b) = (first[pair], if term.b == NO_TERM { NO_TERM } else { second[pair] });
+                    // A term that no result is kept for is charged as an extended one is: its inputs before its count, and its count as the rows of its output.
+                    if !extended && !idle {
+                        spent = spent.saturating_add(self.charge_of(id, arity_a)).saturating_add(if b == NO_TERM { 0 } else { self.charge_of(b, arity_b) });
+                        if spent > walk_cells() {
+                            cut_off = true;
+                            self.over_budget = true;
+                            crate::bounds::skipped(crate::bounds::Bound::Walk, (scope - pair) as u64);
+                            break;
+                        }
+                        crate::native::take_passed_output_limit();
+                    }
                     // An idle term gives what the evaluation gives, with no evaluation.
                     let (rows, number) = if idle {
-                        (self.idle_rows(step, id, if term.b == NO_TERM { None } else { Some(b) }), 0)
+                        (self.idle_rows((id, arity_a), if term.b == NO_TERM { None } else { Some((b, arity_b)) }), 0)
                     } else if extended {
                         let value = &self.values[own[pair] as usize];
                         (count_of(value), if term.root == RootKind::Number { number_word(value) } else { 0 })
                     } else {
                         let key = (step_id, id, b);
-                        let mark = spent.mark();
-                        let counted = match self.counts.get(&key).cloned() {
-                            Some((rows, number, forced)) => {
+                        let counted = match self.counts.get(&key).copied() {
+                            Some(found) => {
                                 crate::bounds::recall((1, key.0, key.1, 0, key.2));
-                                spent.replay(&forced);
-                                (rows, number)
+                                found
                             }
                             None => {
                                 let bounds_before = crate::bounds::enter();
-                                let found = self.count_only(&mut spent, step, at, id, b, term.root == RootKind::Number, steps);
+                                let found = self.count_only(step, at, id, b, term.root == RootKind::Number, steps);
                                 crate::bounds::leave((1, key.0, key.1, 0, key.2), bounds_before);
-                                let forced = spent.since(mark);
-                                self.counts.insert(key, (found.0, found.1, forced));
+                                if !crate::native::passed_output_limit_pending() {
+                                    self.counts.insert(key, found);
+                                }
                                 found
                             }
                         };
-                        spent.end(mark);
+                        spent = spent.saturating_add(set_cells((counted.0 != NO_COUNT).then_some(u64::from(counted.0)), columns));
+                        if crate::native::take_passed_output_limit() || spent > walk_cells() {
+                            cut_off = true;
+                            self.over_budget = true;
+                            crate::bounds::skipped(crate::bounds::Bound::Walk, (scope - pair) as u64);
+                            break;
+                        }
                         counted
                     };
                     let left = count_of(&self.values[id as usize]);
@@ -3390,9 +3314,9 @@ impl<'a> Walker<'a> {
                 }
             }
             crate::bounds::note_term(at as u32);
-            crate::bounds::note_cells(at as u32, spent.total() as u64);
-            if crate::bounds::enabled() && spent.total() > 5_000_000 {
-                eprintln!("term\t{}\textended {extended}\tresults {}\tforced {}\tstopped {is_stopped}\theld {}", term.text.chars().take(160).collect::<String>(), spent.results, spent.written, self.held_cells);
+            crate::bounds::note_cells(at as u32, spent as u64);
+            if crate::bounds::enabled() && spent > 5_000_000 {
+                eprintln!("term\t{}\textended {extended}\tcharged {spent}\tstopped {is_stopped}\theld {}", term.text.chars().take(160).collect::<String>(), self.held_cells);
             }
             ids[term.a as usize] = first;
             if term.b != NO_TERM {
@@ -3435,6 +3359,7 @@ impl<'a> Walker<'a> {
                 }
             }
         }
+        crate::native::set_output_limit(crate::native::CELL_CAP);
         // A task keeps a walker per schema, so one large walk leaves nothing behind.
         self.keep_within_budget_with(crate::native::lazy_written_cells().saturating_sub(lazy_base));
         crate::bounds::flush();
@@ -3445,7 +3370,6 @@ impl<'a> Walker<'a> {
     /// included, for a check against the expression that a term stands for.
     pub fn term_counts(&mut self, leaves: &[Vec<Val>], train: usize, pattern: &str) -> Vec<(String, Vec<Option<u64>>)> {
         // These checks stop at no budget; they pass an evaluation's account that nothing reads.
-        let mut spent = Spent::default();
         let family = self.family;
         let pairs = leaves[0].len();
         let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
@@ -3462,7 +3386,7 @@ impl<'a> Walker<'a> {
                 for pair in 0..scope {
                     let a = ids[term.a as usize][pair];
                     let b = if term.b == NO_TERM { NO_TERM } else { ids[term.b as usize][pair] };
-                    let value = if term.text.contains(pattern) || term.used { self.apply(&mut spent, step, a, b) } else { Val::None };
+                    let value = if term.text.contains(pattern) || term.used { self.apply(step, a, b) } else { Val::None };
                     own.push(self.value_id(value));
                 }
                 own.resize(pairs, 0);
@@ -3607,7 +3531,6 @@ impl Walker<'_> {
     /// the way, for a check against the expression a term stands for.
     /// Each term's time in nanoseconds, its evaluations, and how many gave rows, for a study of where a walk's time goes. Where `needed` is given, only those terms run.
     pub fn timed_terms(&mut self, leaves: &[Vec<Val>], train: usize, needed: Option<&[bool]>) -> Vec<(u64, u32, u32)> {
-        let mut spent = Spent::default();
         let family = self.family;
         let pairs = leaves[0].len();
         let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
@@ -3626,7 +3549,7 @@ impl Walker<'_> {
                     let a = ids[term.a as usize][pair];
                     let b = if term.b == NO_TERM { NO_TERM } else { ids[term.b as usize][pair] };
                     let begun = std::time::Instant::now();
-                    let value = self.apply(&mut spent, step, a, b);
+                    let value = self.apply(step, a, b);
                     let id = self.value_id(value);
                     let own_time = &mut out[at];
                     own_time.0 += begun.elapsed().as_nanos() as u64;
@@ -3645,7 +3568,6 @@ impl Walker<'_> {
     }
 
     pub fn term_values(&mut self, leaves: &[Vec<Val>], train: usize, chosen: &dyn Fn(usize) -> bool) -> Vec<(usize, Vec<Val>)> {
-        let mut spent = Spent::default();
         let family = self.family;
         let pairs = leaves[0].len();
         let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
@@ -3668,7 +3590,7 @@ impl Walker<'_> {
                 let id = if picked || term.used {
                     let a = ids[term.a as usize][pair];
                     let b = if term.b == NO_TERM { NO_TERM } else { ids[term.b as usize][pair] };
-                    let value = self.apply(&mut spent, step, a, b);
+                    let value = self.apply(step, a, b);
                     self.value_id(value)
                 } else {
                     0

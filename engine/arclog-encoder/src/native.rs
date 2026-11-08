@@ -23,15 +23,47 @@ use arclog::session::TaskSession;
 use arclog::terms::{Constant, Term, TermId};
 use arclog::types::ValueType;
 
-use crate::bounds::Bound;
 use crate::columns::Columns;
 use crate::expression::Op;
 
 pub type Cell = u32;
 
-/// The most cells that a materialized table holds; a larger one stops, which
-/// gives no value.
+/// The most cells that an operator writes as its output, outside a walk; a larger output stops, which
+/// gives no value. A walk sets the limit for its operators with [`set_output_limit`].
 pub const CELL_CAP: usize = 1 << 21;
+
+thread_local! {
+    /// The most cells that an operator writes as its output on this thread.
+    static OUTPUT_LIMIT: std::cell::Cell<usize> = const { std::cell::Cell::new(CELL_CAP) };
+    /// Whether an operator on this thread has stopped at its output limit since the last [`take_passed_output_limit`].
+    static PASSED_OUTPUT_LIMIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The most cells that an operator writes as its output on this thread.
+pub fn output_limit() -> usize {
+    OUTPUT_LIMIT.with(std::cell::Cell::get)
+}
+
+/// Sets the most cells that an operator writes as its output on this thread.
+pub fn set_output_limit(cells: usize) {
+    OUTPUT_LIMIT.with(|held| held.set(cells));
+}
+
+/// An operator stops at its output limit: its output has more cells than the limit.
+pub(crate) fn passed_output_limit() {
+    crate::bounds::mark(crate::bounds::Bound::Walk);
+    PASSED_OUTPUT_LIMIT.with(|held| held.set(true));
+}
+
+/// Whether an operator on this thread has stopped at its output limit since the last [`take_passed_output_limit`].
+pub fn passed_output_limit_pending() -> bool {
+    PASSED_OUTPUT_LIMIT.with(std::cell::Cell::get)
+}
+
+/// Whether an operator on this thread has stopped at its output limit since the last call, which clears it.
+pub fn take_passed_output_limit() -> bool {
+    PASSED_OUTPUT_LIMIT.with(|held| held.replace(false))
+}
 
 /// A hasher for keys that are already well mixed or small.
 #[derive(Default, Clone, Copy)]
@@ -345,7 +377,7 @@ pub enum Val {
 }
 
 impl Val {
-    /// The value with any `inside` rows written out: no value where they pass `CELL_CAP` cells.
+    /// The value with any lazy rows written out: no value where they pass the output limit.
     pub fn written(&self) -> Val {
         match self {
             Val::Boxes(boxes) => boxes.written(),
@@ -365,20 +397,6 @@ impl Val {
             Val::Boxes(boxes) => if first { boxes.reads(step) } else { boxes.reads_second(step) },
             Val::Joined(joined) => if first { joined.reads(step) } else { joined.reads_second(step) },
             _ => false,
-        }
-    }
-
-    /// Whether `step` takes a lazy value as its first relation or, where `first` is false, its second, either by reading what it needs from it (`lazy_reads`) or, for the rows of a `join`, as a part of the join or select that `step` makes of it, which `crate::joined::extend` gives where the form allows it and otherwise leaves the rows to be written out.
-    pub fn lazy_takes(&self, step: &Step, first: bool) -> bool {
-        self.lazy_reads(step, first) || (matches!(self, Val::Joined(_)) && crate::joined::Joined::extends(step))
-    }
-
-    /// Whether the rows of a lazy value can be written out, in at most `CELL_CAP` cells.
-    pub fn lazy_fits(&self) -> bool {
-        match self {
-            Val::Boxes(boxes) => boxes.fits(),
-            Val::Joined(joined) => joined.fits(),
-            _ => true,
         }
     }
 
@@ -778,9 +796,6 @@ impl<'a> Evaluator<'a> {
                 }
                 let (l, l_rest, l_places) = one_part(left_parts, left)?;
                 let (r, r_rest, r_places) = one_part(right_parts, right)?;
-                if l.table.cells.len() > CELL_CAP || r.table.cells.len() > CELL_CAP {
-                    return None;
-                }
                 if l_places.iter().zip(&r_places).any(|(a, b)| l.table.mask(*a) & r.table.mask(*b) == 0) {
                     return Some(Some(0));
                 }
@@ -803,9 +818,6 @@ impl<'a> Evaluator<'a> {
                 }
                 let (l, l_rest, l_places) = one_part(left_parts, left)?;
                 let (r, _, r_places) = one_part(right_parts, right)?;
-                if l.table.cells.len() > CELL_CAP || r.table.cells.len() > CELL_CAP {
-                    return None;
-                }
                 if l_places.iter().zip(&r_places).any(|(a, b)| l.table.mask(*a) & r.table.mask(*b) == 0) {
                     return Some(Some(product(&every)));
                 }
@@ -950,7 +962,7 @@ impl<'a> Evaluator<'a> {
         let fresh: Vec<usize> = (0..arity).filter(|at| bound[*at].is_none()).collect();
         let positions: Vec<u16> = bound.iter().flatten().copied().collect();
         let (touched, rest) = split_parts(parts, &positions);
-        let Some(merged) = merge(&touched, Bound::LibJoin) else { return Val::None };
+        let Some(merged) = merge(&touched) else { return Val::None };
         // The place in the merged rows of each lib column that a position binds.
         let places: Vec<Option<usize>> = bound.iter().map(|at| at.map(|at| merged.columns.iter().position(|column| *column == at).expect("a bound column stands in a touched part"))).collect();
         let width = merged.columns.len() + fresh.len();
@@ -971,8 +983,8 @@ impl<'a> Evaluator<'a> {
                     out.extend_from_slice(row);
                     out.extend(fresh.iter().map(|at| lib_row[*at]));
                 }
-                if out.len() > CELL_CAP {
-                    crate::bounds::mark(Bound::LibJoin);
+                if out.len() > output_limit() {
+                    passed_output_limit();
                     return Val::None;
                 }
             }
@@ -1020,10 +1032,7 @@ impl<'a> Evaluator<'a> {
             factors.push((held, cells));
         }
         let total = factors.iter().try_fold(1usize, |total, (held, cells)| total.checked_mul(cells.len() / held.len().max(1)));
-        let Some(total) = total.filter(|total| total.checked_mul(width).is_some_and(|cells| cells <= CELL_CAP)) else {
-            crate::bounds::mark(Bound::Projected);
-            return None;
-        };
+        let total = total.filter(|total| total.checked_mul(width).is_some())?;
         let mut out: Vec<Cell> = vec![0; total * width];
         let mut repeat = 1usize;
         for (held, cells) in &factors {
@@ -1175,8 +1184,8 @@ impl<'a> Evaluator<'a> {
                     cells[at].extend(row.iter().map(|cell| cell.encoding()));
                     counts[at] += 1;
                 }
-                if cells[at].len() > CELL_CAP {
-                    crate::bounds::mark(Bound::ComponentOutput);
+                if cells[at].len() > output_limit() {
+                    passed_output_limit();
                     return None;
                 }
             }
@@ -1526,17 +1535,14 @@ fn side_table(parts: &[&Part], merged: &Merged) -> Arc<Table> {
     }
 }
 
-/// The product of `parts`, or `None` past the cap. One part is its own rows, read in place.
-fn merge<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
+/// The product of `parts`, or `None` where its count of cells overflows. One part is its own rows, read in place.
+fn merge<'p>(parts: &[&'p Part]) -> Option<Merged<'p>> {
     let columns: Vec<u16> = parts.iter().flat_map(|part| part.columns.iter().copied()).collect();
     let total = parts.iter().try_fold(1usize, |total, part| total.checked_mul(part.table.len));
     if parts.is_empty() {
         return Some(Merged { columns, cells: std::borrow::Cow::Borrowed(&[]) });
     }
-    let Some(total) = total.filter(|total| total.checked_mul(columns.len()).is_some_and(|cells| cells <= CELL_CAP)) else {
-        crate::bounds::mark(site);
-        return None;
-    };
+    let total = total.filter(|total| total.checked_mul(columns.len()).is_some())?;
     if let [one] = parts {
         return Some(Merged { columns, cells: std::borrow::Cow::Borrowed(&one.table.cells) });
     }
@@ -1564,12 +1570,12 @@ fn merge<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
     Some(Merged { columns, cells: std::borrow::Cow::Owned(cells) })
 }
 
-/// The rows of the parts that a step reads. One part is its own rows, read in place at any size; several parts are written as a product, which `site` bounds.
-fn touched_rows<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
+/// The rows of the parts that a step reads. One part is its own rows, read in place; several parts are written as a product.
+fn touched_rows<'p>(parts: &[&'p Part]) -> Option<Merged<'p>> {
     if let [one] = parts {
         return Some(Merged { columns: one.columns.to_vec(), cells: std::borrow::Cow::Borrowed(&one.table.cells) });
     }
-    merge(parts, site)
+    merge(parts)
 }
 
 pub(crate) fn project(value: &Val, columns: &[u16]) -> Val {
@@ -1625,7 +1631,7 @@ pub(crate) fn select(value: &Val, at: u16, op: Op, other: Option<u16>, drop: Opt
         let (from, to) = if first.columns.contains(&at) { (*first, *second) } else { (*second, *first) };
         return select_across(from, to, rest, at, op, other, drop);
     }
-    let merged = touched_rows(&touched, Bound::SelectSide)?;
+    let merged = touched_rows(&touched)?;
     let place_of = |position: u16| merged.columns.iter().position(|column| *column == position).expect("a selected column stands in a touched part");
     let a = place_of(at);
     let b = other.map(place_of);
@@ -1663,7 +1669,7 @@ pub(crate) fn select(value: &Val, at: u16, op: Op, other: Option<u16>, drop: Opt
     Some(Val::of_parts(out))
 }
 
-/// A `select` that compares the column `at` of the part `from` with the column `other` of the part `to`. An equality that drops `other`, over two parts and no others, is the join of the two, which stands as its sides. Any other comparison gives one part with the pairs of rows that pass, beside the parts of `rest`. Where those pairs pass `CELL_CAP` cells, they are the rows of the step and a bound stops it.
+/// A `select` that compares the column `at` of the part `from` with the column `other` of the part `to`. An equality that drops `other`, over two parts and no others, is the join of the two, which stands as its sides. Any other comparison gives one part with the pairs of rows that pass, beside the parts of `rest`. Where those pairs pass the output limit, they are the rows of the step and it gives no value.
 fn select_across(from: &Part, to: &Part, rest: Vec<Part>, at: u16, op: Op, other: u16, drop: Option<u16>) -> Option<Val> {
     let a_place = from.columns.iter().position(|column| *column == at).expect("a selected column stands in its part");
     let b_place = to.columns.iter().position(|column| *column == other).expect("a selected column stands in its part");
@@ -1698,8 +1704,8 @@ fn select_across(from: &Part, to: &Part, rest: Vec<Part>, at: u16, op: Op, other
     let kept_places: Vec<usize> = (0..all_columns.len()).filter(|place| Some(all_columns[*place]) != drop).collect();
     let width = kept_places.len();
     let pairs: u64 = from.table.rows().map(|row| runs(row[a_place]).iter().map(|(start, stop)| (stop - start) as u64).sum::<u64>()).sum();
-    if pairs.saturating_mul(width as u64) > CELL_CAP as u64 {
-        crate::bounds::mark(Bound::SelectSide);
+    if pairs.saturating_mul(width as u64) > output_limit() as u64 {
+        passed_output_limit();
         return None;
     }
     if pairs == 0 {
@@ -1831,8 +1837,8 @@ fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16]
     if left_touched.len() > 1 || right_touched.len() > 1 {
         return join_parts(&left_touched, left_rest, &right_touched, right_rest, left_at, right_at, kept, left_arity);
     }
-    let tl = touched_rows(&left_touched, Bound::JoinSide)?;
-    let tr = touched_rows(&right_touched, Bound::JoinSide)?;
+    let tl = touched_rows(&left_touched)?;
+    let tr = touched_rows(&right_touched)?;
     // Where every part is read, the rows stand as the two sides until an operator needs them.
     if left_rest.is_empty() && right_rest.is_empty() {
         let (left_table, right_table) = (side_table(&left_touched, &tl), side_table(&right_touched, &tr));
@@ -1872,8 +1878,8 @@ fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16]
                 cells.extend(right_kept.iter().map(|place| other[*place]));
             }
         }
-        if cells.len() > CELL_CAP {
-            crate::bounds::mark(Bound::JoinOutput);
+        if cells.len() > output_limit() {
+            passed_output_limit();
             return None;
         }
     }
@@ -1914,7 +1920,7 @@ fn rows_by_key(ids: &[u32]) -> (Vec<u32>, Vec<u32>) {
     (starts, rows)
 }
 
-/// A `join` whose paired columns lie in several parts of a side. Each touched part is a node, and each pair joins a node of the left to a node of the right. The nodes that the pairs connect make one part of the result, joined one node at a time; the other parts stay factors. Where a joined part passes `CELL_CAP` cells, a bound stops it.
+/// A `join` whose paired columns lie in several parts of a side. Each touched part is a node, and each pair joins a node of the left to a node of the right. The nodes that the pairs connect make one part of the result, joined one node at a time; the other parts stay factors. Where a joined part passes the output limit, the join gives no value.
 #[allow(clippy::too_many_arguments)]
 fn join_parts(left_touched: &[&Part], left_rest: Vec<Part>, right_touched: &[&Part], right_rest: Vec<Part>, left_at: &[u16], right_at: &[u16], kept: &[u16], left_arity: u16) -> Option<Val> {
     let right_new = |position: u16| kept.iter().position(|column| *column == position).map(|at| left_arity + at as u16).expect("a column with no pair is kept");
@@ -1956,14 +1962,20 @@ fn join_parts(left_touched: &[&Part], left_rest: Vec<Part>, right_touched: &[&Pa
     for label in labels {
         let members: Vec<usize> = (0..nodes.len()).filter(|node| group[*node] == label).collect();
         match join_nodes(&nodes, &members, &links, right_at, &right_new)? {
-            Some(part) => out.push(part),
+            Some(part) => {
+                if part.table.cells.len() > output_limit() {
+                    passed_output_limit();
+                    return None;
+                }
+                out.push(part);
+            }
             None => return Some(Val::Empty),
         }
     }
     Some(Val::of_parts(out))
 }
 
-/// The part that joins the `members` among `nodes` on the `links` between them: no part where no row joins, and `None` where a bound stops it. It starts at the smallest node and takes in the smallest node linked to those it has, with every link between the two as the key.
+/// The part that joins the `members` among `nodes` on the `links` between them: no part where no row joins. It starts at the smallest node and takes in the smallest node linked to those it has, with every link between the two as the key.
 fn join_nodes(nodes: &[(&Part, u32)], members: &[usize], links: &[Link], right_at: &[u16], right_new: &dyn Fn(u16) -> u16) -> Option<Option<Part>> {
     let mut joined: Vec<usize> = Vec::new();
     let mut tags: Vec<u32> = Vec::new();
@@ -2004,10 +2016,6 @@ fn join_nodes(nodes: &[(&Part, u32)], members: &[usize], links: &[Link], right_a
                         next.extend_from_slice(row);
                         next.extend_from_slice(&part.table.cells[*at as usize * arity..(*at as usize + 1) * arity]);
                     }
-                }
-                if next.len() > CELL_CAP {
-                    crate::bounds::mark(Bound::JoinOutput);
-                    return None;
                 }
             }
             cells = next;
@@ -2105,7 +2113,7 @@ pub(crate) fn antijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16
     let (left_touched, left_rest) = split_parts(left_parts, left_at);
     let (right_touched, _) = split_parts(right_parts, right_at);
     // One part of the left is read in place. Paired columns in several parts of the left make the rows of their product the rows to keep from, which a bound limits.
-    let tl = touched_rows(&left_touched, Bound::AntijoinSide)?;
+    let tl = touched_rows(&left_touched)?;
     let left_places: Vec<usize> = left_at.iter().map(|at| tl.columns.iter().position(|column| column == at).expect("a paired column")).collect();
     // The right holds a key when each of its touched parts holds the piece of the key at its own paired columns, since the parts are independent. Each part gives the places of its piece in a left row, and the pieces that it holds.
     let mut tests: Vec<(Vec<usize>, Vec<u64>)> = Vec::new();
@@ -2136,30 +2144,25 @@ fn union(left: &Val, right: &Val, map: &[Option<u16>]) -> Option<Val> {
     let width = map.len();
     let mut cells: Vec<Cell> = Vec::new();
     if let Val::Rows(_) = left {
-        let Some(rows) = left.rows(width, CELL_CAP / width.max(1)) else {
-            crate::bounds::mark(Bound::Union);
-            return None;
-        };
+        let rows = left.rows(width, usize::MAX)?;
         for row in rows {
             cells.extend_from_slice(&row);
         }
     }
     if let Val::Rows(parts) = right {
         let arity = parts.iter().flat_map(|part| part.columns.iter()).map(|column| usize::from(*column) + 1).max().unwrap_or(0);
-        let Some(rows) = right.rows(arity, CELL_CAP / width.max(1)) else {
-            crate::bounds::mark(Bound::Union);
-            return None;
-        };
+        let rows = right.rows(arity, usize::MAX)?;
         for row in rows {
             cells.extend(map.iter().map(|at| at.map_or(0, |at| row[usize::from(at)])));
         }
     }
-    if cells.len() > CELL_CAP {
-        crate::bounds::mark(Bound::Union);
-        return None;
-    }
     if cells.is_empty() {
         return Some(Val::Empty);
     }
-    Some(Val::of_table(Table::distinct(width, cells)))
+    let table = Table::distinct(width, cells);
+    if table.cells.len() > output_limit() {
+        passed_output_limit();
+        return None;
+    }
+    Some(Val::of_table(table))
 }
