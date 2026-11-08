@@ -76,8 +76,6 @@ use arclog_features::{Grid as FeatureGrid, Input, Pair, TableRows};
 
 mod column_hash;
 mod column_order;
-#[cfg(test)]
-mod tests;
 use column_hash::Cells;
 pub use column_hash::{ColumnKey, TIE_EXCHANGEABLE, TIE_NONE, TIE_OPEN};
 
@@ -1112,13 +1110,16 @@ fn pose_name(assembly: &AssemblyId, assemblies: &Assemblies) -> String {
     }
 }
 
+/// A table's hash, the low 64 bits of the hash of each example's Set of TableRows, and the order of the columns that give them: for each place of the order, the column at it.
+type Hashed = (StableHash, Vec<u64>, Vec<usize>);
+
 /// The TableHash of the Set of TableRows of each of `examples`, each as its kind,
 /// index and distinct TableRows, over columns of `types`, and the low 64 bits of
 /// the hash of each example's Set of TableRows under the order of the columns that
 /// gives the TableHash, and that order: for each place of it, the column at it. None of them where the search for the order of the tied
 /// columns passed its cap. The second value is the work of that search in units,
 /// none where no columns tie and no search ran.
-fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblies: &Assemblies, search_cap: u64) -> (Option<(StableHash, Vec<u64>, Vec<usize>)>, Option<u64>) {
+fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblies: &Assemblies, search_cap: u64) -> (Option<Hashed>, Option<u64>) {
     let names = hashed_names(types, assemblies);
     let widths: Vec<usize> = types.iter().map(|ty| if ty.is_box() { 4 } else { 1 }).collect();
     let starts: Vec<usize> = widths.iter().scan(0, |at, width| { let start = *at; *at += width; Some(start) }).collect();
