@@ -11,8 +11,8 @@
 //!   feature-encoder base-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder query-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder state-vectors SOLVER [--size D] --out FILE
-//!   feature-encoder candidate-lists OUT_DIR (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-only [--wide-size D] | --parents-only | --state-only]
-//!   feature-encoder all-lists ROOT (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-size D] [--families DIR] [--count-bounds]
+//!   feature-encoder candidate-lists OUT_DIR (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-only [--wide-size D] | --parents-only | --state-only] [--tables-cmd COMMAND]
+//!   feature-encoder all-lists ROOT (TASK | TABLES_FILE)... --size D --tables-cmd COMMAND [--names DERANGEMENTS] [--threads N] [--wide-size D] [--families DIR] [--count-bounds]
 //!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
 //!   feature-encoder generate-check TABLES_FILE [--size D] [--tables EVERY]
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
@@ -107,10 +107,12 @@ struct Arguments {
     max_tables: usize,
     /// Whether the evaluations that a bound stopped are counted: `--count-bounds`.
     count_bounds: bool,
+    /// The command that prints a task's tables, as words: `--tables-cmd`.
+    tables_cmd: Option<Vec<String>>,
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { kinds: None, families: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false, shapes: None, sample: 0, seed: 1, max_tables: usize::MAX, count_bounds: false };
+    let mut parsed = Arguments { kinds: None, families: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false, shapes: None, sample: 0, seed: 1, max_tables: usize::MAX, count_bounds: false, tables_cmd: None };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -133,6 +135,7 @@ fn arguments() -> Arguments {
             "--control" => parsed.control = true,
             "--program-compare" => parsed.program_compare = true,
             "--count-bounds" => parsed.count_bounds = true,
+            "--tables-cmd" => parsed.tables_cmd = Some(args.next().expect("a command after --tables-cmd").split_whitespace().map(str::to_string).collect()),
             "--rule" => parsed.rule = true,
             "--relational" => parsed.relational = true,
             "--shapes" => parsed.shapes = Some(args.next().expect("a file after --shapes").into()),
@@ -699,7 +702,7 @@ fn tables_by_command(command: &[String], stem: &str) -> Result<arclog_encoder::t
 }
 
 /// Each table's stable roots, one file per task, with a task's tables read from a command that
-/// prints them or from a file. `GENERATE_TABLES_CMD` holds that command, to which the task's name
+/// prints them or from a file. `--tables-cmd` holds that command, to which the task's name
 /// is added. What it prints holds test rows, so it reaches this process by a pipe alone, and
 /// neither its output nor its errors are printed or kept. `--names` gives a derangement per task,
 /// and then each pair reads another pair's output.
@@ -716,9 +719,9 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
         Some(path) => Some(serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?),
         None => None,
     };
-    let command: Option<Vec<String>> = std::env::var("GENERATE_TABLES_CMD").ok().map(|text| text.split_whitespace().map(str::to_string).collect());
+    let command = &arguments.tables_cmd;
     let d = arguments.size.max(1);
-    let next = std::sync::atomic::AtomicUsize::new(0);
+    let next =std::sync::atomic::AtomicUsize::new(0);
     let finished = std::sync::atomic::AtomicUsize::new(0);
     let totals = std::sync::Mutex::new((0u64, 0f64));
     let begun = Instant::now();
@@ -740,7 +743,7 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
                         None => continue,
                     },
                 };
-                let tables = match &command {
+                let tables = match command {
                     Some(parts) => tables_by_command(parts, &stem),
                     None => arclog_encoder::zio::read_text(source).and_then(|text| arclog_encoder::table_stream::TablesIn::from_json(&text)),
                 };
@@ -785,7 +788,7 @@ fn run_candidate_lists(arguments: &Arguments, out: &str, sources: &[String]) -> 
 }
 
 /// Every kind of list of each task, from one read of its tables: state, wide and per-input, on the true
-/// outputs and, by the derangements `--names` gives, on the deranged ones. `GENERATE_TABLES_CMD` holds the
+/// outputs and, by the derangements `--names` gives, on the deranged ones. `--tables-cmd` is required, and holds the
 /// command that prints the tables, as for `candidate-lists`. A task's file of each kind is written as it ends, a
 /// restart skips the files that exist, and the command runs only for a task that lacks one.
 fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Result<(), String> {
@@ -795,7 +798,7 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
         Some(path) => serde_json::from_str(&arclog_encoder::zio::read_text(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?,
         None => Default::default(),
     };
-    let command: Vec<String> = std::env::var("GENERATE_TABLES_CMD").map_err(|_| "`all-lists` reads GENERATE_TABLES_CMD".to_string())?.split_whitespace().map(str::to_string).collect();
+    let command = arguments.tables_cmd.as_ref().ok_or("`all-lists` reads --tables-cmd")?;
     let d = arguments.size.max(1);
     let wide = arguments.wide_size.unwrap_or(1);
     // One family cache per kind. A run writes a names file of its own, since a stopped run leaves its file with an unfinished end.
@@ -851,7 +854,7 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
                     continue;
                 }
                 let started = Instant::now();
-                let tables = match tables_by_command(&command, &stem) {
+                let tables = match tables_by_command(command, &stem) {
                     Ok(tables) => tables,
                     Err(message) => {
                         eprintln!("{stem}: {message}");
