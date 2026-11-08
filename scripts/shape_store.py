@@ -2,7 +2,7 @@
 """The `shapes` records of a task's tables, from a store of walked values, with a walk of only the values that the store lacks.
 
 Usage: scripts/shape_store.py refresh ENCODER ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--tasks DIR] [--store DIR]
-       scripts/shape_store.py carry NEW BASE [--threads N] [--jobs N] [--tasks DIR] [--store DIR]
+       scripts/shape_store.py same-values NEW BASE [--threads N] [--jobs N] [--tasks DIR] [--store DIR]
        scripts/shape_store.py version ENCODER [--store DIR]
 
 `refresh` writes OUT with the lines that `ENCODER shapes-refresh ROWS_FILE TASK OUT [--shapes FILE]` writes, in the same order. A value is
@@ -13,9 +13,9 @@ whole request, and its record goes to OUT as the encoder writes it. A refresh wi
 encoder's values (see VALUE_VARIABLES) is refused.
 
 A value version names the values that a build gives. A build has a version of its own, from the hash of its binary, unless an entry of
-`value-versions.jsonl` in the store gives its binary another. `carry NEW BASE` writes such an entry: it runs both builds on each rows
-file of the check set, and where the records of every file are identical, NEW takes BASE's version. So a change that keeps the values
-keeps the store, and any other change starts a new one.
+`value-versions.jsonl` in the store gives its binary another. `same-values NEW BASE` writes such an entry: it runs both builds on each
+rows file of the check set, and where the records of every file are identical, the entry gives NEW the version of BASE. So a build
+whose change gives the same values reads the values stored before it, and any other build starts with none.
 
 The store is a folder, work/shape-store by default, of `<version>/<task>-<hash of the task file>.jsonl.zst`. Each line is
 `{"table":HASH,"complete":FLAG,"h":B,"v":B}`, with `h` and `v` as in a `shapes` record. `complete` is true where a walk listed no shapes,
@@ -300,7 +300,7 @@ def refresh(args) -> str:
             f'{len(again)} walked again with the whole request, {len(fresh)} tables stored, {time.monotonic() - begun:.1f} s')
 
 
-def carry(args) -> str:
+def same_values(args) -> str:
     refuse_value_variables()
     new, base, store, tasks = Path(args.new).resolve(), Path(args.base).resolve(), Path(args.store).resolve(), Path(args.tasks).resolve()
     base_version, base_digest = version_of(base, store)
@@ -332,7 +332,7 @@ def carry(args) -> str:
 
     def one(rows: Path) -> tuple[str, bool, str, str]:
         task = rows.name[:-len('.rows.zst')]
-        with tempfile.TemporaryDirectory(prefix='shape-carry-') as work:
+        with tempfile.TemporaryDirectory(prefix='shape-same-values-') as work:
             outs, costs = [], []
             started = []
             for build, name in ((base, 'base'), (new, 'new')):
@@ -354,13 +354,13 @@ def carry(args) -> str:
             verdicts.append(same)
             print(f'{task}: records {"IDENTICAL" if same else "DIFFER"}; base {base_cost}; new {new_cost}', flush=True)
     if not all(verdicts):
-        return f'{new.name} keeps its value version {new_version}: {verdicts.count(False)} of {len(verdicts)} rows files differ'
+        return f'{new.name} has its value version {new_version} unchanged: {verdicts.count(False)} of {len(verdicts)} rows files differ'
     entry = {'binary': new_digest, 'version': base_version, 'name': new.name, 'base_binary': base_digest, 'base_name': base.name,
              'check': {'rows_files': len(verdicts), 'identical': len(verdicts)}, 'at': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}
     with locked(ledger_of(store)):
         with open(ledger_of(store), 'a') as ledger:
             ledger.write(json.dumps(entry, separators=(',', ':')) + '\n')
-    return f'{new.name} carries the value version {base_version} of {base.name}: {len(verdicts)} of {len(verdicts)} rows files identical'
+    return f'{new.name} has the value version {base_version} of {base.name}: {len(verdicts)} of {len(verdicts)} rows files identical'
 
 
 def main():
@@ -375,7 +375,7 @@ def main():
     one.add_argument('--threads', type=int, default=1)
     one.add_argument('--tasks', default=str(TASKS))
     one.add_argument('--store', default=str(STORE))
-    two = commands.add_parser('carry')
+    two = commands.add_parser('same-values')
     two.add_argument('new')
     two.add_argument('base')
     two.add_argument('--threads', type=int, default=2)
@@ -389,8 +389,8 @@ def main():
     try:
         if args.command == 'refresh':
             print(refresh(args), file=sys.stderr)
-        elif args.command == 'carry':
-            print(carry(args))
+        elif args.command == 'same-values':
+            print(same_values(args))
         else:
             version, digest = version_of(Path(args.encoder).resolve(), Path(args.store).resolve())
             print(f'{version}\t{digest}')
