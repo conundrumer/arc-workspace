@@ -439,8 +439,8 @@ fn check_before<'b>(before: Option<&'b PyCaseTables>, task: &str, case: &str, bo
 /// capped, the TableHash at each assignment, 16 bytes each and zero for none,
 /// and the features at each assignment; the count of atoms that took a program
 /// of their own, and the place in `atoms` of each atom whose work passed the
-/// cap, which has no table. With `by_program` each atom takes a program. No
-/// deadline applies.
+/// cap, which has no table. With `by_program` each atom takes a program. The
+/// call is one request, under the request work cap.
 #[pyfunction]
 #[pyo3(signature = (decoder, atoms, task, case, before=None, by_program=false))]
 #[allow(clippy::type_complexity)]
@@ -456,8 +456,7 @@ pub(crate) fn atom_tables<'py>(py: Python<'py>, decoder: PyRef<'py, PyDecoder>, 
         Some(found) => found,
         None => {
             let found = std::sync::Arc::new(py.detach(|| {
-                let mut limits = engine.limits();
-                limits.deadline = None;
+                let limits = engine.limits();
                 let operation = engine.clone().with_operation_limits(limits.clone());
                 let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
                 let tables = stream.map_or_else(Vec::new, StreamTables::tables);

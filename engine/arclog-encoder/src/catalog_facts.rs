@@ -1,6 +1,9 @@
 //! What the catalog's shapes read of a train pair's grids, computed once per pair.
 //! Plain data with no engine dependency: a table's pass reads these arrays.
 
+pub use crate::cell_sets::{canon, normalized, symmetry_count};
+use crate::cell_sets::{grid_neighbor, grid_pieces, relation, Walk, STEPS};
+
 /// A set of cells of one grid, by `row * width + column`. Grids hold at most 900 cells.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Bits(pub [u64; 15]);
@@ -88,32 +91,12 @@ pub struct Piece {
 
 /// How two sets stand to each other.
 pub fn set_relation(left: bool, right: bool, both: bool) -> &'static str {
-    if !left && !right {
-        "equal"
-    } else if !both {
-        "disjoint"
-    } else if !left {
-        "subset"
-    } else if !right {
-        "superset"
-    } else {
-        "overlap"
-    }
+    relation(left, right, both, false).word()
 }
 
 /// How two sets stand to each other, in a universe.
 pub fn set_relation_in(left: bool, right: bool, both: bool, neither: bool) -> &'static str {
-    if !left && !right {
-        "equal"
-    } else if !both {
-        if neither { "disjoint" } else { "complement" }
-    } else if !left {
-        "subset"
-    } else if !right {
-        "superset"
-    } else {
-        "overlap"
-    }
+    relation(left, right, both, !neither).word()
 }
 
 pub const CELL_ROLES: usize = 13;
@@ -173,122 +156,68 @@ pub struct GridFacts {
     pub columns_one_color: bool,
 }
 
-/// The eight images of a cell set, each moved so that its box starts at (0, 0), each sorted.
-pub fn images(cells: &[(u8, u8)]) -> [Vec<(u8, u8)>; 8] {
-    let (mut r1, mut c1) = (0u8, 0u8);
-    for (r, c) in cells {
-        r1 = r1.max(*r);
-        c1 = c1.max(*c);
+impl crate::occurrence::Canvas for GridFacts {
+    fn height(&self) -> i32 {
+        self.h as i32
     }
-    let map = |which: usize, r: u8, c: u8| -> (u8, u8) {
-        match which {
-            0 => (r, c),
-            1 => (r, c1 - c),
-            2 => (r1 - r, c),
-            3 => (r1 - r, c1 - c),
-            4 => (c, r),
-            5 => (c, r1 - r),
-            6 => (c1 - c, r),
-            _ => (c1 - c, r1 - r),
+
+    fn width(&self) -> i32 {
+        self.w as i32
+    }
+
+    fn color_at(&self, row: i32, column: i32) -> u32 {
+        u32::from(self.color[row as usize * self.w + column as usize])
+    }
+
+    fn count(&self, color: u32) -> usize {
+        self.counts.get(color as usize).map_or(0, |count| *count as usize)
+    }
+
+    fn each_place(&self, color: u32, mut each: impl FnMut(i32, i32)) {
+        if let Some(cells) = self.by_color.get(color as usize) {
+            cells.each(|at| each((at / self.w) as i32, (at % self.w) as i32));
         }
-    };
-    std::array::from_fn(|which| {
-        let mut out: Vec<(u8, u8)> = cells.iter().map(|(r, c)| map(which, *r, *c)).collect();
-        out.sort_unstable();
-        out
-    })
-}
-
-/// A nonempty cell set moved so that its box starts at (0, 0), sorted.
-pub fn normalized(cells: &[(u8, u8)]) -> Vec<(u8, u8)> {
-    let r0 = cells.iter().map(|cell| cell.0).min().unwrap_or(0);
-    let c0 = cells.iter().map(|cell| cell.1).min().unwrap_or(0);
-    let mut out: Vec<(u8, u8)> = cells.iter().map(|(r, c)| (r - r0, c - c0)).collect();
-    out.sort_unstable();
-    out
-}
-
-/// The eight symmetries that map a cell set onto itself, up to a move.
-pub fn symmetry_count(cells: &[(u8, u8)]) -> u32 {
-    let form = normalized(cells);
-    images(&form).iter().filter(|image| **image == form).count() as u32
-}
-
-/// One form per class of cell sets equal up to a move, a rotation or a reflection.
-pub fn canon(cells: &[(u8, u8)]) -> Vec<(u8, u8)> {
-    let form = normalized(cells);
-    images(&form).into_iter().min().unwrap_or_default()
+    }
 }
 
 /// The 8-connected pieces of a cell set, as cell sets.
 pub fn parts(cells: &Bits, h: usize, w: usize) -> Vec<Bits> {
-    let mut left = *cells;
     let mut out = Vec::new();
-    let mut stack: Vec<usize> = Vec::new();
-    for word in 0..15 {
-        while left.0[word] != 0 {
-            let start = word * 64 + left.0[word].trailing_zeros() as usize;
-            let mut part = Bits::EMPTY;
-            left.0[start >> 6] &= !(1 << (start & 63));
-            part.set(start);
-            stack.push(start);
-            while let Some(at) = stack.pop() {
-                let (r, c) = (at / w, at % w);
-                for nr in r.saturating_sub(1)..(r + 2).min(h) {
-                    for nc in c.saturating_sub(1)..(c + 2).min(w) {
-                        let next = nr * w + nc;
-                        if left.get(next) {
-                            left.0[next >> 6] &= !(1 << (next & 63));
-                            part.set(next);
-                            stack.push(next);
-                        }
-                    }
-                }
-            }
-            out.push(part);
+    grid_pieces(h, w, &STEPS, |at| cells.get(at), |piece| {
+        let mut part = Bits::EMPTY;
+        for at in piece {
+            part.set(*at);
         }
-    }
+        out.push(part);
+    });
     out
 }
 
 /// The count of 8-connected pieces of a cell set.
 pub fn part_count(cells: &Bits, h: usize, w: usize) -> u32 {
-    parts(cells, h, w).len() as u32
+    let mut count = 0;
+    grid_pieces(h, w, &STEPS, |at| cells.get(at), |_| count += 1);
+    count
 }
 
 /// The cells of `free` that no walk of four steps through `free` reaches from the grid's edge.
 pub fn walk_in(free: &Bits, h: usize, w: usize) -> Bits {
-    let mut seen = Bits::EMPTY;
-    let mut stack: Vec<usize> = Vec::new();
+    let mut edge: Vec<usize> = Vec::new();
     free.each(|at| {
         let (r, c) = (at / w, at % w);
         if r == 0 || c == 0 || r == h - 1 || c == w - 1 {
-            seen.set(at);
-            stack.push(at);
+            edge.push(at);
         }
     });
-    while let Some(at) = stack.pop() {
-        let (r, c) = (at / w, at % w);
-        let mut go = |next: usize| {
-            if free.get(next) && !seen.get(next) {
-                seen.set(next);
-                stack.push(next);
-            }
-        };
-        if r > 0 {
-            go(at - w);
+    let mut walk = Walk::default();
+    let seen = walk.reach(h * w, &STEPS[..4], &edge, |at, dr, dc| grid_neighbor(h, w, at, dr, dc).filter(|next| free.get(*next)));
+    let mut out = Bits::EMPTY;
+    free.each(|at| {
+        if !seen[at] {
+            out.set(at);
         }
-        if r + 1 < h {
-            go(at + w);
-        }
-        if c > 0 {
-            go(at - 1);
-        }
-        if c + 1 < w {
-            go(at + 1);
-        }
-    }
-    free.minus(&seen)
+    });
+    out
 }
 
 /// The dense id of each value, by first appearance.

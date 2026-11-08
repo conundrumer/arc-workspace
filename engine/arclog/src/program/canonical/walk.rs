@@ -403,8 +403,7 @@ pub(super) fn out<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, index: usize, o
 /// Walks the key clause and the inputs of `demonstrated`, below the node
 /// at `at`.
 pub(super) fn demonstrated_key<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, demonstrated: &'a Demonstrated) {
-    let value_first = sink.feature_sites() && crate::resolver::demonstrated_on();
-    key_and_inputs(sink, at, NodeRef::Demonstrated(demonstrated), demonstrated.key.as_ref(), &demonstrated.inputs, value_first);
+    key_and_inputs(sink, at, NodeRef::Demonstrated(demonstrated), demonstrated.key.as_ref(), &demonstrated.inputs, false);
 }
 
 pub(super) fn demo_rule<'a, S: ScopeSink<'a>>(sink: &mut S, at: S::At, rule: &'a DemoRule) {

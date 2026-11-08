@@ -1739,12 +1739,26 @@ impl Generated {
         let count = columns.len();
         // A shape's name does not depend on a table's width, so a table's own `project` of all its columns stands as a term.
         let every = at == LEAF_TABLE;
-        if (count >= 2 || (every && count == 1)) && count <= 10 {
-            for mask in 1u32..(1 << count) - u32::from(!every) {
-                if mask.count_ones() as usize > MAX_PROJECTED {
+        if count >= 2 || (every && count == 1) {
+            // Each set of at most MAX_PROJECTED columns as a mask, in the order of the masks, built from the sets of one column fewer.
+            let mut masks: Vec<u64> = Vec::new();
+            let mut level: Vec<u64> = vec![0];
+            for _ in 0..MAX_PROJECTED.min(count) {
+                let mut next: Vec<u64> = Vec::new();
+                for mask in &level {
+                    let first = (u64::BITS - mask.leading_zeros()) as usize;
+                    next.extend((first..count).map(|place| *mask | (1u64 << place)));
+                }
+                masks.extend(&next);
+                level = next;
+            }
+            masks.sort_unstable();
+            for mask in masks {
+                // Only a table has a projection that keeps all its columns.
+                if !every && mask == (1u64 << count) - 1 {
                     continue;
                 }
-                let places: Vec<u16> = (0..count as u16).filter(|place| mask & (1 << place) != 0).collect();
+                let places: Vec<u16> = (0..count as u16).filter(|place| mask >> place & 1 == 1).collect();
                 let kept: Vec<Column> = places.iter().map(|place| columns[usize::from(*place)].clone()).collect();
                 let names: Vec<&str> = kept.iter().map(|column| column.name.as_str()).collect();
                 let line = format!("(project {text} {})", names.join(" "));
@@ -1942,7 +1956,7 @@ impl Generated {
     /// Whether the table is a product of two groups of its columns, for each way to split them. The split stands in no shape's name.
     fn product(&mut self) {
         let columns = self.terms[LEAF_TABLE as usize].columns.clone();
-        if columns.len() < 2 || columns.len() > 8 {
+        if columns.len() < 2 {
             return;
         }
         // Each split once: the group that holds the first column is the key.
@@ -2427,6 +2441,10 @@ pub struct Walker<'a> {
     budget: (usize, usize),
     /// Whether the last walk stopped a term that passed [`walk_cells`] cells of its own, so that the term, and every term that reads it, have no value.
     pub over_budget: bool,
+    /// Whether an evaluation charges the cells of the rows it reads from a lazy value, which a term that keeps no results does not otherwise count.
+    charge_reads: bool,
+    /// The next id that stands for such a charge, counting down from the greatest id, which no value has.
+    read_charge: u32,
 }
 
 /// What a walker's copies on disk have cost: the values and cells written and read back, and the time of each.
@@ -2458,7 +2476,7 @@ const HELD_MEMO: usize = 250_000;
 const WALK_CELLS: usize = 100_000_000;
 
 /// The cells that one term's evaluation can give in a walk: `GENERATE_WALK_CELLS` where it is set, else [`WALK_CELLS`].
-fn walk_cells() -> usize {
+pub(crate) fn walk_cells() -> usize {
     static LIMIT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *LIMIT.get_or_init(|| std::env::var("GENERATE_WALK_CELLS").ok().and_then(|text| text.parse().ok()).unwrap_or(WALK_CELLS))
 }
@@ -2552,7 +2570,7 @@ impl Drop for SpillDir {
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, charged: FastMap::default(), forced: Vec::new(), written_of: FastMap::default(), spilled: FastMap::default(), spill_dir: None, spill_serial: 0, spill_cost: SpillCost::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, charged: FastMap::default(), forced: Vec::new(), written_of: FastMap::default(), spilled: FastMap::default(), spill_dir: None, spill_serial: 0, spill_cost: SpillCost::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false, charge_reads: false, read_charge: u32::MAX }
     }
 
     /// A walker that holds more between walks than [`Walker::new`], for many related tables.
@@ -2921,12 +2939,22 @@ impl<'a> Walker<'a> {
             self.eval.apply(step, &[&first, &second])
         };
         crate::bounds::end(a == 0 || (b != NO_TERM && b == 0));
+        // The rows that an evaluation takes from a lazy value as they are count against the term, as the rows written out do.
+        if self.charge_reads && (first.is_lazy() || (b != NO_TERM && self.values[b as usize].is_lazy())) {
+            let cells = crate::native::cells_of(&value);
+            if cells > 0 {
+                self.read_charge -= 1;
+                let id = self.read_charge;
+                self.force(id, cells);
+            }
+        }
         value
     }
 
     /// A term's count of rows and, for a number root, its number, with what can be left unbuilt left so.
     fn count_only(&mut self, step: &Step, at: usize, id: u32, b: u32, number: bool, steps: &StepIds) -> (u32, u32) {
         if let Some((found, forced)) = self.memo.get(&(steps.ids[at], id, b)).cloned() {
+            crate::bounds::recall((0, steps.ids[at], id, 0, b));
             self.replay(&forced);
             let value = &self.values[found as usize];
             return (count_of(value), if number { number_word(value) } else { 0 });
@@ -2950,11 +2978,14 @@ impl<'a> Walker<'a> {
                 }
                 let key = (part, written, grouping, b);
                 if let Some((found, forced)) = self.group_counts.get(&key).cloned() {
+                    crate::bounds::recall((2, key.0, key.1, key.2, key.3));
                     self.replay(&forced);
                     return (found, 0);
                 }
                 let mark = self.forced.len();
+                let bounds_before = crate::bounds::enter();
                 let found = count_of(&self.apply(step, written, b));
+                crate::bounds::leave((2, key.0, key.1, key.2, key.3), bounds_before);
                 let forced = self.forced_since(mark);
                 self.group_counts.insert(key, (found, forced));
                 return (found, 0);
@@ -3061,6 +3092,7 @@ impl<'a> Walker<'a> {
             self.written_cells = 0;
             self.charged.clear();
             let step_id = steps.ids[at];
+            crate::bounds::clear_term();
             let first = std::mem::take(&mut ids[term.a as usize]);
             let second = if term.b == NO_TERM { Vec::new() } else if term.b == term.a { first.clone() } else { std::mem::take(&mut ids[term.b as usize]) };
             // A value that the walk moved to disk comes back before the term reads it.
@@ -3071,6 +3103,7 @@ impl<'a> Walker<'a> {
             let scope = if reads_output { train.min(instances) } else { instances };
             let wanted = (term.flags & READS_TABLE != 0 || family.over_grids) && (reads_output || !only_output);
             let extended = term.used;
+            self.charge_reads = !extended;
             let mut own = Vec::new();
             let on_no_rows = matches!(step, Step::Part(part) if part.gives_rows_on_no_rows());
             // A term whose first relation is empty, or whose second relation of a `join` or a `semijoin` is, has no rows. One whose first relation has no value, or is the rows of `inside` or of a `join` that `step` cannot write, has no value.
@@ -3082,6 +3115,15 @@ impl<'a> Walker<'a> {
             let cut_by_bound = first_cut && first[..scope].iter().any(|id| self.cut_by_cap(step, *id));
             let inherited = stopped[term.a as usize] || (term.b != NO_TERM && stopped[term.b as usize]);
             let mut past_bound = false;
+            // A term whose first relation is rows that `step` cannot write has no value, and no evaluation counts it.
+            if idle && scope > 0 && crate::bounds::enabled() {
+                for id in &first[..scope] {
+                    let held = &self.values[*id as usize];
+                    if held.is_lazy() && !held.lazy_reads(step, true) && !held.lazy_fits() {
+                        crate::bounds::mark_term(if matches!(held, Val::Joined(_)) { crate::bounds::Bound::JoinOutput } else { crate::bounds::Bound::Walk });
+                    }
+                }
+            }
             if extended {
                 own.reserve(instances);
                 for pair in 0..scope {
@@ -3098,11 +3140,14 @@ impl<'a> Walker<'a> {
                     let mark = self.forced.len();
                     let id = match self.memo.get(&key).cloned() {
                         Some((found, forced)) => {
+                            crate::bounds::recall((0, key.0, key.1, 0, key.2));
                             self.replay(&forced);
                             found
                         }
                         None => {
+                            let bounds_before = crate::bounds::enter();
                             let value = self.apply(step, first[pair], b);
+                            crate::bounds::leave((0, key.0, key.1, 0, key.2), bounds_before);
                             let id = self.value_id(value);
                             let forced = self.forced_since(mark);
                             self.memo.insert(key, (id, forced));
@@ -3165,11 +3210,14 @@ impl<'a> Walker<'a> {
                         let mark = self.forced.len();
                         let counted = match self.counts.get(&key).cloned() {
                             Some((rows, number, forced)) => {
+                                crate::bounds::recall((1, key.0, key.1, 0, key.2));
                                 self.replay(&forced);
                                 (rows, number)
                             }
                             None => {
+                                let bounds_before = crate::bounds::enter();
                                 let found = self.count_only(step, at, id, b, term.root == RootKind::Number, steps);
+                                crate::bounds::leave((1, key.0, key.1, 0, key.2), bounds_before);
                                 let forced = self.forced_since(mark);
                                 self.counts.insert(key, (found.0, found.1, forced));
                                 found
@@ -3243,6 +3291,8 @@ impl<'a> Walker<'a> {
             if crate::bounds::enabled() && term_cells + self.written_cells > 5_000_000 {
                 eprintln!("term\t{}\textended {extended}\tresults {term_cells}\tforced {}\tstopped {is_stopped}\theld {}", term.text.chars().take(160).collect::<String>(), self.written_cells, self.held_cells);
             }
+            crate::bounds::note_term(at as u32);
+            crate::bounds::note_cells(at as u32, (term_cells + self.written_cells) as u64);
             ids[term.a as usize] = first;
             if term.b != NO_TERM {
                 ids[term.b as usize] = second;
@@ -3429,6 +3479,12 @@ impl Generated {
     /// The value that stands for no term in [`Generated::term_links`].
     pub fn no_term() -> u32 {
         NO_TERM
+    }
+
+    /// A term's shape, with the table and its columns as holes, where the family keeps the terms' text.
+    pub fn term_shape(&self, at: usize, types: &[ValueType]) -> Option<String> {
+        let text = &self.terms.get(at)?.text;
+        (!text.is_empty()).then(|| shape_text(text, "T", types))
     }
 
     pub fn is_pair_term(&self, at: usize) -> bool {

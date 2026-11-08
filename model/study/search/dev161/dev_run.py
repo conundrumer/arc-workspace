@@ -1,10 +1,10 @@
 """The live search on the dev or train tasks of the split, in arms that differ only by the writer's tree, judged by solves on the test example.
 
-    run_heavy.py --cpus JOBS --need soon dev_run.py RUN --code DIR --site DIR [--models DIR] [--tree FILE] [--split dev|train] [--arms tree,hand] [--seeds 0] [--seconds 120] [--jobs JOBS] [--tasks N] [--skip TASK,...] [--record]
+    run_heavy.py --cpus JOBS --need soon dev_run.py RUN --code DIR --site DIR [--models DIR] [--tree FILE] [--split dev|train] [--arms tree] [--seeds 0] [--seconds 120] [--jobs JOBS] [--tasks N] [--skip TASK,...] [--record]
 
 RUN names the output folder, $DATA/search/dev161/RUN for dev and $DATA/search/train866/RUN for train (DATA is study_paths.DATA_ROOT). DIR holds model/study, a kit made from a commit.
-Every arm runs under one writer plan (WRITER_PLAN): the plan that --tree records where an arm takes the tree, else WRITER_PLAN, else the plan with no tree (sampler/writer_plan.py).
-Each job is one task of one arm and one seed: the search of --source (the pool search, or the state search) with the v9 notebook's
+Every arm runs under one writer plan (WRITER_PLAN): the plan that --tree records (sampler/writer_plan.py).
+Each job is one task of one arm and one seed: the search of --source (the one search over the graph, or the state search) with the v9 notebook's
 environment and a fresh store of its own. --models
 is the worker's models folder (default the v9 dataset's), and --tree the writer's tree of the arms that take one. With
 --budget cpu (the default), one worker runs on --seconds of its own CPU time (cpu_clock/sitecustomize.py), and the kernel supervisor's
@@ -44,13 +44,11 @@ TREE = DATA_ROOT / 'samples/models/training-ordered-vec750-p1.txt'
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import draw_file  # noqa: E402
 
-POPPED = ('NODE_SCORE', 'WRITER_TREE', 'WRITER_PLAN', 'SEARCH_PARTITION', 'SEARCH_READ_SCOPE', 'WRITER_LEGAL_ADD', 'FIRST_PASS_SECONDS', 'FIRST_PASS_RULE', 'WRITER_LOOKAHEAD', 'ORDER_FREE', 'ONE_REPAIR', 'P_DAG', 'WRITER', 'SEARCH_STATE_SCORE')
-ARMS = {'tree': {'WRITER_TREE': None}, 'tok': {'WRITER_TREE': None}, 'fast': {'WRITER_TREE': None}, 'tok_read': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '8', 'SEARCH_READ_SCOPE': '1'}, 'hand': {}, 'tree_reads': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScope'}, 'tree_first': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst'},
-        'tree_fp': {'WRITER_TREE': None, 'FIRST_PASS_SECONDS': '4'}, 'tree_first_fp': {'WRITER_TREE': None, 'WRITER_LEGAL_ADD': 'ReadsScopeFirst', 'FIRST_PASS_SECONDS': '4'},
-        'tree_any': {'WRITER_TREE': None, 'SEARCH_PARTITION': '1', 'FIRST_PASS_SECONDS': '4'},
-        'base': {'WRITER_TREE': None}}  # WRITER_TREE None: --tree; the checks of the ReadsScope rules; tok and fast: tree under other names, so that two runs of different kits or sites pair by reach.py's --arms
+POPPED = ('WRITER_TREE', 'WRITER_PLAN', 'SEARCH_STATE_SCORE')
+ARMS = {'tree': {'WRITER_TREE': None}, 'tok': {'WRITER_TREE': None}, 'fast': {'WRITER_TREE': None}, 'base': {'WRITER_TREE': None}}  # WRITER_TREE None: --tree; tok and fast: tree under other names, so that two runs of different kits or sites pair by reach.py's --arms
 RSS_LIMIT_MIB = 2888
 STOP_AFTER = 4  # the run stops where its first STOP_AFTER jobs all die with no draw
+WORK_GUARD = 4  # with --budget work, a worker's CPU seconds past this times --seconds end it, whatever its work
 LOCK = threading.Lock()
 RUNNING = [0]  # the jobs running now
 CPU_MODE = [False]  # --budget cpu, where a worker's clock is its CPU time
@@ -94,6 +92,13 @@ def effort(w):
     return draws, round(cpu + seg)
 
 
+def work_of(w):
+    """The engine work of the job's worker: the sum of the `clock: work W cpu S` lines of its logs, which the worker writes at its end and at each renewal (arclog.work_total), or None
+    where an engine build or a worker writes none."""
+    found = [int(m.group(1)) for p in (w / 'work').glob('*.log') for l in p.read_text(errors='replace').splitlines() if (m := re.match(r'clock: work (\d+) cpu', l))]
+    return sum(found) if found else None
+
+
 def gate(out, a):
     """Waits until fewer jobs run than the limit in the file <out>/limit (default --jobs), which can be changed while the run goes on."""
     while True:
@@ -126,7 +131,8 @@ def cpu_job(a, w, task, seed, env, samp, sup):
     ends the job. The submission is the supervisor's: its candidates best first, two attempts per test input. Gives (rc, log text, submission)."""
     work = w / 'work'
     work.mkdir()
-    env = dict(env, ARC_CPU_CLOCK='1', PYTHONPATH='%s:%s' % (Path(__file__).resolve().parent / 'cpu_clock', env['PYTHONPATH']))
+    clock = dict(ARC_WORK_CLOCK=str(a.work_rate), ARC_WORK_GUARD=str(WORK_GUARD * a.seconds)) if a.budget == 'work' else dict(ARC_CPU_CLOCK='1')
+    env = dict(env, **clock, PYTHONPATH='%s:%s' % (Path(__file__).resolve().parent / 'cpu_clock', env['PYTHONPATH']))
     out = work / (task + '.out.jsonl')
     (work / (task + '.beat')).touch()
     cmd = [str(PY), '-u', str(samp / 'kaggle_worker.py'), '--task', str(MAIN_ROOT / 'data/tasks' / (task + '.json')), '--out', str(out),
@@ -167,10 +173,10 @@ def parity_gate(a, out, arm, tasks):
     samp = Path(a.code) / 'model/study/sampler'
     if not (samp / 'serving_parity.py').exists():
         raise SystemExit('this kit has no serving parity check: %s has no serving_parity.py. --no-parity runs it unchecked.' % samp)
-    settings = sorted((k, v) for k, v in os.environ.items() if k.startswith('WRITER_') and k not in ('WRITER_ATOM_LOG_DIR', 'WRITER_PARITY_DIR'))
+    settings = sorted((k, v) for k, v in os.environ.items() if k.startswith('WRITER_') and k != 'WRITER_PARITY_DIR')
     code = hashlib.sha256(b''.join(p.read_bytes() for p in sorted(samp.glob('*.py')))).hexdigest()  # a change to the sampler's code needs a new check
     tree = arm_tree(a, arm)
-    key = hashlib.sha256(json.dumps([a.site, str(tree), a.plan, settings, code] + ([a.lookahead] if a.lookahead and arm != 'base' else []) + (sorted(a.tok_env) if arm != 'base' else [])).encode()).hexdigest()[:16]
+    key = hashlib.sha256(json.dumps([a.site, str(tree), a.plan, settings, code] + (sorted(a.tok_env) if arm != 'base' else [])).encode()).hexdigest()[:16]
     stamp = Path(a.code) / 'parity' / (key + '.json')
     if stamp.exists():
         return
@@ -186,7 +192,7 @@ def parity_gate(a, out, arm, tasks):
         sup = Path(a.code) / 'supervisor.py'
         cpu_job(short, w, task, 0, env, samp, sup if sup.exists() else DATASET / 'supervisor.py')
     env = job_env(a, folder, arm, 0)
-    env.update(ARC_ROOT=str(MAIN_ROOT), WRITER_ROW_DEADLINE='3600', ARCLOG_IDENT_SOURCE='value', PYTHONPATH='%s:%s:%s' % (a.site, samp, Path(a.code) / 'model/study/samples'))
+    env.update(ARC_ROOT=str(MAIN_ROOT), ARCLOG_IDENT_SOURCE='value', PYTHONPATH='%s:%s:%s' % (a.site, samp, Path(a.code) / 'model/study/samples'))
     env.pop('ARC_DRAW_RECORD', None)
     got = subprocess.run([str(PY), str(samp / 'serving_parity.py'), str(folder), '--tree', str(tree), '--models', str(a.models)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     print(got.stdout[-3000:], flush=True)
@@ -199,18 +205,14 @@ def parity_gate(a, out, arm, tasks):
 def job_env(a, w, arm, seed):
     samp = Path(a.code) / 'model/study/sampler'
     env = dict(os.environ, PYTHONPATH='%s:%s' % (a.site, samp), ARC_MODELS=str(a.base_models if arm == 'base' and a.base_models else a.models), ARC_POLICY=str(Path(a.code) / 'model/study/policy'),
-               POLICY_MODEL=str(DATASET / 'policy_model.pkl'), POOL_CLAUSES=a.source, ARC_STORE=str(w / 'store'), ARC_SEED_BASE=str(1000 * seed),
+               POOL_CLAUSES=a.source, ARC_SEED_BASE=str(1000 * seed),
                RUST_BACKTRACE='1', RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1',
                NUMEXPR_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1', ARCLOG_IDENT_SOURCE='value')  # an Ident cell is a digest of its content; unset, it is an intern number, which depends on the order of interning
     for k in POPPED:
         env.pop(k, None)
     env.update({k: v if v is not None else str(arm_tree(a, arm)) for k, v in ARMS[arm].items()}, WRITER_PLAN=a.plan)
-    if a.lookahead and 'WRITER_TREE' in ARMS[arm] and arm != 'base':
-        env['WRITER_LOOKAHEAD'] = a.lookahead
     if arm != 'base':  # --tok-env: env of every arm but base
         env.update(dict(x.split('=', 1) for x in a.tok_env))
-    if a.node_score and arm != 'base':  # the scope pick's node score file for every arm but base (policy/nodescore.py)
-        env['NODE_SCORE'] = a.node_score
     return env
 
 
@@ -232,7 +234,7 @@ def run_job(a, out, task, arm, seed):
     sup = Path(a.code) / 'supervisor.py'
     sup = sup if sup.exists() else DATASET / 'supervisor.py'
     t0 = time.time()
-    if a.budget == 'cpu':
+    if a.budget in ('cpu', 'work'):
         rc, text, sub = cpu_job(a, w, task, seed, env, samp, sup)
     else:
         cmd = [str(PY), '-u', str(sup), '--challenges', str(w / 'challenges.json'),
@@ -248,7 +250,7 @@ def run_job(a, out, task, arm, seed):
     cands = sum(1 for p in (w / 'work').glob('*.out.jsonl') for l in open(p) if l.strip())
     draws, cpu = effort(w)
     draw_file.compress(w)
-    rec = dict(task=task, arm=arm, seed=seed, job=w.name, budget=a.budget, solved=ok, tests=ntest, candidates=cands, draws=draws, cpu=cpu, rc=rc, seconds=round(time.time() - t0, 1),
+    rec = dict(task=task, arm=arm, seed=seed, job=w.name, budget=a.budget, solved=ok, tests=ntest, candidates=cands, draws=draws, cpu=cpu, work=work_of(w), rc=rc, seconds=round(time.time() - t0, 1),
                deaths=int(dk.group(1)) if dk else None, kills=int(dk.group(2)) if dk else None,
                tracebacks=sum(p.read_text(errors='replace').count('Traceback') for p in (w / 'work').glob('*.log')))
     with LOCK:
@@ -270,20 +272,19 @@ def summary(out):
     tasks = {r['task'] for r in recs}
     arms = {r['arm'] for r in recs}
     paired = [t for t in tasks if all(any(r['task'] == t and r['arm'] == arm for r in recs) for arm in arms)]
-    lines.append('paired tasks: %d; solved only by tree: %s; only by hand: %s' % (
-        len(paired), sorted(t for t in paired if any(r['task'] == t and r['arm'] == 'tree' and r['solved'] for r in recs) and not any(r['task'] == t and r['arm'] == 'hand' and r['solved'] for r in recs)),
-        sorted(t for t in paired if any(r['task'] == t and r['arm'] == 'hand' and r['solved'] for r in recs) and not any(r['task'] == t and r['arm'] == 'tree' and r['solved'] for r in recs))))
+    solved = {arm: {r['task'] for r in recs if r['arm'] == arm and r['solved']} for arm in arms}
+    lines.append('paired tasks: %d; %s' % (len(paired), '; '.join('solved only by %s: %s' % (arm, sorted(t for t in paired if t in solved[arm] and not any(t in solved[o] for o in arms if o != arm))) for arm in sorted(arms))))
     (out / 'summary.txt').write_text('\n'.join(lines) + '\n')
 
 
 def run_plan(a):
-    """The writer plan of every arm: the plan that --tree records where an arm takes the tree, else WRITER_PLAN, else the plan with no tree (sampler/writer_plan.py). Raises where
+    """The writer plan of every arm: the plan that --tree records (sampler/writer_plan.py). Raises where
     WRITER_PLAN and the tree give different plans."""
     spec = importlib.util.spec_from_file_location('writer_plan', Path(__file__).resolve().parents[2] / 'sampler/writer_plan.py')
     assert spec is not None and spec.loader is not None
     wp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(wp)
-    tree = str(a.tree) if any('WRITER_TREE' in ARMS[arm] for arm in a.arms.split(',') if arm != 'base') else None
+    tree = str(a.tree) if any(arm != 'base' for arm in a.arms.split(',')) else None
     plan = wp.plan_of_process(tree, os.environ.get('WRITER_PLAN'))[0]
     if 'base' in a.arms.split(','):
         other = wp.plan_of_process(str(a.base_tree or a.tree), os.environ.get('WRITER_PLAN'))[0]
@@ -300,28 +301,30 @@ def main():
     ap.add_argument('--site', required=True)
     ap.add_argument('--models', default=str(DATASET))
     ap.add_argument('--tree', default=str(TREE))
-    ap.add_argument('--lookahead', help='the writer\'s lookahead components for the tree arms other than base (WRITER_LOOKAHEAD), such as legal,GrammarOneValue; the search\'s default where not given')
     ap.add_argument('--base-models', help='the models folder of the arm base; --models where not given')
     ap.add_argument('--allow-dev-priors', action='store_true', help='runs with a priors file fitted on dev or held-out tasks, or one that does not say which tasks it fitted on (check_priors)')
     ap.add_argument('--base-tree', help='the tree of the arm base, which runs beside the other arms under one load; --tree where not given')
     ap.add_argument('--skip', default='')
-    ap.add_argument('--arms', default='tree,hand')
+    ap.add_argument('--arms', default='tree')
     ap.add_argument('--source', choices=('search', 'state'), default='search', help='search: the pool search (superdag_search.py); state: the state search (state_search.py)')
     ap.add_argument('--seeds', default='0')
     ap.add_argument('--seconds', type=int, default=120)
     ap.add_argument('--jobs', type=int, default=4)
     ap.add_argument('--tasks', type=int, default=0)
     ap.add_argument('--tok-env', action='append', default=[], help='KEY=VALUE in the env of every arm but base; may repeat')
-    ap.add_argument('--node-score', help='a node score file (.npz) for the scope pick of every arm but base: NODE_SCORE of policy.py, which needs policy/nodescore.py in --code')
     ap.add_argument('--gate-records', action='store_true', help='each job writes the gate\'s record of every form at the gate into its folder (gate-records/<task>.jsonl.gz)')
     ap.add_argument('--task-list', help='a file of the tasks to run, one a line, in its order, in place of the split\'s')
     ap.add_argument('--shuffle', type=int, help='takes the split\'s tasks in an order that this seed shuffles, so that --tasks gives a mixed sample')
     ap.add_argument('--split', default='dev')
     ap.add_argument('--record', action='store_true', help='each worker writes its draw records')
     ap.add_argument('--no-parity', action='store_true', help='runs with no check that a worker gives the model the rows it was fit on (parity_gate)')
-    ap.add_argument('--budget', choices=('cpu', 'wall'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor')
+    ap.add_argument('--budget', choices=('cpu', 'wall', 'work'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor; '
+                    'work: --seconds of the engine\'s work at --work-rate units a second (arclog.work_total), the same on any machine, with WORK_GUARD times --seconds of CPU as the outer guard')
+    ap.add_argument('--work-rate', type=float, help='with --budget work: the engine work units that one second of the budget is')
     ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu, the wall-clock seconds after which a job is killed')
     a = ap.parse_args()
+    if a.budget == 'work' and not a.work_rate:
+        ap.error('--budget work needs --work-rate')
     a.plan = run_plan(a)
     check_priors(a)
     CPU_MODE[0] = a.budget == 'cpu'
@@ -338,13 +341,12 @@ def main():
         random.Random(a.shuffle).shuffle(tasks)
     tasks = tasks[:a.tasks or None]
     todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
-    if not a.no_parity and a.budget == 'cpu':
+    if not a.no_parity and a.budget in ('cpu', 'work'):
         for arm in a.arms.split(','):
-            if 'WRITER_TREE' in ARMS[arm]:
-                parity_gate(a, out, arm, tasks)
+            parity_gate(a, out, arm, tasks)
     print('%d %s tasks, %d jobs to run, %d done' % (len(tasks), a.split, len(todo), len(done)), flush=True)
     t0, n, dead = time.time(), 0, 0
-    with cf.ThreadPoolExecutor(16) as ex:  # gate() holds the jobs to the limit
+    with cf.ThreadPoolExecutor(max(16, a.jobs)) as ex:  # gate() holds the jobs to the limit; a pool smaller than --jobs would hold them below it
         for fut in cf.as_completed([ex.submit(job, a, out, *j) for j in todo]):
             r = fut.result()
             n += 1

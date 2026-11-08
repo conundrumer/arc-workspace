@@ -24,6 +24,9 @@ use crate::native::{all, hash_words, key_word, project, Cell, FastMap, KeyIndex,
 /// Marks the hash of a [`Joined`], which no other value's hash has.
 const JOINED_WORD: u64 = 0x4a6f_696e_6564_5273;
 
+/// Marks the hash of a [`Joined`] that a `select` makes, which no other value's hash has.
+const ACROSS_WORD: u64 = 0x4163_726f_7373_5373;
+
 /// The most cells of the tables of `Joined::rows_at` that one value keeps for later readers.
 const SKETCH_KEPT: usize = 1 << 18;
 
@@ -158,7 +161,53 @@ impl Joined {
                 Place::Right(place(&right_columns, *kept.get(usize::from(column - left_arity))?)?)
             });
         }
-        let right_keys: Vec<u64> = right.rows().map(|row| key_word(row, &right_places)).collect();
+        let tail: Vec<u64> = left_columns
+            .iter()
+            .map(|column| u64::from(*column))
+            .chain([u64::MAX])
+            .chain(right_columns.iter().map(|column| u64::from(*column)))
+            .chain([u64::MAX])
+            .chain(left_places.iter().map(|at| *at as u64))
+            .chain([u64::MAX])
+            .chain(right_places.iter().map(|at| *at as u64))
+            .chain([u64::MAX])
+            .chain(columns.iter().map(|column| u64::from(*column)))
+            .collect();
+        Self::assemble(left, right, left_places, &right_places, right_kept, columns, places, &tail)
+    }
+
+    /// The join of `left` and `right` that a `select` makes of two parts, where it equates the column at `left_at` of the left table with the column at `right_at` of the right table, and drops the right one. `left_out` and `right_out` give the column of the select's rows for each column of each table; the right column at `right_at` has none. They name each column of the select's rows once. No value where they do not.
+    pub fn across(left: Arc<Table>, left_out: &[u16], right: Arc<Table>, right_out: &[u16], left_at: usize, right_at: usize) -> Option<Val> {
+        if left_out.len() != left.arity || right_out.len() != right.arity || left_at >= left.arity || right_at >= right.arity {
+            return None;
+        }
+        let right_kept: Vec<usize> = (0..right.arity).filter(|place| *place != right_at).collect();
+        let mut columns: Vec<u16> = left_out.to_vec();
+        columns.extend(right_kept.iter().map(|place| right_out[*place]));
+        let mut slots: Vec<Option<Place>> = vec![None; columns.len()];
+        for (written, column) in columns.iter().enumerate() {
+            let place = if written < left.arity { Place::Left(written) } else { Place::Right(right_kept[written - left.arity]) };
+            let slot = slots.get_mut(usize::from(*column))?;
+            if slot.is_some() {
+                return None;
+            }
+            *slot = Some(place);
+        }
+        let places: Vec<Place> = slots.into_iter().collect::<Option<_>>()?;
+        let tail: Vec<u64> = [ACROSS_WORD]
+            .into_iter()
+            .chain(left_out.iter().map(|column| u64::from(*column)))
+            .chain([u64::MAX])
+            .chain(right_out.iter().map(|column| u64::from(*column)))
+            .chain([u64::MAX, left_at as u64, u64::MAX, right_at as u64])
+            .collect();
+        Self::assemble(left, right, vec![left_at], &[right_at], right_kept, columns, places, &tail)
+    }
+
+    /// The join of the tables whose paired places are `left_places` and `right_places`, where `columns` and `places` say where the columns of its rows come from, and `tail` is what its hash holds beyond the two tables.
+    #[allow(clippy::too_many_arguments)]
+    fn assemble(left: Arc<Table>, right: Arc<Table>, left_places: Vec<usize>, right_places: &[usize], right_kept: Vec<usize>, columns: Vec<u16>, places: Vec<Place>, tail: &[u64]) -> Option<Val> {
+        let right_keys: Vec<u64> = right.rows().map(|row| key_word(row, right_places)).collect();
         let (index, right_ids) = KeyIndex::of(&right_keys);
         let groups = right_ids.iter().max().map_or(0, |last| *last as usize + 1);
         let mut right_counts = vec![0u32; groups];
@@ -182,17 +231,7 @@ impl Joined {
             return Some(Val::Empty);
         }
         let (left_hash, right_hash) = (left.hash(), right.hash());
-        let words = [JOINED_WORD, left_hash as u64, (left_hash >> 64) as u64, right_hash as u64, (right_hash >> 64) as u64]
-            .into_iter()
-            .chain(left_columns.iter().map(|column| u64::from(*column)))
-            .chain([u64::MAX])
-            .chain(right_columns.iter().map(|column| u64::from(*column)))
-            .chain([u64::MAX])
-            .chain(left_places.iter().map(|at| *at as u64))
-            .chain([u64::MAX])
-            .chain(right_places.iter().map(|at| *at as u64))
-            .chain([u64::MAX])
-            .chain(columns.iter().map(|column| u64::from(*column)));
+        let words = [JOINED_WORD, left_hash as u64, (left_hash >> 64) as u64, right_hash as u64, (right_hash >> 64) as u64].into_iter().chain(tail.iter().copied());
         let hash = hash_words(words);
         Some(Val::Joined(Arc::new(Joined { left, right, left_places, right_kept, columns, places, left_ids, right_ids, left_counts, right_counts, hash, rows, written: OnceLock::new(), sketches: Mutex::new((0, FastMap::default())) })))
     }

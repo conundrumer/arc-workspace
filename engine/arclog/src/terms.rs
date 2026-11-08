@@ -221,6 +221,10 @@ impl Margins {
     /// The margins packed as four signed bytes, t, b, l and r from the low
     /// byte up.
     fn pack(self) -> Result<u32, ReachedMarginBound> {
+        // The bits that a margin takes, which is the extent of its signed byte; the counter
+        // of the Box margin bound reads the largest of them ([`crate::eval::ambient`]).
+        let extent = |margin: i32| (margin ^ (margin >> 31)) as u32;
+        crate::eval::ambient::note_margin(extent(self.top).max(extent(self.bottom)).max(extent(self.left)).max(extent(self.right)));
         let byte = |margin: i32| i8::try_from(margin).map(|m| u32::from(m as u8));
         match (byte(self.top), byte(self.bottom), byte(self.left), byte(self.right)) {
             (Ok(t), Ok(b), Ok(l), Ok(r)) => Ok(t | (b << 8) | (l << 16) | (r << 24)),

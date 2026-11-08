@@ -12,16 +12,18 @@
 //!
 //! A domain that a walk computes is kept with what its computation did to
 //! the walk's result cache, in order: each lookup, with the value it found;
-//! each relation it gave an id; each store; and the table work it counted.
+//! each relation it gave an id; each store; and its [`Cost`], the work it
+//! charged and the largest counts it noted.
 //! A later walk that needs the domain of a `DET` of the same key ([`Key`])
 //! takes the kept domain where each kept lookup would find in its own cache
 //! a value of the same rows, held in parts of the same columns, where it
-//! found one, and nothing where it found nothing, and where its count stays
-//! within the cap after that work. The computation reads nothing else that
-//! differs between the walks, so it would make those lookups, ids and
-//! stores, and count that work, in the later walk too. The later walk then
-//! makes them and counts that work, so its cache and its count stand as
-//! the computation would leave them. Otherwise it computes the domain.
+//! found one, and nothing where it found nothing, and where its request work
+//! and table work stay within their caps after its cost. The computation
+//! reads nothing else that differs between the walks, so it would make those
+//! lookups, ids and stores, and charge that cost, in the later walk too. The
+//! later walk then makes them and charges that cost, so its cache and its
+//! counts stand as the computation would leave them. Otherwise it computes
+//! the domain.
 //!
 //! A walk asks for only the count of a `DET`'s values where no later step
 //! reads the values ([`crate::judge::determination::descend_unread`]). The
@@ -40,8 +42,8 @@
 //! such turns stays, and the domains that one walk keeps and none asks for
 //! again, such as those of a form that the decode does not write, leave
 //! with the turns. A walk that takes a kept domain makes the lookups, ids
-//! and stores, and counts the work, that its computation would, so the
-//! domains that stay change the time of a walk and no verdict.
+//! and stores, and charges the cost, that its computation would, so the
+//! domains that stay change the time of a walk and no verdict nor count.
 //!
 //! The shared intern table counts toward the byte bound of each walk's
 //! session, and a value kept from another walk can hold its rows apart from
@@ -71,10 +73,10 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
 use crate::check::CheckedProgram;
-use crate::eval::cache::{relation_estimate, replay, Recorded, RecordedKey};
+use crate::eval::cache::{relation_estimate, replay, replay_recorded, Recorded, RecordedKey};
 use crate::eval::carry::{kept_relation, Carry, CarryStore};
 use crate::eval::determinations::det_relation;
-use crate::eval::{Domain, DomainSize, Evaluation, Outcome};
+use crate::eval::{Cost, Domain, DomainSize, Evaluation, Outcome, Stop};
 use crate::hash::{StableHash, StableHashMap, StableHasher};
 use crate::judge::determination::{Assignment, Det, Domains};
 use crate::program::canonical::{CanonicalOrder, SearchBudget};
@@ -140,7 +142,7 @@ pub(crate) struct ProbeMemo {
     term_bytes: usize,
     carry_bytes: usize,
     kept: Mutex<Kept>,
-    parts: Mutex<StableHashMap<PartKey, PartWalk>>,
+    parts: Mutex<StableHashMap<PartKey, (PartWalk, Cost)>>,
 }
 
 /// What the walk of a part of a program's `DET`s gave.
@@ -225,8 +227,8 @@ struct Tier {
 /// A domain computed in a walk, and what its computation did there.
 struct Computed {
     events: Box<[Recorded]>,
-    /// The table work it counted.
-    charged: u64,
+    /// What it charged, which a walk that takes it charges again.
+    cost: Cost,
     given: Given,
     /// The keys of the entries that its lookups found, by the ids of their
     /// relations in the session where it ran, for a computation whose
@@ -289,13 +291,14 @@ impl ProbeMemo {
     }
 
     /// What the walk of `key` gave under `scope`, where the memo keeps it.
-    pub(crate) fn part(&self, scope: Scope, key: &PartKey) -> Option<PartWalk> {
+    pub(crate) fn part(&self, scope: Scope, key: &PartKey) -> Option<(PartWalk, Cost)> {
         let parts = self.parts.lock().expect("the kept walks are not poisoned");
         (scope == self.scope).then(|| parts.get(key).copied()).flatten()
     }
 
-    /// Keeps `walk`, what the walk of `key` gave under `scope`.
-    pub(crate) fn keep_part(&self, scope: Scope, key: PartKey, walk: PartWalk) {
+    /// Keeps `walk`, what the walk of `key` gave under `scope`, with the `cost`
+    /// of the walk.
+    pub(crate) fn keep_part(&self, scope: Scope, key: PartKey, walk: PartWalk, cost: Cost) {
         if scope != self.scope {
             return;
         }
@@ -303,7 +306,7 @@ impl ProbeMemo {
         if parts.len() >= PARTS_KEPT {
             parts.clear();
         }
-        parts.insert(key, walk);
+        parts.insert(key, (walk, cost));
     }
 
     /// The session of one walk of `session` under `scope`, which shares the
@@ -442,7 +445,7 @@ impl Computed {
             Given::Values(Domain::Rows(values)) => Given::Values(Domain::Rows(values.iter().map(&mut *one).collect())),
             other => other.clone(),
         };
-        Computed { events: self.events.iter().map(|event| event.with_relations(&mut *one)).collect(), charged: self.charged, given, found: None }
+        Computed { events: self.events.iter().map(|event| event.with_relations(&mut *one)).collect(), cost: self.cost, given, found: None }
     }
 }
 
@@ -635,20 +638,21 @@ impl Domains for ProbeDomains<'_> {
         let key = key_at(self.dets, det, assigned);
         let session = evaluation.session;
         let memo = self.probe.memo;
+        let limits = evaluation.limits;
         for computed in memo.computed(self.probe.generation, &key) {
             let Some(domain) = computed.given.values() else { continue };
-            if work.fits(computed.charged) && replay(session, &computed.events) {
-                work.charge(computed.charged).expect("a count that stays within the cap");
-                return Ok(domain.clone());
+            if computed.cost.fits(&limits.request, Some(work)) && replay(session, &computed.events) {
+                return Ok(match computed.cost.charge(&limits.request, Some(work), session) {
+                    Ok(()) => domain.clone(),
+                    Err(bound) => Domain::Stopped(Stop { bound, form: evaluation.program.program.form_of(node).clone() }),
+                });
             }
         }
         let capture = session.results.begin_capture();
-        let before = work.count();
-        let found = evaluation.domain(node);
+        let (found, cost) = limits.request.measure(|| evaluation.domain(node));
         let (events, _) = session.results.end_capture(capture);
-        let charged = work.count() - before;
         if let Ok(domain @ (Domain::Rows(_) | Domain::Undefined)) = &found {
-            let computed = Computed { events: events.into(), charged, given: Given::Values(domain.clone()), found: None };
+            let computed = Computed { events: events.into(), cost, given: Given::Values(domain.clone()), found: None };
             if let Some(Given::Values(domain)) = memo.keep(self.probe.generation, key, computed) {
                 // The kept values hold the rows of the values computed, in
                 // parts of the same columns.
@@ -674,19 +678,20 @@ impl Domains for ProbeDomains<'_> {
         let key = key_at(self.dets, det, assigned);
         let session = evaluation.session;
         let memo = self.probe.memo;
+        let limits = evaluation.limits;
         for computed in memo.computed(self.probe.generation, &key) {
-            if work.fits(computed.charged) && replay(session, &computed.events) {
-                work.charge(computed.charged).expect("a count that stays within the cap");
-                return Ok(computed.given.size());
+            if computed.cost.fits(&limits.request, Some(work)) && replay(session, &computed.events) {
+                return Ok(match computed.cost.charge(&limits.request, Some(work), session) {
+                    Ok(()) => computed.given.size(),
+                    Err(bound) => DomainSize::Stopped(Stop { bound, form: evaluation.program.program.form_of(node).clone() }),
+                });
             }
         }
         let capture = session.results.begin_capture();
-        let before = work.count();
-        let found = evaluation.domain_size(node);
+        let (found, cost) = limits.request.measure(|| evaluation.domain_size(node));
         let (events, _) = session.results.end_capture(capture);
-        let charged = work.count() - before;
         if let Ok(size @ (DomainSize::Count(_) | DomainSize::Undefined)) = &found {
-            memo.keep(self.probe.generation, key, Computed { events: events.into(), charged, given: Given::Size(size.clone()), found: None });
+            memo.keep(self.probe.generation, key, Computed { events: events.into(), cost, given: Given::Size(size.clone()), found: None });
         }
         found
     }
@@ -708,14 +713,14 @@ const SESSION_KEPT_SHARE: usize = 64;
 /// this thread made, so a computation on another thread adds none. A later
 /// walk that needs the domain of a `DET` of the same key ([`Key`]) takes
 /// the kept domain where each kept lookup would find in the cache a value
-/// of the same rows, held in parts of the same columns, and where its count
-/// stays within the cap after the work the computation counted. The
-/// computation reads nothing else that differs between the walks, so it
-/// would make those lookups and count that work in the later walk too, and
+/// of the same rows, held in parts of the same columns, and where its request
+/// work and table work stay within their caps after the computation's cost.
+/// The computation reads nothing else that differs between the walks, so it
+/// would make those lookups and charge that cost in the later walk too, and
 /// give a domain of the same values: each value holds its rows in the
 /// content order of their terms, whatever the order of the rows it read.
-/// The later walk then makes those lookups and counts that work, so the
-/// cache and the count stand as the computation would leave them.
+/// The later walk then makes those lookups and charges that cost, so the
+/// cache and the counts stand as the computation would leave them.
 /// Otherwise it computes the domain.
 pub(crate) struct SessionMemo {
     scope: Scope,
@@ -796,24 +801,32 @@ impl Domains for SessionDomains<'_> {
         };
         let key = key_at(self.dets, det, assigned);
         let session = evaluation.session;
+        let limits = evaluation.limits;
         for computed in self.memo.computed(&key) {
             let Some(domain) = computed.given.values() else { continue };
+            // An open capture keeps the events of this replay, as it keeps those of a
+            // computation, so that a later replay of the capture makes the same lookups.
             let replayed = || match &computed.found {
-                Some(keys) if session.results.replay_found(&computed.events, keys) => true,
-                _ => replay(session, &computed.events),
+                Some(keys) if session.results.replay_found(&computed.events, keys) => {
+                    for event in computed.events.iter() {
+                        session.results.record(|| event.clone());
+                    }
+                    true
+                }
+                _ => replay_recorded(session, &computed.events),
             };
-            if work.fits(computed.charged) && replayed() {
-                work.charge(computed.charged).expect("a count that stays within the cap");
-                return Ok(domain.clone());
+            if computed.cost.fits(&limits.request, Some(work)) && replayed() {
+                return Ok(match computed.cost.charge(&limits.request, Some(work), session) {
+                    Ok(()) => domain.clone(),
+                    Err(bound) => Domain::Stopped(Stop { bound, form: evaluation.program.program.form_of(node).clone() }),
+                });
             }
         }
         let Some(recording) = session.results.record_on_thread() else {
             return evaluation.domain(node);
         };
-        let before = work.count();
-        let found = evaluation.domain(node);
+        let (found, cost) = limits.request.measure(|| evaluation.domain(node));
         let events = recording.finish();
-        let charged = work.count() - before;
         let pure = events.iter().all(|event| matches!(event, Recorded::Lookup { found: Some(_), .. }));
         let (true, Ok(domain @ (Domain::Rows(_) | Domain::Undefined))) = (pure, &found) else {
             return found;
@@ -848,7 +861,7 @@ impl Domains for SessionDomains<'_> {
             other => other.clone(),
         };
         let found = results.found_keys(&events);
-        self.memo.keep(key, Computed { events, charged, given: Given::Values(domain.clone()), found });
+        self.memo.keep(key, Computed { events, cost, given: Given::Values(domain.clone()), found });
         Ok(domain)
     }
 }

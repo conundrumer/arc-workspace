@@ -42,12 +42,13 @@ impl Decoder<'_> {
             return Ok(());
         }
         let Some(closed) = after.det_admission_state(&self.state, &self.context) else { return Ok(()) };
+        let work = self.request_work();
         let compute = || self.det_liveness(&closed).map_err(Refusal::DetAdmission);
         let form = closed.program().value().forms.last().expect("a closed DET");
         match super::prefix_key::key(form, None) {
             Some(key) => {
                 let digest = stats::enabled().then(|| stats::digest(&key));
-                self.state.cached_det_prefix(key, || {
+                self.state.cached_det_prefix(key, &|| !work.is_past_cap(), &work, self.session, || {
                     stats::seen(Phase::DetLiveness, || digest.unwrap_or(0));
                     compute()
                 })
@@ -74,9 +75,9 @@ impl Decoder<'_> {
         let dets = held_dets(program);
         let picks: Vec<_> = written.into_iter().filter(|det| det.pick).collect();
         match self.walked(program, &dets, &picks, root).1 {
-            // This budget bounds the walk's time. Reaching it establishes
+            // These budgets bound the walk's time. Reaching one establishes
             // no property of the program.
-            Err(DetRefusal::Bound(ReachedBound::TableWork { .. })) => Ok(()),
+            Err(DetRefusal::Bound(ReachedBound::TableWork { .. } | ReachedBound::RequestWork { .. })) => Ok(()),
             verdict => verdict,
         }
     }
@@ -133,17 +134,25 @@ impl Decoder<'_> {
         let scope = self.det_scope();
         let memo = self.session.det_probes().get_or_init(|| ProbeMemo::new(scope, self.session));
         let key = acyclic.then(|| part_key(program, dets, picks, self.context.settings.caps.assignments)).flatten();
-        if let Some(walk) = key.as_ref().and_then(|key| memo.part(scope, key)) {
-            return walk;
+        let work = self.request_work();
+        // A kept walk charges the cost of the walk that was kept, unless that cost would pass the request's cap, where the part is walked again and stops where it stops with empty caches.
+        if let Some((walk, cost)) = key.as_ref().and_then(|key| memo.part(scope, key))
+            && cost.fits(&work, None)
+        {
+            return match cost.charge(&work, None, self.session) {
+                Ok(()) => walk,
+                Err(_) => PartWalk::Stopped,
+            };
         }
-        let walk = match self.walked(program, dets, picks, root) {
+        let (walk, cost) = work.measure(|| match self.walked(program, dets, picks, root) {
             (leaves, Ok(())) => PartWalk::Ended { leaves, live: true },
             (leaves, Err(DetRefusal::NoLiveAssignment)) => PartWalk::Ended { leaves, live: false },
             (_, Err(DetRefusal::Bound(ReachedBound::Assignments { .. }))) => PartWalk::PastCap,
             (_, Err(_)) => PartWalk::Stopped,
-        };
-        if let Some(key) = key {
-            memo.keep_part(scope, key, walk);
+        });
+        // A walk that a stop at the request cap cut short is no walk of the part.
+        if let Some(key) = key.filter(|_| !work.is_past_cap()) {
+            memo.keep_part(scope, key, walk, cost);
         }
         walk
     }
@@ -176,6 +185,7 @@ impl Decoder<'_> {
     #[allow(clippy::too_many_arguments)]
     fn live(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, session: &TaskSession, domains: Option<&dyn Domains>, carry: Option<Carry>) -> (u64, Result<(), DetRefusal>) {
         let limits = Limits::new(None, Cancellation::default())
+            .in_request(self.request_work())
             .counted_in(TableWork::new(self.context.settings.table_work_cap));
         let limits = match carry {
             Some(carry) => limits.carrying(carry),
@@ -220,7 +230,7 @@ impl Decoder<'_> {
             Err(End::Stop(found)) if matches!(found.bound, ReachedBound::Assignments { .. }) => Err(DetRefusal::Bound(found.bound)),
             _ if live => Ok(()),
             Ok(()) if stop.is_some() => Err(DetRefusal::Bound(stop.expect("a recorded stop").bound)),
-            Err(End::Stop(found)) => Err(DetRefusal::Bound(if matches!(found.bound, ReachedBound::TableWork {..}) {found.bound} else {stop.as_ref().map_or(found.bound, |stop|stop.bound)})),
+            Err(End::Stop(found)) => Err(DetRefusal::Bound(if matches!(found.bound, ReachedBound::TableWork {..} | ReachedBound::RequestWork {..}) {found.bound} else {stop.as_ref().map_or(found.bound, |stop|stop.bound)})),
             Ok(()) => Err(DetRefusal::NoLiveAssignment),
         };
         (leaves, verdict)

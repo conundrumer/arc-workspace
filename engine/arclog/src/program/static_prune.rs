@@ -636,18 +636,21 @@ pub fn reads_an_earlier_row(body: &Body, keys: &dyn Fn(&RelationRef) -> Vec<Vec<
 /// The rule by which the last conjunct of a flat decoder body makes an
 /// earlier membership atom of it redundant, where it does: the last atom
 /// reads, at a column whose type is at or below the membership's type, the
-/// label that the membership atom makes, and `binds` says that it can make
-/// that label itself. Each value at that column is then a member, so the
-/// conjunction equals one with no membership atom, where the label is made
-/// at that column. A membership atom that comes after such an atom is valid
-/// by `membership.subtype`, so a query that holds both is refused in each
-/// order.
+/// label that the membership atom makes, `binds` says that it can make that
+/// label itself, and some order of the other conjuncts has the last atom make
+/// the label before each conjunct that reads it
+/// ([`last_can_make_before_uses`]). Each value at that column is then a
+/// member, so the conjunction equals one with no membership atom, where the
+/// label is made at that column. A membership atom that comes after such an
+/// atom is valid by `membership.subtype`, so a query that holds both is
+/// refused in each order.
 pub fn makes_membership_redundant(
     body: &Body,
     column_type: &dyn Fn(&RelationRef, &ColumnName) -> Option<ValueType>,
     binds: &dyn Fn(&Atom, &ColumnName) -> bool,
 ) -> Option<&'static str> {
-    let (Conjunct::Atom(last), earlier) = body.conjuncts.split_last()? else { return None };
+    let (last_conjunct, earlier) = body.conjuncts.split_last()?;
+    let Conjunct::Atom(last) = last_conjunct else { return None };
     let last = last.value();
     if matches!(&last.relation, RelationRef::Lib(name) if membership_type(&name.0).is_some()) {
         return None;
@@ -669,8 +672,65 @@ pub fn makes_membership_redundant(
         let [SiteArg::Label(LabelUse::Join(label))] = &site.value.args[..] else { return None };
         let ty = column_type(&last.relation, &site.column)?;
         let ty = if matches!(ty, ValueType::Pose(_)) { ValueType::D4 } else { ty };
-        (made_by_membership(*label, &ty) && binds(last, &site.column)).then_some("membership.implied_later")
+        (made_by_membership(*label, &ty) && binds(last, &site.column) && last_can_make_before_uses(earlier, last_conjunct, *label)).then_some("membership.implied_later")
     })
+}
+
+/// Whether `conjunct` is a membership atom that makes `label`: a positive atom
+/// of a membership relation whose one site makes `label`.
+fn is_membership_maker(conjunct: &Conjunct, label: LabelId) -> bool {
+    let Conjunct::Atom(atom) = conjunct else { return false };
+    let atom = atom.value();
+    let RelationRef::Lib(name) = &atom.relation else { return false };
+    membership_type(&name.0).is_some()
+        && match &atom.sites[..] {
+            [only] => matches!(&only.value.args[..], [SiteArg::Label(LabelUse::Fresh(made))] if *made == label),
+            _ => false,
+        }
+}
+
+/// The labels that `conjunct` makes with `*` or `^`, then the labels it joins,
+/// at any depth.
+fn label_flow(conjunct: &Conjunct) -> (Vec<LabelId>, Vec<LabelId>) {
+    let body = Body { conjuncts: vec![conjunct.clone()].into() };
+    let (mut makes, mut joins) = (Vec::new(), Vec::new());
+    crate::safety::each_label_use(&body, &mut |use_| match use_ {
+        LabelUse::Fresh(label) | LabelUse::Key(label) => makes.push(label),
+        LabelUse::Join(label) => joins.push(label),
+        LabelUse::Zero => {}
+    });
+    (makes, joins)
+}
+
+/// Whether some order of the conjuncts of `earlier` and `last`, less the
+/// membership atom that makes `label`, has `last` make `label` before every
+/// conjunct that reads it, with each other label made before it is read.
+///
+/// The written order makes each other label before its readers. A new order
+/// puts `last` before each reader of `label`, so it needs `last` to follow
+/// the makers of the labels it joins, and a reader of `label` that `last`
+/// depends on, through those makers, rules every such order out. A conjunct
+/// that reads `label` between the membership atom and `last`, such as a `NOT`
+/// or an atom that cannot make it, moves after `last` where `last` does not
+/// depend on it.
+fn last_can_make_before_uses(earlier: &[Conjunct], last: &Conjunct, label: LabelId) -> bool {
+    let mut flows: Vec<(Vec<LabelId>, Vec<LabelId>)> =
+        earlier.iter().filter(|conjunct| !is_membership_maker(conjunct, label)).map(label_flow).collect();
+    flows.push(label_flow(last));
+    let at = flows.len() - 1;
+    let mut depends = vec![false; flows.len()];
+    let mut pending = vec![at];
+    while let Some(item) = pending.pop() {
+        for read in flows[item].1.iter().filter(|read| **read != label) {
+            for (maker, flow) in flows.iter().enumerate() {
+                if maker != item && !depends[maker] && flow.0.contains(read) {
+                    depends[maker] = true;
+                    pending.push(maker);
+                }
+            }
+        }
+    }
+    !flows.iter().enumerate().any(|(index, flow)| index != at && depends[index] && flow.1.contains(&label))
 }
 
 /// The refusal message of the static prune's rule `rule`, for the rules whose

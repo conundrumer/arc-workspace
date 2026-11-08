@@ -115,7 +115,7 @@ impl<R: Clone> Trace<R> {
     }
 }
 
-/// The bound a step reached: a cap, the deadline or a cancellation.
+/// The bound a step reached: a cap or a cancellation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub enum Stop {
     Bindings,
@@ -126,7 +126,7 @@ pub enum Stop {
     TableWork,
     Margin,
     SessionBytes,
-    Deadline,
+    RequestWork,
     Cancelled,
     NoValues,
 }
@@ -142,7 +142,7 @@ impl From<ReachedBound> for Stop {
             ReachedBound::TableWork { .. } => Stop::TableWork,
             ReachedBound::Margin(_) => Stop::Margin,
             ReachedBound::SessionBytes(_) => Stop::SessionBytes,
-            ReachedBound::Deadline => Stop::Deadline,
+            ReachedBound::RequestWork { .. } => Stop::RequestWork,
             ReachedBound::Cancelled => Stop::Cancelled,
             ReachedBound::NoValues => Stop::NoValues,
         }

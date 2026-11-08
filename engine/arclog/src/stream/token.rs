@@ -179,7 +179,10 @@ impl Control {
     ];
 
     /// The control tokens of the `DEMONSTRATED` form, whose slots follow
-    /// every other slot of the vocabulary, in this order.
+    /// every other slot of the vocabulary, in this order. The vocabulary
+    /// holds them so that no token id changes. The grammar refuses each of
+    /// them at every state (`crate::decode`), and the writer gives no stream
+    /// for a program that holds the form.
     pub const DEMONSTRATED_FORM: [Control; 4] = [Control::Demonstrated, Control::DemoRule, Control::Predict, Control::AltForm];
 }
 

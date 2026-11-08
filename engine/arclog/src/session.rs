@@ -1,7 +1,8 @@
 //! The task session: the engine's state for one task, its result cache,
 //! its intern table, and the largest counts of its evaluations.
 //!
-//! The result cache keys an entry by its content, a [`ResultKey`], and
+//! The result cache keys an entry by its content, a [`ResultKey`], keeps with
+//! it the [`crate::eval::Cost`] of its computation, and
 //! gives each relation it holds an id by its rows. It evicts the entries
 //! least recently used while its bytes exceed its share of the session's
 //! byte bound, [`crate::eval::cache::cache_bytes_bound`].
@@ -11,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use crate::eval::pool::InFlight;
-use crate::eval::{Caps, ReachedBound, RelationValue};
+use crate::eval::{Caps, Cost, ReachedBound, RelationValue};
 use crate::hash::{StableHash, StableHashMap};
 use crate::relations::{Relation, RelationPart, SharedRows, StorageTag};
 use crate::program::FactRelation;
@@ -76,6 +77,10 @@ pub struct RelationId(u32);
 /// bound of a stop, with no form.
 pub type CachedValue = RelationValue<ReachedBound>;
 
+/// What an entry's computation gives the threads that wait for it: the value
+/// and the cost of the computation.
+pub type Costed = (CachedValue, Cost);
+
 /// The memo table of evaluated relations, keyed by content, bounded by bytes.
 /// Several threads read and write it at once through a shared reference.
 /// An entry holds a relation, `undefined`, or a bound whose
@@ -97,7 +102,7 @@ pub struct ResultCache {
     found: AtomicU64,
     /// The entries that a thread of the pool computes, which a thread that
     /// asks for one of them waits for.
-    in_flight: InFlight<ResultKey, CachedValue>,
+    in_flight: InFlight<ResultKey, Costed>,
     /// Whether a capture is open ([`ResultCache::begin_capture`]), so that
     /// [`ResultCache::record`] keeps the lookups, ids and stores that
     /// [`crate::eval::cache`] makes in `recorded`.
@@ -117,12 +122,18 @@ struct Captured {
     /// For each open capture, the outermost first, the largest counts that
     /// [`TaskSession::record_counts`] was given since it began.
     counts: Vec<Counts>,
+    /// The most events that the outermost capture keeps, where it is limited
+    /// ([`ResultCache::begin_capture_limited`]).
+    limit: Option<usize>,
+    /// Whether the events passed `limit`: the capture then keeps none, and
+    /// stops recording.
+    overflowed: bool,
 }
 
 /// An open capture of a result cache's events and counts
 /// ([`ResultCache::begin_capture`]).
 #[derive(Debug)]
-pub(crate) struct Capture {
+pub struct Capture {
     /// The place in the cache's events where the capture began.
     mark: usize,
     /// The count of captures open when it began, itself included.
@@ -203,6 +214,8 @@ const MADE_IN_VIEW: u32 = u32::MAX;
 #[derive(Debug)]
 struct Entry {
     value: CachedValue,
+    /// What the entry's computation charged, which a hit charges again.
+    cost: Cost,
     /// The id of the value's relation, where the value is one.
     rows: Option<RelationId>,
     used: u64,
@@ -263,22 +276,22 @@ const EVICT_MARGIN: usize = 8;
 const _: () = assert!(EVICT_MARGIN < SUM_MARGIN);
 
 impl ResultCache {
-    /// The value cached under `key`, if any. A value found counts as a use
-    /// of its entry.
-    pub fn get(&self, key: &ResultKey) -> Option<CachedValue> {
+    /// The value cached under `key` and its cost, if any. A value found counts
+    /// as a use of its entry.
+    pub fn get(&self, key: &ResultKey) -> Option<Costed> {
         let mut state = self.state.lock().expect(UNPOISONED);
         let value = state.touch(key)?;
         self.found.fetch_add(1, Ordering::Relaxed);
         Some(value)
     }
 
-    /// Caches `value` under `key`. A stop that is not stored is a fault of
-    /// the caller, so this panics on one.
-    pub fn insert(&self, key: ResultKey, value: CachedValue) {
+    /// Caches `value` under `key`, with the `cost` of its computation. A stop
+    /// that is not stored is a fault of the caller, so this panics on one.
+    pub fn insert(&self, key: ResultKey, value: CachedValue, cost: Cost) {
         if let RelationValue::Stopped(bound) = &value {
             assert!(bound.is_stored(), "a stop at a bound that the cache stores");
         }
-        self.state.lock().expect(UNPOISONED).insert(key, value);
+        self.state.lock().expect(UNPOISONED).insert(key, value, cost);
     }
 
     /// Makes the events `events`, which a cache recorded
@@ -310,10 +323,10 @@ impl ResultCache {
                 Recorded::Id { relation } => {
                     state.id_of(relation);
                 }
-                Recorded::Store { key, value } => {
+                Recorded::Store { key, value, cost } => {
                     let reads = key.reads.iter().map(|relation| state.id_of(relation)).collect();
                     let parameters = key.parameters.iter().map(|relation| state.id_of(relation)).collect();
-                    state.insert(ResultKey { clause: key.clause.clone(), reads, example: key.example, parameters }, value.clone());
+                    state.insert(ResultKey { clause: key.clause.clone(), reads, example: key.example, parameters }, value.clone(), *cost);
                     state.evict(bound);
                 }
             }
@@ -408,8 +421,25 @@ impl ResultCache {
     /// [`TaskSession::record_counts`] is given, until the capture ends
     /// ([`ResultCache::end_capture`]). A capture may begin while another is
     /// open, and ends before it.
-    pub(crate) fn begin_capture(&self) -> Capture {
+    pub fn begin_capture(&self) -> Capture {
+        self.begin(None)
+    }
+
+    /// [`ResultCache::begin_capture`], where the capture keeps at most `limit`
+    /// events: past them it keeps none and records nothing more, which
+    /// [`ResultCache::end_capture_limited`] gives as `None`. A capture that
+    /// begins while another is open is not limited, since the other keeps
+    /// its events.
+    pub fn begin_capture_limited(&self, limit: usize) -> Capture {
+        self.begin(Some(limit))
+    }
+
+    fn begin(&self, limit: Option<usize>) -> Capture {
         let mut captured = self.recorded.lock().expect(UNPOISONED);
+        if captured.counts.is_empty() {
+            captured.limit = limit;
+            captured.overflowed = false;
+        }
         captured.counts.push(Counts::default());
         self.recording.store(true, Ordering::Relaxed);
         Capture { mark: captured.events.len(), depth: captured.counts.len() }
@@ -419,17 +449,33 @@ impl ResultCache {
     /// order, and the largest counts recorded since then. A capture that
     /// was open when this one began keeps them too, and the cache keeps
     /// none once no capture is open.
-    pub(crate) fn end_capture(&self, capture: Capture) -> (Vec<crate::eval::cache::Recorded>, Counts) {
+    pub fn end_capture(&self, capture: Capture) -> (Vec<crate::eval::cache::Recorded>, Counts) {
+        let (events, counts, _) = self.end(capture);
+        (events, counts)
+    }
+
+    /// [`ResultCache::end_capture`] of a capture that
+    /// [`ResultCache::begin_capture_limited`] began: `None` where its events
+    /// passed the limit.
+    pub fn end_capture_limited(&self, capture: Capture) -> Option<(Vec<crate::eval::cache::Recorded>, Counts)> {
+        let (events, counts, overflowed) = self.end(capture);
+        (!overflowed).then_some((events, counts))
+    }
+
+    fn end(&self, capture: Capture) -> (Vec<crate::eval::cache::Recorded>, Counts, bool) {
         let mut captured = self.recorded.lock().expect(UNPOISONED);
         assert_eq!(captured.counts.len(), capture.depth, "a capture ends before the one that was open when it began");
         let counts = captured.counts.pop().expect("an open capture");
+        let mut overflowed = false;
         let events = if captured.counts.is_empty() {
             self.recording.store(false, Ordering::Relaxed);
+            overflowed = std::mem::take(&mut captured.overflowed);
+            captured.limit = None;
             std::mem::take(&mut captured.events)
         } else {
             captured.events[capture.mark..].to_vec()
         };
-        (events, counts)
+        (events, counts, overflowed)
     }
 
     /// Keeps `counts`, as the count of one evaluation that ended with no
@@ -467,7 +513,14 @@ impl ResultCache {
             });
         }
         if recording {
-            self.recorded.lock().expect(UNPOISONED).events.push(event);
+            let mut captured = self.recorded.lock().expect(UNPOISONED);
+            if captured.counts.len() == 1 && captured.limit.is_some_and(|limit| captured.events.len() >= limit) {
+                captured.overflowed = true;
+                captured.events = Vec::new();
+                self.recording.store(false, Ordering::Relaxed);
+            } else {
+                captured.events.push(event);
+            }
         }
     }
 
@@ -552,18 +605,18 @@ impl ResultCache {
     }
 
     /// The entries in flight on the pool's threads.
-    pub fn in_flight(&self) -> &InFlight<ResultKey, CachedValue> {
+    pub fn in_flight(&self) -> &InFlight<ResultKey, Costed> {
         &self.in_flight
     }
 }
 
 impl CacheState {
-    fn touch(&mut self, key: &ResultKey) -> Option<CachedValue> {
+    fn touch(&mut self, key: &ResultKey) -> Option<Costed> {
         let tick = self.tick();
         let view = self.view;
         let entry = self.entries.get_mut(key).filter(|entry| entry.found_under(view))?;
         let last = std::mem::replace(&mut entry.used, tick);
-        let value = entry.value.clone();
+        let value = (entry.value.clone(), entry.cost);
         let key = self.recency.remove(&last).expect("a recency tick for each entry");
         self.recency.insert(tick, key);
         Some(value)
@@ -630,7 +683,7 @@ impl CacheState {
                         relations.entry(relation.rows_hash()).or_default().push(Arc::clone(relation));
                     }
                 }
-                Recorded::Store { key, value } => {
+                Recorded::Store { key, value, .. } => {
                     let digest = key.digest();
                     if entry(&entries, key, digest).is_some() {
                         continue;
@@ -691,7 +744,7 @@ impl CacheState {
         id
     }
 
-    fn insert(&mut self, key: ResultKey, value: CachedValue) {
+    fn insert(&mut self, key: ResultKey, value: CachedValue, cost: Cost) {
         let view = self.view;
         if let Some(entry) = self.entries.get_mut(&key) {
             if let Some(view) = view {
@@ -716,7 +769,7 @@ impl CacheState {
         let key = Arc::new(key);
         self.recency.insert(used, key.clone());
         let (made, stored_in) = view.map_or((self.mark, 0), |view| (MADE_IN_VIEW, view.id));
-        self.entries.insert(key, Entry { value, rows, used, made, stored_in });
+        self.entries.insert(key, Entry { value, cost, rows, used, made, stored_in });
     }
 
     fn remove_entry(&mut self, key: &Arc<ResultKey>) {
@@ -1062,7 +1115,7 @@ impl TaskSession {
     /// checked only where it holds [`crate::eval::join::BUILD_CHECK_MIN`]
     /// bytes or more. So while the session's bytes are far from the bound,
     /// the checks take a small share of the work between them.
-    pub fn within_bound(&self, starts: &HeapStarts, bound: Option<SessionBound>) -> Result<(), ReachedSessionBound> {
+    pub fn within_bound(&self, starts: &HeapStarts, bound: Option<SessionBound>) -> Result<usize, ReachedSessionBound> {
         self.within_room(starts, bound, 0)
     }
 
@@ -1072,7 +1125,7 @@ impl TaskSession {
     /// build would bring the session to. A caller gives the bytes that the
     /// build holds at the least, so a stop comes only where the build passes
     /// the bound.
-    pub fn within_room(&self, starts: &HeapStarts, bound: Option<SessionBound>, growth: usize) -> Result<(), ReachedSessionBound> {
+    pub fn within_room(&self, starts: &HeapStarts, bound: Option<SessionBound>, growth: usize) -> Result<usize, ReachedSessionBound> {
         let bound = bound.unwrap_or(self.bound);
         let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
         let ledger = intern.saturating_add(self.results.bytes()).saturating_add(self.allocated.load(Ordering::Relaxed));
@@ -1081,7 +1134,7 @@ impl TaskSession {
             Some(heap) => ledger.max(starts.grown(Arc::as_ptr(&self.allocated) as usize, heap, ledger)),
         };
         let bytes = now.saturating_add(growth);
-        if bytes > bound.bytes { Err(ReachedSessionBound { bytes, bound }) } else { Ok(()) }
+        if bytes > bound.bytes { Err(ReachedSessionBound { bytes, bound }) } else { Ok(bytes) }
     }
 
     /// Reserves a buffer before allocation, together with all live buffer
@@ -1130,6 +1183,7 @@ impl TaskSession {
         self.largest_bindings.fetch_max(counts.bindings, Ordering::Relaxed);
         self.largest_rows.fetch_max(counts.rows, Ordering::Relaxed);
         self.results.capture_counts(counts);
+        crate::eval::tally_counts(counts);
     }
 
     /// The largest counts of the session's evaluations that ended with no

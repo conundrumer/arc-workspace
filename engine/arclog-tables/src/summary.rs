@@ -185,7 +185,7 @@ pub fn bound_name(bound: ReachedBound) -> &'static str {
         ReachedBound::TableWork { .. } => "TableWork",
         ReachedBound::Margin(_) => "Margin",
         ReachedBound::SessionBytes(_) => "SessionBytes",
-        ReachedBound::Deadline => "Deadline",
+        ReachedBound::RequestWork { .. } => "RequestWork",
         ReachedBound::Cancelled => "Cancelled",
         ReachedBound::NoValues => "NoValues",
     }

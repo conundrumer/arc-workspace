@@ -4,7 +4,7 @@
 //! [`crate::stream::token_stream`] writes, and its mask,
 //! [`Decoder::admissible`], admits a token where every check of
 //! [`crate::check::checks`] holds, by its prefix form, on the program that
-//! the token gives, a `DEMONSTRATED` form in progress included: one
+//! the token gives: one
 //! [`PrefixChecks`] per state resolves, and infers the
 //! types of, the finished forms once, and each candidate token costs the
 //! resolution and the checks of its form in progress alone. The candidates
@@ -69,7 +69,7 @@ use crate::check::CheckId;
 use crate::eval::instance::Constructions;
 use crate::eval::copies::{CopyViolation, CopyViolations};
 use crate::eval::values::HeldStops;
-use crate::eval::{Cancellation, TableWork};
+use crate::eval::{Cancellation, RequestWork, TableWork};
 use crate::judge::candidates::PairCandidates;
 use crate::program::path::NodePath;
 use crate::program::{ProgramRelation, RelationRef};
@@ -98,6 +98,9 @@ pub struct Decoder<'a> {
     train: Option<Arc<[PairCandidates<'a>]>>,
     cancellation: Cancellation,
     operation_limits: Option<crate::eval::Limits>,
+    /// The request that a call of this decode is in, where it has no
+    /// operation limits ([`Decoder::begin_request`]).
+    requests: Requests,
     /// The path of the first `OUT` form that was consistent, at which the
     /// decode ended.
     output: Option<NodePath>,
@@ -121,12 +124,49 @@ pub struct Decoder<'a> {
     evaluates: bool,
 }
 
+/// The request that a call of a decode is in: its work, and how many calls
+/// that began it are open. A clone holds none, so a fork has requests of its
+/// own.
+#[derive(Default)]
+struct Requests(Arc<std::sync::Mutex<ActiveRequest>>);
+
+#[derive(Default)]
+struct ActiveRequest {
+    depth: u32,
+    work: Option<RequestWork>,
+}
+
+impl Clone for Requests {
+    fn clone(&self) -> Requests {
+        Requests::default()
+    }
+}
+
+/// The open call of a decode that began a request, or that is nested in one;
+/// the request ends with the call that began it.
+pub struct RequestGuard(Option<Arc<std::sync::Mutex<ActiveRequest>>>);
+
+impl Drop for RequestGuard {
+    fn drop(&mut self) {
+        let Some(active) = &self.0 else { return };
+        let mut active = active.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        active.depth -= 1;
+        if active.depth == 0 {
+            active.work = None;
+        }
+    }
+}
+
 /// What [`Decoder::admissible`] computes at a state: the mask, and the
 /// state and the forced tokens that each admitted token gives, by the
 /// token's id, which [`Decoder::advance`] takes in place of a second check.
 struct Mask {
     mask: TokenMask,
     steps: HashMap<u32, (state::State, Vec<Token>)>,
+    /// What the mask's computation charged to the request, which a call of
+    /// [`Decoder::admissible`] that takes the mask from the decode or from the
+    /// session charges again.
+    cost: crate::eval::Cost,
 }
 
 /// The [`Mask`] of a decoder's state, once computed. A clone holds none, so
@@ -171,12 +211,12 @@ const PATH_MASKS: usize = 8192;
 /// generation is full, it becomes the older one, and the one before it goes.
 #[derive(Default, Debug)]
 pub(crate) struct PathMasks {
-    entries: std::collections::HashMap<u128, TokenMask>,
-    older: std::collections::HashMap<u128, TokenMask>,
+    entries: std::collections::HashMap<u128, (TokenMask, crate::eval::Cost)>,
+    older: std::collections::HashMap<u128, (TokenMask, crate::eval::Cost)>,
 }
 
 impl PathMasks {
-    fn get(&mut self, key: u128) -> Option<TokenMask> {
+    fn get(&mut self, key: u128) -> Option<(TokenMask, crate::eval::Cost)> {
         if let Some(mask) = self.entries.get(&key) {
             return Some(mask.clone());
         }
@@ -185,7 +225,7 @@ impl PathMasks {
         Some(mask)
     }
 
-    fn insert(&mut self, key: u128, mask: TokenMask) {
+    fn insert(&mut self, key: u128, mask: (TokenMask, crate::eval::Cost)) {
         if self.entries.len() >= PATH_MASKS {
             self.older = std::mem::take(&mut self.entries);
         }
@@ -245,7 +285,7 @@ impl<'a> Decoder<'a> {
         };
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings), key_base };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, output: None, assignments: Vec::new(), trace: DecodeTrace::default(), path: Some(0), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default(), evaluates: true }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, requests: Requests::default(), output: None, assignments: Vec::new(), trace: DecodeTrace::default(), path: Some(0), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default(), evaluates: true }
     }
 
     /// The decode, with steps that evaluate nothing: a step runs the
@@ -294,6 +334,39 @@ impl<'a> Decoder<'a> {
         TableWork::new(self.context.settings.table_work_cap)
     }
 
+    /// Begins a request, where this decode is in none and holds no operation
+    /// limits: the work of every query, walk and check that a call under the
+    /// returned guard makes counts in one request, under the request work cap
+    /// of the settings. A call nested in another joins the request that began
+    /// first, and the request ends when that call's guard drops. With
+    /// operation limits ([`Decoder::with_operation_limits`]) the operation is
+    /// the request, and the guard does nothing.
+    pub fn begin_request(&self) -> RequestGuard {
+        if self.operation_limits.is_some() {
+            return RequestGuard(None);
+        }
+        let mut active = self.requests.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if active.depth == 0 {
+            active.work = Some(RequestWork::begin(self.context.settings.request_work_cap));
+        }
+        active.depth += 1;
+        RequestGuard(Some(Arc::clone(&self.requests.0)))
+    }
+
+    /// The work of the request that this decode is in: the operation's, or
+    /// that of the open call ([`Decoder::begin_request`]), or, where no call
+    /// is open, a request that begins now and that nothing else shares.
+    pub fn request_work(&self) -> RequestWork {
+        if let Some(limits) = &self.operation_limits {
+            return limits.request.clone();
+        }
+        let active = self.requests.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        match &active.work {
+            Some(work) => work.clone(),
+            None => RequestWork::begin(self.context.settings.request_work_cap),
+        }
+    }
+
     /// The work of a query walk, counted without an observation budget.
     pub fn query_work(&self) -> TableWork {
         TableWork::uncapped()
@@ -320,8 +393,26 @@ impl<'a> Decoder<'a> {
     /// The tokens that may come next. The first call at a state computes the
     /// mask, and keeps the state and forced tokens of each admitted token for
     /// [`Decoder::step`]; a later call at that state gives the same mask.
+    ///
+    /// A mask that a request stopped at its work cap is no mask of the state:
+    /// the decode and its session keep none of it, and the checks that a stop
+    /// left open admit their tokens ([`Decoder::request_work`]).
     pub fn admissible(&self) -> TokenMask {
-        self.held.0.get_or_init(|| self.path_mask()).mask.clone()
+        let _request = self.begin_request();
+        if let Some(held) = self.held.0.get() {
+            // The mask charges what its computation charged, so a second call at a state counts as the first did.
+            let work = self.request_work();
+            if !held.cost.fits(&work, None) {
+                return self.compute_mask().mask;
+            }
+            let _ = held.cost.charge(&work, None, self.session);
+            return held.mask.clone();
+        }
+        let mask = self.path_mask();
+        if self.request_work().is_past_cap() {
+            return mask.mask;
+        }
+        self.held.0.get_or_init(|| mask).mask.clone()
     }
 
     /// Whether each token whose id `ids` gives may come next, as
@@ -330,12 +421,9 @@ impl<'a> Decoder<'a> {
     /// Where the decode holds the mask of its state, it reads the verdicts
     /// from the mask.
     pub fn admits(&self, ids: &[u32]) -> Vec<bool> {
-        let kept = self.path_key().and_then(|key| self.session.path_masks.lock().expect("the masks are not poisoned").get(key));
-        let mask = match (self.held.0.get(), kept) {
-            (Some(held), _) => held.mask.clone(),
-            (None, Some(mask)) => mask,
-            (None, None) => self.mask_over(ids.iter().copied()).mask,
-        };
+        let _request = self.begin_request();
+        // A mask held for every token has a cost that is not the cost of the checks of these tokens alone, so these checks run whatever the decode or the session holds, and the count of the call does not depend on that.
+        let mask = self.mask_over(ids.iter().copied()).mask;
         ids.iter().map(|&id| mask.contains(id)).collect()
     }
 
@@ -379,10 +467,11 @@ impl<'a> Decoder<'a> {
     /// `first` holds.
     fn mask_until(&self, ids: impl Iterator<Item = u32>, first: bool) -> Mask {
         let vocabulary = &self.context.vocabulary;
+        let work = self.request_work();
         let mut mask = TokenMask::new(vocabulary.len());
         let mut steps = HashMap::new();
         if self.output.is_some() {
-            return Mask { mask, steps };
+            return Mask { mask, steps, cost: Default::default() };
         }
         if self.state.awaits_component() {
             for id in ids {
@@ -394,7 +483,7 @@ impl<'a> Decoder<'a> {
                     }
                 }
             }
-            return Mask { mask, steps };
+            return Mask { mask, steps, cost: Default::default() };
         }
         self.with_checks_at_state(|checks| {
             checks.prepare_mask();
@@ -420,6 +509,8 @@ impl<'a> Decoder<'a> {
                     continue;
                 }
                 if self.state.mask_may_take(token) {
+                    // One unit for each candidate token that the mask checks.
+                    let _ = work.charge(1);
                     if let Some(result) = class_of[id as usize].and_then(|class| admitted[class]) {
                         if result {
                             // A member shares the class's verdict, and takes its own
@@ -447,7 +538,7 @@ impl<'a> Decoder<'a> {
                 }
             }
         });
-        Mask { mask, steps }
+        Mask { mask, steps, cost: Default::default() }
     }
 
     /// The fixed scalar type of `column` of `relation` at this decoder's state,
@@ -482,7 +573,7 @@ impl<'a> Decoder<'a> {
                 }
             }
         });
-        Mask { mask, steps }
+        Mask { mask, steps, cost: Default::default() }
     }
 
     /// Runs `body` with the checks over the prefixes that follow the
@@ -519,6 +610,7 @@ impl<'a> Decoder<'a> {
     /// it was. The decode ends at the first `OUT` form that is consistent,
     /// and at nothing else, and refuses every token after it.
     pub fn step(&mut self, token: Token) -> StepResult {
+        let _request = self.begin_request();
         let advanced = self.advance(&token, true);
         self.apply(advanced)
     }
@@ -532,6 +624,8 @@ impl<'a> Decoder<'a> {
     pub fn fork_step(&self, token: Token) -> (Decoder<'a>, StepResult) {
         let kept = self.held.0.get().and_then(|held| held.steps.get(&self.context.vocabulary.id(&token)?).cloned());
         let mut next = self.fork();
+        // The fork's step is the request.
+        let _request = next.begin_request();
         let result = match kept {
             Some((state, forced)) => {
                 let advanced = next.advanced(&token, state, forced, true);
@@ -548,6 +642,7 @@ impl<'a> Decoder<'a> {
     /// assignments from the step. A caller that steps no further token that
     /// reads the output of the step uses it.
     pub fn step_untested(&mut self, token: Token) -> StepResult {
+        let _request = self.begin_request();
         let advanced = self.advance(&token, false);
         self.apply(advanced)
     }
@@ -560,6 +655,7 @@ impl<'a> Decoder<'a> {
     /// `step` does, and no rule test, so the fork's trace has no rule test
     /// at the step. This decode stays as it was.
     pub fn successor(&self, token: Token) -> Result<Decoder<'a>, Refusal> {
+        let _request = self.begin_request();
         let (state, forced) = self.next_state(&token)?;
         let forms = &state.program().value().forms;
         let finishes_out = forms.len() > self.state.program().value().forms.len() && matches!(forms.last(), Some(crate::program::Form::Out(_)));
@@ -578,6 +674,7 @@ impl<'a> Decoder<'a> {
     /// holds the mask of its state and the mask admits `token`, it reads the
     /// forced tokens from the mask and runs no check.
     pub fn forced(&self, token: &Token) -> Result<Vec<Token>, Refusal> {
+        let _request = self.begin_request();
         self.next_state(token).map(|(_, forced)| forced)
     }
 
@@ -688,12 +785,26 @@ impl<'a> Decoder<'a> {
     /// decode of the same key computed it, and else computed and kept there.
     /// A mask from the session holds no states of its tokens' steps.
     fn path_mask(&self) -> Mask {
-        let Some(key) = self.path_key() else { return self.compute_mask() };
-        if let Some(mask) = self.session.path_masks.lock().expect("the masks are not poisoned").get(key) {
-            return Mask { mask, steps: HashMap::new() };
+        let work = self.request_work();
+        let measured = || {
+            let (mut mask, cost) = work.measure(|| self.compute_mask());
+            mask.cost = cost;
+            mask
+        };
+        let Some(key) = self.path_key() else { return measured() };
+        let kept = self.session.path_masks.lock().expect("the masks are not poisoned").get(key);
+        // A mask from the session charges what its computation charged, unless that would pass the request's cap, where the mask is computed here and stops where it stops with empty caches.
+        if let Some((mask, cost)) = kept
+            && cost.fits(&work, None)
+        {
+            let _ = cost.charge(&work, None, self.session);
+            return Mask { mask, steps: HashMap::new(), cost };
         }
-        let mask = self.compute_mask();
-        self.session.path_masks.lock().expect("the masks are not poisoned").insert(key, mask.mask.clone());
+        let mask = measured();
+        // A mask that a stop at the request cap cut short is the mask of no state.
+        if !work.is_past_cap() {
+            self.session.path_masks.lock().expect("the masks are not poisoned").insert(key, (mask.mask.clone(), mask.cost));
+        }
         mask
     }
 
@@ -717,8 +828,9 @@ impl<'a> Decoder<'a> {
         self.trace.update(step, |record| record.top_k = Some(top_k))
     }
 
-    /// Uses one caller operation for every nested query and materialization.
-    /// Forks retain its absolute deadline; no query starts another clock.
+    /// Uses one caller operation for every nested query and materialization:
+    /// the operation is one request, which counts the work of every call of
+    /// this decode and its forks under the cap of the limits.
     pub fn with_operation_limits(mut self,limits:crate::eval::Limits)->Self {
         self.cancellation=limits.cancellation.clone();
         self.operation_limits=Some(limits);self
@@ -727,7 +839,7 @@ impl<'a> Decoder<'a> {
     /// A second decode from the same state, which shares this one's caches
     /// and takes a cancellation of its own, and a store of held stops of its
     /// own that holds the stops at the table work cap this decode holds now
-    /// and shares the stops at the deadline ([`HeldStops::snapshot`]).
+    /// ([`HeldStops::snapshot`]), and requests of its own.
     pub fn fork(&self) -> Decoder<'a> {
         Decoder {
             cancellation: self.operation_limits.as_ref().map_or_else(Cancellation::default,|limits|limits.cancellation.clone()),
@@ -806,7 +918,7 @@ impl<'a> Decoder<'a> {
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
-                let pruned = if self.context.settings.static_pruning { self.check_static_prune(&program, open.as_ref(), checks, memo) } else { Ok(()) };
+                let pruned = self.check_static_prune(&program, open.as_ref(), checks, memo);
                 if let (Some(open), true, Token::Lib(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
                     let _ = memo.head.set((open.clone(), pruned.clone()));
                 }
@@ -836,6 +948,8 @@ impl<'a> Decoder<'a> {
     /// Check only conjuncts that this grammar step completed. An atom can
     /// close on the next relation token; END can finish the entire form.
     /// Restrict replacement certificates to flat top-level clauses for now.
+    /// The lists of every other form, an `INIT`, `CHOOSE` or `RIGID_DET` form among
+    /// them, take only the verdicts of [`Decoder::check_nested_static_prune`].
     fn check_static_prune(
         &self,
         program: &Node<Program>,
@@ -853,7 +967,8 @@ impl<'a> Decoder<'a> {
             };
             Some((body, count))
         }
-        let Some((body, count)) = completed(program, open) else { return Ok(()) };
+        // A last form that is no clause has no top-level body of its own, and its lists are the nested prune's.
+        let Some((body, count)) = completed(program, open) else { return self.check_nested_static_prune(program, open, checks, memo) };
         let prior = memo.before.get_or_init(|| {
             let before = self.state.partial()?;
             completed(&before.0, before.1.as_ref()).map(|(_, count)| (before.0.value().forms.len(), count))

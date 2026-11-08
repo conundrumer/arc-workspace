@@ -1,17 +1,18 @@
 //! The driver's way into the result cache: the key of an entry from what
-//! the entry reads, the lookup and the store, the ids of relations by
+//! the entry reads, the lookup, which charges the entry's cost, and the
+//! store, which keeps the cost with the entry, the ids of relations by
 //! their rows, and eviction by least recent use under a share of the
 //! session's byte bound.
 
 use std::sync::Arc;
 
 use super::pool::InFlight;
-use super::{RelationValue, Stop};
+use super::{Cost, Limits, RelationValue, Stop};
 use crate::program::path::NodePath;
 use crate::relations::Relation;
 use super::ir::ClauseIr;
 use crate::resolver::ResolvedContent;
-use crate::session::{same_rows, CachedValue, RelationId, ResultContent, ResultKey, TaskSession};
+use crate::session::{same_rows, CachedValue, Costed, RelationId, ResultContent, ResultKey, TaskSession};
 use crate::terms::Example;
 
 /// What an entry evaluates, by reference: a form's resolved content, the
@@ -46,14 +47,38 @@ pub struct EntryRequest<'a> {
     pub parameters: &'a [Arc<Relation>],
 }
 
-/// The value cached for `request` in `session`, if any, made at `form`, the
-/// path in the requesting program of the clause that made the request: a
-/// stop the cache holds is given at `form`, so its diagnostic stands at a
-/// path of the requesting program.
-pub fn lookup(session: &TaskSession, request: &EntryRequest<'_>, form: &NodePath) -> Option<RelationValue> {
-    let value = found_key(session, request.clause.owned(), request.reads, request.example, request.parameters).and_then(|key| session.results.get(&key));
-    session.results.record(|| Recorded::Lookup { key: RecordedKey::of(request), found: value.clone() });
-    Some(value?.map_stop(|bound| Stop { bound, form: form.clone() }))
+/// The value cached for `request` in `session`, if any, and the cost of its
+/// entry.
+#[derive(Clone, Debug)]
+pub struct Found {
+    /// The value, made at `form`, the path in the requesting program of the
+    /// clause that made the request: a stop the cache holds is given at
+    /// `form`, so its diagnostic stands at a path of the requesting program.
+    /// Where charging the entry's cost took the request or the observation past
+    /// its cap, the value is that stop.
+    pub value: RelationValue,
+    pub cost: Cost,
+}
+
+/// The entry cached for `request` in `session`, if any, charged to `limits`
+/// as the entry's computation charged: the hit charges the entry's recorded
+/// cost, so the counts of the evaluation around it are those of one that
+/// computed the entry. `None` where the cache holds no entry, and where the
+/// cost would take a count past its cap ([`Cost::fits`]): the caller then
+/// computes the entry, and its charges stop where they stop with empty caches.
+pub fn lookup(session: &TaskSession, limits: &Limits, request: &EntryRequest<'_>, form: &NodePath) -> Option<Found> {
+    let found = found_key(session, request.clause.owned(), request.reads, request.example, request.parameters).and_then(|key| session.results.get(&key));
+    session.results.record(|| Recorded::Lookup { key: RecordedKey::of(request), found: found.as_ref().map(|(value, _)| value.clone()) });
+    let (value, cost) = found?;
+    let table = limits.table_work.as_ref();
+    if !cost.fits(&limits.request, table) {
+        return None;
+    }
+    let value = match cost.charge(&limits.request, table, session) {
+        Ok(()) => value.map_stop(|bound| Stop { bound, form: form.clone() }),
+        Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+    };
+    Some(Found { value, cost })
 }
 
 /// The key of an entry whose relations the cache holds, each by its id, or
@@ -65,17 +90,17 @@ fn found_key(session: &TaskSession, clause: ResultContent, reads: &[Arc<Relation
     Some(ResultKey { clause, reads: found(reads)?, example, parameters: found(parameters)? })
 }
 
-/// Caches `value` for `request` in `session`, where its stop, if it holds
-/// one, is stored: the entry holds the stop's bound and no form. Then
-/// evicts the entries least recently used while the cache's bytes exceed
-/// its share of the session's byte bound.
-pub fn store(session: &TaskSession, request: &EntryRequest<'_>, value: &RelationValue) {
+/// Caches `value` for `request` in `session`, with the `cost` of its
+/// computation, where its stop, if it holds one, is stored: the entry holds
+/// the stop's bound and no form. Then evicts the entries least recently used
+/// while the cache's bytes exceed its share of the session's byte bound.
+pub fn store(session: &TaskSession, request: &EntryRequest<'_>, value: &RelationValue, cost: Cost) {
     let Some(value) = cached(value) else {
         return;
     };
     let key = key(session, request);
-    session.results.record(|| Recorded::Store { key: RecordedKey::of(request), value: value.clone() });
-    session.results.insert(key, value);
+    session.results.record(|| Recorded::Store { key: RecordedKey::of(request), value: value.clone(), cost });
+    session.results.insert(key, value, cost);
     session.results.evict(cache_bytes_bound(session));
 }
 
@@ -120,8 +145,8 @@ pub enum Recorded {
     /// The id of `relation`, which the cache then holds where it held no
     /// relation of its rows.
     Id { relation: Arc<Relation> },
-    /// A store of `value`.
-    Store { key: RecordedKey, value: CachedValue },
+    /// A store of `value`, with the cost of its computation.
+    Store { key: RecordedKey, value: CachedValue, cost: Cost },
 }
 
 /// The key of an entry by the relations it reads, and not by their ids in
@@ -185,7 +210,7 @@ impl Recorded {
         match self {
             Recorded::Lookup { key: looked, found } => Recorded::Lookup { key: key(looked, one), found: found.as_ref().map(|found| value(found, one)) },
             Recorded::Id { relation } => Recorded::Id { relation: one(relation) },
-            Recorded::Store { key: stored, value: kept } => Recorded::Store { key: key(stored, one), value: value(kept, one) },
+            Recorded::Store { key: stored, value: kept, cost } => Recorded::Store { key: key(stored, one), value: value(kept, one), cost: *cost },
         }
     }
 
@@ -205,7 +230,7 @@ impl Recorded {
                 }
             }
             Recorded::Id { relation } => each(relation),
-            Recorded::Store { key, value: stored } => {
+            Recorded::Store { key, value: stored, .. } => {
                 key.relations().for_each(&mut *each);
                 value(stored, each);
             }
@@ -221,7 +246,7 @@ impl Recorded {
         256 + match self {
             Recorded::Lookup { key, found } => key.relations().map(|relation| relation_estimate(relation)).sum::<usize>() + found.as_ref().map_or(0, value),
             Recorded::Id { relation } => relation_estimate(relation),
-            Recorded::Store { key, value: stored } => key.relations().map(|relation| relation_estimate(relation)).sum::<usize>() + value(stored),
+            Recorded::Store { key, value: stored, .. } => key.relations().map(|relation| relation_estimate(relation)).sum::<usize>() + value(stored),
         }
     }
 }
@@ -264,6 +289,6 @@ pub fn cache_bytes_bound(session: &TaskSession) -> usize {
 
 /// The entries that the pool's threads compute, for a thread that asks for
 /// one of them to wait on.
-pub fn in_flight(session: &TaskSession) -> &InFlight<ResultKey, CachedValue> {
+pub fn in_flight(session: &TaskSession) -> &InFlight<ResultKey, Costed> {
     session.results.in_flight()
 }

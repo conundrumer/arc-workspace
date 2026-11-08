@@ -112,8 +112,7 @@ pub(crate) fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task
                 for case in cases {
                     match case.stream {
                         Ok(stream) => {
-                            let masks = if tasks.is_some() && case.demonstrated { Err("the program holds a DEMONSTRATED form".to_string()) } else { Ok(None) };
-                            streams.push(IdStream { task: id.to_string(), case: case.case, concept: case.concept, ids: token_ids(&stream.tokens, &vocabulary), masks });
+                            streams.push(IdStream { task: id.to_string(), case: case.case, concept: case.concept, ids: token_ids(&stream.tokens, &vocabulary), masks: Ok(None) });
                         }
                         Err(fault) => faults.push(fault_line(id, Some(&case.case), &fault)),
                     }

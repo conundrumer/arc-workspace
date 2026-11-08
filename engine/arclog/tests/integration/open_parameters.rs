@@ -128,14 +128,3 @@ fn a_case_at_the_model_cap_solves_a_train_pair_and_gives_attempts_from_the_model
     assert_eq!(&*attempts, &[arclog::judge::attempts::Attempts::One(grid(&[3, 4]))]);
     assert_eq!(capped, 1, "the one test input ended at the cap");
 }
-
-#[test]
-fn a_case_at_the_model_cap_has_no_output_when_the_setting_is_off() {
-    let mut inputs = inputs(INPUT, Caps { models: 1, ..Caps::CORPUS });
-    inputs.settings.grids_at_model_cap = false;
-    let mut decoder = decoder(&inputs);
-    let (ended, _) = walk(&mut decoder, &model_tokens(PICKED_CELL));
-    assert!(matches!(ended, Some(Consistency::Stopped(ref stop)) if matches!(stop.bound, arclog::eval::ReachedBound::Models { cap: 1 })), "{ended:?}");
-    assert!(decoder.output().is_none());
-    assert_eq!(decoder.capped_sets(), 0);
-}

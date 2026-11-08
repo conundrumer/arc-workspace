@@ -13,9 +13,7 @@
 //!   position of its label in the labeling of the form's label scope under
 //!   the resolver's writer (the least of the positions where the heads of
 //!   several inputs write the column with several labels). Any other column
-//!   has `#` and that position. Under `ARCLOG_DEMONSTRATED`,
-//!   demonstrated columns use their fixed value roles and key, with record
-//!   fields identified by canonical outer labels. A rigid part column that
+//!   has `#` and that position. A rigid part column that
 //!   repeats a key's label prefixes its identity with `part.` to distinguish
 //!   the two roles.
 //! - A flow's atom has the identity of its form, and its canonical path in
@@ -43,8 +41,7 @@ use crate::tables::{Contents, Point, Table, TableRelation};
 pub struct Identities {
     /// The identity of each table, as 32 hexadecimal digits, and the empty
     /// string for a table that has none: a table that faulted or stands at a
-    /// body in progress, and a `DEMONSTRATED` form's while
-    /// `ARCLOG_DEMONSTRATED` is off.
+    /// body in progress, and a `DEMONSTRATED` form's.
     pub tables: Vec<String>,
     /// The identity of each column of each table, in the order of its
     /// columns.
@@ -207,16 +204,6 @@ pub(crate) fn table_identity(forms: &mut Forms, table: &Table) -> (String, Vec<S
         hex(form)
     };
     let instance = matches!(forms.form(top), Some(Form::Instance(_)));
-    if arclog::resolver::demonstrated_on() && matches!(forms.form(top), Some(Form::Demonstrated(_))) {
-        // The paths give fixed roles independently of the synthetic header
-        // names and the authored order of the value input's head sites.
-        let Some(paths) = contents.rows.as_ref().filter(|paths| paths.len() == contents.columns.len()) else { return Default::default() };
-        let columns: Option<Vec<String>> = paths.iter().enumerate().map(|(at, path)| {
-            let lib = arclog::program::column_spelled(path.first()?);
-            Some(if path.len() == 1 { lib } else { format!("{lib}.#{}", column_position(query, contents, at)?) })
-        }).collect();
-        return columns.map(|columns| (ident, columns)).unwrap_or_default();
-    }
     let mut columns: Vec<String> = contents
         .columns
         .iter()

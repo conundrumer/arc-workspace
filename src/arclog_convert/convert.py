@@ -54,6 +54,12 @@ A pass removes each atom that another atom of the same conjunction implies
 (`arclog_convert.implied`): it runs on the text of the solver and on the text of each case, before the projection pass,
 which folds a relation the removal leaves a projection, and after it; it runs as well on the copy under `CORPUS`, before
 the projection pass.
+The same pass removes a membership atom (`(dir_elem *D)`) whose label a later atom of the conjunction makes at a column of
+the atom's type or below, which is the static prune's rule `membership.implied_later`
+(`engine/arclog/src/program/static_prune.rs`); the pass's text says where it applies.
+Where the later atom is on a relation of the program, the case files drop it (`_typed_membership`), with the column types
+that the checker gives the sites in `StudyProgram.render_json`; the run writes the case files of each solver whose text holds
+such a pair.
 A form the script cannot translate is written literally, under a
 `;; TODO <kind>: ...` comment.
 A clause or a factor that a pass keeps because a block other than the reader's derives its relation again, or because
@@ -98,7 +104,7 @@ from engine import checkout
 from engine.memo import hash_files, write_whole
 from engine.pool import pool_size
 from engine.program import Qualifier, Variable
-from arclog_convert.implied import drop_implied
+from arclog_convert.implied import drop_implied, drop_typed_membership, has_program_membership
 from arclog_convert.libmap import rename as libmap_rename
 from arclog_convert.lint_alts import alt_blocks, derived, placements, selects_case
 from arclog_convert.lint_read import L, read
@@ -352,7 +358,9 @@ def convert_one(stem: str) -> Converted:
         checked = (kept.arclog, base[1])
         projected = project(arclog, arcdata, columns)
         arclog = drop_implied(projected.arclog).arclog
-        if pulled.blocked or projected.blocked:
+        # the cases of a solver where a later atom on a relation of the program makes a membership atom redundant get
+        # their files, which drop it (`_typed_membership`)
+        if pulled.blocked or projected.blocked or has_program_membership(arclog):
             answers = rows.answers
         if kept.readers:
             names["removed"] = readers_json(kept.readers)
@@ -559,6 +567,24 @@ def _equality_edit(text: str, match: dict) -> tuple[int, int, str] | None:
     return atom.start, atom.end, f"(= *{sites[out_column].label} {equal})"
 
 
+def _typed_membership(text: str) -> str:
+    """`text`, a case program, with each membership atom dropped that a later atom on a relation of the program makes
+    redundant, as `arclog_convert.implied` gives for an atom on a lib relation: the types of the columns of the program's
+    relations are those that the checker gives the sites in `StudyProgram.render_json` (`typed_sites.arguments`,
+    `column_type`), which the pass in Python cannot infer. A text that the engine does not read stays as it is."""
+    from arclog import DecodeSettings, StudyProgram
+    while True:
+        try:
+            arguments = json.loads(StudyProgram.from_sexp(text, DecodeSettings.corpus()).render_json())["typed_sites"]["arguments"]
+        except ValueError:
+            return text
+        columns = {tuple(a["site_path"]): a["column_type"] for a in arguments if a["column_type"]}
+        step = drop_typed_membership(text, lambda path, types: columns.get(path) in types)
+        if step is None:
+            return text
+        text = step
+
+
 EQUALITY_REFUSAL = "static prune: use the admitted equality binding"
 """The refusal of the decoder with static pruning at an alias or constant atom whose equality binding the checker
 admits (`check_static_prune` in `engine/arclog/src/decode/mod.rs`)."""
@@ -633,6 +659,7 @@ def _write_cases(stem: str, answers: Answers, part: CaseTexts) -> tuple[str, int
             # removal of a binder, and re-resolves/checks the normalized case.
             # A case that holds a DEMONSTRATED form is no study input, so the classifier does not read it.
             if "(DEMONSTRATED " not in text:
+                text = _typed_membership(text)
                 program = StudyProgram.from_sexp(text, DecodeSettings.corpus())
                 # With `normalize=True` the report also holds a provenance record of megabytes, which this pass does
                 # not use. The call is made only for a case in which the classifier finds a test to delete.

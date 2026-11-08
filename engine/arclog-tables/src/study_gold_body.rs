@@ -42,7 +42,7 @@ fn evaluate_query(gold:&StudyProgram,body:&NodePath,task:&Task,session:&TaskSess
     report["body_assignment_map"]=Value::Null;
     report["body_status"]=json!({"status":"unavailable","reason":"BODY acquisition has not completed"});
     report["body_coverage"]=json!({"complete":false,"examples":[]});
-    report["bound_scope"]=json!("one current operation deadline and session across prefix, held BODY, extents and packing; canonical per-table work caps retained; cached FITS retains its original completion/stop");
+    report["bound_scope"]=json!("one current operation request work cap and session across prefix, held BODY, extents and packing; canonical per-table work caps retained; cached FITS retains its original completion/stop");
     let mut result=GoldBody {limits:limits.clone(),report,tables:Vec::new()};
     if result.report["status"]=="fault" {return Ok(result);}
     if fixed.is_empty() || result.report["assignment_coverage_complete"]!=true {

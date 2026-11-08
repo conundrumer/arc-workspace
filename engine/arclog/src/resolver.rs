@@ -473,21 +473,6 @@ struct ConceptForms {
     paths: crate::hash::StableHashMap<NodePath, NodePath>,
 }
 
-/// Whether the experimental demonstrated work is enabled.
-/// `ARCLOG_DEMONSTRATED` is read once per process: unset, empty
-/// or `0` disables the feature; `1` enables it. Other values panic.
-pub fn demonstrated_on() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| match std::env::var("ARCLOG_DEMONSTRATED") {
-        Err(_) => false,
-        Ok(text) => match text.as_str() {
-            "" | "0" => false,
-            "1" => true,
-            other => panic!("ARCLOG_DEMONSTRATED is `{other}`; it must be unset, `0` or `1`"),
-        },
-    })
-}
-
 impl ResolvedProgram {
     /// The node that `relation`, read in the program's scope, resolves to,
     /// where the program declares it.
@@ -707,15 +692,6 @@ impl ResolvedProgram {
         Some(self.names.node_columns_of(node.0 as usize)?.row_paths())
     }
 
-    /// The fixed value roles and key fields of a demonstrated relation,
-    /// when `ARCLOG_DEMONSTRATED` enables their export.
-    pub fn demonstrated_row_paths(&self, node: GraphNodeIndex) -> Option<Vec<Box<[ColumnName]>>> {
-        if !demonstrated_on() || !matches!(self.graph.nodes[node.0 as usize].kind, DependencyKind::Demonstrated(_)) {
-            return None;
-        }
-        Some(self.names.fixed_columns_of(node.0 as usize)?.row_paths())
-    }
-
     /// The signature of the name read at `path`.
     pub fn signature(&self, path: &NodePath) -> Option<&Signature> {
         match self.earlier_of(path) {
@@ -822,9 +798,8 @@ impl ResolvedProgram {
     /// `position`, as [`ResolvedProgram::query_content`] gives it, with the
     /// canonical order of the query's form through the resolver's writer of
     /// the same closure, so that the content and the order name the form's
-    /// lists and labels alike. A `DEMONSTRATED` form's order covers its
-    /// outer scope alone under `ARCLOG_DEMONSTRATED`, and is
-    /// otherwise absent. `None` where `position` names no node.
+    /// lists and labels alike. A `DEMONSTRATED` form has no
+    /// order. `None` where `position` names no node.
     ///
     /// Unlike [`ResolvedProgram::query_content`], the closure keeps the
     /// columns of each `DET` node that its reads name in the order of their
@@ -850,11 +825,10 @@ impl ResolvedProgram {
         closure.names.part_positions(&closure.program, &last)
     }
 
-    /// The program of the use closure of the finished query at the
-    /// top-level position `position`, resolved as
-    /// [`ResolvedProgram::query_content`] gives, and the path of the query
-    /// in it.
-    fn query_closure(&self, position: usize, registry: &Registry, canonical_kept: bool) -> Option<(ResolvedProgram, NodePath)> {
+    /// For each top-level form, whether it is the form at `position` or a form
+    /// of a node that the form at `position` reads at any depth, at or before
+    /// `position`. `None` where `position` names no form.
+    pub fn use_closure(&self, position: usize) -> Option<Vec<bool>> {
         let forms = &self.program.value().forms;
         let mut keep = vec![false; forms.len()];
         *keep.get_mut(position)? = true;
@@ -875,6 +849,16 @@ impl ResolvedProgram {
                 }
             }
         }
+        Some(keep)
+    }
+
+    /// The program of the use closure of the finished query at the
+    /// top-level position `position`, resolved as
+    /// [`ResolvedProgram::query_content`] gives, and the path of the query
+    /// in it.
+    fn query_closure(&self, position: usize, registry: &Registry, canonical_kept: bool) -> Option<(ResolvedProgram, NodePath)> {
+        let forms = &self.program.value().forms;
+        let keep = self.use_closure(position)?;
         let closure: Vec<_> = forms.iter().zip(&keep).take(position + 1).filter(|(_, keep)| **keep).map(|(form, _)| query_form(form, registry)).collect();
         let last = NodePath::top(closure.len() as u32 - 1);
         let pruned = crate::write::in_text_order(&Node::new(Program { forms: closure.into() }), registry);
@@ -1268,8 +1252,8 @@ fn demo_rules<'d>(
 }
 
 /// `form` as the content of a query holds it: a clause with no gloss, and
-/// a `DEMONSTRATED` form as a decode of its stream gives it
-/// ([`crate::stream::demonstrated::as_streamed`]).
+/// a `DEMONSTRATED` form as [`crate::stream::demonstrated::as_streamed`]
+/// gives it.
 fn query_form(form: &crate::program::Form, registry: &Registry) -> crate::program::Form {
     use crate::program::{Clause, Form};
     match form {

@@ -3,10 +3,9 @@
 //! of a body from the entries of its parts, and the way into it of a form
 //! over a lib component.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::convert::Infallible;
 use std::sync::Arc;
-use std::time::Instant;
 
 use super::examples::{self, ExampleScope};
 use super::ir::{self, AtomSource, ClauseIr, CompiledBody, IrNode};
@@ -14,7 +13,7 @@ use super::join::{self, Budget, JoinInputs, NodeInput, Part};
 use super::models::{self, Choice, Entry, Factor};
 use super::determinations::{self, Domain};
 use super::{cache, carry, init_form, instance, plan, proposers, rigid};
-use super::{Evaluation, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
+use super::{Cost, Evaluation, Outcome, ParameterSource, ReachedBound, RelationValue, RunFault, Stop};
 use crate::hash::{StableHash, StableHashMap};
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{Clause, ParamValue, ProgramRelation, RelationRef};
@@ -276,6 +275,13 @@ impl<'e, 'a> Driver<'e, 'a> {
                 }
             }
         }
+        if relations.len() > 1 {
+            // The union walks the rows of each relation.
+            let rows = relations.iter().map(|relation| relation.len()).fold(0u64, u64::saturating_add);
+            if let Err(bound) = self.evaluation.limits.request.charge(rows) {
+                return Ok(RelationValue::Stopped(Stop { bound, form: self.program().form_of(node).clone() }));
+            }
+        }
         Ok(RelationValue::Rows(join::union(relations)))
     }
 
@@ -300,7 +306,16 @@ impl<'e, 'a> Driver<'e, 'a> {
         let exported = self.evaluation.limits.exported.is_some_and(|(program, node)| program == std::ptr::from_ref(self.program()) as usize && self.program().forms_of(node).contains(form));
         let reserve = self.evaluation.limits.row_reserve.filter(|_| exported).map(|reserve| reserve.bytes_per_row(body.clause.columns.len()));
         let shape = || carry::body_shape(&body);
-        self.cached(form, &reads.request(&content, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example, reserve)))
+        let measured = ir::measures().then(|| (std::time::Instant::now(), super::RequestWork::latest().map_or(0, |request| request.count())));
+        let value = self.cached(form, &reads.request(&content, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example, reserve)));
+        if let Some((start, before)) = measured {
+            let work = super::RequestWork::latest().map_or(0, |request| request.count()).saturating_sub(before);
+            if work > 0 {
+                let path: Vec<String> = form.0.iter().map(|step| step.0.to_string()).collect();
+                eprintln!("arclog-join-measure form={} nodes={} work={work} ns={}", path.join("."), body.clause.nodes.len(), start.elapsed().as_nanos());
+            }
+        }
+        value
     }
 
     /// The relation of the conjuncts at `kept` of the body of the clause at
@@ -313,13 +328,14 @@ impl<'e, 'a> Driver<'e, 'a> {
     }
 
     /// The IR of the conjuncts at `kept` of the body of the clause at
-    /// `form`, with what its nodes read on `example`, or the body's value
-    /// where a read is `undefined` or stopped.
+    /// `form`, with its nodes in canonical order
+    /// ([`CheckedProgram::joined_body`]) and what they read on `example`, or
+    /// the body's value where a read is `undefined` or stopped.
     fn compiled(&self, form: &NodePath, kept: &[u32], example: Option<Example>) -> Outcome<Result<(Arc<CompiledBody>, JoinInputs), RelationValue>> {
         let body = self
             .evaluation
             .program
-            .compiled_body(form, kept)
+            .joined_body(form, kept)
             .map_err(|fault| RunFault { message: format!("the body does not compile: {fault:?}").into(), form: form.clone() })?;
         Ok(self.inputs(&body.clause, scope_at(example), example)?.map(|inputs| (body, inputs)))
     }
@@ -340,27 +356,31 @@ impl<'e, 'a> Driver<'e, 'a> {
         let clause = &body.clause;
         let order = plan::variable_order(clause, &join::sizes(clause, inputs), &[]);
         let all: Vec<usize> = (0..clause.nodes.len()).collect();
-        let mut placed: Vec<RelationPart> = Vec::new();
+        let mut placed: Vec<(u32, RelationPart)> = Vec::new();
         let mut value = None;
         let parts = join::parts(clause, &all, &|node| body.conjuncts[node]);
         let last = parts.len().saturating_sub(1);
         for (at, part) in parts.into_iter().enumerate() {
+            let written = part.nodes.iter().map(|&node| clause.written[node]).min().unwrap_or(0);
             let entry = self.part_entry(form, body, &part, inputs);
-            let floor = reserve.filter(|_| at == last && placed.iter().all(|found| !found.rows.is_empty())).map(|bytes| {
-                (bytes, placed.iter().filter(|found| !found.columns.is_empty()).fold(1u64, |rows, found| rows.saturating_mul(found.rows.len() as u64)))
+            let floor = reserve.filter(|_| at == last && placed.iter().all(|(_, found)| !found.rows.is_empty())).map(|bytes| {
+                (bytes, placed.iter().filter(|(_, found)| !found.columns.is_empty()).fold(1u64, |rows, (_, found)| rows.saturating_mul(found.rows.len() as u64)))
             });
             match self.part_value(form, body, &part, &entry, inputs, &order, example, floor) {
-                RelationValue::Rows(relation) => placed.extend(relation.parts().iter().map(|found| RelationPart {
+                RelationValue::Rows(relation) => placed.extend(relation.parts().iter().map(|found| (written, RelationPart {
                     columns: found.columns.iter().map(|column| entry.columns[usize::from(column.0)]).collect(),
                     rows: found.rows.clone(),
-                })),
+                }))),
                 other => {
                     value = Some(other);
                     break;
                 }
             }
         }
-        value.unwrap_or_else(|| RelationValue::Rows(Arc::new(join::product(clause, placed))))
+        // The parts are joined in the clause's canonical order. The relation lists
+        // them in the order of the clause as compiled, which its readers follow.
+        placed.sort_by_key(|(written, _)| *written);
+        value.unwrap_or_else(|| RelationValue::Rows(Arc::new(join::product(clause, placed.into_iter().map(|(_, part)| part).collect()))))
     }
 
     /// The value of `part`, a part of `body` whose entry `entry` gives: the
@@ -382,27 +402,31 @@ impl<'e, 'a> Driver<'e, 'a> {
     ) -> RelationValue {
         let evaluation = self.evaluation;
         let request = entry.reads.request(&entry.content, example);
-        if let Some(value) = cache::lookup(evaluation.session, &request, form) {
-            return value;
+        if let Some(found) = cache::lookup(evaluation.session, evaluation.limits, &request, form) {
+            return found.value;
         }
         let compute = || {
-            let mut budget = Budget::new(evaluation.limits, evaluation.session);
-            if let Some((bytes_per_row, multiplier)) = floor {
-                budget = budget.with_row_floor(bytes_per_row, multiplier);
-            }
-            let Ok(value) = self.holding_stops::<Infallible>(&request, || {
-                let relation = join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget);
-                Ok(match relation {
-                    Ok(relation) => RelationValue::Rows(Arc::new(relation)),
-                    Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
-                })
+            let limits = evaluation.limits;
+            let (value, cost) = limits.request.measure(|| {
+                let mut budget = Budget::new(evaluation.limits, evaluation.session);
+                if let Some((bytes_per_row, multiplier)) = floor {
+                    budget = budget.with_row_floor(bytes_per_row, multiplier);
+                }
+                let Ok(value) = self.holding_stops::<Infallible>(&request, || {
+                    let relation = join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget);
+                    Ok(match relation {
+                        Ok(relation) => RelationValue::Rows(Arc::new(relation)),
+                        Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+                    })
+                });
+                record_whole(&budget, [&value]);
+                value
             });
-            record_whole(&budget, [&value]);
-            cache::store(evaluation.session, &request, &value);
+            cache::store(evaluation.session, &request, &value, cost);
             Ok(value)
         };
         let shape = || carry::part_shape(&body.clause, part, order, &entry.columns);
-        match self.carrying(form, &request, &shape, compute) {
+        match self.carrying(form, &request, &shape, &Cell::new(Cost::default()), compute) {
             Ok(value) => value,
             Err(fault) => unreachable!("the evaluation of a part gives no fault: {fault:?}"),
         }
@@ -464,33 +488,69 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// stores. A fault of `compute` is given and not stored. Where `shape` is
     /// given, the computation is carried across the walks that carry one
     /// ([`Driver::carrying`]).
+    ///
+    /// A value that the cache holds charges the cost recorded in its entry
+    /// ([`cache::lookup`]), and so does a value that another thread
+    /// computed while this one waited for it, so the evaluation's counts are
+    /// those of one that computed the entry. Where the recorded cost would
+    /// not fit under a cap, the entry is computed here instead.
     fn cached(&self, form: &NodePath, request: &cache::EntryRequest<'_>, shape: Option<&dyn Fn() -> StableHash>, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
         let session = self.evaluation.session;
-        if let Some(value) = cache::lookup(session, request, form) {
-            return Ok(value);
+        let limits = self.evaluation.limits;
+        if let Some(found) = cache::lookup(session, limits, request, form) {
+            return Ok(found.value);
         }
+        let compute = RefCell::new(Some(compute));
+        let evaluate = || {
+            let compute = compute.borrow_mut().take().expect("an entry is computed once");
+            self.compute_entry(form, request, shape, compute)
+        };
         let mut own = None;
         let key = cache::key(session, request);
         let shared = cache::in_flight(session).get_or_compute(key, || {
             // A computation that ended since the lookup above stored the entry.
-            let value = match cache::lookup(session, request, form) {
-                Some(value) => Ok(value),
-                None => {
-                    let run = || self.holding_stops(request, compute).inspect(|value| cache::store(session, request, value));
-                    match shape {
-                        Some(shape) => self.carrying(form, request, shape, run),
-                        None => run(),
-                    }
-                }
+            let (value, cost) = match cache::lookup(session, limits, request, form) {
+                Some(found) => (Ok(found.value), found.cost),
+                None => evaluate(),
             };
-            let shared = value.as_ref().ok().and_then(cache::cached);
+            let shared = value.as_ref().ok().and_then(cache::cached).map(|value| (value, cost));
             own = Some(value);
             shared
         });
         own.unwrap_or_else(|| {
-            let shared = shared.expect("a value from the computation another thread ended");
-            Ok(shared.map_stop(|bound| Stop { bound, form: form.clone() }))
+            let (value, cost) = shared.expect("a value from the computation another thread ended");
+            let table = limits.table_work.as_ref();
+            if !cost.fits(&limits.request, table) {
+                return evaluate().0;
+            }
+            Ok(match cost.charge(&limits.request, table, session) {
+                Ok(()) => value.map_stop(|bound| Stop { bound, form: form.clone() }),
+                Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
+            })
         })
+    }
+
+    /// The value of `compute`, the evaluation of the entry `request`, with
+    /// what it charged, as [`Driver::cached`] needs them. The value is stored
+    /// in the cache with its cost, or is that of a kept computation
+    /// ([`Driver::carrying`]).
+    fn compute_entry(&self, form: &NodePath, request: &cache::EntryRequest<'_>, shape: Option<&dyn Fn() -> StableHash>, compute: impl FnOnce() -> Outcome<RelationValue>) -> (Outcome<RelationValue>, Cost) {
+        let session = self.evaluation.session;
+        let limits = self.evaluation.limits;
+        let spent = Cell::new(Cost::default());
+        let run = || {
+            let (value, cost) = limits.request.measure(|| self.holding_stops(request, compute));
+            spent.set(cost);
+            if let Ok(value) = &value {
+                cache::store(session, request, value, cost);
+            }
+            value
+        };
+        let value = match shape {
+            Some(shape) => self.carrying(form, request, shape, &spent, run),
+            None => run(),
+        };
+        (value, spent.get())
     }
 
     /// The value of `compute`, the evaluation of the entry `request` that
@@ -499,17 +559,21 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// evaluation by nothing that depends on the time, the value is the one
     /// of a kept computation that replays, and otherwise `compute` is
     /// captured and kept. `shape` is the digest of what the search of the
-    /// entry reads beside its request.
-    fn carrying(&self, form: &NodePath, request: &cache::EntryRequest<'_>, shape: &dyn Fn() -> StableHash, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
+    /// entry reads beside its request. `spent` takes the cost of a kept
+    /// computation that replays; `compute` sets it itself.
+    fn carrying(&self, form: &NodePath, request: &cache::EntryRequest<'_>, shape: &dyn Fn() -> StableHash, spent: &Cell<Cost>, compute: impl FnOnce() -> Outcome<RelationValue>) -> Outcome<RelationValue> {
         let limits = self.evaluation.limits;
-        let (Some(carry), Some(work), None, None, None) = (&limits.carry, &limits.table_work, &limits.held_stops, &limits.deadline, &limits.copies) else {
+        let (Some(carry), Some(_), None, None) = (&limits.carry, &limits.table_work, &limits.held_stops, &limits.copies) else {
             return compute();
         };
         let session = self.evaluation.session;
         let key = carry::CarryKey::new(request, shape());
-        match carry.replay(session, work, &key, form) {
-            Some(value) => Ok(value),
-            None => carry.capture(session, work, key, form, compute),
+        match carry.replay(limits, session, &key, form) {
+            Some((value, cost)) => {
+                spent.set(cost);
+                Ok(value)
+            }
+            None => carry.capture(limits, session, key, form, compute),
         }
     }
 
@@ -517,44 +581,32 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// the evaluation runs for a decode, with the stops that the decode holds
     /// ([`super::values::HeldStops`]). The stop held for the entry is taken
     /// at the form that stopped, in place of an evaluation that tries
-    /// bindings, where one of these holds:
-    ///
-    /// - the evaluation runs for a bounded observation, and the stop is at
-    ///   its table work cap;
-    /// - the evaluation has a deadline, and the stop is at the deadline,
-    ///   with at most [`super::values::DEADLINE_STOP_REUSE`] times the time
-    ///   its evaluation ran left to the deadline.
+    /// bindings, where the evaluation runs for a bounded observation and the
+    /// stop is at its table work cap.
     ///
     /// Otherwise the stop of `compute` is held: a stop at the table work cap
     /// where the evaluation began within the cap, which an evaluation that
-    /// begins past the cap does not reach, and a stop at the deadline with
-    /// the time from the start of `compute`, where the evaluation has a
-    /// deadline.
+    /// begins past the cap does not reach.
     fn holding_stops<E>(&self, request: &cache::EntryRequest<'_>, compute: impl FnOnce() -> Result<RelationValue, E>) -> Result<RelationValue, E> {
         let session = self.evaluation.session;
         let limits = self.evaluation.limits;
         let Some(held) = &limits.held_stops else { return compute() };
-        if !limits.table_work.as_ref().is_some_and(|work|work.is_capped()) && limits.deadline.is_none() {
+        if !limits.table_work.as_ref().is_some_and(|work| work.is_capped()) {
             return compute();
         }
         let entry_key = || cache::key(session, request);
         if !held.is_empty() {
-            let key = entry_key();
-            let table_work = limits.table_work.as_ref().filter(|work|work.is_capped()).and_then(|_| held.table_work_stop(&key));
-            let deadline = || limits.deadline.and_then(|deadline| held.deadline_stop(&key, deadline.saturating_duration_since(Instant::now())));
-            if let Some(stop) = table_work.or_else(deadline) {
+            if let Some(stop) = held.table_work_stop(&entry_key()) {
                 return Ok(RelationValue::Stopped(stop));
             }
         }
         let began_within_cap = limits.table_work.as_ref().is_some_and(|work| !work.is_past_cap());
-        let began = limits.deadline.map(|_| Instant::now());
         let value = compute()?;
-        if let RelationValue::Stopped(stop) = &value {
-            match (stop.bound, began) {
-                (ReachedBound::TableWork { .. }, _) if began_within_cap => held.hold_table_work(entry_key(), stop.clone()),
-                (ReachedBound::Deadline, Some(began)) => held.hold_deadline(entry_key(), stop.clone(), began.elapsed()),
-                _ => {}
-            }
+        if let RelationValue::Stopped(stop) = &value
+            && matches!(stop.bound, ReachedBound::TableWork { .. })
+            && began_within_cap
+        {
+            held.hold_table_work(entry_key(), stop.clone());
         }
         Ok(value)
     }
@@ -587,6 +639,10 @@ impl<'e, 'a> Driver<'e, 'a> {
             return Ok(RelationValue::Undefined);
         }
         let arity = positions.iter().flatten().count();
+        // The placing walks each row of the proposer's relation.
+        if let Err(bound) = self.evaluation.limits.request.charge(relation.len()) {
+            return Ok(RelationValue::Stopped(Stop { bound, form: form.clone() }));
+        }
         let mut rows = RowSet::empty(arity as u16);
         join::each_row(&relation, &mut |row| {
             let mut placed = vec![row[0]; arity];
@@ -621,8 +677,20 @@ impl<'e, 'a> Driver<'e, 'a> {
 
     /// What each node of `clause` reads, in a clause of `scope` on
     /// `example`, or the clause's value where a read is `undefined` or
-    /// stopped.
+    /// stopped. A clause that names a relation no form declares is
+    /// `undefined` whatever else it reads, so nothing is read for it. The
+    /// reads stand in the order of the nodes, and the branches of a union in
+    /// their canonical order, and the first read that is `undefined` or
+    /// stopped gives the value.
     fn inputs(&self, clause: &ClauseIr, scope: ExampleScope, example: Option<Example>) -> Outcome<Result<JoinInputs, RelationValue>> {
+        if names_undefined(clause) {
+            return Ok(Err(RelationValue::Undefined));
+        }
+        self.read_inputs(clause, scope, example)
+    }
+
+    /// [`Driver::inputs`], for a clause that names no undeclared relation.
+    fn read_inputs(&self, clause: &ClauseIr, scope: ExampleScope, example: Option<Example>) -> Outcome<Result<JoinInputs, RelationValue>> {
         let mut inputs = Vec::with_capacity(clause.nodes.len());
         for node in clause.nodes.iter() {
             let bodies: Vec<&ClauseIr> = match node {
@@ -652,14 +720,18 @@ impl<'e, 'a> Driver<'e, 'a> {
                 IrNode::Not(filter) | IrNode::Counterexample(filter) => vec![&*filter.body],
                 IrNode::Or(union) => union.branches.iter().collect(),
             };
-            let mut nested = Vec::with_capacity(bodies.len());
-            for body in bodies {
-                match self.inputs(body, scope, example)? {
-                    Ok(body_inputs) => nested.push(body_inputs),
+            let order: Vec<usize> = match node {
+                IrNode::Or(union) => union.in_canonical_order().collect(),
+                _ => (0..bodies.len()).collect(),
+            };
+            let mut nested: Vec<Option<JoinInputs>> = bodies.iter().map(|_| None).collect();
+            for at in order {
+                match self.read_inputs(bodies[at], scope, example)? {
+                    Ok(body_inputs) => nested[at] = Some(body_inputs),
                     Err(value) => return Ok(Err(value)),
                 }
             }
-            inputs.push(NodeInput::Clauses(nested.into()));
+            inputs.push(NodeInput::Clauses(nested.into_iter().map(|found| found.expect("the inputs of each branch")).collect()));
         }
         Ok(Ok(JoinInputs(inputs.into())))
     }
@@ -735,6 +807,7 @@ impl FormBodies<'_> {
     /// of its join.
     pub fn relation(&self, form: &NodePath, clause: &ClauseIr, example: Option<Example>) -> Outcome<RelationValue> {
         let driver = self.driver;
+        let clause = clause.in_canonical_order();
         let inputs = match driver.inputs(clause, scope_at(example), example)? {
             Ok(inputs) => inputs,
             Err(value) => return Ok(value),
@@ -742,11 +815,12 @@ impl FormBodies<'_> {
         let session = driver.evaluation.session;
         let reads = driver.reads(clause, &(0..clause.nodes.len()).collect::<Vec<_>>(), &inputs);
         let request = cache::EntryRequest { clause: cache::EntryContent::Body(clause), reads: &reads.reads, example, parameters: &reads.parameters };
-        if let Some(value) = cache::lookup(session, &request, form) {
-            return Ok(value);
+        let limits = driver.evaluation.limits;
+        if let Some(found) = cache::lookup(session, limits, &request, form) {
+            return Ok(found.value);
         }
-        let Ok(value) = driver.holding_stops::<Infallible>(&request, || Ok(driver.join(form, clause, &inputs)));
-        cache::store(session, &request, &value);
+        let (Ok(value), cost) = limits.request.measure(|| driver.holding_stops::<Infallible>(&request, || Ok(driver.join(form, clause, &inputs))));
+        cache::store(session, &request, &value, cost);
         Ok(value)
     }
 
@@ -754,6 +828,7 @@ impl FormBodies<'_> {
     /// bindings are part of the request, so it uses the bound native join
     /// rather than a cache key for an unbound body.
     pub(super) fn bound_relation(&self,form:&NodePath,clause:&ClauseIr,example:Option<Example>,bound:&[(ir::Variable,crate::terms::TermId)])->Outcome<RelationValue> {
+        let clause=clause.in_canonical_order();
         let inputs=match self.driver.inputs(clause,scope_at(example),example)? {Ok(inputs)=>inputs,Err(value)=>return Ok(value)};
         let evaluation=self.driver.evaluation;
         let order=plan::variable_order(clause,&join::sizes(clause, &inputs),&bound.iter().map(|(v,_)|*v).collect::<Vec<_>>());
@@ -801,13 +876,28 @@ fn recorded(budget: &Budget<'_>, value: Outcome<RelationValue>) -> Outcome<Relat
 
 /// Records the counts of `budget` in its session where its evaluation,
 /// which gave `values` and no fault, ended whole: where no value is a stop.
-/// A stop at the byte bound, the deadline or a cancellation leaves counts
+/// A stop at the byte bound, the request work cap or a cancellation leaves counts
 /// that depend on the machine, a stop at a cap is the fault of its solver,
 /// and a stop at a margin leaves the counts of an evaluation cut short.
 pub(super) fn record_whole<'v>(budget: &Budget<'_>, values: impl IntoIterator<Item = &'v RelationValue>) {
     if values.into_iter().all(|value| matches!(value, RelationValue::Rows(_) | RelationValue::Undefined)) {
         budget.record();
     }
+}
+
+/// Whether `clause`, or a clause nested in one of its nodes, reads a relation
+/// that no form declares.
+fn names_undefined(clause: &ClauseIr) -> bool {
+    clause.nodes.iter().any(|node| match node {
+        IrNode::Atom(atom) => match &atom.source {
+            AtomSource::Undefined(_) => true,
+            AtomSource::Key(key) => names_undefined(&key.clause),
+            _ => false,
+        },
+        IrNode::Not(filter) | IrNode::Counterexample(filter) => names_undefined(&filter.body),
+        IrNode::Or(union) => union.branches.iter().any(names_undefined),
+        IrNode::Lib(_) | IrNode::Comparison(_) => false,
+    })
 }
 
 /// The indexes of each conjunct of the body of `clause`.

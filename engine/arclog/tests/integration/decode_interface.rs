@@ -292,15 +292,6 @@ fn det_admission_refuses_an_empty_proposer_domain_and_allows_its_empty_set_value
 }
 
 #[test]
-fn det_admission_ignores_an_expired_deadline() {
-    let mut inputs = inputs(INPUT, Caps::CORPUS);
-    inputs.settings.deadline = Some(std::time::Duration::ZERO);
-    let mut decoder = decoder(&inputs);
-    // The deterministic admission is still live even with an already-expired operation.
-    walk(&mut decoder, &model_tokens("(DET &c ColorDomain)\n"));
-}
-
-#[test]
 fn det_admission_checks_a_proposer_one_before_accepting_the_mark() {
     let inputs = inputs(&[3, 3], Caps::CORPUS);
     let mut decoder = decoder(&inputs);
@@ -321,18 +312,4 @@ fn det_admission_keeps_a_keyed_model_pick_available() {
     // The unkeyed ONE would have two models. Its open key must stay writable.
     let mut decoder = decoder(&inputs);
     walk(&mut decoder, &model_tokens("(DET &pick (ex_input *E *P *Col) (ONE E P))\n"));
-}
-
-#[test]
-fn det_admission_masks_are_deadline_independent() {
-    let normal = inputs(INPUT, Caps::CORPUS);
-    let mut expired = inputs(INPUT, Caps::CORPUS);
-    expired.settings.deadline = Some(std::time::Duration::ZERO);
-    let tokens = model_tokens("(DET &c ColorDomain)\n");
-    let (_, prefix) = tokens.split_last().unwrap();
-    let mut a = decoder(&normal);
-    let mut b = decoder(&expired);
-    walk(&mut a, prefix);
-    walk(&mut b, prefix);
-    assert_eq!(a.admissible(), b.admissible());
 }

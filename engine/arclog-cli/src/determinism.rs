@@ -105,7 +105,7 @@ enum Observed {
 
 /// One entry of a case: a relation that the `OUT` form reads, or its own,
 /// on an example or task-wide.
-type Entry = (GraphRelation, Option<Example>);
+pub(crate) type Entry = (GraphRelation, Option<Example>);
 
 /// The line of the first difference between the run of the solver `id` at
 /// one thread and at many, `None` where the runs agree, or the fault that
@@ -134,7 +134,7 @@ fn observe(corpus: &Path, tasks: &Path, id: &str, threads: usize) -> Result<Vec<
 /// `OUT` form reads, at any depth, the `OUT` form's own too, by graph order, on each
 /// example of the task for a relation per example, and task-wide for
 /// another.
-fn entries(evaluation: &Evaluation<'_>) -> Vec<Entry> {
+pub(crate) fn entries(evaluation: &Evaluation<'_>) -> Vec<Entry> {
     let program = evaluation.program;
     let Some(output) = output_relation(program) else { return Vec::new() };
     let graph = &program.program.graph;

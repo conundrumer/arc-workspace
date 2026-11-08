@@ -52,8 +52,8 @@ impl ConceptCase<'_> {
     }
 }
 
-/// The limits of a run over the corpus: no deadline, and a cancellation
-/// that nothing cancels.
+/// The limits of a run over the corpus: the default request work cap, and a
+/// cancellation that nothing cancels.
 pub(crate) fn corpus_limits() -> Limits {
     Limits::new(None, Cancellation::default())
 }

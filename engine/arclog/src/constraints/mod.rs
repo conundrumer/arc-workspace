@@ -99,6 +99,14 @@ pub struct Models<'a> {
     done: bool,
 }
 
+impl Models<'_> {
+    /// The most search nodes that one cluster has counted so far, which the
+    /// node cap bounds for each cluster.
+    pub fn most_nodes(&self) -> u64 {
+        self.product.factors().iter().map(|cluster| cluster.search.nodes()).max().unwrap_or(0)
+    }
+}
+
 impl Iterator for Models<'_> {
     type Item = Result<Model, NodeCapReached>;
 

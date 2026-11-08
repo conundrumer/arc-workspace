@@ -25,7 +25,7 @@ const HELD_ENTRIES: usize = 2_000_000;
 const HELD_CELLS: usize = 10_000_000;
 const HELD_KEYS: usize = 4_000_000;
 
-fn base64(bytes: &[u8]) -> String {
+pub(crate) fn base64(bytes: &[u8]) -> String {
     const LETTERS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
@@ -114,8 +114,11 @@ impl Sink {
     }
 }
 
+/// Why `stored_of` can't read a table that has more columns than the generator takes.
+pub const PAST_MAX_COLUMNS: &str = "past MAX_COLUMNS columns";
+
 /// A file's table as a table of the candidate lists, with each assignment's each model as a model at its example. `Ok(None)` is no table, and `Err` says why a table can't be read.
-fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &HashMap<i64, String>) -> Result<Option<Stored>, &'static str> {
+pub fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &HashMap<i64, String>) -> Result<Option<Stored>, &'static str> {
     use serde_json::Value;
     let Some(parts) = table.as_array() else { return Ok(None) };
     if parts.len() != 1 {
@@ -124,8 +127,8 @@ fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &Hash
     let part = &parts[0];
     let names: Vec<&str> = part["types"].as_array().ok_or("types")?.iter().filter_map(Value::as_str).collect();
     let types: Vec<ValueType> = names.iter().map(|name| type_of_name(name)).collect::<Option<_>>().ok_or("a type")?;
-    if types.len() > 8 {
-        return Err("past 8 columns");
+    if types.len() > crate::generate::MAX_COLUMNS {
+        return Err(PAST_MAX_COLUMNS);
     }
     let examples = train + test;
     let mut rows: Vec<Vec<Vec<Vec<u32>>>> = vec![Vec::new(); examples];

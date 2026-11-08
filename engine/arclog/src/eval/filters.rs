@@ -164,6 +164,7 @@ fn compile_union(
             columns: labels.intersection(&shared).copied().map(LabelId).collect(),
         };
         let mut clause = IrBuilder::new(builder.program,builder.form.clone(),std::rc::Rc::new(compiled))?;
+        clause.canonical_order = builder.canonical_order;
         for (list, path) in &branch.lists {
             clause.body(list.value(), path)?;
         }
@@ -176,7 +177,12 @@ fn compile_union(
         branch_paths.push(paths);
     }
     let exported = variables_of(builder, &exported);
-    builder.push(IrNode::Or(Union { exported, branches: clauses.into() }), NodePaths::Branches(branch_paths.into()));
+    // The union is searched branch by branch in the canonical order of the
+    // branches' paths, which the order of the branches as written does not give.
+    let keys: Vec<Vec<u32>> = branches.iter().map(|branch| builder.key_of(&branch.lists[0].1)).collect();
+    let mut canonical: Vec<u32> = (0..branches.len() as u32).collect();
+    canonical.sort_by(|&a, &b| keys[a as usize].cmp(&keys[b as usize]));
+    builder.push(IrNode::Or(Union { exported, branches: clauses.into(), canonical: canonical.into() }), NodePaths::Branches(branch_paths.into()));
     Ok(())
 }
 
@@ -221,7 +227,9 @@ pub fn probe(
 /// A builder of a clause nested in `builder`'s, over the variables of the
 /// same form.
 fn nested<'a>(builder: &IrBuilder<'a>) -> Result<IrBuilder<'a>, CompileFault> {
-    IrBuilder::new(builder.program, builder.form.clone(), builder.compiled.clone())
+    let mut inner = IrBuilder::new(builder.program, builder.form.clone(), builder.compiled.clone())?;
+    inner.canonical_order = builder.canonical_order;
+    Ok(inner)
 }
 
 /// The filter over `outer` whose body is the clause of `body`, a relation

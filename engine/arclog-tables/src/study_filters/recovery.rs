@@ -327,6 +327,7 @@ pub fn evaluate(g: &Value, m: &Value, n_train: usize, domains: &Value, work: &mu
     match run() {
         Ok(mut value) => {
             value["work"] = json!(work.used());
+            value["work_cap"] = json!(work.cap());
             value
         }
         Err(e) => unknown(e, work),

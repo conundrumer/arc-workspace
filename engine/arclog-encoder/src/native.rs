@@ -110,7 +110,12 @@ pub struct Table {
     groupings: std::sync::OnceLock<Box<[std::sync::OnceLock<Arc<Grouping>>]>>,
     /// For each column, its distinct values in order, once something has read it.
     sorted: std::sync::OnceLock<Box<[std::sync::OnceLock<Arc<[Cell]>>]>>,
+    /// Its finest split into groups of columns whose product it is, once something has read it.
+    factors: std::sync::OnceLock<Arc<Factors>>,
 }
+
+/// A table's finest split into groups of columns whose product it is: for each column the place of its group, and for each group the number of distinct rows of its columns.
+pub type Factors = (Vec<u8>, Vec<u64>);
 
 /// How keys group a table's rows: the dense id of each row's key in order of first appearance, and the place of the first row at each key.
 pub type Grouping = (Vec<u32>, Vec<u32>);
@@ -172,7 +177,7 @@ impl Table {
     /// The table of `cells`, whose rows are distinct.
     pub fn new(arity: usize, cells: Vec<Cell>) -> Arc<Table> {
         let len = cells.len().checked_div(arity).unwrap_or(0);
-        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new() })
+        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new(), factors: std::sync::OnceLock::new() })
     }
 
     /// The table of `cells`, whose rows are distinct and whose hash is `hash`, which a read of the hash would give.
@@ -248,11 +253,16 @@ impl Table {
     /// The table of no columns, with one row where `holds`.
     pub fn unit(holds: bool) -> Arc<Table> {
         let len = usize::from(holds);
-        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new() })
+        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new(), factors: std::sync::OnceLock::new() })
     }
 
     pub fn rows(&self) -> impl Iterator<Item = &[Cell]> {
         self.cells.chunks_exact(self.arity.max(1))
+    }
+
+    /// The table's finest split into groups of columns whose product it is, which `make` gives the first time something asks.
+    pub fn factors(&self, make: impl FnOnce() -> Factors) -> Arc<Factors> {
+        self.factors.get_or_init(|| Arc::new(make())).clone()
     }
 }
 
@@ -576,7 +586,7 @@ pub fn lazy_written_cells() -> usize {
 }
 
 /// The cells of the tables of `value`, which a lazy value's written rows hold.
-fn cells_of(value: &Val) -> usize {
+pub(crate) fn cells_of(value: &Val) -> usize {
     match value {
         Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
         _ => 0,
@@ -1512,6 +1522,14 @@ fn merge<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
     Some(Merged { columns, cells: std::borrow::Cow::Owned(cells) })
 }
 
+/// The rows of the parts that a step reads. One part is its own rows, read in place at any size; several parts are written as a product, which `site` bounds.
+fn touched_rows<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
+    if let [one] = parts {
+        return Some(Merged { columns: one.columns.to_vec(), cells: std::borrow::Cow::Borrowed(&one.table.cells) });
+    }
+    merge(parts, site)
+}
+
 pub(crate) fn project(value: &Val, columns: &[u16]) -> Val {
     let Val::Rows(parts) = value else { return value.clone() };
     let mut out = Vec::with_capacity(parts.len());
@@ -1560,7 +1578,12 @@ pub(crate) fn select(value: &Val, at: u16, op: Op, other: Option<u16>, drop: Opt
     let mut positions = vec![at];
     positions.extend(other);
     let (touched, rest) = split_parts(parts, &positions);
-    let merged = merge(&touched, Bound::SelectSide)?;
+    // A comparison of a column of one part with a column of another reads the pairs of rows that pass, and never writes the product of the two parts.
+    if let ([first, second], Some(other)) = (&touched[..], other) {
+        let (from, to) = if first.columns.contains(&at) { (*first, *second) } else { (*second, *first) };
+        return select_across(from, to, rest, at, op, other, drop);
+    }
+    let merged = touched_rows(&touched, Bound::SelectSide)?;
     let place_of = |position: u16| merged.columns.iter().position(|column| *column == position).expect("a selected column stands in a touched part");
     let a = place_of(at);
     let b = other.map(place_of);
@@ -1595,6 +1618,66 @@ pub(crate) fn select(value: &Val, at: u16, op: Op, other: Option<u16>, drop: Opt
     }
     let columns: Vec<u16> = merged.columns.iter().enumerate().filter(|(place, _)| Some(*place) != drop_place).map(|(_, column)| shifted(*column)).collect();
     out.push(Part { table: Table::new(kept_width, cells), columns: columns.into_boxed_slice() });
+    Some(Val::of_parts(out))
+}
+
+/// A `select` that compares the column `at` of the part `from` with the column `other` of the part `to`. An equality that drops `other`, over two parts and no others, is the join of the two, which stands as its sides. Any other comparison gives one part with the pairs of rows that pass, beside the parts of `rest`. Where those pairs pass `CELL_CAP` cells, they are the rows of the step and a bound stops it.
+fn select_across(from: &Part, to: &Part, rest: Vec<Part>, at: u16, op: Op, other: u16, drop: Option<u16>) -> Option<Val> {
+    let a_place = from.columns.iter().position(|column| *column == at).expect("a selected column stands in its part");
+    let b_place = to.columns.iter().position(|column| *column == other).expect("a selected column stands in its part");
+    let shifted = |position: u16| drop.map_or(position, |dropped| if position > dropped { position - 1 } else { position });
+    if op == Op::Eq && drop == Some(other) && rest.is_empty() {
+        let left_out: Vec<u16> = from.columns.iter().map(|column| shifted(*column)).collect();
+        let right_out: Vec<u16> = to.columns.iter().map(|column| shifted(*column)).collect();
+        if let Some(value) = crate::joined::Joined::across(from.table.clone(), &left_out, to.table.clone(), &right_out, a_place, b_place) {
+            return Some(value);
+        }
+    }
+    // The rows of `to` in order of the compared column, as a signed number, so that the rows that one row of `from` passes stand in at most two runs. Rows of one value keep their order.
+    let (a_arity, b_arity) = (from.table.arity, to.table.arity);
+    let mut order: Vec<u32> = (0..to.table.len as u32).collect();
+    order.sort_by_key(|row| to.table.cells[*row as usize * b_arity + b_place] as i32);
+    let sorted: Vec<i32> = order.iter().map(|row| to.table.cells[*row as usize * b_arity + b_place] as i32).collect();
+    let end = sorted.len();
+    let runs = |value: Cell| -> [(usize, usize); 2] {
+        let value = value as i32;
+        let lower = sorted.partition_point(|own| *own < value);
+        let upper = sorted.partition_point(|own| *own <= value);
+        match op {
+            Op::Eq => [(lower, upper), (0, 0)],
+            Op::Ne => [(0, lower), (upper, end)],
+            Op::Lt => [(upper, end), (0, 0)],
+            Op::Le => [(lower, end), (0, 0)],
+            Op::Gt => [(0, lower), (0, 0)],
+            Op::Ge => [(0, upper), (0, 0)],
+        }
+    };
+    let all_columns: Vec<u16> = from.columns.iter().chain(to.columns.iter()).copied().collect();
+    let kept_places: Vec<usize> = (0..all_columns.len()).filter(|place| Some(all_columns[*place]) != drop).collect();
+    let width = kept_places.len();
+    let pairs: u64 = from.table.rows().map(|row| runs(row[a_place]).iter().map(|(start, stop)| (stop - start) as u64).sum::<u64>()).sum();
+    if pairs.saturating_mul(width as u64) > CELL_CAP as u64 {
+        crate::bounds::mark(Bound::SelectSide);
+        return None;
+    }
+    if pairs == 0 {
+        return Some(Val::Empty);
+    }
+    let mut cells: Vec<Cell> = Vec::with_capacity(pairs as usize * width);
+    let mut pair: Vec<Cell> = vec![0; all_columns.len()];
+    for row in from.table.rows() {
+        pair[..a_arity].copy_from_slice(row);
+        for (start, stop) in runs(row[a_place]) {
+            for at_sorted in start..stop {
+                let own = order[at_sorted] as usize;
+                pair[a_arity..].copy_from_slice(&to.table.cells[own * b_arity..(own + 1) * b_arity]);
+                cells.extend(kept_places.iter().map(|place| pair[*place]));
+            }
+        }
+    }
+    let columns: Vec<u16> = kept_places.iter().map(|place| shifted(all_columns[*place])).collect();
+    let mut out: Vec<Part> = rest.into_iter().map(|part| Part { columns: part.columns.iter().map(|column| shifted(*column)).collect(), table: part.table }).collect();
+    out.push(Part { table: Table::new(width, cells), columns: columns.into_boxed_slice() });
     Some(Val::of_parts(out))
 }
 
@@ -1702,8 +1785,12 @@ fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16]
             }
         }
     }
-    let tl = merge(&left_touched, Bound::JoinSide)?;
-    let tr = merge(&right_touched, Bound::JoinSide)?;
+    // Paired columns in several parts of a side join those parts one at a time, so no product of parts is written.
+    if left_touched.len() > 1 || right_touched.len() > 1 {
+        return join_parts(&left_touched, left_rest, &right_touched, right_rest, left_at, right_at, kept, left_arity);
+    }
+    let tl = touched_rows(&left_touched, Bound::JoinSide)?;
+    let tr = touched_rows(&right_touched, Bound::JoinSide)?;
     // Where every part is read, the rows stand as the two sides until an operator needs them.
     if left_rest.is_empty() && right_rest.is_empty() {
         let (left_table, right_table) = (side_table(&left_touched, &tl), side_table(&right_touched, &tr));
@@ -1759,6 +1846,157 @@ fn join(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16], kept: &[u16]
     }
     out.push(Part { table: Table::new(width, cells), columns: columns.into_boxed_slice() });
     Some(Val::of_parts(out))
+}
+
+/// The tag of a right column among the tags of the columns of a join in progress, which tell the two sides' columns apart.
+const RIGHT_TAG: u32 = 1 << 16;
+
+/// A link of a `join` in progress: a pair of columns, as the left node and the place in it, and the right node and the place in it.
+type Link = (usize, usize, usize, usize);
+
+/// The rows of a table by the id of their key: the first position of each id's rows in the list, and the list, which holds the rows of an id in order.
+fn rows_by_key(ids: &[u32]) -> (Vec<u32>, Vec<u32>) {
+    let mut starts: Vec<u32> = vec![0; ids.iter().max().map_or(0, |last| *last as usize + 1) + 1];
+    for id in ids {
+        starts[*id as usize + 1] += 1;
+    }
+    for at in 1..starts.len() {
+        starts[at] += starts[at - 1];
+    }
+    let mut next = starts.clone();
+    let mut rows: Vec<u32> = vec![0; ids.len()];
+    for (row, id) in ids.iter().enumerate() {
+        rows[next[*id as usize] as usize] = row as u32;
+        next[*id as usize] += 1;
+    }
+    (starts, rows)
+}
+
+/// A `join` whose paired columns lie in several parts of a side. Each touched part is a node, and each pair joins a node of the left to a node of the right. The nodes that the pairs connect make one part of the result, joined one node at a time; the other parts stay factors. Where a joined part passes `CELL_CAP` cells, a bound stops it.
+#[allow(clippy::too_many_arguments)]
+fn join_parts(left_touched: &[&Part], left_rest: Vec<Part>, right_touched: &[&Part], right_rest: Vec<Part>, left_at: &[u16], right_at: &[u16], kept: &[u16], left_arity: u16) -> Option<Val> {
+    let right_new = |position: u16| kept.iter().position(|column| *column == position).map(|at| left_arity + at as u16).expect("a column with no pair is kept");
+    let nodes: Vec<(&Part, u32)> = left_touched.iter().map(|part| (*part, 0u32)).chain(right_touched.iter().map(|part| (*part, RIGHT_TAG))).collect();
+    let node_of = |side: u32, position: u16| nodes.iter().position(|(part, own)| *own == side && part.columns.contains(&position)).expect("a paired column stands in a touched part");
+    let place_in = |node: usize, position: u16| nodes[node].0.columns.iter().position(|column| *column == position).expect("a paired column stands in its part");
+    let links: Vec<Link> = left_at
+        .iter()
+        .zip(right_at)
+        .map(|(l, r)| {
+            let (a, b) = (node_of(0, *l), node_of(RIGHT_TAG, *r));
+            (a, place_in(a, *l), b, place_in(b, *r))
+        })
+        .collect();
+    // Each node takes the smallest number of a node it is linked to, until the nodes of a part of the result share one.
+    let mut group: Vec<usize> = (0..nodes.len()).collect();
+    loop {
+        let mut changed = false;
+        for (a, _, b, _) in &links {
+            let low = group[*a].min(group[*b]);
+            for node in [*a, *b] {
+                if group[node] != low {
+                    group[node] = low;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let mut out: Vec<Part> = left_rest;
+    for part in right_rest {
+        out.push(Part { columns: part.columns.iter().map(|column| right_new(*column)).collect(), table: part.table });
+    }
+    let mut labels: Vec<usize> = group.clone();
+    labels.sort_unstable();
+    labels.dedup();
+    for label in labels {
+        let members: Vec<usize> = (0..nodes.len()).filter(|node| group[*node] == label).collect();
+        match join_nodes(&nodes, &members, &links, right_at, &right_new)? {
+            Some(part) => out.push(part),
+            None => return Some(Val::Empty),
+        }
+    }
+    Some(Val::of_parts(out))
+}
+
+/// The part that joins the `members` among `nodes` on the `links` between them: no part where no row joins, and `None` where a bound stops it. It starts at the smallest node and takes in the smallest node linked to those it has, with every link between the two as the key.
+fn join_nodes(nodes: &[(&Part, u32)], members: &[usize], links: &[Link], right_at: &[u16], right_new: &dyn Fn(u16) -> u16) -> Option<Option<Part>> {
+    let mut joined: Vec<usize> = Vec::new();
+    let mut tags: Vec<u32> = Vec::new();
+    let mut cells: Vec<Cell> = Vec::new();
+    let mut remaining: Vec<usize> = members.to_vec();
+    while !remaining.is_empty() {
+        let linked = |node: usize| links.iter().any(|(a, _, b, _)| (*a == node && joined.contains(b)) || (*b == node && joined.contains(a)));
+        let (at, node) = remaining.iter().copied().enumerate().filter(|(_, node)| joined.is_empty() || linked(*node)).min_by_key(|(_, node)| nodes[*node].0.table.len).expect("the nodes of a part of the result are linked");
+        remaining.swap_remove(at);
+        let (part, side) = nodes[node];
+        if joined.is_empty() {
+            tags = part.columns.iter().map(|column| side | u32::from(*column)).collect();
+            cells = part.table.cells.to_vec();
+        } else {
+            // The places of the key in the rows so far, and in this node's rows.
+            let (mut have, mut own): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
+            for (a, a_place, b, b_place) in links {
+                let (other, mine, theirs) = if *a == node && joined.contains(b) {
+                    (*b, *a_place, *b_place)
+                } else if *b == node && joined.contains(a) {
+                    (*a, *b_place, *a_place)
+                } else {
+                    continue;
+                };
+                let tag = nodes[other].1 | u32::from(nodes[other].0.columns[theirs]);
+                have.push(tags.iter().position(|own_tag| *own_tag == tag).expect("a column of a joined node stands in the rows so far"));
+                own.push(mine);
+            }
+            let width = tags.len();
+            let arity = part.table.arity;
+            let keys: Vec<u64> = part.table.rows().map(|row| key_word(row, &own)).collect();
+            let (index, ids) = KeyIndex::of(&keys);
+            let (starts, by_key) = rows_by_key(&ids);
+            let mut next: Vec<Cell> = Vec::new();
+            for row in cells.chunks_exact(width) {
+                if let Some(key) = index.get(key_word(row, &have)) {
+                    for at in &by_key[starts[key as usize] as usize..starts[key as usize + 1] as usize] {
+                        next.extend_from_slice(row);
+                        next.extend_from_slice(&part.table.cells[*at as usize * arity..(*at as usize + 1) * arity]);
+                    }
+                }
+                if next.len() > CELL_CAP {
+                    crate::bounds::mark(Bound::JoinOutput);
+                    return None;
+                }
+            }
+            cells = next;
+            tags.extend(part.columns.iter().map(|column| side | u32::from(*column)));
+        }
+        if cells.is_empty() {
+            return Some(None);
+        }
+        joined.push(node);
+    }
+    // A paired column of the right holds the value of the left column it pairs with, so it is left out.
+    let keep: Vec<(usize, u16)> = tags
+        .iter()
+        .enumerate()
+        .filter_map(|(place, tag)| {
+            let position = (tag & (RIGHT_TAG - 1)) as u16;
+            if tag & RIGHT_TAG == 0 {
+                Some((place, position))
+            } else if right_at.contains(&position) {
+                None
+            } else {
+                Some((place, right_new(position)))
+            }
+        })
+        .collect();
+    let width = tags.len();
+    let mut out: Vec<Cell> = Vec::with_capacity(cells.len() / width * keep.len());
+    for row in cells.chunks_exact(width) {
+        out.extend(keep.iter().map(|(place, _)| row[*place]));
+    }
+    Some(Some(Part { table: Table::new(keep.len(), out), columns: keep.iter().map(|(_, position)| *position).collect() }))
 }
 
 /// Whether the key of each row of `table` at `at` is among `keys`, which stand sorted. A key at one column is read once per distinct value of the column.
@@ -1824,17 +2062,23 @@ pub(crate) fn antijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16
     }
     let (left_touched, left_rest) = split_parts(left_parts, left_at);
     let (right_touched, _) = split_parts(right_parts, right_at);
-    let tl = merge(&left_touched, Bound::AntijoinSide)?;
-    let tr = merge(&right_touched, Bound::AntijoinSide)?;
+    // One part of the left is read in place. Paired columns in several parts of the left make the rows of their product the rows to keep from, which a bound limits.
+    let tl = touched_rows(&left_touched, Bound::AntijoinSide)?;
     let left_places: Vec<usize> = left_at.iter().map(|at| tl.columns.iter().position(|column| column == at).expect("a paired column")).collect();
-    let right_places: Vec<usize> = right_at.iter().map(|at| tr.columns.iter().position(|column| column == at).expect("a paired column")).collect();
-    let mut keys: Vec<u64> = tr.cells.chunks_exact(tr.columns.len()).map(|row| key_word(row, &right_places)).collect();
-    keys.sort_unstable();
-    keys.dedup();
+    // The right holds a key when each of its touched parts holds the piece of the key at its own paired columns, since the parts are independent. Each part gives the places of its piece in a left row, and the pieces that it holds.
+    let mut tests: Vec<(Vec<usize>, Vec<u64>)> = Vec::new();
+    for part in &right_touched {
+        let slots: Vec<usize> = (0..right_at.len()).filter(|slot| part.columns.contains(&right_at[*slot])).collect();
+        let own: Vec<usize> = slots.iter().map(|slot| part.columns.iter().position(|column| *column == right_at[*slot]).expect("a paired column")).collect();
+        let mut keys: Vec<u64> = part.table.rows().map(|row| key_word(row, &own)).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        tests.push((slots.iter().map(|slot| left_places[*slot]).collect(), keys));
+    }
     let width = tl.columns.len();
     let mut cells: Vec<Cell> = Vec::with_capacity(tl.cells.len());
     for row in tl.cells.chunks_exact(width) {
-        if keys.binary_search(&key_word(row, &left_places)).is_err() {
+        if !tests.iter().all(|(places, keys)| keys.binary_search(&key_word(row, places)).is_ok()) {
             cells.extend_from_slice(row);
         }
     }

@@ -244,7 +244,7 @@ pub fn equivalent(a: &Normal, b: &Normal, work: &mut Work) -> Result<Option<Matc
 }
 
 /// Compare against every caller-inventoried available/later-gold table.
-/// A separate work/deadline budget is supplied per request by the binding;
+/// A separate work budget is supplied per request by the binding;
 /// once stopped, remaining candidates are explicitly unknown as well.
 pub fn evaluate(mutant: &Value, candidates: &Value, earlier: &Value, work: &mut Work) -> Value {
     let mut prepare = || -> Result<(Table, Normal)> {
@@ -299,5 +299,5 @@ pub fn evaluate(mutant: &Value, candidates: &Value, earlier: &Value, work: &mut 
         }
         comparisons.push(result);
     }
-    json!({"status":if any_unknown {"unknown"} else {"determined"},"policy":"nf4f-spec-native-v1","normal":normal.json(),"comparisons":comparisons,"matches":matches,"work":work.used()})
+    json!({"status":if any_unknown {"unknown"} else {"determined"},"policy":"nf4f-spec-native-v1","normal":normal.json(),"comparisons":comparisons,"matches":matches,"work":work.used(),"work_cap":work.cap()})
 }

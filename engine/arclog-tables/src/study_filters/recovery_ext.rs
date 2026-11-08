@@ -18,6 +18,7 @@ pub fn finish(mut result: Value, final_output: bool, work: &Work) -> Value {
         json!(true)
     };
     result["work"] = json!(work.used());
+    result["work_cap"] = json!(work.cap());
     result
 }
 fn witness(

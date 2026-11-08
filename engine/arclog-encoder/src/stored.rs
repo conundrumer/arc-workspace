@@ -263,6 +263,7 @@ pub fn cell_bits(value: &serde_json::Value, ty: &ValueType) -> Option<u32> {
         ValueType::Color => Term::Constant(Constant::Color(Color::from_digit(value.as_u64()? as u8)?)),
         ValueType::Example => Term::Constant(Constant::Example(arclog::terms::Example::at(u16::try_from(value.as_u64()?).ok()?))),
         ValueType::Int | ValueType::Nat => return Some(Term::encode_number(value.as_i64()? as i32).encoding()),
+        ValueType::Unit | ValueType::LibName => return u32::try_from(value.as_u64()?).ok(),
         ValueType::Ident(_) => {
             let bits = match value {
                 serde_json::Value::String(text) => hash_words(text.bytes().map(u64::from)) as u32,
@@ -273,4 +274,85 @@ pub fn cell_bits(value: &serde_json::Value, ty: &ValueType) -> Option<u32> {
         _ => Term::Constant(Constant::Orientation(Registry::get().orientation_constant(value.as_str()?)?)),
     };
     term.encode().ok().map(TermId::encoding)
+}
+
+/// Pushes the JSON that `cell_bits` reads back to `bits` at a column of type `ty`: one value, or four for a box. False where the type has no such spelling.
+fn push_cell(out: &mut String, bits: u32, ty: &ValueType) -> bool {
+    use arclog::terms::{Constant, Term, TermId};
+    use std::fmt::Write;
+    if matches!(ty, ValueType::Pose(_) | ValueType::Record(_)) {
+        return false;
+    }
+    let written = match Term::decode(TermId::from_encoding(bits), ty) {
+        Term::Number(number) => write!(out, "{}", number.0),
+        Term::Constant(Constant::Color(color)) => write!(out, "{}", color.digit()),
+        Term::Constant(Constant::Example(example)) => write!(out, "{}", example.index()),
+        Term::Constant(Constant::Orientation(constant)) => write!(out, "{}", serde_json::Value::String(Registry::get().constant_name(constant).to_string())),
+        Term::Constant(Constant::Unit | Constant::LibName(_)) | Term::Ident(_) => write!(out, "{bits}"),
+        Term::Box(margins) => write!(out, "{},{},{},{}", margins.top, margins.bottom, margins.left, margins.right),
+    };
+    written.is_ok()
+}
+
+/// What a stored table holds for one place of the task: `kind` 0 for the task, 1 for a train example and 2 for a test example, with the example's `index` among those of its kind, and the example's models. The models are none
+/// where one of them can't be written out, which leaves the example with no value.
+pub struct Placed<'a> {
+    pub kind: u8,
+    pub index: u32,
+    pub models: Option<&'a [Model]>,
+}
+
+/// The cells of a model's rows, each row's `arity` cells in a row, with the rows in the order of their cells.
+fn sorted_cells(model: &Model, arity: usize) -> Vec<u32> {
+    let mut order: Vec<usize> = (0..model.rows).collect();
+    order.sort_unstable_by(|a, b| model.columns.iter().map(|column| column[*a].cmp(&column[*b])).find(|ordering| ordering.is_ne()).unwrap_or(std::cmp::Ordering::Equal));
+    let mut cells = Vec::with_capacity(model.rows * arity);
+    for row in order {
+        cells.extend(model.columns.iter().map(|column| column[row]));
+    }
+    cells
+}
+
+/// The text of a table in the form that `atom_lists::stored_of` reads: `[{"types": names, "at": [{"entries": [[kind, index, model, complete, rows, cells], ..]}]}]`, where `cells` lists each row's cells in the order of
+/// `types`, a box as its four margins. A model that can't be written out is an entry with `complete` false. The places appear in the order given, each place's models in the order of their rows, and each model's rows in the
+/// order of their cells, so the text depends on the table alone. None where a type has no name or a cell has no spelling.
+pub fn stored_json(types: &[ValueType], placed: &[Placed]) -> Option<String> {
+    use std::fmt::Write;
+    let mut out = String::from("[{\"types\":[");
+    for (at, ty) in types.iter().enumerate() {
+        if at > 0 {
+            out.push(',');
+        }
+        write!(out, "\"{}\"", crate::schema::name_of_type(ty)?).ok()?;
+    }
+    out.push_str("],\"at\":[{\"entries\":[");
+    let mut first = true;
+    for place in placed {
+        let Some(models) = place.models else {
+            if !std::mem::take(&mut first) {
+                out.push(',');
+            }
+            write!(out, "[{},{},0,false,0,null]", place.kind, place.index).ok()?;
+            continue;
+        };
+        let mut written: Vec<(usize, Vec<u32>)> = models.iter().map(|model| (model.rows, sorted_cells(model, types.len()))).collect();
+        written.sort_unstable();
+        for (at, (rows, cells)) in written.iter().enumerate() {
+            if !std::mem::take(&mut first) {
+                out.push(',');
+            }
+            write!(out, "[{},{},{at},true,{rows},[", place.kind, place.index).ok()?;
+            for (number, cell) in cells.iter().enumerate() {
+                if number > 0 {
+                    out.push(',');
+                }
+                if !push_cell(&mut out, *cell, &types[number % types.len()]) {
+                    return None;
+                }
+            }
+            out.push_str("]]");
+        }
+    }
+    out.push_str("]}]}]");
+    Some(out)
 }

@@ -21,7 +21,10 @@ ink(P, Col) :- in(P, Col), !params.bg(Col), !params.frame(Col).
 
 // The rectangles drawn in the frame color, and their insides.
 .init drect = Outlines<Unit>
-drect.node($U(), P) :- in(P, Col), params.frame(Col).
+// @workaround: every cell of the frame color; the arclog program converted
+//  from this solver also tries the background as the frame color, and there
+//  the outlines of the background go past the arclog engine's caps
+drect.node($U(), P) :- in(P, Col), params.frame(Col), !params.bg(Col).
 
 .decl rect_hole(b: Box, p: Position)
 rect_hole(B, P) :- drect.box(_, B), in(P, _), interior(P, B).

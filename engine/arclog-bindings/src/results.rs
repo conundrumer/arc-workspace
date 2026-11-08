@@ -21,7 +21,7 @@ pub(crate) enum PyStopKind {
     TableWork,
     Margin,
     SessionBytes,
-    Deadline,
+    RequestWork,
     Cancelled,
     NoValues,
 }
@@ -37,7 +37,7 @@ impl From<Stop> for PyStopKind {
             Stop::TableWork => PyStopKind::TableWork,
             Stop::Margin => PyStopKind::Margin,
             Stop::SessionBytes => PyStopKind::SessionBytes,
-            Stop::Deadline => PyStopKind::Deadline,
+            Stop::RequestWork => PyStopKind::RequestWork,
             Stop::Cancelled => PyStopKind::Cancelled,
             Stop::NoValues => PyStopKind::NoValues,
         }

@@ -3,6 +3,7 @@
 use crate::catalog::*;
 use crate::catalog_cells::*;
 use crate::catalog_facts::*;
+use crate::occurrence::{distinct_patterns, each_turned_image, extent_of, PatternCell};
 
 /// `agreeing`: the rows whose value is the one most frequent value of their key, in a key of two
 /// rows or more.
@@ -500,57 +501,6 @@ fn patterns(view: &mut View<'_>, pos: &Pos) {
     }
 }
 
-/// The translations that take a colored pattern into a grid.
-fn moves_of(pattern: &[(i32, i32, u8)], grid: &GridFacts) -> Vec<(i32, i32)> {
-    let (h, w) = (grid.h as i32, grid.w as i32);
-    let Some(anchor) = pattern.iter().min_by_key(|cell| (grid.counts.get(cell.2 as usize).copied().unwrap_or(0), cell.0, cell.1)) else { return Vec::new() };
-    if anchor.2 >= 10 {
-        return Vec::new();
-    }
-    let mut out = Vec::new();
-    grid.by_color[anchor.2 as usize].each(|at| {
-        let (dr, dc) = ((at / grid.w) as i32 - anchor.0, (at % grid.w) as i32 - anchor.1);
-        let fits = pattern.iter().all(|cell| {
-            let (r, c) = (cell.0 + dr, cell.1 + dc);
-            r >= 0 && c >= 0 && r < h && c < w && grid.color[(r * w + c) as usize] == cell.2
-        });
-        if fits {
-            out.push((dr, dc));
-        }
-    });
-    out
-}
-
-/// Whether some image of a colored pattern under D4, other than the pattern itself, occurs in a grid.
-/// Images equal to the pattern or to an earlier image are skipped.
-fn occurs_turned_images(pattern: &[(i32, i32, u8)], grid: &GridFacts) -> bool {
-    let r1 = pattern.iter().map(|cell| cell.0).max().unwrap_or(0);
-    let c1 = pattern.iter().map(|cell| cell.1).max().unwrap_or(0);
-    let mut seen: Vec<Vec<(i32, i32, u8)>> = vec![pattern.to_vec()];
-    (1..8).any(|which| {
-        let mut image: Vec<(i32, i32, u8)> = pattern.iter().map(|cell| {
-            let (r, c) = (cell.0, cell.1);
-            let (y, z) = match which {
-                1 => (r, c1 - c),
-                2 => (r1 - r, c),
-                3 => (r1 - r, c1 - c),
-                4 => (c, r1 - r),
-                5 => (c1 - c, r),
-                6 => (c, r),
-                _ => (c1 - c, r1 - r),
-            };
-            (y, z, cell.2)
-        }).collect();
-        image.sort_unstable();
-        if seen.contains(&image) {
-            return false;
-        }
-        let found = !moves_of(&image, grid).is_empty();
-        seen.push(image);
-        found
-    })
-}
-
 /// The kinds that read a column's cells as shapes.
 pub(crate) fn shape_kinds(view: &mut View<'_>, pos: &Pos, group_of: &[u32], groups: u32) {
     let t = view.t;
@@ -657,7 +607,7 @@ fn occurrences(view: &mut View<'_>, pos: &Pos, color: Option<usize>) {
         group.clone_from(&view.dense[x].0);
         groups = view.dense[x].1;
     }
-    let mut patterns: Vec<Vec<(i32, i32, u8)>> = vec![Vec::new(); groups as usize];
+    let mut patterns: Vec<Vec<PatternCell>> = vec![Vec::new(); groups as usize];
     for row in 0..t.rows {
         let cell = t.at(row, p);
         let held = match color {
@@ -670,25 +620,22 @@ fn occurrences(view: &mut View<'_>, pos: &Pos, color: Option<usize>) {
             }
             Some(x) => t.at(row, x)[0] as u8,
         };
-        patterns[group[row] as usize].push((cell[0], cell[2], held));
-    }
-    for pattern in &mut patterns {
-        pattern.sort_unstable();
-        pattern.dedup();
-        if pattern.windows(2).any(|pair| pair[0].0 == pair[1].0 && pair[0].1 == pair[1].1) {
-            return;
-        }
+        patterns[group[row] as usize].push((cell[0], cell[2], u32::from(held)));
     }
     let of = patterns.len() as u32;
     // Equal patterns are searched once, each with the number of groups that hold it.
-    let mut distinct: std::collections::BTreeMap<Vec<(i32, i32, u8)>, u32> = std::collections::BTreeMap::new();
-    for pattern in patterns {
-        *distinct.entry(pattern).or_insert(0) += 1;
+    let (distinct, of_group) = distinct_patterns(patterns);
+    if distinct.iter().any(|pattern| pattern.windows(2).any(|pair| pair[0].0 == pair[1].0 && pair[0].1 == pair[1].1)) {
+        return;
+    }
+    let mut weights = vec![0u32; distinct.len()];
+    for which in &of_group {
+        weights[*which as usize] += 1;
     }
     let (mut in_place, mut elsewhere, mut turned) = (0u32, 0u32, 0u32);
     let mut common: Option<Vec<(i32, i32)>> = None;
-    for (pattern, weight) in &distinct {
-        let mut moves = moves_of(pattern, output);
+    for (pattern, weight) in distinct.iter().zip(&weights) {
+        let mut moves = crate::occurrence::moves(output, pattern);
         moves.sort_unstable();
         if moves.binary_search(&(0, 0)).is_ok() {
             in_place += weight;
@@ -698,7 +645,7 @@ fn occurrences(view: &mut View<'_>, pos: &Pos, color: Option<usize>) {
             elsewhere += weight;
         }
         // A one-cell pattern is its own image under every turn and reflection.
-        if !moves.is_empty() || (pattern.len() > 1 && occurs_turned_images(pattern, output)) {
+        if !moves.is_empty() || (pattern.len() > 1 && each_turned_image(pattern, extent_of(pattern), false, |_, image| !crate::occurrence::moves(output, image).is_empty())) {
             turned += weight;
         }
         common = Some(match common {

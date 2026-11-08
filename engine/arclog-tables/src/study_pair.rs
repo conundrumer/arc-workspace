@@ -29,6 +29,9 @@ pub mod prefix;
 #[path = "study_judgement.rs"]
 mod judgement;
 
+#[path = "study_form_memo.rs"]
+pub mod form_memo;
+
 
 /// Per-session study budget: 16 workers share the pipeline's 8 GiB memory
 /// alert allowance. Callers can explicitly choose another session bound.
@@ -45,10 +48,14 @@ pub const TABLE_ROW_WORK:u64=1<<28;
 /// heap count it reads depends on the session's history.
 pub const TABLE_BYTES:usize=4<<30;
 
-/// The limits of [`gold_tables_cached_in`]: no clock, whatever deadline the
+/// The limits of [`gold_tables_cached_in`]: a request that begins now, under the
+/// request work cap of `settings`, with no clock, whatever deadline the
 /// settings hold, so that the rows of a table do not depend on machine load.
-pub fn table_limits()->arclog::eval::Limits {
-    arclog::eval::Limits::new(None,arclog::eval::Cancellation::default()).bound_by(arclog::session::SessionBound {bytes:TABLE_BYTES})
+/// The request's work sums the queries, the walks and the packing of the
+/// call, so the call stops at the cap where the work of its tables passes it,
+/// on whatever table that is.
+pub fn table_limits(settings:&DecodeSettings)->arclog::eval::Limits {
+    settings.operation_limits().bound_by(arclog::session::SessionBound {bytes:TABLE_BYTES})
 }
 
 /// A stop in `tables`, in rows, projections or extents, at a bound that `at` takes.
@@ -131,6 +138,9 @@ pub struct PairCache {
     held: Option<HeldProgram>,
     prefix: Option<PrefixMemo>,
     columns: Option<(Vec<u32>,crate::columns::CaseColumnPrefix)>,
+    /// The walks of tables that the programs of the task share. A case's end
+    /// does not release them ([`form_memo::FormMemo`]).
+    forms: form_memo::FormMemo,
     source: Option<(Arc<CheckedProgram>,Arc<arclog::stream::WrittenStream>)>,
     pub compact: bool,
     cache_bytes: usize,
@@ -215,9 +225,24 @@ impl Default for PairCache { fn default()->Self {Self::new(false)} }
 impl PairCache {
     pub fn new(compact:bool)->Self {Self::with_byte_bound(compact,STUDY_SESSION_BYTES)}
     pub fn with_byte_bound(compact:bool,bytes:usize)->Self {
-        Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),held:None,prefix:None,columns:None,source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
+        Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),held:None,prefix:None,columns:None,forms:form_memo::FormMemo::new(bytes/4),source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
     }
     pub fn set_observation_start(&mut self,sequence:u64) {self.sequence=sequence;}
+    /// The bytes that the native prefix and the packed prefix may hold: the admission budget less the walks of tables that the form cache holds.
+    fn pair_room(&self)->usize {self.cache_bytes.saturating_sub(self.forms.bytes())}
+    /// Change the most bytes that the form cache holds, which is a quarter of the session bound by default.
+    pub fn set_form_cache_bytes(&mut self,bytes:usize) {self.forms.set_bound(bytes);}
+    /// Whether the walks of tables are kept from one program to the next.
+    pub fn set_form_cache(&mut self,on:bool) {self.forms.set_on(on);}
+    /// Release the kept walks of tables.
+    pub fn clear_form_cache(&mut self) {self.forms.clear();}
+    /// The work count of the request that the calls after this one belong to
+    /// ([`form_memo::FormMemo::set_request_work`]).
+    pub fn set_request_work(&mut self,work:Option<TableWork>) {self.forms.set_request_work(work);}
+    pub fn form_cache_stats(&self)->Value {
+        let stats=self.forms.stats();
+        json!({"entries":stats.entries,"bytes":stats.bytes,"bound_bytes":self.forms.bound(),"hits":stats.hits,"kept":stats.kept,"bypassed":stats.bypassed,"skipped":stats.skipped,"cheap":stats.cheap,"overflow":stats.overflow,"declined":stats.declined,"evicted":stats.evicted,"lost":stats.lost,"mismatch":stats.mismatch,"refused":stats.refused,"walk_seconds":stats.walk_seconds,"replay_seconds":stats.replay_seconds,"saved_seconds":stats.saved_seconds,"keep_seconds":stats.keep_seconds})
+    }
     /// End a case even when ingestion or a pair faults. Release allocations,
     /// including hash-map capacities, rather than leaving them at task high-water.
     /// Observation sequence numbers remain unique within the evaluator.
@@ -250,7 +275,7 @@ impl PairCache {
         for (_,table) in &tables {if let Ok(c)=&table.contents {for ex in &c.examples {if let Ok(a)=&ex.rows {for (_,models) in &a.at {for model in models {if let RelationValue::Rows(r)=model {
             bytes=bytes.saturating_add(usize::try_from(r.len()).unwrap_or(usize::MAX).saturating_mul(usize::from(r.arity()).saturating_mul(8)+16));
         }}}}}}}
-        if bytes<=self.cache_bytes {
+        if bytes<=self.pair_room() {
             self.prefix=Some(PrefixMemo {key,tables,row_bytes:bytes});
         }
     }
@@ -265,7 +290,7 @@ impl PairCache {
         }}}
         bytes
     }
-    pub fn stats(&self)->Value {json!({"assignment_receipt_bytes_estimate":self.assignment_receipt_bytes(),"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"gold_entries":self.gold.len(),"prefix_entries":usize::from(self.prefix.is_some()),"prefix_bytes_estimate":self.prefix.as_ref().map_or(0,|memo|memo.row_bytes),"prefix_hits":self.prefix_hits,"column_prefix_entries":usize::from(self.columns.is_some()),"column_prefix_bytes":self.columns.as_ref().map_or(0,|(_,columns)|columns.retained_bytes()),"cache_byte_bound":self.cache_bytes})}
+    pub fn stats(&self)->Value {json!({"assignment_receipt_bytes_estimate":self.assignment_receipt_bytes(),"gold_hits":self.gold_hits,"gold_body_hits":self.gold_body_hits,"gold_body_entries":self.gold_bodies.len(),"gold_relation_entries":self.gold_relations.len(),"gold_entries":self.gold.len(),"prefix_entries":usize::from(self.prefix.is_some()),"prefix_bytes_estimate":self.prefix.as_ref().map_or(0,|memo|memo.row_bytes),"prefix_hits":self.prefix_hits,"column_prefix_entries":usize::from(self.columns.is_some()),"column_prefix_bytes":self.columns.as_ref().map_or(0,|(_,columns)|columns.retained_bytes()),"cache_byte_bound":self.cache_bytes,"form_cache":self.form_cache_stats()})}
 }
 
 fn fault(message: impl Into<Box<str>>, form: &NodePath) -> RunFault {
@@ -293,20 +318,29 @@ fn source_stream(program:&StudyProgram,decoder:&Decoder<'_>,cache:&PairCache)->O
 /// The tables of `form` of `program`, after the tables `earlier`, with the
 /// stops of a table's rows that `skipping` holds where it is given: then a
 /// table's rows count under [`TABLE_ROW_WORK`].
-fn form_relations(program:&StudyProgram,written:&arclog::stream::WrittenStream,form:&arclog::stream::write::WrittenForm,skipping:Option<&TooLarge>,decoder:&Decoder<'_>,earlier:&[&Table])->Outcome<Vec<(usize,Table)>> {
+fn form_relations(program:&StudyProgram,written:&arclog::stream::WrittenStream,form:&arclog::stream::write::WrittenForm,skipping:Option<&TooLarge>,decoder:&Decoder<'_>,earlier:&[&Table],mut memo:Option<(&mut form_memo::FormMemo,&form_memo::TopHashes<'_>)>)->Outcome<Vec<(usize,Table)>> {
     let checked=program.checked();
     let mut held:Vec<(usize,Table)>=Vec::new();
+    let mut outputs:Vec<String>=Vec::new();
     for slot in materialized_slots(program.program().value(),written,form) {
         let declared=&written.relations[slot];
         let relation=graph_relation(checked,decoder.registry(),&form.path,declared).ok_or_else(||fault("the graph holds no node for a relation the form declares",&form.path))?;
         let dets=relation_dets(checked,relation.node);
-        let work=if skipping.is_some() {TableWork::new(TABLE_ROW_WORK)} else {decoder.query_work()};
-        let examples=match skipping {
-            Some(too_large)=>relation_examples_skipping(decoder,checked,&relation,&dets,&work,too_large),
-            None=>relation_examples(decoder,checked,&relation,&dets,&work),
+        let work=if skipping.is_some() {TableWork::counted_as(TABLE_ROW_WORK,arclog::eval::Gauge::StudyRowWork,&decoder.request_work())} else {decoder.query_work()};
+        let output=output_name(program.program().value(),&form.path,declared);
+        let ordinal=outputs.iter().filter(|seen|**seen==output).count();
+        outputs.push(output.clone());
+        let examples=match (skipping,memo.as_mut()) {
+            (Some(too_large),Some((memo,tops)))=>{
+                let probe=form_memo::Probe {checked,tops:*tops,form:&form.path,output:&output,ordinal,dets:&dets};
+                let (_,session,_)=decoder.evaluation_inputs();
+                memo.examples(&probe,session,too_large,&work,||relation_examples_skipping(decoder,checked,&relation,&dets,&work,too_large))
+            }
+            (Some(too_large),None)=>relation_examples_skipping(decoder,checked,&relation,&dets,&work,too_large),
+            (None,_)=>relation_examples(decoder,checked,&relation,&dets,&work),
         };
         let contents=contents(decoder,checked,&form.path,&relation,slot as u32,&dets,examples).map(|c| {
-            let c=Contents {name:relation_spelled(declared),output_name:output_name(program.program().value(),&form.path,declared),keys:checked.program.column_keys(relation.node),..c};
+            let c=Contents {name:relation_spelled(declared),output_name:output,keys:checked.program.column_keys(relation.node),..c};
             let seen=earlier.iter().copied().chain(held.iter().map(|(_,t)|t)).collect::<Vec<_>>();
             made(decoder,&seen,checked,&relation,c)
         });
@@ -344,6 +378,8 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
         }
     }
     let too_large=TooLarge::default();
+    let source_text=until.is_none().then(||program.sexp(decoder.registry()));
+    let hashes=form_memo::TopHashes::new(checked,source_text.as_deref().map(top_level_forms));
     let (_,session,_)=decoder.evaluation_inputs();
     let mut starts=Vec::new();
     for form in forms.iter().skip(start) {
@@ -353,11 +389,11 @@ fn original_relations(program:&StudyProgram,written:&arclog::stream::WrittenStre
             session.results.mark(top as u32);
         }
         let seen=tables.iter().map(|(_,t)|t).collect::<Vec<_>>();
-        let held=form_relations(program,written,form,until.is_none().then_some(&too_large),decoder,&seen)?;
+        let held=form_relations(program,written,form,until.is_none().then_some(&too_large),decoder,&seen,until.is_none().then(||(&mut cache.forms,&hashes)))?;
         tables.extend(held);
     }
     if until.is_none() && start==0 {
-        let source=program.sexp(decoder.registry());
+        let source=source_text.unwrap_or_default();
         cache.held=Some(HeldProgram {
             key:Arc::as_ptr(checked) as usize,
             checked:Arc::clone(checked),
@@ -871,14 +907,13 @@ fn gold_observation_report(gold:&StudyProgram,session:&TaskSession,settings:&Dec
         "fits_contract":"native closed-world TRAIN candidate-set comparison; no TEST Fit verdict",
         "settings":{"deadline_seconds":settings.deadline.map(|d|d.as_secs_f64()),
             "table_work_cap":settings.table_work_cap,"projection_cap":settings.projection_cap,
-            "rule_tests":settings.rule_tests,"grids_at_model_cap":settings.grids_at_model_cap,"check_copies":settings.check_copies,
-            "proposer_tokens":settings.proposer_tokens,"type_domain_proposers":settings.type_domain_proposers,
+            "rule_tests":settings.rule_tests,"check_copies":settings.check_copies,
             "vocabulary":{"relations":settings.vocabulary.relations,"columns":settings.vocabulary.columns,"labels":settings.vocabulary.labels},
             "caps":{"bindings":session.caps.bindings,"rows":session.caps.rows,"models":session.caps.models,
                 "nodes":session.caps.nodes,"assignments":session.caps.assignments},"session_bytes":session.bound.bytes},
         "program_provenance":{"program_sexp":gold.sexp(Registry::get()),"stream":null},
         "assignment_contract":"kept_assignments are ordered native full-program DET choices; raw rows and relation names use the existing pair encoding; Undefined DETs may have no assigned value and are listed separately",
-        "bound_scope":"one operation deadline; per-evaluation binding and row caps for the native gold walk; cached observations retain their original completion/stop"});
+        "bound_scope":"one operation request work cap; per-evaluation binding and row caps for the native gold walk; cached observations retain their original completion/stop"});
     let stream=match gold.decode_stream(Registry::get(),settings) {
         Ok(stream)=>stream,
         Err(reason)=>{report["reason"]=json!(reason);return report;}
@@ -1081,7 +1116,7 @@ fn evaluate_pair_inner(
     result.report["table_indices"] = json!({"gold_all":g,"gold_kept":g+1,"mutant_all":m,"mutant_kept":m+1,"note":"indices include the two evidence tables; each kept assignment can have multiple native models per example; use the kept assignment maps"});
     result.report["gold_kept_assignment_map"] = component_tables::assignment_map(&result.gold[g-1..],g+1,task.train.len());
     result.report["mutant_kept_assignment_map"] = component_tables::assignment_map(&result.mutant[m-1..],m+1,task.train.len());
-    let comparison_work = TableWork::new(settings.table_work_cap);
+    let comparison_work = TableWork::counted_as(settings.table_work_cap, arclog::eval::Gauge::PairComparisons, &limits.request);
     result.report["comparisons"] = comparisons(
         &result.gold[g - 2].1,
         &result.mutant[m - 2].1,
@@ -1163,7 +1198,7 @@ pub fn evaluate_pair_cached(gold:&StudyProgram,point:&MutationPoint,mutant:&Vali
 /// Full native relation tables, evaluated once per gold handle in this task
 /// session. Faults and work-cap stops are cached as observations too.
 pub fn gold_tables_cached(gold:&StudyProgram,task:&Task,session:&TaskSession,constructions:&Constructions,settings:&DecodeSettings,cache:&mut PairCache)->(Value,Vec<(usize,Table)>) {
-    let limits=table_limits();
+    let limits=table_limits(settings);
     gold_tables_cached_in(gold,task,session,constructions,settings,cache,&limits)
 }
 
@@ -1237,7 +1272,7 @@ pub fn form_tables(program:&StudyProgram,form:usize,task:&Task,session:&TaskSess
         let mut result:Outcome<()>=Ok(());
         for written_form in written.forms.iter().filter(|written_form|(same..=form).contains(&top_of(written_form))) {
             let seen=earlier.iter().copied().chain(made.iter().map(|(_,table)|table)).collect::<Vec<_>>();
-            match form_relations(program,&written,written_form,Some(&too_large),&decoder,&seen) {
+            match form_relations(program,&written,written_form,Some(&too_large),&decoder,&seen,None) {
                 Ok(tables)=>made.extend(tables),
                 Err(fault)=>{result=Err(fault);break},
             }
@@ -1257,7 +1292,7 @@ pub fn form_tables(program:&StudyProgram,form:usize,task:&Task,session:&TaskSess
     let mut made:Vec<(usize,Table)>=Vec::new();
     for written_form in written.forms.iter().filter(|written_form|top_of(written_form)<=form) {
         let seen=made.iter().map(|(_,table)|table).collect::<Vec<_>>();
-        match form_relations(program,&written,written_form,Some(&too_large),&decoder,&seen) {
+        match form_relations(program,&written,written_form,Some(&too_large),&decoder,&seen,None) {
             Ok(tables)=>made.extend(tables),
             Err(fault)=>return finish(Err(fault),"full",form+1),
         }
@@ -1288,7 +1323,7 @@ pub fn pair_side_columns_cached(materializer:&arclog::eval::join::Materializer<'
     // The packed fold includes nested string/vector capacities and its
     // run-interning metadata, not just the values buffer.
     let native_prefix_bytes=cache.prefix.as_ref().map_or(0,|memo|memo.row_bytes);
-    if prefix.is_complete() && prefix.retained_bytes().saturating_add(native_prefix_bytes)<=cache.cache_bytes {
+    if prefix.is_complete() && prefix.retained_bytes().saturating_add(native_prefix_bytes)<=cache.pair_room() {
         let columns=prefix.finish(materializer,&tables[split..],train);
         if let Some(columns)=columns {
             cache.columns=Some((key.clone(),prefix));columns

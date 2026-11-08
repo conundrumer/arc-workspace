@@ -29,7 +29,8 @@ This contract gives the types of the sample data and the invariants that every i
 - A **feature vector** is the one input vector that a learned model reads. [Structure of the search](../feature-spec/structure.md#maps) gives its content.
 - A **training instance** is one feature vector with its label, as a fit reads it. [Training instances](training-instances.md) gives the writer's.
 - A **fit** is any step that sets, from data, the parameters of the learned model or of another learned function, or a statistic that one of them uses.
-- Other words stand for these and are not used: definition, function, form, clause and line (for a query); node (for a parameterized table); world (for an assignment); walk (for a state sequence); given table (for a base table); row (for a training instance or a feature vector); and a bare row, model or example.
+- An **experimental condition** is one setting of a run that a measurement compares. An **engine build** is the engine and its bindings built from one commit. A **patched code version** is a copy of the search and writer code with changes that a run imports. A **sampled query** is a query that the search's writer wrote in a run.
+- Other words stand for these and are not used: definition, function, form, clause and line (for a query); node (for a parameterized table); world (for an assignment); walk (for a state sequence); given table (for a base table); row (for a training instance, a feature vector or an entry of a summary); arm (for an experimental condition); site (for an engine build); overlay (for a patched code version); draw (for a sampled query); and a bare row, point, model or example. A code name stands in text only where it names that code.
 
 ## Levels
 

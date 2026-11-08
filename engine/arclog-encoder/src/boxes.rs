@@ -7,16 +7,17 @@
 //! in the grid where the columns are the relation's, and otherwise from a union of boxes per
 //! tuple of the relation's columns. An operator that keeps rows whole, over the relation's
 //! columns, keeps the relation's rows, and gives boxes again. A `select` that compares the cell
-//! column or the color column writes only the pairs of a row and a cell that pass, up to
-//! `CELL_CAP` cells. Any other operator reads the rows written out, once, up to `CELL_CAP`
-//! cells.
+//! column or the color column writes only the pairs of a row and a cell that pass. Any other
+//! operator reads the rows written out, once. A write that passes the walker's budget of cells for
+//! one term ([`walk_cells`]) gives no value.
 
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::gen_constants::{box_bits, margins_of};
 use crate::gen_parts::GridView;
 use crate::expression::Op;
-use crate::native::{all, antijoin, hash_words, holds, project, select, semijoin, Cell, FastMap, Step, Table, Val, CELL_CAP};
+use crate::generate::walk_cells;
+use crate::native::{all, antijoin, hash_words, holds, project, select, semijoin, Cell, FastMap, Step, Table, Val};
 
 /// Marks the hash of a [`Boxes`], which no other value's hash has.
 const BOXES_WORD: u64 = 0x426f_7865_7352_6f77;
@@ -36,7 +37,7 @@ pub struct Boxes {
     rows: u64,
     /// The rows of the relation whose box has a cell in the grid.
     support: OnceLock<Arc<Table>>,
-    /// The rows of `inside`, once written: no value where they pass `CELL_CAP` cells.
+    /// The rows of `inside`, once written: no value where they pass one term's budget of cells.
     written: OnceLock<Val>,
     /// The tables of `sketch`, by their columns, and the cells that they hold.
     sketches: Mutex<(usize, FastMap<Box<[u16]>, Option<Arc<Table>>>)>,
@@ -114,20 +115,22 @@ impl Boxes {
         }).clone()
     }
 
-    /// Whether the rows of `inside` can be written out, in at most `CELL_CAP` cells.
+    /// Whether the rows of `inside` can be written out, in at most one term's budget of cells.
     pub fn fits(&self) -> bool {
-        self.rows.saturating_mul(self.table.arity as u64 + 2) <= CELL_CAP as u64
+        self.rows.saturating_mul(self.table.arity as u64 + 2) <= walk_cells() as u64
     }
 
-    /// The rows of `inside` written out, or no value where they pass `CELL_CAP` cells.
+    /// The rows of `inside` written out, or no value where they pass one term's budget of cells.
     pub fn written(&self) -> Val {
         let held = self.written.get_or_init(|| {
+            let started = crate::bounds::started();
             let value = self.write();
             crate::native::lazy_wrote(&value);
+            crate::bounds::wrote("rows", crate::native::cells_of(&value), started);
             value
         });
         if matches!(held, Val::None) {
-            crate::bounds::mark(crate::bounds::Bound::InsideCells);
+            crate::bounds::mark(crate::bounds::Bound::Walk);
         }
         held.clone()
     }
@@ -187,7 +190,7 @@ impl Boxes {
         self.sketch(columns)
     }
 
-    /// The distinct tuples of the rows of `inside` at `columns`, as rows of the arity of `inside` with 0 at each other column: no value where they pass `CELL_CAP` cells. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
+    /// The distinct tuples of the rows of `inside` at `columns`, as rows of the arity of `inside` with 0 at each other column: no value where they pass one term's budget of cells. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
     fn sketch(&self, columns: &[u16]) -> Option<Arc<Table>> {
         let mut key: Vec<u16> = columns.to_vec();
         key.sort_unstable();
@@ -197,7 +200,9 @@ impl Boxes {
         let built = match held {
             Some(built) => built,
             None => {
+                let started = crate::bounds::started();
                 let built = self.build_sketch(&key);
+                crate::bounds::wrote("tuples", built.as_ref().map_or(0, |table| table.cells.len()), started);
                 let mut kept = self.sketches.lock().expect("a sketch lock");
                 let cells = built.as_ref().map_or(0, |table| table.cells.len());
                 if kept.0 + cells <= SKETCH_KEPT {
@@ -208,7 +213,7 @@ impl Boxes {
             }
         };
         if built.is_none() {
-            crate::bounds::mark(crate::bounds::Bound::InsideCells);
+            crate::bounds::mark(crate::bounds::Bound::Walk);
         }
         built
     }
@@ -277,7 +282,7 @@ impl Boxes {
             };
             let held = cells_of(&union);
             if want_p {
-                if (out.len() / arity + held.len()).saturating_mul(arity) > CELL_CAP {
+                if (out.len() / arity + held.len()).saturating_mul(arity) > walk_cells() {
                     return None;
                 }
                 for place in held {
@@ -293,7 +298,7 @@ impl Boxes {
                 colors.extend(held.iter().map(|place| grid.colors[*place]));
                 colors.sort_unstable();
                 colors.dedup();
-                if (out.len() / arity + colors.len()).saturating_mul(arity) > CELL_CAP {
+                if (out.len() / arity + colors.len()).saturating_mul(arity) > walk_cells() {
                     return None;
                 }
                 for color in &colors {
@@ -322,7 +327,7 @@ impl Boxes {
         second_columns(step).is_some()
     }
 
-    /// The relation that `step` reads in place of these boxes as its second relation, where `reads_second` holds of it: no value where the rows pass `CELL_CAP` cells.
+    /// The relation that `step` reads in place of these boxes as its second relation, where `reads_second` holds of it: no value where the rows pass one term's budget of cells.
     pub fn read_second(&self, step: &Step) -> Option<Val> {
         let columns = second_columns(step)?;
         Some(self.rows_at(&columns).map_or(Val::None, Val::of_table))
@@ -366,7 +371,7 @@ impl Boxes {
         Boxes::of(&table, moved, self.grid.clone(), self.grid_hash)
     }
 
-    /// The rows of `inside` that pass a `select`, written out: no value where they pass `CELL_CAP` cells. A row of the relation passes with the cells of its box that the comparison keeps. A comparison of the cell column with a column of the relation keeps one cell at most, which is found from the box's extent.
+    /// The rows of `inside` that pass a `select`, written out: no value where they pass one term's budget of cells. A row of the relation passes with the cells of its box that the comparison keeps. A comparison of the cell column with a column of the relation keeps one cell at most, which is found from the box's extent.
     fn select_pairs(&self, at: u16, op: Op, other: Option<u16>, drop: Option<u16>) -> Val {
         let grid = &self.grid;
         let width = usize::from(self.width());
@@ -380,6 +385,7 @@ impl Boxes {
         let on_cells = left.is_cell() || right.is_cell();
         let drop = drop.map(usize::from);
         let box_at = usize::from(self.at);
+        let started = crate::bounds::started();
         let mut out: Vec<Cell> = Vec::new();
         let mut line: Vec<Cell> = vec![0; arity];
         for row in self.support().rows() {
@@ -435,11 +441,13 @@ impl Boxes {
                     }
                 }
             }
-            if out.len() > CELL_CAP {
-                crate::bounds::mark(crate::bounds::Bound::InsideCells);
+            if out.len() > walk_cells() {
+                crate::bounds::mark(crate::bounds::Bound::Walk);
+                crate::bounds::wrote("pairs", out.len(), started);
                 return Val::None;
             }
         }
+        crate::bounds::wrote("pairs", out.len(), started);
         let arity = arity - usize::from(drop.is_some());
         let sorted = out.chunks_exact(arity).is_sorted_by(|a, b| a < b);
         Val::of_table(if sorted { Table::new(arity, out) } else { Table::distinct(arity, out) })

@@ -152,13 +152,20 @@ impl CanonicalOrder {
     pub fn try_canonical_path(&self, source: &NodePath) -> Option<NodePath> {
         let mut canonical = Vec::with_capacity(source.0.len());
         for (depth, step) in source.0.iter().enumerate() {
-            let mapped = match self.lists.get(&NodePath(source.0[..depth].into())) {
+            let mapped = match self.lists.get(&source.0[..depth]) {
                 Some(order) => PathStep(order.iter().position(|&index| index == step.0)? as u32),
                 None => *step,
             };
             canonical.push(mapped);
         }
         Some(NodePath(canonical.into()))
+    }
+
+    /// The labels of the scope whose form stands at `scope`, a source path
+    /// relative to the form, each with its canonical position, and `None`
+    /// where the form holds no such scope.
+    pub fn labels_of(&self, scope: &NodePath) -> Option<&[(LabelId, u32)]> {
+        self.labels.get(scope).map(|labels| &labels[..])
     }
 
     /// The canonical position of `label` of the scope whose form stands at

@@ -356,25 +356,16 @@ impl Names {
 
     /// The canonical order of the top-level form at `path` of `program`
     /// through the resolver's writer, and the form it writes (the form of
-    /// [`Names::form_content`] before any kept columns). Under
-    /// `ARCLOG_DEMONSTRATED`, a demonstrated form records its
-    /// outer scope alone. Otherwise it has no order, as for a path that
-    /// names no top-level form.
+    /// [`Names::form_content`] before any kept columns). A `DEMONSTRATED`
+    /// form has no order, as a path that names no top-level form has none.
     pub(super) fn order(&self, program: &Node<Program>, path: &NodePath) -> Option<(CanonicalOrder, CanonicalForm)> {
         let [top] = &path.0[..] else { return None };
         let form = program.value().forms.get(top.0 as usize)?;
-        if matches!(form, Form::Demonstrated(_)) && !super::demonstrated_on() {
+        if matches!(form, Form::Demonstrated(_)) {
             return None;
         }
         let at = At::of(program, path)?;
         let writer = Writer { names: self, scope: &at.scope, own: at.own.as_ref() };
-        let outer;
-        let form = if let Form::Demonstrated(demonstrated) = form {
-            outer = Form::Demonstrated(Node::new(Demonstrated { rules: Arc::from([]), ..demonstrated.value().clone() }));
-            &outer
-        } else {
-            form
-        };
         Some(CanonicalOrder::with_names(form, &writer, &mut SearchBudget::new()))
     }
 

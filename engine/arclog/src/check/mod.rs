@@ -40,7 +40,7 @@ pub mod zero;
 
 use std::sync::{Arc, Mutex};
 
-use crate::eval::ir::{compile_body, ClauseIr, CompileFault, CompiledBody, IrPaths};
+use crate::eval::ir::{compile_body_in, ClauseIr, CompileFault, CompiledBody, IrPaths, NodeOrder};
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{canonical_form, CanonicalForm, CanonicalOrder, CanonicalWriter, SearchBudget};
@@ -530,9 +530,9 @@ pub type AssemblyClause = (Arc<ClauseIr>, Arc<IrPaths>);
 /// gives, kept per argument on the first ask.
 #[derive(Debug, Default)]
 struct Derived {
-    /// The result of [`crate::eval::ir::compile_body`] for each clause path
-    /// and kept conjuncts.
-    bodies: Mutex<StableHashMap<(NodePath, Box<[u32]>), Result<Arc<CompiledBody>, CompileFault>>>,
+    /// The result of [`crate::eval::ir::compile_body_in`] for each clause
+    /// path, kept conjuncts and order of the nodes.
+    bodies: Mutex<StableHashMap<(NodePath, Box<[u32]>, NodeOrder), Result<Arc<CompiledBody>, CompileFault>>>,
     /// The clause of an `INIT` form's input, or of its key where the name
     /// is `None`, with the paths of its nodes and the count of its key
     /// columns, as the evaluator compiles it.
@@ -550,11 +550,24 @@ struct Derived {
 
 impl CheckedProgram {
     /// The result of `compile_body` for the conjuncts at `kept` of the body
-    /// of the clause at `clause`, compiled on the first ask.
+    /// of the clause at `clause`, compiled on the first ask, with the nodes
+    /// in the order the conjuncts are written.
     pub fn compiled_body(&self, clause: &NodePath, kept: &[u32]) -> Result<Arc<CompiledBody>, CompileFault> {
-        let key = (clause.clone(), Box::<[u32]>::from(kept));
+        self.compiled_body_in(clause, kept, NodeOrder::Written)
+    }
+
+    /// The body that the evaluator joins for the conjuncts at `kept` of the
+    /// body of the clause at `clause`: as [`CheckedProgram::compiled_body`],
+    /// with the nodes in canonical order, compiled on the first ask. Its
+    /// paths and conjuncts stand in the same order.
+    pub fn joined_body(&self, clause: &NodePath, kept: &[u32]) -> Result<Arc<CompiledBody>, CompileFault> {
+        self.compiled_body_in(clause, kept, NodeOrder::Canonical)
+    }
+
+    fn compiled_body_in(&self, clause: &NodePath, kept: &[u32], order: NodeOrder) -> Result<Arc<CompiledBody>, CompileFault> {
+        let key = (clause.clone(), Box::<[u32]>::from(kept), order);
         let mut memo = self.derived.bodies.lock().expect("a memo that no panic poisoned");
-        memo.entry(key).or_insert_with(|| compile_body(self, clause, kept).map(Arc::new)).clone()
+        memo.entry(key).or_insert_with(|| compile_body_in(self, clause, kept, order).map(Arc::new)).clone()
     }
 
     /// The clause of the input `input` of the `INIT` form at `form`, or of

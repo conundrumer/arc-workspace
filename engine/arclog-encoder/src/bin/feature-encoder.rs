@@ -7,6 +7,7 @@
 //!   feature-encoder names [--size D] [--limit N] [--max-inputs N] [--program-relations] [--out FILE]
 //!   feature-encoder vector SOLVER TABLE [--size D] [--wide-size D] [--shapes FILE] --out FILE
 //!   feature-encoder shape-check SOLVER... --sample N [--seed S] [--max-tables K] [--size D] [--out FILE]
+//!   feature-encoder cap-hits SOLVER... [--size D] [--max-tables K] --out FILE
 //!   feature-encoder base-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder query-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder state-vectors SOLVER [--size D] --out FILE
@@ -17,6 +18,7 @@
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
 //!   feature-encoder refine-check TABLES_FILE [--size D]
 //!   feature-encoder time-heads TABLES_FILE... [--size D]
+//!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N]
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
 //!   feature-encoder family-names TYPE,TYPE,... [--size D]
 //!   feature-encoder refine-explain CALL ARITY KEY_BITS
@@ -408,6 +410,11 @@ fn names_of(store: &arclog_encoder::generate::NameStore) -> std::collections::Ha
 /// The shapes of a file, one per line. A line whose first field, up to a tab, is up to 16 hex digits with or
 /// without `0x` gives a hash, as the names file writes them. Any other line is a shape's text.
 fn read_shape_list(path: &std::path::Path) -> Result<arclog_encoder::generate::ShapeList, String> {
+    Ok(arclog_encoder::generate::ShapeList::new(read_shape_hashes(path)?))
+}
+
+/// The hashes of a file's shapes, in the file's order (see [`read_shape_list`]).
+fn read_shape_hashes(path: &std::path::Path) -> Result<Vec<u64>, String> {
     use arclog_encoder::generate::ShapeList;
     let text = arclog_encoder::zio::read_text(path)?;
     let mut hashes = Vec::new();
@@ -420,7 +427,7 @@ fn read_shape_list(path: &std::path::Path) -> Result<arclog_encoder::generate::S
         let hash = if digits.len() <= 16 { u64::from_str_radix(digits, 16).ok() } else { None };
         hashes.push(hash.unwrap_or_else(|| ShapeList::hash_of_text(line.trim())));
     }
-    Ok(ShapeList::new(hashes))
+    Ok(hashes)
 }
 
 /// The CPU seconds that this thread has used.
@@ -885,7 +892,7 @@ fn run_term_counts(arguments: &Arguments, pattern: &str, file: &str) -> Result<(
     let empty = Vec::new();
     for item in data["items"].as_array().unwrap_or(&empty) {
         let Some(stored) = Stored::of_json(&item["gold"], train, 0) else { continue };
-        if stored.types.len() > 8 {
+        if stored.types.len() > arclog_encoder::generate::MAX_COLUMNS {
             continue;
         }
         let family = families.get(&stored, arguments.size.max(1));
@@ -1133,7 +1140,7 @@ fn run_generate_check(arguments: &Arguments, every: usize, file: &str) -> Result
             break;
         }
         let Some(stored) = Stored::of_json(item, train, 0) else { continue };
-        if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
+        if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
             continue;
         }
         let task = arclog::task::read_task(&arguments.tasks.join(format!("{task_name}.json"))).map_err(|error| format!("{error:?}"))?;
@@ -1239,7 +1246,7 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
         }
         let Evaluated::Value(value) = host.relation(name, false) else { continue };
         let [at] = value.at.as_slice() else { continue };
-        if value.types.is_empty() || value.types.len() > 8 || value.types.iter().any(|ty| *ty == arclog::types::ValueType::Example) || value.row_names.iter().any(|column| column == "T") {
+        if value.types.is_empty() || value.types.len() > arclog_encoder::generate::MAX_COLUMNS || value.types.iter().any(|ty| *ty == arclog::types::ValueType::Example) || value.row_names.iter().any(|column| column == "T") {
             continue;
         }
         let mut rows: Vec<Vec<Vec<Vec<u32>>>> = vec![Vec::new(); train];
@@ -1266,7 +1273,43 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
             let label = &value.row_names[*at];
             labels.iter().position(|held| held == label).map_or_else(|| label.clone(), |place| schema.columns[place].name.clone())
         }).collect();
+        if std::env::var_os("GENERATE_FAMILY_SIZES").is_some() && std::env::var("GENERATE_ONLY_TABLE").is_ok_and(|only| only != *name) {
+            continue;
+        }
         let family = if std::env::var_os("GENERATE_CHECK_ONE_GROUP").is_some() { Generated::one_group_with_names(&stored.types, &names, arguments.size.max(1), &store) } else { Generated::with_column_names(&stored.types, &names, arguments.size.max(1), &store) };
+        // With GENERATE_FAMILY_SIZES, a line of sizes for each table in place of its check. GENERATE_KEEP_TEXT gives the counts of product and project terms.
+        // GENERATE_ONLY_TABLE names the one table to size, and GENERATE_FAMILY_WALK also walks its family on the train pairs, for the seconds, the active entries and whether the walk passed its bound.
+        if std::env::var_os("GENERATE_FAMILY_SIZES").is_some() {
+            let (count, first) = family.counts();
+            let (mut products, mut projects) = (0usize, 0usize);
+            for at in first..count {
+                let text = family.term_info(at).0;
+                products += usize::from(text.starts_with("(product "));
+                projects += usize::from(text.starts_with("(project T "));
+            }
+            let words: Vec<String> = stored.types.iter().map(|ty| if matches!(ty, arclog::types::ValueType::Ident(_)) { "Ident".to_string() } else { format!("{ty:?}") }).collect();
+            println!("sizes\t{name}\tcolumns {}\ttypes {}\tterms {}\troots {}\tproduct terms {products}\tproject-of-T terms {projects}", stored.types.len(), words.join(","), count - first, family.roots);
+            if std::env::var_os("GENERATE_FAMILY_WALK").is_some() {
+                let example_of: Vec<usize> = (0..train).collect();
+                let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
+                let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
+                let mut walker = arclog_encoder::generate::Walker::new(&family);
+                let started = Instant::now();
+                let found = walker.walk(&leaves, train, false);
+                let (mut active, mut check) = (0usize, 0u64);
+                for (hash, at) in &found.index {
+                    let at = *at as usize * found.stride;
+                    let live = &found.slots[at..at + found.stride];
+                    active += usize::from(live.iter().any(|slot| slot.state != 0));
+                    // A sum over the entries, so the order of the index does not matter.
+                    for (instance, slot) in live.iter().enumerate().filter(|(_, slot)| slot.state != 0) {
+                        check = check.wrapping_add(((*hash as u64) ^ slot.digest.rotate_left(instance as u32)).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (u64::from(slot.state) << 56) ^ u64::from(slot.undefined));
+                    }
+                }
+                println!("walk\t{name}\tseconds {:.1}\tactive entries {active}\tdigest {check:016x}\tpast the bound {}", started.elapsed().as_secs_f64(), walker.over_budget);
+            }
+            continue;
+        }
         let example_of: Vec<usize> = (0..train).collect();
         let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
         let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
@@ -1343,7 +1386,20 @@ fn run_atom_lists(arguments: &Arguments, input: &str, out: &str) -> Result<(), S
     arclog_encoder::atom_lists::run(std::path::Path::new(input), std::path::Path::new(out), &arguments.tasks, &families, arguments.size.max(1), &orders, &orient, arguments.threads, idle)
 }
 
-/// Where a walk's time goes, over tables of stored files: `time-heads FILE... --size D`. Each schema has one walker, as a run has. It prints each term head's terms, evaluations, those that
+/// The `shapes` records of a task's tables from their stored rows: `shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N]`. ROWS_FILE holds a line `{"hash": HEX, "table": T}` for each table, with `T` as `stored_of`
+/// reads it. With `--shapes`, the records hold the listed shapes alone, in the file's order. It prints a line of counts.
+fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) -> Result<(), String> {
+    let only = match &arguments.shapes {
+        Some(path) => Some(read_shape_hashes(path)?),
+        None => None,
+    };
+    let families = arclog_encoder::generate::Generators::default();
+    let summary = arclog_encoder::shapes_refresh::run(std::path::Path::new(rows), std::path::Path::new(out), &arguments.tasks, task, only.as_deref(), arguments.threads, &families)?;
+    eprintln!("{summary}");
+    Ok(())
+}
+
+/// Where a walk's time goes, over tables of stored files: `time-heads FILE... --size D`. It needs GENERATE_KEEP_TEXT=1, since a family drops its terms' text otherwise, and it also prints each table's 20 slowest terms, 30 in all. With TIME_TASK naming a task, each FILE is instead a rows file of that task, as `shapes-refresh` reads it. Each schema has one walker, as a run has. It prints each term head's terms, evaluations, those that
 /// gave rows, and time, and each table's time. With TIME_TABLES, at most that many tables of a file. With TIME_SHAPES naming a file of `gain<TAB>shape` lines, it then times only those
 /// shapes and the terms they read, with a new walker per table, and prints each shape's gain and its share of that time.
 fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String> {
@@ -1366,27 +1422,43 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
     let mut heads: BTreeMap<String, [u64; 4]> = BTreeMap::new();
     let mut table_times: Vec<(f64, usize, usize, usize)> = Vec::new();
     let mut chosen_times: Vec<(f64, usize, usize)> = Vec::new();
+    // The 20 terms of each table that took longest: nanoseconds, evaluations, those that gave rows, and the text.
+    let mut slowest_terms: Vec<(u64, u32, u32, String)> = Vec::new();
     let mut shape_time: Vec<f64> = vec![0.0; wanted.len()];
     let mut shape_seen: Vec<u64> = vec![0; wanted.len()];
     let mut families: HashMap<String, Generated> = HashMap::new();
+    // With TIME_TASK, each file is a rows file of that task (see `shapes-refresh`) in place of a file of items.
+    let rows_task = std::env::var("TIME_TASK").ok();
     for file in files {
-        let data: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(file)?).map_err(|error| error.to_string())?;
-        let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
-        let train = data["train"].as_u64().ok_or("a file's train")? as usize;
-        let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
-        let items: Vec<serde_json::Value> = data["items"].as_array().unwrap_or(&empty).iter().flat_map(|item| {
-            let mut out = vec![item["gold"].clone()];
-            out.extend(item["mutants"].as_array().unwrap_or(&empty).iter().map(|mutant| mutant["table"].clone()));
-            out
-        }).collect();
+        let text = arclog_encoder::zio::read_text(file)?;
+        let (train, grids, mut tables): (usize, Grids, Box<dyn Iterator<Item = Option<Stored>>>) = match &rows_task {
+            Some(task_name) => {
+                let (task, grids) = Grids::of_file(&arguments.tasks, task_name, None)?;
+                let (train, test) = (task.train.len(), task.test.len());
+                let lines: Vec<serde_json::Value> = text.lines().filter(|line| !line.trim().is_empty()).map(|line| serde_json::from_str(line).map_err(|error| error.to_string())).collect::<Result<_, _>>()?;
+                (train, grids, Box::new(lines.into_iter().map(move |line| arclog_encoder::atom_lists::stored_of(&line["table"], train, test, &HashMap::new()).ok().flatten())))
+            }
+            None => {
+                let data: serde_json::Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+                let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
+                let train = data["train"].as_u64().ok_or("a file's train")? as usize;
+                let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
+                let items: Vec<serde_json::Value> = data["items"].as_array().unwrap_or(&empty).iter().flat_map(|item| {
+                    let mut out = vec![item["gold"].clone()];
+                    out.extend(item["mutants"].as_array().unwrap_or(&empty).iter().map(|mutant| mutant["table"].clone()));
+                    out
+                }).collect();
+                (train, grids, Box::new(items.into_iter().map(move |item| Stored::of_json(&item, train, 0))))
+            }
+        };
         let mut seen: HashSet<u128> = HashSet::new();
         let mut taken = 0;
-        for item in &items {
+        for stored in &mut tables {
             if taken >= limit {
                 break;
             }
-            let Some(stored) = Stored::of_json(item, train, 0) else { continue };
-            if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
+            let Some(stored) = stored else { continue };
+            if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
                 continue;
             }
             taken += 1;
@@ -1398,7 +1470,13 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
             let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
             let mut walker = Walker::new(family);
             let times = walker.timed_terms(&leaves, train, None);
+            if count > first && family.term_info(first).0.is_empty() {
+                return Err("the family keeps no term text: run `time-heads` with GENERATE_KEEP_TEXT=1".to_string());
+            }
             let mut total = 0;
+            let mut costly: Vec<(u64, usize)> = times.iter().enumerate().take(count).skip(first).map(|(at, time)| (time.0, at)).collect();
+            costly.sort_unstable_by(|a, b| b.cmp(a));
+            slowest_terms.extend(costly.iter().take(20).map(|(nanos, at)| (*nanos, times[*at].1, times[*at].2, family.term_info(*at).0.to_string())));
             for (at, (nanos, evals, gave)) in times.iter().enumerate().take(count).skip(first) {
                 let text = family.term_info(at).0;
                 let head = text.trim_start_matches('(').split(' ').next().unwrap_or("").to_string();
@@ -1464,6 +1542,13 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
     for (head, held) in order {
         println!("{head}\t{}\t{}\t{}\t{:.0}\t{:.3}\t{:.0}", held[0], held[1], held[2], held[3] as f64 / 1000.0, held[3] as f64 / whole.max(1) as f64, held[3] as f64 / held[1].max(1) as f64);
     }
+    slowest_terms.sort_by(|a, b| b.0.cmp(&a.0));
+    if !slowest_terms.is_empty() {
+        println!("term\tmicroseconds\tshare\tevaluations\twith rows\ttext");
+        for (nanos, evals, gave, text) in slowest_terms.iter().take(30) {
+            println!("term\t{:.0}\t{:.4}\t{evals}\t{gave}\t{text}", *nanos as f64 / 1000.0, *nanos as f64 / whole.max(1) as f64);
+        }
+    }
     table_times.sort_by(|a, b| a.0.total_cmp(&b.0));
     if !table_times.is_empty() {
         let at = |share: f64| table_times[((table_times.len() - 1) as f64 * share) as usize];
@@ -1515,7 +1600,7 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
             break;
         }
         let Some(stored) = Stored::of_json(item, train, 0) else { continue };
-        if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
+        if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
             continue;
         }
         let other = if two_tables {
@@ -1693,7 +1778,7 @@ fn run_shape_count(arguments: &Arguments, files: &[String]) -> Result<(), String
         let mut seen: BTreeSet<u128> = BTreeSet::new();
         for item in data["items"].as_array().unwrap_or(&empty) {
             let Some(stored) = Stored::of_json(&item["gold"], train, 0) else { continue };
-            if stored.types.is_empty() || stored.types.len() > 8 || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
+            if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
                 continue;
             }
             let family = families.get(&stored, arguments.size.max(1));
@@ -2065,6 +2150,110 @@ fn run_serve_lists(arguments: &Arguments) -> Result<(), String> {
     Ok(())
 }
 
+/// The lines of a file of an earlier run that a restart reads, or none where the file does not stand.
+fn earlier_lines(path: &std::path::Path) -> Vec<serde_json::Value> {
+    arclog_encoder::zio::read_text(path).map(|text| text.lines().filter_map(|line| serde_json::from_str(line).ok()).collect()).unwrap_or_default()
+}
+
+/// For each table of each solver, one full walk at each assignment, and the terms that a bound stopped, with the bound.
+/// A line holds shape texts and bound names, and no value. The run needs `GENERATE_COUNT_BOUNDS=1` and `GENERATE_KEEP_TEXT=1`.
+/// A line `{"task", "table", "start"}` comes before a table's walks and `{"task", "table", "done"}` after them, so that a restart
+/// skips the tables that are done and those that a stopped run began and did not finish.
+fn run_cap_hits(arguments: &Arguments, solvers: &[String]) -> Result<(), String> {
+    use arclog_encoder::generate::{Generators, Walker};
+    use arclog_encoder::table_vector::{table_vector, Grids};
+    if !arclog_encoder::bounds::enabled() || std::env::var_os("GENERATE_KEEP_TEXT").is_none() {
+        return Err("`cap-hits` needs GENERATE_COUNT_BOUNDS=1 and GENERATE_KEEP_TEXT=1".to_string());
+    }
+    let path = arguments.out.clone().ok_or("`cap-hits` writes to --out")?;
+    let shapes = arguments.shapes.as_ref().map(|path| read_shape_list(path)).transpose()?;
+    let earlier = earlier_lines(&path);
+    let started: HashSet<(String, String)> = earlier.iter().filter(|line| line.get("start").is_some()).map(|line| (line["task"].as_str().unwrap_or("").to_string(), line["table"].as_str().unwrap_or("").to_string())).collect();
+    let task_done: HashSet<String> = earlier.iter().filter(|line| line.get("task_done").is_some()).map(|line| line["task"].as_str().unwrap_or("").to_string()).collect();
+    let mut out = arclog_encoder::zio::writer(&path, true)?;
+    let size = arguments.size.max(1);
+    let walk_bit = arclog_encoder::bounds::bit_of(arclog_encoder::bounds::Bound::Walk);
+    for solver in solvers {
+        if task_done.contains(solver) {
+            continue;
+        }
+        let prepared = host(arguments, solver).and_then(|host| Grids::of_file(&arguments.tasks, solver, None).map(|(_, grids)| (host, grids)));
+        let (host, grids) = match prepared {
+            Ok(held) => held,
+            Err(message) => {
+                writeln!(out, "{}", serde_json::json!({"task": solver, "task_done": true, "error": message})).map_err(|error| error.to_string())?;
+                continue;
+            }
+        };
+        let examples = grids.inputs.len();
+        let families = Generators::default();
+        let mut skipped = 0usize;
+        for (identity, spelled) in host.program_facts().table_names.iter().take(arguments.max_tables) {
+            if started.contains(&(solver.clone(), identity.clone())) {
+                skipped += 1;
+                continue;
+            }
+            writeln!(out, "{}", serde_json::json!({"task": solver, "table": identity, "start": true})).map_err(|error| error.to_string())?;
+            out.flush().map_err(|error| error.to_string())?;
+            let Ok(tables) = arclog_encoder::run::stored_tables(&host, spelled) else {
+                writeln!(out, "{}", serde_json::json!({"task": solver, "table": identity, "done": 0, "error": "no table"})).map_err(|error| error.to_string())?;
+                continue;
+            };
+            for (at, (_, stored)) in tables.at.iter().enumerate() {
+                let family = families.get(stored, size);
+                arclog_encoder::gen_parts::clear_views();
+                let begun = thread_cpu_seconds();
+                let mut walker = Walker::new(&family);
+                let vector = table_vector(&mut walker, stored, &grids, examples, false);
+                let seconds = thread_cpu_seconds() - begun;
+                let (hits, cells) = arclog_encoder::bounds::take_term_hits();
+                let shape = |term: u32| family.term_shape(term as usize, &stored.types).unwrap_or_default();
+                let listed: Vec<serde_json::Value> = hits.iter().filter(|(_, bits)| bits & !walk_bit != 0).map(|(term, bits)| serde_json::json!([shape(*term), arclog_encoder::bounds::names_of_bits(bits & !walk_bit)])).collect();
+                let walk_skipped: Vec<u32> = hits.iter().filter(|(_, bits)| bits & walk_bit != 0).map(|(term, _)| *term).collect();
+                let mut top: Vec<(u32, u64)> = cells;
+                top.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+                top.truncate(12);
+                let top: Vec<serde_json::Value> = top.iter().map(|(term, count)| serde_json::json!([shape(*term), count])).collect();
+                let types: Vec<String> = stored.types.iter().map(|ty| format!("{:?}", ty.without_source())).collect();
+                // With --shapes: each listed shape that the vector holds, with the examples where it has a value, the examples where a bound stopped it, and the distinct values.
+                let mut listed_shapes: Vec<serde_json::Value> = Vec::new();
+                if let Some(list) = &shapes {
+                    let mut names: Option<std::collections::HashMap<u64, String>> = None;
+                    for (place, hash) in vector.shapes.iter().enumerate() {
+                        if !list.contains(*hash) {
+                            continue;
+                        }
+                        let slots = vector.at(place);
+                        let valued = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SLOT_VALUE).count();
+                        let stopped = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SLOT_NO_VALUE).count();
+                        if valued == 0 && stopped == 0 {
+                            continue;
+                        }
+                        let distinct = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SLOT_VALUE).map(|slot| slot.digest).collect::<HashSet<_>>().len();
+                        let names = names.get_or_insert_with(|| names_of(&families.names));
+                        listed_shapes.push(serde_json::json!([names.get(hash), valued, stopped, distinct, vector.scope(place)]));
+                    }
+                }
+                let line = serde_json::json!({
+                    "task": solver, "table": identity, "assignment": at, "types": types, "keys": stored.keys, "terms": family.counts().0, "seconds": seconds,
+                    "over_budget": vector.over_budget, "table_rows_max": vector.table_rows.1, "hits": listed,
+                    "walk_skipped": walk_skipped.len(), "first_walk_skip": walk_skipped.first().map(|term| shape(*term)), "cells": top,
+                    "listed_shapes": listed_shapes,
+                });
+                writeln!(out, "{line}").map_err(|error| error.to_string())?;
+                out.flush().map_err(|error| error.to_string())?;
+            }
+            writeln!(out, "{}", serde_json::json!({"task": solver, "table": identity, "done": tables.at.len(), "capped": tables.capped})).map_err(|error| error.to_string())?;
+            out.flush().map_err(|error| error.to_string())?;
+        }
+        writeln!(out, "{}", serde_json::json!({"task": solver, "task_done": true, "skipped_tables": skipped})).map_err(|error| error.to_string())?;
+        out.flush().map_err(|error| error.to_string())?;
+    }
+    // The summary lists, per head, the cells and the seconds of the writes of `inside` cells.
+    eprint!("{}", arclog_encoder::bounds::summary());
+    Ok(())
+}
+
 fn main() {
     let arguments = arguments();
     let command = arguments.positional.first().map(String::as_str).unwrap_or_default();
@@ -2080,6 +2269,7 @@ fn main() {
         ("names", []) => run_names(&arguments),
         ("vector", [solver, table]) => run_vector(&arguments, solver, table),
         ("shape-check", solvers) if !solvers.is_empty() => run_shape_check(&arguments, solvers),
+        ("cap-hits", solvers) if !solvers.is_empty() => run_cap_hits(&arguments, solvers),
         ("base-vectors", [solver]) => run_base_vectors(&arguments, solver),
         ("query-vectors", [solver]) => run_query_vectors(&arguments, solver),
         ("state-vectors", [solver]) => run_state_vectors(&arguments, solver),
@@ -2098,6 +2288,7 @@ fn main() {
         ("refine-check", [file]) => run_refine_check(&arguments, file),
         ("time-heads", files) => run_time_heads(&arguments, files),
         ("atom-lists", [input, out]) => run_atom_lists(&arguments, input, out),
+        ("shapes-refresh", [rows, task, out]) => run_shapes_refresh(&arguments, rows, task, out),
         ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
         ("grid-values", [grids]) => run_grid_values(&arguments, grids),

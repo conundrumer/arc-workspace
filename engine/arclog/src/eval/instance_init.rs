@@ -138,12 +138,14 @@ pub fn evaluate_instance<'a>(
         let (groups, group_inputs) = grouped_inputs(evaluation, &shape, key.as_deref(), &inputs).map_err(&fault)?;
         let outputs = construct(budget, &groups, &group_inputs)?;
         record_whole(budget, outputs.iter().map(|(_, value)| value));
+        // Each output's entry costs what the construction charged: a request that reads one output makes the others.
+        let cost = if store { evaluation.limits.request.spent() } else { Default::default() };
         let mut found = None;
         for (output, value) in outputs {
             if output == *asked {
                 found = Some(value);
             } else if let Some(content) = store.then(|| program.node_content(output.node)).flatten() {
-                cache::store(session, &entry.request(&content, example), &value);
+                cache::store(session, &entry.request(&content, example), &value, cost);
             }
         }
         Ok(found.expect("the value of each output of the instance"))

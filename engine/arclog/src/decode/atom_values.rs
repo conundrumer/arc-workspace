@@ -982,7 +982,7 @@ impl<'a> Decoder<'a> {
             let mut outer: Vec<Variable> = plan.sites.iter().filter_map(|&(_, argument)| match argument { PlanArgument::Column(column) => Some(Variable(column)), _ => None }).collect();
             outer.sort_by_key(|variable| variable.0);
             outer.dedup();
-            let body = ClauseIr { variables: plan.variables.clone(), nodes: Box::new([node]), columns: Box::new([]) };
+            let body = ClauseIr::new(plan.variables.clone(), Box::new([node]), Box::new([]));
             nodes.push(IrNode::Not(Filter { outer: outer.into(), body: Box::new(body) }));
             inputs.push(NodeInput::Clauses(Box::new([JoinInputs(Box::new([input]))])));
         } else {
@@ -990,7 +990,7 @@ impl<'a> Decoder<'a> {
             nodes.push(node);
             inputs.push(input);
         }
-        let clause = ClauseIr { variables: plan.variables.clone(), nodes: nodes.into(), columns: joined_columns.into() };
+        let clause = ClauseIr::new(plan.variables.clone(), nodes.into(), joined_columns.into());
         let inputs = JoinInputs(inputs.into());
         let order = plan::variable_order(&clause, &join::sizes(&clause, &inputs), &[]);
         let all: Vec<usize> = (0..clause.nodes.len()).collect();
@@ -1025,7 +1025,11 @@ fn trie_reading(relation: &Relation, plan: &AtomPlan, group_place: &dyn Fn(u16) 
         _ => None,
     }));
     let order = ColumnOrder(sites.iter().map(|(column, _)| *column).collect());
-    (relation.index(&order), sites.into_iter().map(|(_, level)| level).collect())
+    // No budget stands here, so the rows of a build wait for the next charge of the request.
+    // They count at each use, whether or not the relation held the index.
+    let (index, _) = relation.index_built(&order);
+    crate::eval::RequestWork::note_unbilled(index.walked());
+    (index, sites.into_iter().map(|(_, level)| level).collect())
 }
 
 /// The node of an index at the values that `levels`, none of them a made label, give at `values`.

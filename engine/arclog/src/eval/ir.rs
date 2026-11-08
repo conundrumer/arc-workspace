@@ -9,7 +9,9 @@
 //! content. [`crate::eval::filters`] compiles `NOT`, `ALL`, `IF` and `OR`
 //! through [`IrBuilder`].
 
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use crate::check::CheckedProgram;
 use crate::hash::StableHashSet;
@@ -126,10 +128,47 @@ pub struct Filter {
 /// variables it exports to the enclosing clause, which every branch binds.
 /// A branch's columns are the variables it shares with the enclosing
 /// clause, those it exports included.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+///
+/// The branches stand in the order they are written, which the relation of
+/// the union lists its rows in. The evaluator searches them in
+/// [`Union::canonical`], so that the work of a union follows its content. The
+/// equality and the hash of a union hold its exports and branches, and not
+/// that order.
+#[derive(Clone, Debug)]
 pub struct Union {
     pub exported: Box<[Variable]>,
     pub branches: Box<[ClauseIr]>,
+    /// The index of the branch at each place of the canonical order of the
+    /// branches: the order of their canonical paths in the program's
+    /// canonical form.
+    pub canonical: Box<[u32]>,
+}
+
+impl PartialEq for Union {
+    fn eq(&self, other: &Self) -> bool {
+        self.exported == other.exported && self.branches == other.branches
+    }
+}
+
+impl Eq for Union {}
+
+impl Hash for Union {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.exported.hash(state);
+        self.branches.hash(state);
+    }
+}
+
+impl Union {
+    /// The index of each branch, in the canonical order of the branches.
+    pub fn in_canonical_order(&self) -> impl Iterator<Item = usize> + '_ {
+        self.canonical.iter().map(|&index| index as usize)
+    }
+
+    /// Whether the canonical order of the branches is the order written.
+    pub fn is_written_order(&self) -> bool {
+        self.canonical.iter().zip(0u32..).all(|(&index, at)| index == at)
+    }
 }
 
 /// One node of a clause.
@@ -149,11 +188,168 @@ pub enum IrNode {
 
 /// A clause: its variables, its nodes, and the variables its relation
 /// holds as columns, in the order of the relation's columns.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+///
+/// The nodes of a clause stand in the order of the conjuncts as written, which
+/// the readers of the IR follow, or, in a clause that a compile in canonical
+/// order gives, in the canonical order of the conjuncts. The evaluator joins
+/// a clause in its canonical order, [`ClauseIr::in_canonical_order`], so that
+/// its work is a function of the clause's content. The equality and the hash
+/// of a clause hold its variables, nodes and columns, and neither of the two
+/// orders.
+#[derive(Clone, Debug)]
 pub struct ClauseIr {
     pub variables: Box<[VariableInfo]>,
     pub nodes: Box<[IrNode]>,
     pub columns: Box<[Variable]>,
+    /// The place of each node in the canonical order of the conjuncts that
+    /// the nodes compile, by the node's index: the order of the conjuncts'
+    /// canonical paths in the program's canonical form.
+    pub canonical: Box<[u32]>,
+    /// The index of each node in the clause as written, by the node's index.
+    /// A clause in canonical order holds there the places its nodes had.
+    pub written: Box<[u32]>,
+    /// This clause in canonical order, made on the first use of
+    /// [`ClauseIr::in_canonical_order`]; none where the nodes stand in it.
+    /// The fields above are fixed from the first use on.
+    joined: Joined,
+}
+
+/// The clause that [`ClauseIr::in_canonical_order`] gives, which the clause
+/// holds. A clone of a clause holds none.
+#[derive(Debug, Default)]
+struct Joined(OnceLock<Option<Box<ClauseIr>>>);
+
+impl Clone for Joined {
+    fn clone(&self) -> Self {
+        Joined::default()
+    }
+}
+
+impl PartialEq for ClauseIr {
+    fn eq(&self, other: &Self) -> bool {
+        self.variables == other.variables && self.nodes == other.nodes && self.columns == other.columns
+    }
+}
+
+impl Eq for ClauseIr {}
+
+impl Hash for ClauseIr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.variables.hash(state);
+        self.nodes.hash(state);
+        self.columns.hash(state);
+    }
+}
+
+/// Whether the driver prints, to the standard error, one line for each clause
+/// whose evaluation did work: `arclog-join-measure form=<path> nodes=<n>
+/// work=<n> ns=<n>`. The work and the time include those of the clauses it
+/// reads. `ARCLOG_JOIN_MEASURE` set to a value other than `0` or empty, read
+/// once. It changes no result.
+pub fn measures() -> bool {
+    static MEASURES: OnceLock<bool> = OnceLock::new();
+    *MEASURES.get_or_init(|| std::env::var("ARCLOG_JOIN_MEASURE").is_ok_and(|value| !value.is_empty() && value != "0"))
+}
+
+impl ClauseIr {
+    /// A clause whose nodes stand in the order they are given, which is also
+    /// the order they are joined in.
+    pub fn new(variables: Box<[VariableInfo]>, nodes: Box<[IrNode]>, columns: Box<[Variable]>) -> Self {
+        let identity: Box<[u32]> = (0..nodes.len() as u32).collect();
+        ClauseIr { variables, nodes, columns, canonical: identity.clone(), written: identity, joined: Joined::default() }
+    }
+
+    /// Whether the nodes stand in canonical order, here and in each clause
+    /// nested in them.
+    fn is_canonical(&self) -> bool {
+        self.canonical.iter().zip(0u32..).all(|(&place, at)| place == at) && self.nodes.iter().all(IrNode::is_canonical)
+    }
+
+    /// The index of the node at each place of the canonical order.
+    fn canonical_nodes(&self) -> Vec<usize> {
+        let mut at: Vec<usize> = (0..self.nodes.len()).collect();
+        at.sort_by_key(|&node| self.canonical[node]);
+        at
+    }
+
+    /// This clause with its nodes in canonical order, and the clauses nested
+    /// in them likewise: the clause the evaluator joins. Two clauses of one
+    /// content, whose conjuncts are written in two orders, give one clause.
+    /// The relation's columns, and so its rows and their columns, are those of
+    /// this clause. The clause is made on the first call and kept; a clause
+    /// whose nodes stand in canonical order gives itself.
+    pub fn in_canonical_order(&self) -> &ClauseIr {
+        self.joined.0.get_or_init(|| (!self.is_canonical()).then(|| Box::new(self.reordered()))).as_deref().unwrap_or(self)
+    }
+
+    fn reordered(&self) -> ClauseIr {
+        let at = self.canonical_nodes();
+        ClauseIr {
+            variables: self.variables.clone(),
+            nodes: at.iter().map(|&node| self.nodes[node].in_canonical_order()).collect(),
+            columns: self.columns.clone(),
+            canonical: (0..at.len() as u32).collect(),
+            written: at.iter().map(|&node| self.written[node]).collect(),
+            joined: Joined::default(),
+        }
+    }
+
+    /// This clause with the union at node `at` replaced by the nodes of its
+    /// `branch`, which stand where the union stood, in the canonical order
+    /// among themselves.
+    pub fn splice(&self, at: usize, branch: &ClauseIr) -> ClauseIr {
+        let mut parts: Vec<((u32, u32), IrNode)> = Vec::with_capacity(self.nodes.len() + branch.nodes.len());
+        for (index, node) in self.nodes.iter().enumerate() {
+            if index == at {
+                parts.extend(branch.nodes.iter().zip(branch.canonical.iter()).map(|(inner, &place)| ((self.canonical[at], place), inner.clone())));
+            } else {
+                parts.push(((self.canonical[index], 0), node.clone()));
+            }
+        }
+        let mut places: Vec<usize> = (0..parts.len()).collect();
+        places.sort_by_key(|&part| parts[part].0);
+        let mut canonical = vec![0u32; parts.len()];
+        for (place, &part) in places.iter().enumerate() {
+            canonical[part] = place as u32;
+        }
+        let written: Box<[u32]> = (0..parts.len() as u32).collect();
+        let nodes: Box<[IrNode]> = parts.into_iter().map(|(_, node)| node).collect();
+        ClauseIr { variables: self.variables.clone(), nodes, columns: self.columns.clone(), canonical: canonical.into(), written, joined: Joined::default() }
+    }
+}
+
+impl IrNode {
+    /// Whether the clauses nested in the node stand in canonical order.
+    fn is_canonical(&self) -> bool {
+        match self {
+            IrNode::Not(filter) | IrNode::Counterexample(filter) => filter.body.is_canonical(),
+            IrNode::Or(union) => union.branches.iter().all(ClauseIr::is_canonical),
+            IrNode::Atom(RelationAtom { source: AtomSource::Key(key), .. }) => key.clause.is_canonical(),
+            _ => true,
+        }
+    }
+
+    /// This node with the clauses nested in it in canonical order. The
+    /// branches of a union stand in the order they are written: the rows of
+    /// the union are listed in that order.
+    fn in_canonical_order(&self) -> IrNode {
+        let filter = |filter: &Filter| Filter { outer: filter.outer.clone(), body: Box::new(filter.body.reordered()) };
+        match self {
+            IrNode::Not(inner) => IrNode::Not(filter(inner)),
+            IrNode::Counterexample(inner) => IrNode::Counterexample(filter(inner)),
+            IrNode::Or(union) => IrNode::Or(Union {
+                exported: union.exported.clone(),
+                branches: union.branches.iter().map(ClauseIr::reordered).collect(),
+                canonical: union.canonical.clone(),
+            }),
+            IrNode::Atom(RelationAtom { source: AtomSource::Key(key), train_only, arguments }) => IrNode::Atom(RelationAtom {
+                source: AtomSource::Key(Box::new(KeyRead { form: key.form.clone(), clause: key.clause.reordered() })),
+                train_only: *train_only,
+                arguments: arguments.clone(),
+            }),
+            other => other.clone(),
+        }
+    }
 }
 
 /// What a node of a clause stands on in the program text.
@@ -213,14 +409,26 @@ pub struct IrBuilder<'a> {
     /// serves takes.
     pub compiled: Rc<Compiled>,
     /// The canonical order of the top-level form that holds `form`.
-    order: CanonicalOrder,
+    order: &'a CanonicalOrder,
+    /// Whether [`IrBuilder::finish`] puts the nodes in canonical order, with
+    /// their paths, and not in the order the conjuncts are written.
+    pub(super) canonical_order: bool,
     variables: Vec<VariableInfo>,
     nodes: Vec<IrNode>,
     /// The label of each variable.
     labels: Vec<LabelId>,
     /// The paths of each node of `nodes`.
     paths: Vec<NodePaths>,
+    /// The canonical path of the conjunct that each node of `nodes`
+    /// compiles, which gives the node its place in the canonical order.
+    keys: Vec<Vec<u32>>,
+    /// The canonical path of the conjunct being compiled, or [`AFTER`].
+    current: Vec<u32>,
 }
+
+/// The key of a node that stands after the nodes of every conjunct: a node
+/// that a filter or a branch adds beside its conjuncts.
+const AFTER: [u32; 1] = [u32::MAX];
 
 impl<'a> IrBuilder<'a> {
     /// A builder over the body of the form at `form` of `program`, for a
@@ -232,17 +440,17 @@ impl<'a> IrBuilder<'a> {
         let order = CanonicalOrder::of(top, &mut SearchBudget::new());
         let scope = NodePath(scope.into());
         let types = form_types(program, &form);
-        let labels = order.label_scopes().into_iter().find(|(path, _)| *path == scope).map(|(_, labels)| labels.to_vec());
-        let mut variables = vec![None; labels.as_ref().map_or(0, Vec::len)];
+        let labels = order.labels_of(&scope).unwrap_or_default();
+        let mut variables = vec![None; labels.len()];
         let mut held = vec![None; variables.len()];
-        for (label, position) in labels.into_iter().flatten() {
+        for &(label, position) in labels {
             let ty = types.label(label).ok_or(CompileFault::Untyped { label })?.clone();
             variables[position as usize] = Some(VariableInfo { ty });
             held[position as usize] = Some(label);
         }
         let variables = variables.into_iter().map(|info| info.expect("a label at each canonical position")).collect();
         let labels = held.into_iter().map(|label| label.expect("a label at each canonical position")).collect();
-        Ok(IrBuilder { program, form, compiled, order: order.clone(), variables, nodes: Vec::new(), labels, paths: Vec::new() })
+        Ok(IrBuilder { program, form, compiled, order, canonical_order: false, variables, nodes: Vec::new(), labels, paths: Vec::new(), keys: Vec::new(), current: AFTER.to_vec() })
     }
 
     /// The variable of `label`: its canonical position in the form's scope.
@@ -256,6 +464,23 @@ impl<'a> IrBuilder<'a> {
     pub fn push(&mut self, node: IrNode, paths: NodePaths) {
         self.nodes.push(node);
         self.paths.push(paths);
+        self.keys.push(self.current.clone());
+    }
+
+    /// Adds `node` to the clause ahead of the nodes of every conjunct in the
+    /// canonical order.
+    fn push_first(&mut self, node: IrNode, paths: NodePaths) {
+        self.nodes.push(node);
+        self.paths.push(paths);
+        self.keys.push(Vec::new());
+    }
+
+    /// The canonical path of the node at `path`, a path in the program,
+    /// below the form, as the steps of its path.
+    pub(super) fn key_of(&self, path: &NodePath) -> Vec<u32> {
+        let relative = NodePath(path.0.get(1..).unwrap_or_default().into());
+        let placed = self.order.try_canonical_path(&relative).unwrap_or(relative);
+        placed.0.iter().map(|step| step.0).collect()
     }
 
     /// Compiles the conjuncts of `body` at `path` into the clause: its atoms
@@ -268,8 +493,17 @@ impl<'a> IrBuilder<'a> {
         Ok(())
     }
 
-    /// Compiles one conjunct at `path`.
+    /// Compiles one conjunct at `path`. Its nodes stand at the conjunct's
+    /// place in the canonical order of the body's conjuncts.
     pub(super) fn conjunct(&mut self, conjunct: &Conjunct, path: &NodePath) -> Result<(), CompileFault> {
+        let key = self.key_of(path);
+        let outer = std::mem::replace(&mut self.current, key);
+        let compiled = self.compile_conjunct(conjunct, path);
+        self.current = outer;
+        compiled
+    }
+
+    fn compile_conjunct(&mut self, conjunct: &Conjunct, path: &NodePath) -> Result<(), CompileFault> {
         match conjunct {
             Conjunct::Atom(atom) => {
                 let node = self.atom(atom.value(), path);
@@ -361,11 +595,33 @@ impl<'a> IrBuilder<'a> {
     }
 
     /// The clause, whose relation holds `columns`, with the paths of its
-    /// nodes.
+    /// nodes: in the order of the conjuncts as written, or, where
+    /// [`IrBuilder::canonical_order`] holds, in their canonical order, each
+    /// node and its paths moved to its place.
     pub fn finish(self, columns: Box<[Variable]>) -> (ClauseIr, IrPaths) {
-        let paths = IrPaths { labels: self.labels.into(), nodes: self.paths.into() };
-        (ClauseIr { variables: self.variables.into(), nodes: self.nodes.into(), columns }, paths)
+        let mut at: Vec<usize> = (0..self.nodes.len()).collect();
+        at.sort_by(|&a, &b| self.keys[a].cmp(&self.keys[b]));
+        let count = at.len() as u32;
+        let (nodes, paths, canonical, written): (Vec<IrNode>, Vec<NodePaths>, Vec<u32>, Vec<u32>) = if self.canonical_order {
+            let written = at.iter().map(|&node| node as u32).collect();
+            (moved(self.nodes, &at), moved(self.paths, &at), (0..count).collect(), written)
+        } else {
+            let mut canonical = vec![0u32; at.len()];
+            for (place, &node) in at.iter().enumerate() {
+                canonical[node] = place as u32;
+            }
+            (self.nodes, self.paths, canonical, (0..count).collect())
+        };
+        let paths = IrPaths { labels: self.labels.into(), nodes: paths.into() };
+        (ClauseIr { variables: self.variables.into(), nodes: nodes.into(), columns, canonical: canonical.into(), written: written.into(), joined: Joined::default() }, paths)
     }
+}
+
+/// `items` moved to the order of `at`, the index in `items` of each item of
+/// the result.
+fn moved<T>(items: Vec<T>, at: &[usize]) -> Vec<T> {
+    let mut slots: Vec<Option<T>> = items.into_iter().map(Some).collect();
+    at.iter().map(|&index| slots[index].take().expect("each item once")).collect()
 }
 
 /// The types of the labels of the scope at `form`.
@@ -458,12 +714,30 @@ pub struct CompiledBody {
     pub columns: Box<[LabelId]>,
 }
 
+/// The order of the nodes that a compile gives.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum NodeOrder {
+    /// The order of the conjuncts as written, which the readers of the IR
+    /// follow.
+    Written,
+    /// The canonical order of the conjuncts, in which the evaluator joins.
+    /// Each node stands with its paths and its conjunct at its place, in the
+    /// clause and in each clause nested in it, and [`ClauseIr::written`]
+    /// holds the index it had in the order written.
+    Canonical,
+}
+
 /// The IR of the conjuncts at `kept`, as [`compile_conjuncts`] gives it,
 /// with the conjunct of each node and the label of each column.
 pub fn compile_body(program: &CheckedProgram, clause: &NodePath, kept: &[u32]) -> Result<CompiledBody, CompileFault> {
+    compile_body_in(program, clause, kept, NodeOrder::Written)
+}
+
+/// [`compile_body`], with the nodes in `order`.
+pub fn compile_body_in(program: &CheckedProgram, clause: &NodePath, kept: &[u32], order: NodeOrder) -> Result<CompiledBody, CompileFault> {
     let (body, body_path, columns) = form_body(program, clause);
     let conjuncts = kept.iter().map(|&index| (&body.conjuncts[index as usize], body_path.child(index))).collect();
-    let mapped = compile_mapped(program, clause, None, conjuncts, &columns)?;
+    let mapped = compile_mapped(program, clause, None, conjuncts, &columns, order)?;
     Ok(CompiledBody { clause: mapped.clause, paths: mapped.paths, conjuncts: mapped.of_node.into_iter().map(|at| kept[at]).collect(), columns: mapped.columns })
 }
 
@@ -571,7 +845,7 @@ pub fn compile_query(
     conjuncts: Vec<(&Conjunct, NodePath)>,
     columns: &[LabelId],
 ) -> Result<(ClauseIr, IrPaths), CompileFault> {
-    compile_mapped(program, form, key, conjuncts, columns).map(|mapped| (mapped.clause, mapped.paths))
+    compile_mapped(program, form, key, conjuncts, columns, NodeOrder::Written).map(|mapped| (mapped.clause, mapped.paths))
 }
 
 /// What [`compile_mapped`] gives.
@@ -594,6 +868,7 @@ fn compile_mapped(
     key: Option<(KeyRead, IrPaths, &[LabelId])>,
     conjuncts: Vec<(&Conjunct, NodePath)>,
     columns: &[LabelId],
+    order: NodeOrder,
 ) -> Result<Mapped, CompileFault> {
     let scope = scope_of(program, form);
     let types = form_types(program, &scope);
@@ -619,10 +894,11 @@ fn compile_mapped(
         columns: columns.into(),
     };
     let mut builder = IrBuilder::new(program, scope, Rc::new(compiled))?;
+    builder.canonical_order = order == NodeOrder::Canonical;
     let mut of_node = Vec::new();
     if let Some((read, key_paths, labels)) = key {
         let arguments = labels.iter().zip(0u16..).map(|(&label, column)| (ColumnIndex(column), Argument::Variable(builder.variable(label)))).collect();
-        builder.push(IrNode::Atom(RelationAtom { source: AtomSource::Key(Box::new(read)), train_only: false, arguments: Arguments(arguments) }), NodePaths::Key(Box::new(key_paths)));
+        builder.push_first(IrNode::Atom(RelationAtom { source: AtomSource::Key(Box::new(read)), train_only: false, arguments: Arguments(arguments) }), NodePaths::Key(Box::new(key_paths)));
         of_node.push(0);
     }
     for (at, (conjunct, path)) in conjuncts.iter().enumerate() {
@@ -632,6 +908,7 @@ fn compile_mapped(
     let labels: Box<[LabelId]> = columns.iter().copied().filter(|label| held.contains(label)).collect();
     let column_variables = labels.iter().map(|&label| builder.variable(label)).collect();
     let (clause, paths) = builder.finish(column_variables);
+    let of_node = if order == NodeOrder::Canonical { clause.written.iter().map(|&node| of_node[node as usize]).collect() } else { of_node };
     Ok(Mapped { clause, paths, of_node, columns: labels })
 }
 

@@ -234,9 +234,10 @@ impl Decoder<'_> {
     /// once for each shape of an atom ([`Shapes`]), and each later atom of that
     /// shape takes the verdict. The walk asks at most `limit` times.
     pub fn candidate_atoms(&self, limit: usize) -> CandidateAtoms {
+        let _request = self.begin_request();
         let mut found = CandidateAtoms::default();
         let vocabulary = self.vocabulary();
-        let mut tokens = Tokens { opening: Vec::new(), not: None, columns: Vec::new(), values: Vec::new(), closing: Vec::new(), end: None, ascending_after_site: Vec::new(), settings: { let settings = &self.context.settings; format!("{:?}", (settings.proposer_tokens, settings.type_domain_proposers, &settings.vocabulary, &settings.caps, settings.check_copies, settings.rule_tests, settings.static_pruning, settings.grids_at_model_cap)) } };
+        let mut tokens = Tokens { opening: Vec::new(), not: None, columns: Vec::new(), values: Vec::new(), closing: Vec::new(), end: None, ascending_after_site: Vec::new(), settings: { let settings = &self.context.settings; format!("{:?}", (&settings.vocabulary, &settings.caps, settings.check_copies, settings.rule_tests)) } };
         for id in 0..vocabulary.len() as u32 {
             match vocabulary.token(id).expect("an id of the vocabulary") {
                 Token::Relation(_) | Token::Fact(_) | Token::Lib(_) => tokens.opening.push(id),
@@ -272,6 +273,13 @@ impl Decoder<'_> {
             } else {
                 walker.relation_atoms(&tokens, &[id], next.clone(), limit, &mut found);
             }
+        }
+        let gauges = self.request_work();
+        let (gauges, states, limit) = (gauges.gauges(), found.states as u64, limit as u64);
+        if found.truncated {
+            gauges.hit(crate::eval::Gauge::AtomStates, states, limit);
+        } else {
+            gauges.note(crate::eval::Gauge::AtomStates, states, limit);
         }
         found
     }
@@ -523,6 +531,7 @@ impl Decoder<'_> {
     /// The list of [`Decoder::candidate_atoms`] from a whole mask at each token
     /// of each atom, for a check of that walk.
     pub fn candidate_atoms_reference(&self, limit: usize) -> CandidateAtoms {
+        let _request = self.begin_request();
         let mut found = CandidateAtoms::default();
         let mut path = Vec::new();
         let mask = self.admissible();

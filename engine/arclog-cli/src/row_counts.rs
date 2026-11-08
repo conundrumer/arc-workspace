@@ -289,7 +289,7 @@ fn stopped(bound: ReachedBound) -> String {
         ReachedBound::TableWork { cap } => format!("table-work:{cap}"),
         ReachedBound::Margin(_) => "margin".to_owned(),
         ReachedBound::SessionBytes(reached) => format!("session-bytes:{}", reached.bound.bytes),
-        ReachedBound::Deadline => "deadline".to_owned(),
+        ReachedBound::RequestWork { cap } => format!("request-work:{cap}"),
         ReachedBound::Cancelled => "cancelled".to_owned(),
         ReachedBound::NoValues => "no-values".to_owned(),
     };

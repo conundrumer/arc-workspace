@@ -69,7 +69,7 @@
 //! derivation leaves the count past the cap, gets the stop
 //! ([`EntryExtents::Stopped`]) in place of extents. A stop at this budget or
 //! an evaluation bound leaves the table's rows available. Session-byte,
-//! deadline and cancellation stops remain stops of the table.
+//! request-work and cancellation stops remain stops of the table.
 //!
 //! An entry that holds rows and has no extent says why in
 //! [`EntryExtents::Lost`]: the fault of a widened body, or the reason the
@@ -1299,11 +1299,11 @@ impl<'a> Reads<'a> {
         }
     }
 
-    /// Adds `rows` visited rows to the table's work count; the stop at the work
-    /// cap, at the form `form`, where the count is then past the cap.
+    /// Adds `rows` visited rows to the table's work count and to the request's;
+    /// the stop at either cap, at the form `form`, where the count is then past it.
     fn charge(&self, rows: u64, form: &NodePath) -> Result<(), Stop> {
         if let Some(stop)=self.failure.borrow().as_ref() {return Err(stop.clone());}
-        self.materializer().check().and_then(|_|self.work.charge(rows)).map_err(|bound| Stop { bound, form: form.clone() })
+        self.materializer().check().and_then(|_|self.limits.request.charge(rows)).and_then(|_|self.work.charge(rows)).map_err(|bound| Stop { bound, form: form.clone() })
     }
 
     /// The extent of the frame of the column `index` of the table `named`, at its rows

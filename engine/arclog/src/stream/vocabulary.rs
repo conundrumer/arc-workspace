@@ -3,13 +3,13 @@
 
 use crate::hash::StableHashMap;
 use crate::program::FactRelation;
-use crate::registry::{LibEntry, LibName, Proposer, ProposerKind, Registry};
+use crate::registry::{LibEntry, LibName, Registry};
 
 use super::{Control, DecodeSettings, Token, TokenKind, VocabularyCaps};
 
 /// The tokens of one decode by id, and the id of each. The slots stand in
 /// this order: the control tokens of [`Control::ALL`], the lib relations,
-/// relation macros and components, the proposers the settings offer, the
+/// relation macros and components, the proposers, the
 /// fact relations, the relation, column and label slots up to the settings'
 /// caps, then the control tokens of [`Control::DEMONSTRATED_FORM`]. Lib names
 /// stand in the order of their text within each kind.
@@ -28,11 +28,7 @@ impl<'r> Vocabulary<'r> {
         for name in registry.names() {
             match registry.entry(name).expect("a name the registry gives") {
                 LibEntry::Relation(_) | LibEntry::Component(_) | LibEntry::Macro(_) => lib.push(name),
-                LibEntry::Proposer(proposer) => {
-                    if offers(proposer, settings) {
-                        proposers.push(name);
-                    }
-                }
+                LibEntry::Proposer(_) => proposers.push(name),
             }
         }
         lib.sort_by(|a, b| a.0.cmp(&b.0));
@@ -100,10 +96,4 @@ impl<'r> Vocabulary<'r> {
     pub fn is_empty(&self) -> bool {
         self.tokens.is_empty()
     }
-}
-
-/// Whether `settings` offer `proposer` as a token.
-fn offers(proposer: &Proposer, settings: &DecodeSettings) -> bool {
-    let domain = matches!(proposer.kind, ProposerKind::Native { domain: true });
-    settings.proposer_tokens && (settings.type_domain_proposers || !domain)
 }

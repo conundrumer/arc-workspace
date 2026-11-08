@@ -4,9 +4,12 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use crate::catalog_facts::{canon, normalized};
+use crate::cell_sets::{grid_pieces, relation, shape_hash, symmetry_count, Walk, STEPS};
+pub use crate::cell_sets::SetRelation;
 use crate::gen_constants::{box_bits, encoding, margins_of, number_bits, number_of};
+use crate::grid_walks::{enclosed_regions, walk_outward};
 use crate::native::{first_ids, hash_words, row_word, Cell, FastMap, Grouping, Table, Val};
+use crate::occurrence::{distinct_patterns, each_turned_image, for_each_move, Canvas, PatternCell};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum PartStep {
@@ -316,6 +319,96 @@ impl PartStep {
     }
 }
 
+/// The number of distinct rows of a table over some of its columns.
+fn distinct_over(t: &Table, places: &[usize]) -> usize {
+    // Up to four cells of a row pack into one number.
+    if places.len() <= 4 {
+        t.rows().map(|row| places.iter().fold(0u128, |packed, at| packed << 32 | u128::from(row[*at]))).collect::<std::collections::HashSet<u128>>().len()
+    } else {
+        t.rows().map(|row| places.iter().map(|at| row[*at]).collect::<Vec<Cell>>()).collect::<std::collections::HashSet<_>>().len()
+    }
+}
+
+/// The group of a column in a list of links between columns.
+fn link_root(link: &mut [usize], mut at: usize) -> usize {
+    while link[at] != at {
+        link[at] = link[link[at]];
+        at = link[at];
+    }
+    at
+}
+
+/// A table's finest split into groups of columns whose product it is: for each column the place of its group, and for each group the number of distinct rows of its columns. A table has one such split, and every split
+/// of its columns into two sides has each group wholly on one side. A column of one value is a group of its own.
+fn finest_split(t: &Table) -> crate::native::Factors {
+    let arity = t.arity;
+    let values: Vec<usize> = (0..arity).map(|at| t.sorted_column(at).len()).collect();
+    // Two columns whose pairs of values are not all the pairs of their values depend on one another, and a split has no such pair across its sides. Columns that depend on one another, directly or through others, are linked.
+    let mut link: Vec<usize> = (0..arity).collect();
+    let many: Vec<usize> = (0..arity).filter(|at| values[*at] > 1).collect();
+    for (place, a) in many.iter().enumerate() {
+        for b in &many[place + 1..] {
+            let (ra, rb) = (link_root(&mut link, *a), link_root(&mut link, *b));
+            if ra == rb {
+                continue;
+            }
+            // More pairs of values than rows: some pair is missing.
+            let full = values[*a].saturating_mul(values[*b]);
+            if full > t.len || distinct_over(t, &[*a, *b]) != full {
+                link[ra] = rb;
+            }
+        }
+    }
+    let mut linked: Vec<Vec<usize>> = Vec::new();
+    let mut roots: Vec<usize> = Vec::new();
+    for at in many.iter().copied() {
+        let root = link_root(&mut link, at);
+        match roots.iter().position(|held| *held == root) {
+            Some(place) => linked[place].push(at),
+            None => {
+                roots.push(root);
+                linked.push(vec![at]);
+            }
+        }
+    }
+    // The linked columns are a group each, unless some union of them is a split that no pair shows.
+    let mut together: Vec<Vec<usize>> = linked.clone();
+    if linked.len() >= 2 {
+        let full = linked.iter().fold(1usize, |product, columns| product.saturating_mul(distinct_over(t, columns)));
+        if full != t.len {
+            let count = linked.len();
+            let columns_of = |mask: u32, inside: bool| -> Vec<usize> { (0..count).filter(|at| (mask >> at & 1 == 1) == inside).flat_map(|at| linked[at].iter().copied()).collect() };
+            let splits: Vec<u32> = (1u32..(1 << count) - 1).filter(|mask| mask & 1 == 1).filter(|mask| distinct_over(t, &columns_of(*mask, true)).saturating_mul(distinct_over(t, &columns_of(*mask, false))) == t.len).collect();
+            // Two linked groups are one group where every split has them on one side.
+            together = Vec::new();
+            let mut signatures: Vec<Vec<bool>> = Vec::new();
+            for at in 0..count {
+                let signature: Vec<bool> = splits.iter().map(|mask| mask >> at & 1 == 1).collect();
+                match signatures.iter().position(|held| *held == signature) {
+                    Some(place) => together[place].extend(linked[at].iter().copied()),
+                    None => {
+                        signatures.push(signature);
+                        together.push(linked[at].clone());
+                    }
+                }
+            }
+        }
+    }
+    let mut group_of = vec![0u8; arity];
+    let mut rows_of: Vec<u64> = Vec::new();
+    for at in (0..arity).filter(|at| values[*at] <= 1) {
+        group_of[at] = rows_of.len() as u8;
+        rows_of.push(values[at] as u64);
+    }
+    for columns in &together {
+        for at in columns {
+            group_of[*at] = rows_of.len() as u8;
+        }
+        rows_of.push(distinct_over(t, columns) as u64);
+    }
+    (group_of, rows_of)
+}
+
 /// A value's rows in the order of its columns.
 pub fn flat(value: &Val) -> Option<Arc<Table>> {
     if value.is_lazy() {
@@ -530,8 +623,7 @@ fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
     let mut grid: Vec<u32> = Vec::new();
     let mut held: Vec<Cell> = Vec::new();
     let mut margins: Vec<[i32; 4]> = Vec::new();
-    let mut seen: Vec<bool> = Vec::new();
-    let mut stack: Vec<usize> = Vec::new();
+    let mut walk = Walk::default();
     let mut piece: Vec<Cell> = Vec::new();
     let mut at = 0;
     while at < pairs.len() {
@@ -556,34 +648,18 @@ fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
                 grid[(m[0] * w + m[2]) as usize] = place as u32;
             }
         }
-        seen.clear();
-        seen.resize(held.len(), false);
-        for start in 0..held.len() {
-            if seen[start] {
-                continue;
+        let neighbor = |from: usize, dr: i32, dc: i32| {
+            let m = margins[from];
+            if on_frame {
+                let (r, c) = (m[0] + dr, m[2] + dc);
+                if r < 0 || c < 0 || r >= h || c >= w { None } else { Some(grid[(r * w + c) as usize]).filter(|place| *place != NONE).map(|place| place as usize) }
+            } else {
+                held.binary_search(&shifted_box(m, dr, dc)).ok()
             }
-            seen[start] = true;
-            stack.clear();
-            stack.push(start);
+        };
+        walk.pieces(held.len(), steps, |_| true, neighbor, |members| {
             piece.clear();
-            while let Some(from) = stack.pop() {
-                piece.push(held[from]);
-                let m = margins[from];
-                for (dr, dc) in steps {
-                    let next = if on_frame {
-                        let (r, c) = (m[0] + dr, m[2] + dc);
-                        if r < 0 || c < 0 || r >= h || c >= w { None } else { Some(grid[(r * w + c) as usize]).filter(|place| *place != NONE).map(|place| place as usize) }
-                    } else {
-                        held.binary_search(&shifted_box(m, *dr, *dc)).ok()
-                    };
-                    if let Some(place) = next {
-                        if !seen[place] {
-                            seen[place] = true;
-                            stack.push(place);
-                        }
-                    }
-                }
-            }
+            piece.extend(members.iter().map(|place| held[*place]));
             // An Ident labels the set of its members, as `Connectivity` interns it.
             piece.sort_unstable();
             let label = hash_words(piece.iter().map(|cell| u64::from(*cell))) as u32;
@@ -592,7 +668,7 @@ fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
                 out.push(*cell);
                 out.push(label);
             }
-        }
+        });
         if on_frame {
             for m in &margins {
                 grid[(m[0] * w + m[2]) as usize] = NONE;
@@ -656,6 +732,8 @@ pub struct GridView {
     pub at: FastMap<Cell, Cell>,
     /// The places of each color's cells, as (row, column).
     pub of_color: FastMap<Cell, Vec<(i32, i32)>>,
+    /// The places of each shape that `placements_on` has searched for on this grid, and the count of cells of those shapes.
+    searched: std::sync::Mutex<(FastMap<Shape, Arc<Vec<(i32, i32)>>>, usize)>,
 }
 
 thread_local! {
@@ -680,6 +758,7 @@ pub fn clear_views() {
     VIEWS.with(|views| views.borrow_mut().clear());
     FLATS.with(|flats| *flats.borrow_mut() = (HashMap::new(), 0));
     RIGHT_KEYS.with(|keys| keys.borrow_mut().clear());
+    OCCURS.with(|held| *held.borrow_mut() = OccurHeld::default());
     GROUPS.with(|groups| *groups.borrow_mut() = Groups::default());
 }
 
@@ -725,7 +804,7 @@ fn view_of(table: &Arc<Table>) -> Arc<GridView> {
                     colors[(m[0] * w + m[2]) as usize] = row[1];
                 }
             }
-            Arc::new(GridView { h, w, colors, at, of_color })
+            Arc::new(GridView { h, w, colors, at, of_color, searched: Default::default() })
         }).clone()
     })
 }
@@ -752,8 +831,6 @@ fn add_cell(a: [i32; 4], b: [i32; 4]) -> Cell {
 fn less_cell(a: [i32; 4], b: [i32; 4]) -> Cell {
     box_bits(a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3])
 }
-
-const STEPS: [(i32, i32); 8] = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)];
 
 #[inline]
 fn moved(m: [i32; 4], dr: i32, dc: i32) -> Option<Cell> {
@@ -841,151 +918,16 @@ fn on_one_frame(table: &Table, keys: &[u16], p: u16) -> bool {
 
 /// The fewest eight-neighbor steps from a set of cells to a held cell outside it.
 fn nearest_other(own: &[(u8, u8)], held: &[bool], h: usize, w: usize) -> Option<i64> {
-    let mut seen = vec![false; h * w];
-    let mut frontier: Vec<usize> = own.iter().map(|(r, c)| usize::from(*r) * w + usize::from(*c)).collect();
-    for at in &frontier {
-        seen[*at] = true;
-    }
-    let mut steps = 0;
-    while !frontier.is_empty() {
-        steps += 1;
-        let mut next = Vec::new();
-        for at in frontier {
-            let (r, c) = ((at / w) as i32, (at % w) as i32);
-            for dr in -1..=1 {
-                for dc in -1..=1 {
-                    let (nr, nc) = (r + dr, c + dc);
-                    if nr < 0 || nc < 0 || nr >= h as i32 || nc >= w as i32 {
-                        continue;
-                    }
-                    let near = nr as usize * w + nc as usize;
-                    if !seen[near] {
-                        if held[near] {
-                            return Some(steps);
-                        }
-                        seen[near] = true;
-                        next.push(near);
-                    }
-                }
-            }
+    let mut found = None;
+    walk_outward(own.iter().map(|(r, c)| usize::from(*r) * w + usize::from(*c)), h, w, true, |at, steps| {
+        if held[at] {
+            found = Some(i64::from(steps));
         }
-        frontier = next;
-    }
-    None
+        held[at]
+    });
+    found
 }
 
-/// A class per set of cells, up to a move, and with `turned` also up to a rotation or a reflection.
-pub fn shape_hash(cells: &[(u8, u8)], turned: bool) -> u32 {
-    hash_cells(&if turned { canon(cells) } else { normalized(cells) })
-}
-
-/// What `shape_hash` gives for cells that stand sorted and without repeats, with no cell set built but the best image.
-fn set_shape(cells: &[(u8, u8)], turned: bool) -> u32 {
-    let r0 = cells.iter().map(|cell| cell.0).min().unwrap_or(0);
-    let c0 = cells.iter().map(|cell| cell.1).min().unwrap_or(0);
-    if !turned {
-        return hash_words(cells.iter().map(|(r, c)| u64::from(r - r0) << 8 | u64::from(c - c0))) as u32;
-    }
-    let r1 = cells.iter().map(|cell| cell.0 - r0).max().unwrap_or(0);
-    let c1 = cells.iter().map(|cell| cell.1 - c0).max().unwrap_or(0);
-    let mut best: Vec<u16> = Vec::new();
-    let mut image: Vec<u16> = Vec::with_capacity(cells.len());
-    for which in 0..8 {
-        image.clear();
-        image.extend(cells.iter().map(|(r, c)| {
-            let (r, c) = (r - r0, c - c0);
-            let (a, b) = match which {
-                0 => (r, c),
-                1 => (r, c1 - c),
-                2 => (r1 - r, c),
-                3 => (r1 - r, c1 - c),
-                4 => (c, r),
-                5 => (c, r1 - r),
-                6 => (c1 - c, r),
-                _ => (c1 - c, r1 - r),
-            };
-            u16::from(a) << 8 | u16::from(b)
-        }));
-        image.sort_unstable();
-        if which == 0 || image < best {
-            std::mem::swap(&mut best, &mut image);
-        }
-    }
-    hash_words(best.iter().map(|word| u64::from(*word))) as u32
-}
-
-/// What `symmetry_count` gives for cells that stand without repeats: the images of the cells that land on cells.
-fn set_symmetries(cells: &[(u8, u8)]) -> u32 {
-    let r0 = cells.iter().map(|cell| cell.0).min().unwrap_or(0);
-    let c0 = cells.iter().map(|cell| cell.1).min().unwrap_or(0);
-    let r1 = cells.iter().map(|cell| cell.0 - r0).max().unwrap_or(0);
-    let c1 = cells.iter().map(|cell| cell.1 - c0).max().unwrap_or(0);
-    let (h, w) = (usize::from(r1) + 1, usize::from(c1) + 1);
-    let mut held = vec![false; h * w];
-    for (r, c) in cells {
-        held[usize::from(r - r0) * w + usize::from(c - c0)] = true;
-    }
-    (0..8).filter(|which| cells.iter().all(|(r, c)| {
-        let (r, c) = (r - r0, c - c0);
-        let (a, b) = match *which {
-            0 => (r, c),
-            1 => (r, c1 - c),
-            2 => (r1 - r, c),
-            3 => (r1 - r, c1 - c),
-            4 => (c, r),
-            5 => (c, r1 - r),
-            6 => (c1 - c, r),
-            _ => (c1 - c, r1 - r),
-        };
-        usize::from(a) < h && usize::from(b) < w && held[usize::from(a) * w + usize::from(b)]
-    })).count() as u32
-}
-
-fn hash_cells(cells: &[(u8, u8)]) -> u32 {
-    hash_words(cells.iter().map(|cell| u64::from(cell.0) << 8 | u64::from(cell.1))) as u32
-}
-
-fn enclosed_regions(list: &[(u8, u8)]) -> i64 {
-    let (rmin, rmax) = (list.iter().map(|x| i32::from(x.0)).min().unwrap_or(0), list.iter().map(|x| i32::from(x.0)).max().unwrap_or(0));
-    let (cmin, cmax) = (list.iter().map(|x| i32::from(x.1)).min().unwrap_or(0), list.iter().map(|x| i32::from(x.1)).max().unwrap_or(0));
-    let (h, w) = ((rmax - rmin + 3) as usize, (cmax - cmin + 3) as usize);
-    let mut seen = vec![false; h * w];
-    for (r, c) in list {
-        seen[(i32::from(*r) - rmin + 1) as usize * w + (i32::from(*c) - cmin + 1) as usize] = true;
-    }
-    let mut regions = 0;
-    let mut stack = Vec::new();
-    for start in 0..h * w {
-        if seen[start] {
-            continue;
-        }
-        regions += 1;
-        seen[start] = true;
-        stack.push(start);
-        while let Some(at) = stack.pop() {
-            let (r, c) = (at / w, at % w);
-            let mut go = |next: usize| {
-                if !seen[next] {
-                    seen[next] = true;
-                    stack.push(next);
-                }
-            };
-            if r > 0 {
-                go(at - w);
-            }
-            if r + 1 < h {
-                go(at + w);
-            }
-            if c > 0 {
-                go(at - 1);
-            }
-            if c + 1 < w {
-                go(at + 1);
-            }
-        }
-    }
-    regions - 1
-}
 
 fn keyed_values(heads: &[Vec<Cell>], values: impl Iterator<Item = Option<Vec<Cell>>>, width: usize) -> Val {
     let mut out = Vec::new();
@@ -1013,113 +955,160 @@ fn keys_only(heads: &[Vec<Cell>], holds: impl Iterator<Item = bool>, width: usiz
     Val::of_table(Table::distinct(width, out))
 }
 
-/// A cell's margins under an element of D4, in the order ID, LR, TB, HT, CW, CC, DG, AD.
-fn image_margins(which: usize, m: [i32; 4]) -> [i32; 4] {
-    let [t, b, l, r] = m;
-    match which {
-        0 => [t, b, l, r],
-        1 => [t, b, r, l],
-        2 => [b, t, l, r],
-        3 => [b, t, r, l],
-        4 => [l, r, b, t],
-        5 => [r, l, t, b],
-        6 => [l, r, t, b],
-        _ => [r, l, b, t],
+impl Canvas for GridView {
+    fn height(&self) -> i32 {
+        self.h
+    }
+
+    fn width(&self) -> i32 {
+        self.w
+    }
+
+    fn color_at(&self, row: i32, column: i32) -> u32 {
+        self.colors[(row * self.w + column) as usize]
+    }
+
+    fn count(&self, color: u32) -> usize {
+        self.of_color.get(&color).map_or(0, Vec::len)
+    }
+
+    fn each_place(&self, color: u32, mut each: impl FnMut(i32, i32)) {
+        for &(row, column) in self.of_color.get(&color).into_iter().flatten() {
+            each(row, column);
+        }
     }
 }
 
-/// A colored pattern with its top-left corner at (0, 0): (row, column, color) sorted by row, then column, then color.
-type Shape = Vec<(i32, i32, Cell)>;
+/// A colored pattern with its top-left corner at (0, 0).
+type Shape = Vec<PatternCell>;
 
-/// Where the corner of each shape lies on a grid, for each shape that `moves_of` has met on that grid.
+/// The places of a shape on a grid, searched once for the grid.
+fn placements_on(grid: &GridView, shape: Shape) -> Arc<Vec<(i32, i32)>> {
+    let lock = || grid.searched.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(found) = lock().0.get(&shape) {
+        return found.clone();
+    }
+    let places = Arc::new(crate::occurrence::moves(grid, &shape));
+    let mut held = lock();
+    if held.1 + shape.len() <= 1 << 18 {
+        held.1 += shape.len();
+        held.0.insert(shape, places.clone());
+    }
+    places
+}
+
+/// The offsets that move cells of a frame with the given last row and last column onto a grid, added to `out`: each `P` where
+/// `compose` of a cell and `P` is a grid cell of the cell's color, for every cell. The cells are (row, column, color) sorted.
+/// Patterns that differ only by a shift share one search, which the grid keeps.
+fn framed_moves(cells: &[PatternCell], frame: (i32, i32), grid: &GridView, out: &mut Vec<Cell>) {
+    let offset = |dr: i32, dc: i32| box_bits(dr, grid.h - 1 - frame.0 - dr, dc, grid.w - 1 - frame.1 - dc);
+    if cells.len() == 1 {
+        for_each_move(grid, cells, |dr, dc| out.push(offset(dr, dc)));
+        return;
+    }
+    let top = cells.first().map_or(0, |cell| cell.0);
+    let left = cells.iter().map(|cell| cell.1).min().unwrap_or(0);
+    let shape: Shape = cells.iter().map(|&(r, c, color)| (r - top, c - left, color)).collect();
+    let places = placements_on(grid, shape);
+    out.extend(places.iter().map(|&(r, c)| offset(r - top, c - left)));
+}
+
+/// The cells of a pattern whose cells lie in one frame, with the frame's last row and last column.
+type Framed = (Vec<PatternCell>, (i32, i32));
+
+/// The colored patterns of a relation's key groups, each pattern once.
+struct OccurPatterns {
+    /// Each distinct pattern, or none where its cells do not lie in one frame, which leaves no move.
+    distinct: Vec<Option<Framed>>,
+    /// For each key group in order of first appearance, the place of its pattern in `distinct`.
+    of_group: Vec<u32>,
+}
+
+/// What the occurs parts share, held while a table's walks go on, up to [`HELD_GROUP_CELLS`] of cells in all.
 #[derive(Default)]
-struct Placements(FastMap<Shape, Vec<(i32, i32)>>);
-
-/// The offsets that move a colored pattern onto a grid's cells: each `P` where `compose` of a pattern
-/// cell and `P` is a grid cell of the cell's color, for every cell of the pattern.
-/// Patterns that differ only by a shift share one search, through `known`.
-fn moves_of(pattern: &[([i32; 4], Cell)], grid: &GridView, known: &mut Placements) -> Vec<Cell> {
-    let Some(((first, _), rest)) = pattern.split_first() else { return Vec::new() };
-    // A move puts each cell of the pattern on a grid cell, so all of them lie in one frame of the grid's size.
-    let (frame_rows, frame_cols) = (first[0] + first[1], first[2] + first[3]);
-    if rest.iter().any(|(m, _)| m[0] + m[1] != frame_rows || m[2] + m[3] != frame_cols) {
-        return Vec::new();
-    }
-    let (top, left) = pattern.iter().fold((i32::MAX, i32::MAX), |(t, l), (m, _)| (t.min(m[0]), l.min(m[2])));
-    let mut shape: Shape = pattern.iter().map(|(m, color)| (m[0] - top, m[2] - left, *color)).collect();
-    shape.sort_unstable();
-    // Two colors on one cell of the pattern leave no move.
-    if shape.windows(2).any(|pair| pair[0].0 == pair[1].0 && pair[0].1 == pair[1].1) {
-        return Vec::new();
-    }
-    let places = match known.0.get(&shape) {
-        Some(places) => places,
-        None => {
-            let places = placements(&shape, grid);
-            known.0.entry(shape).or_insert(places)
-        }
-    };
-    places.iter().map(|&(r, c)| {
-        let (dr, dc) = (r - top, c - left);
-        box_bits(dr, grid.h - 1 - frame_rows - dr, dc, grid.w - 1 - frame_cols - dc)
-    }).collect()
+struct OccurHeld {
+    patterns: FastMap<(u64, u128), Arc<OccurPatterns>>,
+    moves: FastMap<(u64, u128, u128), Arc<Vec<Vec<Cell>>>>,
+    held: usize,
 }
 
-/// Each place of a shape's corner where every cell of the shape is a grid cell of its color.
-fn placements(shape: &Shape, grid: &GridView) -> Vec<(i32, i32)> {
-    let (height, width) = shape.iter().fold((0, 0), |(h, w), (r, c, _)| (h.max(r + 1), w.max(c + 1)));
-    if height > grid.h || width > grid.w {
-        return Vec::new();
+thread_local! {
+    static OCCURS: std::cell::RefCell<OccurHeld> = std::cell::RefCell::new(OccurHeld::default());
+}
+
+/// The patterns of the key groups of a table, whose rows give a cell at column `p` and its color at column `v`. `ids` is each row's group, and `word` hashes the keys and columns.
+fn occur_patterns(table: &Table, ids: &[u32], groups: usize, (p, v): (u16, u16), word: u128) -> Arc<OccurPatterns> {
+    let key = (table.id, word);
+    if let Some(found) = OCCURS.with(|held| held.borrow().patterns.get(&key).cloned()) {
+        return found;
     }
-    let count = |color: &Cell| grid.of_color.get(color).map_or(0, Vec::len);
-    // A move takes every cell to a cell of its color, so a color that the grid holds fewer times than the shape does leaves no move.
-    let mut by_color: Vec<Cell> = shape.iter().map(|(_, _, color)| *color).collect();
-    by_color.sort_unstable();
-    for run in by_color.chunk_by(|a, b| a == b) {
-        if count(&run[0]) < run.len() {
-            return Vec::new();
-        }
+    let mut per_group: Vec<Vec<([i32; 4], Cell)>> = vec![Vec::new(); groups];
+    for (row, id) in table.rows().zip(ids) {
+        per_group[*id as usize].push((margins_of(row[usize::from(p)]), row[usize::from(v)]));
     }
-    // The cells of the shape's rarest color give every move. Rarer colors are tried first when a place is checked.
-    let mut order: Vec<(i32, i32, Cell)> = shape.clone();
-    order.sort_by_key(|(_, _, color)| (count(color), *color));
-    let (anchor_row, anchor_col, color) = order[0];
-    let mut out = Vec::new();
-    for &(r, c) in &grid.of_color[&color] {
-        let (r0, c0) = (r - anchor_row, c - anchor_col);
-        if r0 < 0 || c0 < 0 || r0 + height > grid.h || c0 + width > grid.w {
-            continue;
+    let (distinct, of_group) = distinct_patterns(per_group);
+    // A pattern sorts by its margins, which in one frame is by row, then column.
+    let distinct = distinct.iter().map(|pattern| {
+        let ((first, _), rest) = pattern.split_first()?;
+        let frame = (first[0] + first[1], first[2] + first[3]);
+        if rest.iter().any(|(m, _)| (m[0] + m[1], m[2] + m[3]) != frame) {
+            return None;
         }
-        if order.iter().all(|&(y, z, held)| grid.colors[((r0 + y) * grid.w + c0 + z) as usize] == held) {
-            out.push((r0, c0));
+        Some((pattern.iter().map(|(m, color)| (m[0], m[2], *color)).collect(), frame))
+    }).collect();
+    let built = Arc::new(OccurPatterns { distinct, of_group });
+    OCCURS.with(|held| {
+        let mut held = held.borrow_mut();
+        held.held += table.len;
+        if held.held > HELD_GROUP_CELLS {
+            *held = OccurHeld { held: table.len, ..OccurHeld::default() };
         }
+        held.patterns.insert(key, built.clone());
+    });
+    built
+}
+
+/// The offsets that move each distinct pattern onto the grid as it stands, for a table, columns and grid that `key` names.
+fn occur_moves(patterns: &OccurPatterns, grid: &GridView, key: (u64, u128, u128)) -> Arc<Vec<Vec<Cell>>> {
+    if let Some(found) = OCCURS.with(|held| held.borrow().moves.get(&key).cloned()) {
+        return found;
     }
+    let built: Arc<Vec<Vec<Cell>>> = Arc::new(patterns.distinct.iter().map(|framed| {
+        let mut moves = Vec::new();
+        if let Some((cells, frame)) = framed {
+            framed_moves(cells, *frame, grid, &mut moves);
+        }
+        moves
+    }).collect());
+    let size: usize = built.iter().map(Vec::len).sum::<usize>() + built.len();
+    OCCURS.with(|held| {
+        let mut held = held.borrow_mut();
+        held.held += size;
+        if held.held > HELD_GROUP_CELLS {
+            *held = OccurHeld { held: size, ..OccurHeld::default() };
+        }
+        held.moves.insert(key, built.clone());
+    });
+    built
+}
+
+/// The offsets that move a pattern, or its image under some element of D4, onto the grid, sorted and without repeats. `plain` holds those of the pattern itself.
+fn turned_moves_of(framed: &Option<Framed>, grid: &GridView, plain: &[Cell]) -> Vec<Cell> {
+    let mut out = plain.to_vec();
+    if let Some((cells, frame)) = framed {
+        each_turned_image(cells, *frame, true, |which, image| {
+            // A turn by a quarter swaps the frame's height and width.
+            let turned = if which >= 4 { (frame.1, frame.0) } else { *frame };
+            framed_moves(image, turned, grid, &mut out);
+            false
+        });
+    }
+    out.sort_unstable();
+    out.dedup();
     out
 }
 
-/// How two sets of values stand to each other.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum SetRelation {
-    Equal,
-    Subset,
-    Superset,
-    Overlap,
-    Disjoint,
-    Complement,
-}
-
 impl SetRelation {
-    fn word(self) -> &'static str {
-        match self {
-            SetRelation::Equal => "equal",
-            SetRelation::Subset => "subset",
-            SetRelation::Superset => "superset",
-            SetRelation::Overlap => "overlap",
-            SetRelation::Disjoint => "disjoint",
-            SetRelation::Complement => "complement",
-        }
-    }
-
     /// The fragment that defines the word over two columns.
     pub fn fragment(self, cells: bool) -> String {
         format!("{}-{}", if cells && matches!(self, SetRelation::Disjoint | SetRelation::Complement) { "cells" } else { "set" }, self.word())
@@ -1320,38 +1309,6 @@ fn box_features(set: &[[i32; 4]], h: i32, w: i32) -> BoxFeatures {
     out
 }
 
-/// The connected parts of the places that `on` holds, in a grid of `w` columns, by four or eight steps.
-fn connected_parts(on: &[bool], w: usize, diagonal: bool) -> Vec<Vec<usize>> {
-    let h = if w == 0 { 0 } else { on.len() / w };
-    let mut seen = vec![false; on.len()];
-    let mut parts = Vec::new();
-    let mut stack = Vec::new();
-    for start in 0..on.len() {
-        if !on[start] || seen[start] {
-            continue;
-        }
-        seen[start] = true;
-        stack.push(start);
-        let mut part = Vec::new();
-        while let Some(at) = stack.pop() {
-            part.push(at);
-            let (r, c) = ((at / w) as i32, (at % w) as i32);
-            for (dr, dc) in if diagonal { &STEPS[..] } else { &STEPS[..4] } {
-                let (nr, nc) = (r + dr, c + dc);
-                if nr >= 0 && nc >= 0 && (nr as usize) < h && (nc as usize) < w {
-                    let next = nr as usize * w + nc as usize;
-                    if on[next] && !seen[next] {
-                        seen[next] = true;
-                        stack.push(next);
-                    }
-                }
-            }
-        }
-        parts.push(part);
-    }
-    parts
-}
-
 /// The boxes of a column that decide whether a box lies inside one of them, or holds one: the ones no other box is beyond on every margin. Past 64 of them, every box. Held with the table.
 fn box_front(table: &Table, b: u16, inside: bool) -> Arc<Vec<[i32; 4]>> {
     let key = (table.id, places_word(&[], Some(b)) ^ u128::from(inside));
@@ -1539,17 +1496,7 @@ fn set_relation<K: Ord>(own: &[K], theirs: &[K], fill: Option<(usize, usize)>) -
             }
         }
     }
-    if shared == own.len() && shared == theirs.len() {
-        SetRelation::Equal
-    } else if shared == 0 {
-        if fill.is_some_and(|(area, there)| area == own.len() + there) { SetRelation::Complement } else { SetRelation::Disjoint }
-    } else if shared == own.len() {
-        SetRelation::Subset
-    } else if shared == theirs.len() {
-        SetRelation::Superset
-    } else {
-        SetRelation::Overlap
-    }
+    relation(shared < own.len(), shared < theirs.len(), shared > 0, fill.is_some_and(|(area, there)| area == own.len() + there))
 }
 
 impl PartStep {
@@ -1989,7 +1936,7 @@ impl PartStep {
                 }
                 let held = cells_by_key(t, keys, *p);
                 let (cells, heads) = (&held.0, &held.1);
-                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![set_shape(held, *turned)])), keys.len() + 1)
+                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![shape_hash(held, *turned)])), keys.len() + 1)
             }
             PartStep::Holes { keys, p } => {
                 if !on_one_frame(t, keys, *p) {
@@ -1997,7 +1944,7 @@ impl PartStep {
                 }
                 let held = cells_by_key(t, keys, *p);
                 let (cells, heads) = (&held.0, &held.1);
-                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(enclosed_regions(held))])), keys.len() + 1)
+                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(i64::from(enclosed_regions(held)))])), keys.len() + 1)
             }
             PartStep::Symmetry { keys, p } => {
                 if !on_one_frame(t, keys, *p) {
@@ -2005,7 +1952,7 @@ impl PartStep {
                 }
                 let held = cells_by_key(t, keys, *p);
                 let (cells, heads) = (&held.0, &held.1);
-                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(i64::from(set_symmetries(held)))])), keys.len() + 1)
+                keyed_values(&heads, cells.iter().map(|held| (!held.is_empty()).then(|| vec![number_bits(i64::from(symmetry_count(held)))])), keys.len() + 1)
             }
             PartStep::TouchesEdge { keys, p } => {
                 let (grouping, first) = key_ids(t, keys);
@@ -2037,22 +1984,23 @@ impl PartStep {
             PartStep::Occurs { keys, p, v, turned } => {
                 let grid = grid_of(children[1])?;
                 let (grouping, first) = key_ids(t, keys);
-                let ids = &grouping.0;
-                let mut patterns: Vec<Vec<([i32; 4], Cell)>> = vec![Vec::new(); first.len()];
-                for (row, id) in t.rows().zip(ids) {
-                    patterns[*id as usize].push((margins_of(row[usize::from(*p)]), row[usize::from(*v)]));
-                }
-                let mut known = Placements::default();
-                let mut out = Vec::new();
-                for (pattern, head) in patterns.iter_mut().zip(&first) {
-                    pattern.sort_unstable();
-                    pattern.dedup();
-                    for which in 0..if *turned { 8 } else { 1 } {
-                        let image: Vec<([i32; 4], Cell)> = pattern.iter().map(|(m, color)| (image_margins(which, *m), *color)).collect();
-                        for moved in moves_of(&image, &grid, &mut known) {
-                            push_key(&mut out, head, keys);
-                            out.push(moved);
-                        }
+                let word = hash_words(keys.iter().map(|at| u64::from(*at)).chain([u64::MAX, u64::from(*p), u64::from(*v)]));
+                let patterns = occur_patterns(t, &grouping.0, first.len(), (*p, *v), word);
+                // The moves of the patterns themselves are shared by the part with and without the turns.
+                let plain = occur_moves(&patterns, &grid, (t.id, word, children[1].hash()));
+                let turned_moves;
+                let moves: &[Vec<Cell>] = if *turned {
+                    turned_moves = patterns.distinct.iter().zip(plain.iter()).map(|(pattern, held)| turned_moves_of(pattern, &grid, held)).collect::<Vec<_>>();
+                    &turned_moves
+                } else {
+                    &plain
+                };
+                let total: usize = patterns.of_group.iter().map(|which| moves[*which as usize].len()).sum();
+                let mut out = Vec::with_capacity(total * (keys.len() + 1));
+                for (head, which) in first.iter().zip(&patterns.of_group) {
+                    for moved in &moves[*which as usize] {
+                        push_key(&mut out, head, keys);
+                        out.push(*moved);
                     }
                 }
                 Val::of_table(Table::distinct(keys.len() + 1, out))
@@ -2131,7 +2079,9 @@ impl PartStep {
                     let m = margins_of(row[usize::from(*p)]);
                     free[m[0] as usize * w + m[2] as usize] = false;
                 }
-                Val::of_table(Table::new(1, vec![number_bits(connected_parts(&free, w, false).len() as i64)]))
+                let mut count = 0;
+                grid_pieces(h, w, &STEPS[..4], |at| free[at], |_| count += 1);
+                Val::of_table(Table::new(1, vec![number_bits(count)]))
             }
             PartStep::EveryPartStraight { p } => {
                 if !on_one_frame(t, &[], *p) {
@@ -2144,11 +2094,13 @@ impl PartStep {
                     let m = margins_of(row[usize::from(*p)]);
                     on[m[0] as usize * w + m[2] as usize] = true;
                 }
-                Val::of_table(Table::unit(connected_parts(&on, w, true).iter().all(|part| {
+                let mut straight = true;
+                grid_pieces(h, w, &STEPS, |at| on[at], |part| {
                     let places: Vec<(i32, i32)> = part.iter().map(|at| ((at / w) as i32, (at % w) as i32)).collect();
                     let one = |pick: &dyn Fn(&(i32, i32)) -> i32| places.iter().all(|place| pick(place) == pick(&places[0]));
-                    one(&|place| place.0) || one(&|place| place.1) || one(&|place| place.0 - place.1) || one(&|place| place.0 + place.1)
-                })))
+                    straight &= one(&|place| place.0) || one(&|place| place.1) || one(&|place| place.0 - place.1) || one(&|place| place.0 + place.1);
+                });
+                Val::of_table(Table::unit(straight))
             }
             PartStep::OutlinesBox { p } => {
                 if !on_one_frame(t, &[], *p) {
@@ -2312,7 +2264,7 @@ impl PartStep {
                             return None;
                         }
                         let held = cells_by_key(table, keys, cell);
-                        held.0.iter().filter(|cells| !cells.is_empty()).map(|cells| u128::from(set_shape(cells, false))).collect()
+                        held.0.iter().filter(|cells| !cells.is_empty()).map(|cells| u128::from(shape_hash(cells, false))).collect()
                     } else {
                         // A set of cells is a set of values, whatever frame each cell is in.
                         let (grouping, first) = key_ids(table, keys);
@@ -2382,7 +2334,7 @@ impl PartStep {
                 if !on_one_frame(t, keys, *a) || !on_one_frame(&other, others, *b) {
                     return None;
                 }
-                let shape = |held: &Vec<(u8, u8)>| set_shape(held, *turned);
+                let shape = |held: &Vec<(u8, u8)>| shape_hash(held, *turned);
                 let held = cells_by_key(t, keys, *a);
                 let (cells, heads) = (&held.0, &held.1);
                 let other_held = cells_by_key(&other, others, *b);
@@ -2682,10 +2634,27 @@ impl PartStep {
                 Val::of_table(Table::distinct(1, out))
             }
             PartStep::Product { keys } => {
-                let others: Vec<u16> = (0..t.arity as u16).filter(|at| !keys.contains(at)).collect();
-                let distinct = |places: &[u16]| t.rows().map(|row| places.iter().map(|at| row[usize::from(*at)]).collect::<Vec<Cell>>()).collect::<std::collections::HashSet<_>>().len();
-                let (own, rest) = (distinct(keys), distinct(&others));
-                Val::of_table(Table::unit(own >= 2 && rest >= 2 && own * rest == t.len))
+                let factors = t.factors(|| finest_split(t));
+                let (group_of, rows_of) = (&factors.0, &factors.1);
+                // A split holds where each group of the finest split lies wholly on one side of it, and each side then has the product of its groups' row counts.
+                let mut side_of: Vec<Option<bool>> = vec![None; rows_of.len()];
+                let mut counts = [1u128, 1u128];
+                let mut whole = true;
+                for (at, group) in group_of.iter().enumerate() {
+                    let in_keys = keys.contains(&(at as u16));
+                    match side_of[usize::from(*group)] {
+                        Some(side) if side != in_keys => {
+                            whole = false;
+                            break;
+                        }
+                        Some(_) => {}
+                        None => {
+                            side_of[usize::from(*group)] = Some(in_keys);
+                            counts[usize::from(!in_keys)] *= u128::from(rows_of[usize::from(*group)]);
+                        }
+                    }
+                }
+                Val::of_table(Table::unit(whole && counts[0] >= 2 && counts[1] >= 2))
             }
             PartStep::SameRows { left, right, key } => {
                 let other = flat(children[1])?;

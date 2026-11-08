@@ -5,21 +5,22 @@
 //! share them.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::relations::Relation;
-use crate::session::{ReachedSessionBound, ResultKey};
+use crate::session::{Counts, ReachedSessionBound, ResultKey, TaskSession};
 use crate::solver::CaseName;
 use crate::task::Grid;
 use crate::terms::ReachedMarginBound;
 
 /// The caps of one query's evaluation, independent of the machine. A query
 /// evaluates a clause, finished or in progress, on one example at one
-/// assignment. No cap sums the evaluations of a program.
+/// assignment. No cap here sums the evaluations of a program: the request
+/// work cap does ([`RequestWork`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Caps {
     /// The bindings the join of one part of a body, a native construction,
@@ -95,7 +96,9 @@ pub enum ReachedBound {
     /// A Box with a margin outside a signed byte.
     Margin(ReachedMarginBound),
     SessionBytes(ReachedSessionBound),
-    Deadline,
+    /// The work cap of one request, summed over every query and walk of it
+    /// ([`RequestWork`]).
+    RequestWork { cap: u64 },
     Cancelled,
     /// A variable of a search's order that no node of the clause gives values
     /// at any place of the order. The search has no relation to give.
@@ -121,12 +124,13 @@ impl ReachedBound {
     /// Whether the result cache stores a stop at this bound: a stop at the
     /// binding cap, the row cap, a margin or a variable with no values, which
     /// is the same at every later
-    /// request of its entry. A stop at the session's byte bound, at the
-    /// deadline or by a cancellation depends on the machine or the
-    /// session's history, and is stored nowhere. A stop at the model cap,
-    /// the node cap or the assignment cap is stored nowhere either. A stop
-    /// at the table work cap, and a stop at the deadline, are held for the
-    /// requests of one decode alone, in [`HeldStops`].
+    /// request of its entry. A stop at the session's byte bound or by a
+    /// cancellation depends on the machine or the caller, and is stored
+    /// nowhere. A stop at the model cap, the node cap or the assignment cap is
+    /// stored nowhere either, and neither is a stop at the request work cap,
+    /// which depends on the work the request did before the entry. A stop at
+    /// the table work cap is held for the requests of one decode alone, in
+    /// [`HeldStops`].
     pub fn is_stored(self) -> bool {
         match self {
             ReachedBound::Bindings { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) | ReachedBound::NoValues => true,
@@ -135,7 +139,7 @@ impl ReachedBound {
             | ReachedBound::Assignments { .. }
             | ReachedBound::TableWork { .. }
             | ReachedBound::SessionBytes(_)
-            | ReachedBound::Deadline
+            | ReachedBound::RequestWork { .. }
             | ReachedBound::Cancelled => false,
         }
     }
@@ -153,7 +157,7 @@ impl ReachedBound {
             ReachedBound::SessionBytes(reached) => {
                 format!("the session's byte bound of {} bytes, at {} bytes", reached.bound.bytes, reached.bytes)
             }
-            ReachedBound::Deadline => "the deadline".to_owned(),
+            ReachedBound::RequestWork { cap } => format!("the request work cap of {cap} units of work"),
             ReachedBound::Cancelled => "a cancellation".to_owned(),
             ReachedBound::NoValues => "a variable that no node gives values".to_owned(),
         }
@@ -295,30 +299,10 @@ impl Cancellation {
 /// The stops of the evaluations of a decode and its forks, each held by the
 /// result-cache key of its entry. A table-work stop is read only by a bounded
 /// observation: one that needs that evaluation takes the stop at its form
-/// without trying bindings. A stop at the deadline is
-/// held with the time its evaluation ran: a later request takes it, at the
-/// form that stopped, where the request has at most [`DEADLINE_STOP_REUSE`]
-/// times that time left to its own deadline.
+/// without trying bindings.
 #[derive(Debug, Default)]
 pub struct HeldStops {
     table_work: Mutex<StableHashMap<ResultKey, Stop>>,
-    /// Shared with the snapshots: a stop at the deadline depends on the
-    /// machine, so no fork's result depends on its history alone.
-    deadline: Arc<Mutex<StableHashMap<ResultKey, DeadlineStop>>>,
-}
-
-/// The factor of the time a held stop at the deadline ran that a request's
-/// time left may reach for the request to take the stop. Provisional: a
-/// later request reaches the entry sooner than the first, whose upstream
-/// entries it evaluated first and the later one finds in the result cache,
-/// so a stop held at the time the first run had would rarely be taken.
-pub const DEADLINE_STOP_REUSE: f64 = 1.1;
-
-/// A stop at the deadline, with the time the evaluation that reached it ran.
-#[derive(Clone, Debug)]
-struct DeadlineStop {
-    stop: Stop,
-    ran: Duration,
 }
 
 impl HeldStops {
@@ -333,40 +317,522 @@ impl HeldStops {
         self.table_work.lock().expect(UNPOISONED).entry(key).or_insert(stop);
     }
 
-    /// The stop at the deadline held for the entry `key`, where the request
-    /// has `left` to its deadline and that is at most
-    /// [`DEADLINE_STOP_REUSE`] times the time the stop's evaluation ran.
-    pub fn deadline_stop(&self, key: &ResultKey, left: Duration) -> Option<Stop> {
-        let held = self.deadline.lock().expect(UNPOISONED);
-        let held = held.get(key)?;
-        (left <= held.ran.mul_f64(DEADLINE_STOP_REUSE)).then(|| held.stop.clone())
-    }
-
-    /// Holds `stop`, at the deadline, for the entry `key`, with the time
-    /// `ran` its evaluation ran. Where a stop is held for the key, the one
-    /// with the larger time stands.
-    pub fn hold_deadline(&self, key: ResultKey, stop: Stop, ran: Duration) {
-        let mut held = self.deadline.lock().expect(UNPOISONED);
-        if held.get(&key).is_none_or(|held| held.ran < ran) {
-            held.insert(key, DeadlineStop { stop, ran });
-        }
-    }
-
     /// Whether no stop is held.
     pub fn is_empty(&self) -> bool {
-        self.table_work.lock().expect(UNPOISONED).is_empty() && self.deadline.lock().expect(UNPOISONED).is_empty()
+        self.table_work.lock().expect(UNPOISONED).is_empty()
     }
 
     /// A store for a fork of a decode: it holds the stops at the table work
     /// cap that this one holds now, in a map of its own, so the tables of the
-    /// fork depend on the fork's own history, and shares this one's stops at
-    /// the deadline.
+    /// fork depend on the fork's own history.
     pub fn snapshot(&self) -> HeldStops {
-        HeldStops { table_work: Mutex::new(self.table_work.lock().expect(UNPOISONED).clone()), deadline: Arc::clone(&self.deadline) }
+        HeldStops { table_work: Mutex::new(self.table_work.lock().expect(UNPOISONED).clone()) }
     }
 }
 
 const UNPOISONED: &str = "a store that no panic poisoned";
+
+/// The default cap of a request's work, in units of work
+/// ([`RequestWork`]). Provisional: `docs/engine/synthesis.md#decode-settings`
+/// gives how it is to be set from the work of the gold programs' requests.
+pub const REQUEST_WORK_CAP: u64 = 1 << 36;
+
+/// The count of [`Gauge`]s.
+const GAUGES: usize = 15;
+
+/// A capped quantity of a request, which [`Gauges`] keeps the largest value of
+/// and the hits at.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Gauge {
+    /// The work of the request ([`RequestWork`]).
+    RequestWork,
+    /// The count of one observation, under the table work cap.
+    TableWork,
+    /// The bindings of one evaluation, under the binding cap.
+    Bindings,
+    /// The rows of one evaluation, under the row cap.
+    Rows,
+    /// The joint assignments of one walk, under the assignment cap.
+    Assignments,
+    /// The models of one enumeration, under the model cap.
+    Models,
+    /// The nodes of one constraint search, under the node cap.
+    Nodes,
+    /// The rows of one projection read, under the projection cap.
+    ProjectionRows,
+    /// The steps of one completion search of an input's head, under the step
+    /// bound of `ARCLOG_PROJECTION_STEPS`.
+    ProjectionSteps,
+    /// The bytes of the session at a check, under the session's byte bound;
+    /// the room of an index build or a reservation counts as a hit alone. A
+    /// study request runs under its own bound (`TABLE_BYTES`), which the
+    /// gauge reports as its cap.
+    SessionBytes,
+    /// The bindings of the rows of one table of a study request that skips
+    /// the tables a larger one made too large, under `TABLE_ROW_WORK`.
+    StudyRowWork,
+    /// The row comparisons of one study pair, under the table work cap of the
+    /// settings.
+    PairComparisons,
+    /// The rows of the larger of two relations that a comparison of successor
+    /// tables reads row by row, under `COMPARED_ROWS`.
+    ComparedRows,
+    /// The largest margin of a Box that a term holds, as the bits it takes
+    /// (a margin `m` takes `m` for `m >= 0` and `-m - 1` for `m < 0`), under
+    /// the 127 that a signed byte holds. The count is of the process, from
+    /// the begin of the latest request ([`ambient`]).
+    BoxMargin,
+    /// The states that the walk of `Decoder::candidate_atoms` checked, under
+    /// its `limit`.
+    AtomStates,
+}
+
+impl Gauge {
+    /// Each gauge, in the order of [`Gauges::each`].
+    pub const ALL: [Gauge; GAUGES] = [
+        Gauge::RequestWork,
+        Gauge::TableWork,
+        Gauge::Bindings,
+        Gauge::Rows,
+        Gauge::Assignments,
+        Gauge::Models,
+        Gauge::Nodes,
+        Gauge::ProjectionRows,
+        Gauge::ProjectionSteps,
+        Gauge::SessionBytes,
+        Gauge::StudyRowWork,
+        Gauge::PairComparisons,
+        Gauge::ComparedRows,
+        Gauge::BoxMargin,
+        Gauge::AtomStates,
+    ];
+
+    /// The gauge's name, which is stable.
+    pub fn name(self) -> &'static str {
+        match self {
+            Gauge::RequestWork => "request_work",
+            Gauge::TableWork => "table_work",
+            Gauge::Bindings => "bindings",
+            Gauge::Rows => "rows",
+            Gauge::Assignments => "assignments",
+            Gauge::Models => "models",
+            Gauge::Nodes => "nodes",
+            Gauge::ProjectionRows => "projection_rows",
+            Gauge::ProjectionSteps => "projection_steps",
+            Gauge::SessionBytes => "session_bytes",
+            Gauge::StudyRowWork => "study_row_work",
+            Gauge::PairComparisons => "pair_comparisons",
+            Gauge::ComparedRows => "compared_rows",
+            Gauge::BoxMargin => "box_margin",
+            Gauge::AtomStates => "atom_states",
+        }
+    }
+}
+
+/// For each [`Gauge`], the largest value that a request's quantity reached,
+/// its cap, and how often it hit the cap. A note is a load and a compare while
+/// the value is no new largest, and each caller notes once per batch or once
+/// per evaluation, never per binding or row.
+#[derive(Debug, Default)]
+pub struct Gauges {
+    slots: [GaugeSlot; GAUGES],
+}
+
+#[derive(Debug, Default)]
+struct GaugeSlot {
+    max: AtomicU64,
+    cap: AtomicU64,
+    hits: AtomicU64,
+}
+
+impl Gauges {
+    fn slot(&self, gauge: Gauge) -> &GaugeSlot {
+        &self.slots[gauge as usize]
+    }
+
+    /// Records that `gauge` reached `value` under `cap`.
+    #[inline]
+    pub fn note(&self, gauge: Gauge, value: u64, cap: u64) {
+        let slot = self.slot(gauge);
+        if value > slot.max.load(Ordering::Relaxed) {
+            slot.max.fetch_max(value, Ordering::Relaxed);
+        }
+        if slot.cap.load(Ordering::Relaxed) != cap {
+            slot.cap.store(cap, Ordering::Relaxed);
+        }
+    }
+
+    /// Records that `gauge` reached `value`, which passes `cap`: a hit.
+    #[cold]
+    pub fn hit(&self, gauge: Gauge, value: u64, cap: u64) {
+        self.note(gauge, value, cap);
+        self.slot(gauge).hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// The largest value, the cap and the hits of each gauge, in the order of
+    /// [`Gauge::ALL`]. A cap of 0 is one that the request never gave.
+    pub fn each(&self) -> [(Gauge, u64, u64, u64); GAUGES] {
+        Gauge::ALL.map(|gauge| {
+            if gauge == Gauge::BoxMargin {
+                let (largest, hits) = ambient::margin();
+                return (gauge, largest, ambient::MARGIN_CAP, hits);
+            }
+            let slot = self.slot(gauge);
+            (gauge, slot.max.load(Ordering::Relaxed), slot.cap.load(Ordering::Relaxed), slot.hits.load(Ordering::Relaxed))
+        })
+    }
+}
+
+/// The counters of caps that a computation meets where no [`Limits`] are at
+/// hand, which the process keeps from the begin of the latest request
+/// ([`RequestWork::begin`]) to the next. A request that runs while another
+/// begins, on another thread of the process, shares them with it.
+pub mod ambient {
+    use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+    /// The largest margin extent that a signed byte holds, which the Box
+    /// margin bound is ([`super::Gauge::BoxMargin`]).
+    pub const MARGIN_CAP: u64 = 127;
+
+    static LARGEST_MARGIN: AtomicU32 = AtomicU32::new(0);
+    static MARGIN_HITS: AtomicU64 = AtomicU64::new(0);
+
+    /// Records the margin `extent` of a Box that a term packs: two compares
+    /// while it is no new largest and holds.
+    #[inline]
+    pub fn note_margin(extent: u32) {
+        if extent > LARGEST_MARGIN.load(Ordering::Relaxed) {
+            LARGEST_MARGIN.fetch_max(extent, Ordering::Relaxed);
+        }
+        if u64::from(extent) > MARGIN_CAP {
+            MARGIN_HITS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// The largest margin extent and the count of Boxes past the bound.
+    pub fn margin() -> (u64, u64) {
+        (u64::from(LARGEST_MARGIN.load(Ordering::Relaxed)), MARGIN_HITS.load(Ordering::Relaxed))
+    }
+
+    /// Starts the counters again from zero.
+    pub fn reset() {
+        LARGEST_MARGIN.store(0, Ordering::Relaxed);
+        MARGIN_HITS.store(0, Ordering::Relaxed);
+    }
+}
+
+/// The count of the work of one request, a call from a caller into a decoder
+/// or a study evaluator, summed over every query, walk and observation the
+/// request runs, and its cap, with the [`Gauges`] of its other caps. A unit of
+/// work is one binding that a join tries, one row that a walk, a
+/// materialization or an index build visits, or one step of a walk of joint
+/// assignments, as `docs/engine/synthesis.md#decode-settings` lists.
+///
+/// The count is a plain sum of the charges. A thread's charges come in an
+/// order that the calls alone decide, and the count and the place where it
+/// passes the cap do not depend on the machine's speed. The count is the
+/// work the request would do with every cache empty: a hit in the result
+/// cache, in a memo or in a kept computation charges the [`Cost`] recorded
+/// in its entry, which is what the entry's computation charged, so the count
+/// does not depend on what the caches held, nor on which thread filled an
+/// entry first. Where the recorded cost would not fit under the cap, the hit
+/// is no hit: the entry is computed again, and the computation stops at the
+/// charge that a computation with empty caches stops at
+/// ([`Cost::fits`]). Clones share the count.
+#[derive(Clone, Debug)]
+pub struct RequestWork {
+    count: Arc<AtomicU64>,
+    cap: u64,
+    gauges: Arc<Gauges>,
+}
+
+/// The units that every request of the process has charged ([`RequestWork::total`]).
+static TOTAL: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    /// The request most recently begun on this thread ([`RequestWork::begin`]).
+    static LATEST: RefCell<Option<RequestWork>> = const { RefCell::new(None) };
+    /// What this thread charges, for the costs of entries ([`Tally`]).
+    static TALLY: RefCell<Tally> = const { RefCell::new(Tally { frames: Vec::new(), unbilled: 0 }) };
+}
+
+/// What a thread has charged, for the cost of an entry ([`Cost`]).
+///
+/// An entry is computed on one thread, which runs no task of the pool while
+/// it computes (`super::pool`), so the charges of an entry are the charges
+/// that its thread makes between its begin and its end, and a tally for each
+/// thread gives the cost of an entry when several threads share a request.
+struct Tally {
+    /// The measurements open on the thread ([`RequestWork::measure`]), the
+    /// innermost last.
+    frames: Vec<Frame>,
+    /// The rows that index builds on this thread walked, for which no call had
+    /// a request at hand ([`RequestWork::note_unbilled`]).
+    unbilled: u64,
+}
+
+/// One open measurement.
+struct Frame {
+    /// The identity of the request that the measurement counts the charges
+    /// to.
+    request: usize,
+    /// The rows that were unbilled when the measurement began, which belong
+    /// to the work around it.
+    held: u64,
+    cost: Cost,
+}
+
+fn tally<R>(with: impl FnOnce(&mut Tally) -> R) -> R {
+    TALLY.with(|tally| with(&mut tally.borrow_mut()))
+}
+
+/// Notes in the innermost open measurement the `bindings` that a batch charged
+/// to the observation's count, whichever count the evaluation has.
+pub(crate) fn tally_table(bindings: u64) {
+    tally(|tally| {
+        if let Some(top) = tally.frames.last_mut() {
+            top.cost.table = top.cost.table.saturating_add(bindings);
+        }
+    });
+}
+
+/// Notes in the innermost open measurement the largest bindings and rows of
+/// an evaluation that ended, as its [`Gauges`] hold them.
+pub(crate) fn tally_gauges(bindings: u64, rows: u64) {
+    tally(|tally| {
+        if let Some(top) = tally.frames.last_mut() {
+            top.cost.bindings = top.cost.bindings.max(bindings);
+            top.cost.rows = top.cost.rows.max(rows);
+        }
+    });
+}
+
+/// Notes in the innermost open measurement the counts that a session recorded
+/// ([`TaskSession::record_counts`]).
+pub(crate) fn tally_counts(counts: Counts) {
+    tally(|tally| {
+        if let Some(top) = tally.frames.last_mut() {
+            top.cost.counts.bindings = top.cost.counts.bindings.max(counts.bindings);
+            top.cost.counts.rows = top.cost.counts.rows.max(counts.rows);
+        }
+    });
+}
+
+/// What the computation of an entry charged, which a hit on the entry charges
+/// again: the units in the request, the bindings in the observation's count,
+/// and the largest counts that its evaluations noted. A cost includes the
+/// costs of the entries that the computation read, so it is the cost of the
+/// computation with every cache empty. It is a function of the entry alone.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Cost {
+    /// The units of work charged to the request.
+    pub request: u64,
+    /// The bindings charged to the observation's count.
+    pub table: u64,
+    /// The largest bindings and rows that an evaluation noted in the request's
+    /// gauges.
+    bindings: u64,
+    rows: u64,
+    /// The largest counts that the session recorded.
+    counts: Counts,
+}
+
+impl Cost {
+    /// Adds what a computation inside the one this cost counts charged.
+    fn absorb(&mut self, inner: &Cost, same_request: bool) {
+        if same_request {
+            self.request = self.request.saturating_add(inner.request);
+        }
+        self.table = self.table.saturating_add(inner.table);
+        self.bindings = self.bindings.max(inner.bindings);
+        self.rows = self.rows.max(inner.rows);
+        self.counts.bindings = self.counts.bindings.max(inner.counts.bindings);
+        self.counts.rows = self.counts.rows.max(inner.counts.rows);
+    }
+
+    /// Whether `request` and `table`, the observation's count where there is
+    /// one, stay within their caps after this cost. A hit whose cost does not
+    /// fit is no hit: the caller computes the entry again, and the
+    /// computation stops at the charge that a computation with empty caches
+    /// stops at.
+    pub fn fits(&self, request: &RequestWork, table: Option<&TableWork>) -> bool {
+        request.count().saturating_add(self.request) <= request.cap() && table.is_none_or(|table| table.fits(self.table))
+    }
+
+    /// Charges this cost for a hit: the units to `request`, the bindings to
+    /// `table`, and the counts to the gauges of `request` and to `session`.
+    /// The rows of index builds that wait for a charge stay waiting for the
+    /// next one, as they do around a computation.
+    pub fn charge(&self, request: &RequestWork, table: Option<&TableWork>, session: &TaskSession) -> Result<(), ReachedBound> {
+        let held = tally(|tally| std::mem::take(&mut tally.unbilled));
+        tally_table(self.table);
+        let charged = request.charge(self.request).and_then(|()| table.map_or(Ok(()), |table| table.charge(self.table)));
+        let caps = session.caps;
+        request.gauges().note(Gauge::Bindings, self.bindings, caps.bindings);
+        request.gauges().note(Gauge::Rows, self.rows, caps.rows);
+        tally_gauges(self.bindings, self.rows);
+        session.record_counts(self.counts);
+        tally(|tally| tally.unbilled = tally.unbilled.saturating_add(held));
+        charged
+    }
+}
+
+/// Pops the measurement that [`RequestWork::measure`] opened, where its
+/// computation panicked.
+struct Unwind(bool);
+
+impl Drop for Unwind {
+    fn drop(&mut self) {
+        if self.0 {
+            let _ = TALLY.try_with(|tally| {
+                if let Ok(mut tally) = tally.try_borrow_mut()
+                    && let Some(frame) = tally.frames.pop()
+                {
+                    tally.unbilled = frame.held;
+                }
+            });
+        }
+    }
+}
+
+impl RequestWork {
+    /// A count of no work, under `cap`.
+    pub fn new(cap: u64) -> Self {
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, gauges: Arc::default() }
+    }
+
+    /// A count of no work for a request that begins now, under `cap`, which
+    /// [`RequestWork::latest`] gives on this thread until another request
+    /// begins on it.
+    pub fn begin(cap: u64) -> Self {
+        let work = Self::new(cap);
+        ambient::reset();
+        tally(|tally| tally.unbilled = 0);
+        LATEST.with(|latest| *latest.borrow_mut() = Some(work.clone()));
+        work
+    }
+
+    /// The request most recently begun on this thread, or `None` where none
+    /// has begun.
+    pub fn latest() -> Option<RequestWork> {
+        LATEST.with(|latest| latest.borrow().clone())
+    }
+
+    /// The units that the requests of this process have charged since it
+    /// started, on every thread: the sum of their counts.
+    pub fn total() -> u64 {
+        TOTAL.load(Ordering::Relaxed)
+    }
+
+    /// Adds `units` to the count, and gives the stop once the count is past
+    /// the cap. Each later call gives it too, so a request that reached the
+    /// cap stops at each charge after it.
+    ///
+    /// The add is one relaxed `fetch_add` and a comparison. A call comes once
+    /// for each batch of 1024 bindings or rows, beside the byte-bound check
+    /// ([`super::join::Budget::charge_work`]) and the table work count, which
+    /// cost more.
+    #[inline]
+    pub fn charge(&self, units: u64) -> Result<(), ReachedBound> {
+        let key = self.key();
+        let units = tally(|tally| {
+            let units = units.saturating_add(std::mem::take(&mut tally.unbilled));
+            // Past 2^40 a charge is past every cap, and the clamp keeps the sum of a request's charges from wrapping.
+            let units = units.min(1 << 40);
+            if units > 0
+                && let Some(top) = tally.frames.last_mut()
+                && top.request == key
+            {
+                top.cost.request = top.cost.request.saturating_add(units);
+            }
+            units
+        });
+        // A check that adds nothing reads the count alone.
+        let count = if units == 0 {
+            self.count.load(Ordering::Relaxed)
+        } else {
+            TOTAL.fetch_add(units, Ordering::Relaxed);
+            self.count.fetch_add(units, Ordering::Relaxed).saturating_add(units)
+        };
+        if count > self.cap {
+            // The charge that takes the count past the cap is the one hit.
+            if count - units <= self.cap {
+                self.gauges.hit(Gauge::RequestWork, count, self.cap);
+            }
+            Err(ReachedBound::RequestWork { cap: self.cap })
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Holds `rows`, which an index build on this thread walked where no
+    /// request was at hand to charge, for the next charge of a request on this
+    /// thread. A request runs on one thread, so the rows go to the request
+    /// that built the index.
+    pub fn note_unbilled(rows: u64) {
+        tally(|tally| tally.unbilled = tally.unbilled.saturating_add(rows));
+    }
+
+    /// The identity of the count, which the open measurements name it by.
+    fn key(&self) -> usize {
+        Arc::as_ptr(&self.count) as usize
+    }
+
+    /// The value of `run` and its [`Cost`]: what `run` charges to this
+    /// request on this thread, and the bindings it charges to an observation's
+    /// count, with the costs of the entries it hits. The cost counts in
+    /// the measurement around it too, and the rows of index builds that
+    /// waited for a charge when `run` began wait for one after it, so they
+    /// belong to the work around and not to `run`.
+    pub fn measure<T>(&self, run: impl FnOnce() -> T) -> (T, Cost) {
+        tally(|tally| {
+            let held = std::mem::take(&mut tally.unbilled);
+            tally.frames.push(Frame { request: self.key(), held, cost: Cost::default() });
+        });
+        let mut open = Unwind(true);
+        let value = run();
+        // The rows of builds that no charge in `run` took are the work of `run`.
+        let _ = self.charge(0);
+        open.0 = false;
+        let cost = tally(|tally| {
+            let frame = tally.frames.pop().expect("the measurement this call opened");
+            tally.unbilled = tally.unbilled.saturating_add(frame.held);
+            if let Some(outer) = tally.frames.last_mut() {
+                outer.cost.absorb(&frame.cost, frame.request == outer.request);
+            }
+            frame.cost
+        });
+        (value, cost)
+    }
+
+    /// What the innermost measurement open on this thread has charged to this
+    /// request so far.
+    pub fn spent(&self) -> Cost {
+        let _ = self.charge(0);
+        let key = self.key();
+        tally(|tally| tally.frames.last().filter(|frame| frame.request == key).map_or_else(Cost::default, |frame| frame.cost))
+    }
+
+    /// The work counted so far.
+    pub fn count(&self) -> u64 {
+        self.count.load(Ordering::Relaxed)
+    }
+
+    /// The cap on the count.
+    pub fn cap(&self) -> u64 {
+        self.cap
+    }
+
+    /// Whether the count is past the cap.
+    pub fn is_past_cap(&self) -> bool {
+        self.count() > self.cap
+    }
+
+    /// The gauges of the request's other caps.
+    pub fn gauges(&self) -> &Gauges {
+        &self.gauges
+    }
+}
 
 /// A shared count of work. Row queries count without an observation budget;
 /// projections, extents, mask walks and row comparisons supply their own cap.
@@ -376,6 +842,11 @@ pub struct TableWork {
     count: Arc<AtomicU64>,
     cap: u64,
     crossing: Arc<Crossing>,
+    /// The gauges of the request that the count's observation runs in, once
+    /// [`Limits::counted_in`] gives them; the clones of the count share them.
+    gauges: Arc<std::sync::OnceLock<Arc<Gauges>>>,
+    /// The gauge that the count's notes and hits go to.
+    gauge: Gauge,
 }
 
 /// The counts on the two sides of the charge that first took a count past
@@ -390,7 +861,16 @@ struct Crossing {
 impl TableWork {
     /// An observation with no work counted, under `cap`.
     pub fn new(cap: u64) -> Self {
-        TableWork { count: Arc::new(AtomicU64::new(0)), cap, crossing: Arc::new(Crossing { set: AtomicBool::new(false), before: AtomicU64::new(0), after: AtomicU64::new(0) }) }
+        TableWork { count: Arc::new(AtomicU64::new(0)), cap, crossing: Arc::new(Crossing { set: AtomicBool::new(false), before: AtomicU64::new(0), after: AtomicU64::new(0) }), gauges: Arc::default(), gauge: Gauge::TableWork }
+    }
+
+    /// An observation with no work counted, under `cap`, whose count the
+    /// gauge `gauge` of `request` keeps, where the budget is no table work
+    /// cap of the settings.
+    pub fn counted_as(cap: u64, gauge: Gauge, request: &RequestWork) -> Self {
+        let work = Self::new(cap);
+        let _ = work.gauges.set(Arc::clone(&request.gauges));
+        TableWork { gauge, ..work }
     }
 
     /// A count with no observation budget.
@@ -409,8 +889,14 @@ impl TableWork {
             if before <= self.cap {
                 self.cross(before, count);
             }
+            if let Some(gauges) = self.gauges.get() {
+                gauges.hit(self.gauge, count, self.cap);
+            }
             Err(ReachedBound::TableWork { cap: self.cap })
         } else {
+            if let Some(gauges) = self.gauges.get() {
+                gauges.note(self.gauge, count, self.cap);
+            }
             Ok(())
         }
     }
@@ -471,13 +957,16 @@ impl TableWork {
 }
 
 /// The bounds of one evaluation that differ between the evaluations of a
-/// session: the deadline where it has one, its cancellation, the work
+/// session: the work of its request, its cancellation, the work
 /// count of its query or observation, the stops held by the decode
 /// it runs for, and whether it checks the declared rows of the outputs it
 /// builds. The caps stand in the [`crate::session::TaskSession`].
 #[derive(Clone, Debug)]
 pub struct Limits {
-    pub deadline: Option<std::time::Instant>,
+    /// The work of the request that the evaluation runs in, which every
+    /// evaluation of the request adds to, and which stops each of them once
+    /// past its cap.
+    pub request: RequestWork,
     pub cancellation: Cancellation,
     /// The count that the evaluation's batches of bindings are added to.
     pub table_work: Option<TableWork>,
@@ -531,9 +1020,19 @@ impl RowReserve {
 }
 
 impl Limits {
-    /// The limits of an evaluation outside a table and outside a decode.
-    pub fn new(deadline: Option<std::time::Instant>, cancellation: Cancellation) -> Self {
-        Limits { deadline, cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default(), byte_bound: None, row_reserve: None, exported: None, carry: None }
+    /// The limits of an evaluation outside a table and outside a decode, with
+    /// a request of no work counted under `request_cap`, or under
+    /// [`REQUEST_WORK_CAP`] where it is `None`. The request is no request
+    /// that [`RequestWork::latest`] gives: a caller begins one with
+    /// [`crate::stream::DecodeSettings::operation_limits`] or a decoder's call.
+    pub fn new(request_cap: Option<u64>, cancellation: Cancellation) -> Self {
+        Limits { request: RequestWork::new(request_cap.unwrap_or(REQUEST_WORK_CAP)), cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default(), byte_bound: None, row_reserve: None, exported: None, carry: None }
+    }
+
+    /// These limits with the evaluation adding to `request`, the work of the
+    /// request it runs in, in place of a request of its own.
+    pub fn in_request(self, request: RequestWork) -> Self {
+        Limits { request, ..self }
     }
 
     /// These limits with the evaluation checking the declared rows of the
@@ -544,6 +1043,8 @@ impl Limits {
 
     /// These limits with the evaluation counted in `work`.
     pub fn counted_in(self, work: TableWork) -> Self {
+        // The first request that counts an observation keeps its gauges.
+        let _ = work.gauges.set(Arc::clone(&self.request.gauges));
         Limits { table_work: Some(work), ..self }
     }
 

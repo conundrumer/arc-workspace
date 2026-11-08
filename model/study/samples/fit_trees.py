@@ -6,6 +6,7 @@
 DIR is `samples/SET/points/`. The point files of train tasks give the fit and those of dev tasks give the evaluation, by the split in each file's header. A file whose header split is
 held-out (or `held`, its name in older files) is an error, and so is a DIR below `points_held-out` or `points_held`. The tasks of split.OUT_OF_SCOPE are left
 out of the fit and of --score, and the report's `out_of_scope` names them. --dev-tasks names tasks to treat as dev whatever their header says (for development on a small set; held-out stays an error).
+Where no file is dev, the fit runs exactly --rounds rounds, which must then be given, and it evaluates nothing.
 With --points-per-task N a task keeps at most N of its points, chosen by a hash of the seed, the sample id and the point's position in its file (0: all).
 
 A row is one (point, id): the id's option values, the id's table vector and the point's values. The columns are in the order of the header's `uses` (the writer's feature names, which
@@ -774,6 +775,21 @@ def check(folder: Path, seed: int, alpha: float = 0.0) -> int:
 
 # ---------------------------------------------------------------- the fit
 
+class Progress:
+    """LightGBM callback of a fit with no dev files: print the round, the seconds so far and the ETA every `period` rounds of `rounds`."""
+    order = 30
+    before_iteration = False
+
+    def __init__(self, period: int, rounds: int):
+        self.period, self.rounds, self.t0 = period, rounds, time.time()
+
+    def __call__(self, env: Any) -> None:
+        k = env.iteration + 1
+        if self.period > 0 and k % self.period == 0:
+            el = time.time() - self.t0
+            print(f'round {k} of {self.rounds}, {el:.0f} s, ETA {el / k * (self.rounds - k):.0f} s', flush=True)
+
+
 class Reporter:
     """LightGBM callback: keep the dev loss of every round and print it every `period` rounds."""
     order = 30
@@ -808,8 +824,11 @@ def fit(args: argparse.Namespace) -> int:
     dev_tasks = set(args.dev_tasks.split(',')) if args.dev_tasks else set()
     alike = alike_checks(args)
     train_files, dev_files, heads = split_files(args.points, dev_tasks)
-    if not train_files or not dev_files:
-        raise FitError(f'{len(train_files)} train files and {len(dev_files)} dev files: the fit needs both')
+    if not train_files:
+        raise FitError('no train files: the fit needs some')
+    if not dev_files and args.rounds is None:
+        raise FitError('no dev files: the fit then runs a fixed count of rounds, which --rounds gives')
+    rounds = args.rounds if args.rounds is not None else 2000
     fields = feature_fields([heads[points_stem(p)] for p in (*train_files, *dev_files)], frozenset(filter(None, args.wheels_alike.split(','))))
     plan = plan_of([heads[points_stem(p)] for p in (*train_files, *dev_files)])
     layout = layout_of(fields)
@@ -834,48 +853,57 @@ def fit(args: argparse.Namespace) -> int:
         print(f'shapes: {info}', flush=True)
     names = layout.names
     safe = booster_names(names)
-    dev, dev_count = load(dev_files, heads, layout, args.points_per_task, args.seed)
-    sizes = dict(train=train.describe(), dev=dev.describe())
+    dev, dev_count = load(dev_files, heads, layout, args.points_per_task, args.seed) if dev_files else (None, Counter())
+    sizes = dict(train=train.describe(), **({} if dev is None else dict(dev=dev.describe())))
     for split, d in sizes.items():
         print(f'{split} matrix: {d["groups"]} points, {d["rows"]} rows x {d["columns"]} columns float32 = {d["matrix_bytes"] / (1 << 20):.1f} MiB, '
               f'{d["bytes_per_row"]} bytes per row with its positive mark, {d["ids_per_group"]} ids and {d["positives_per_group"]} positives per point, {d["tasks"]} tasks', flush=True)
     print(f'loaded in {time.time() - t0:.1f} s; points left out: train {dict(train_count)} dev {dict(dev_count)}', flush=True)
 
-    params: dict[str, Any] = dict(num_leaves=args.num_leaves, learning_rate=args.learning_rate, min_data_in_leaf=args.min_data_in_leaf, feature_fraction=args.feature_fraction,
-                                  seed=args.seed, num_threads=args.threads, verbosity=-1, metric='None')
+    params: dict[str, Any] = dict(num_leaves=args.num_leaves, learning_rate=args.learning_rate, min_data_in_leaf=args.min_data_in_leaf, min_sum_hessian_in_leaf=args.min_sum_hessian,
+                                  lambda_l2=args.lambda_l2, max_delta_step=args.max_delta_step, feature_fraction=args.feature_fraction, seed=args.seed, num_threads=args.threads, verbosity=-1, metric='None')
     if args.alpha and (train.drawn is None or not train.drawn.any()):
         print(f'--alpha {args.alpha}: the train points have no drawn count, so the loss has no weight', flush=True)
     train_objective = objective_of(train, args.alpha, args.task_weights)
-    dev_starts, dev_sizes, dev_positive = dev.starts, dev.sizes, dev.positive.astype(np.float64)
-
-    def dev_loss(scores: Floats, _data: Any) -> tuple[str, float, bool]:
-        return 'dev_loss', float(group_terms(np.asarray(scores, np.float64), dev_positive, dev_starts, dev_sizes).loss.mean()), False
-
     train_set = SequenceDataset(train_rows, label=train.positive, feature_name=safe, params=dict(params, max_bin=255), free_raw_data=True)
     train_set.construct()
     reader.release()
-    dev_set = lgb.Dataset(dev.matrix, label=dev.positive, reference=train_set, feature_name=safe, free_raw_data=False)
-    reporter = Reporter(args.log_every)
     t1 = time.time()
-    booster = lgb.train(dict(params, objective=train_objective), train_set, num_boost_round=args.rounds, valid_sets=[dev_set], valid_names=['dev'], feval=dev_loss,
-                        callbacks=[reporter, lgb.early_stopping(args.early_stopping, first_metric_only=True, verbose=False)])
-    best = booster.best_iteration or booster.current_iteration()
-    print(f'fit: {booster.current_iteration()} rounds in {time.time() - t1:.1f} s, best round {best}, dev loss at best {reporter.curve[best - 1]:.6f}', flush=True)
+    curve: list[float] = []
+    if dev is None:  # no dev files: exactly --rounds rounds, and no evaluation
+        booster = lgb.train(dict(params, objective=train_objective), train_set, num_boost_round=rounds, callbacks=[Progress(args.log_every, rounds)])
+        best = booster.current_iteration()
+        print(f'fit: {best} rounds in {time.time() - t1:.1f} s, no dev files', flush=True)
+    else:
+        dev_starts, dev_sizes, dev_positive = dev.starts, dev.sizes, dev.positive.astype(np.float64)
+
+        def dev_loss(scores: Floats, _data: Any) -> tuple[str, float, bool]:
+            return 'dev_loss', float(group_terms(np.asarray(scores, np.float64), dev_positive, dev_starts, dev_sizes).loss.mean()), False
+
+        dev_set = lgb.Dataset(dev.matrix, label=dev.positive, reference=train_set, feature_name=safe, free_raw_data=False)
+        reporter = Reporter(args.log_every)
+        booster = lgb.train(dict(params, objective=train_objective), train_set, num_boost_round=rounds, valid_sets=[dev_set], valid_names=['dev'], feval=dev_loss,
+                            callbacks=[reporter, lgb.early_stopping(args.early_stopping, first_metric_only=True, verbose=False)])
+        best = booster.best_iteration or booster.current_iteration()
+        curve = reporter.curve
+        print(f'fit: {booster.current_iteration()} rounds in {time.time() - t1:.1f} s, best round {best}, dev loss at best {curve[best - 1]:.6f}', flush=True)
 
     out: Path = args.out
     out.parent.mkdir(parents=True, exist_ok=True)
     booster.save_model(str(out), num_iteration=best)
     if shapes_report is not None:
         Path(str(out) + '.shapes.json').write_text(json.dumps(sidecar, indent=1))
-    scores = booster.predict(dev.matrix, num_iteration=best, raw_score=True)
-    got, base = evaluate(np.asarray(scores), dev), uniform_baseline(dev)
-    print(f'dev, trees:   mean loss {got["mean_loss"]:.6f}  top-scored id is positive {got["top_is_positive"]:.4f}  ({got["points"]} points)')
-    print(f'dev, uniform: mean loss {base["mean_loss"]:.6f}  top-scored id is positive {base["top_is_positive"]:.4f}  (every id ties; credit shared)')
+    got = base = None
+    if dev is not None:
+        scores = booster.predict(dev.matrix, num_iteration=best, raw_score=True)
+        got, base = evaluate(np.asarray(scores), dev), uniform_baseline(dev)
+        print(f'dev, trees:   mean loss {got["mean_loss"]:.6f}  top-scored id is positive {got["top_is_positive"]:.4f}  ({got["points"]} points)')
+        print(f'dev, uniform: mean loss {base["mean_loss"]:.6f}  top-scored id is positive {base["top_is_positive"]:.4f}  (every id ties; credit shared)')
     report = dict(
         model=str(out), plan=plan, params=dict(params, objective='custom: -log(sum of softmax over the positive ids), per point', alpha=args.alpha), rounds_run=booster.current_iteration(), best_round=best,
-        early_stopping_rounds=args.early_stopping, max_rounds=args.rounds, dev_loss_by_round=reporter.curve, dev=got, dev_uniform=base,
+        early_stopping_rounds=None if dev is None else args.early_stopping, max_rounds=rounds, dev_loss_by_round=curve, dev=got, dev_uniform=base,
         points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=[str(f) for f in args.points], matrix=sizes,
-        points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=sorted(set(dev.tasks)),
+        points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=[] if dev is None else sorted(set(dev.tasks)),
         features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), wheels_alike=alike, out_of_scope=dict(file=str(OUT_OF_SCOPE), tasks=out_of_scope()), shapes=shapes_report, peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
     Path(str(out) + '.json').write_text(json.dumps(report, indent=1))
     print(f'wrote {out} and {out}.json; peak RSS {peak_rss_mib():.0f} MiB')
@@ -923,12 +951,15 @@ def main() -> int:
     ap.add_argument('--wheels-alike', default='', help='W,W: engine wheels whose point files go in one fit (header wheel, such as site-exp61,site-exp62)')
     ap.add_argument('--wheels-alike-check', nargs='+', default=[], help='with --wheels-alike: the JSON files of run/points_alike.py that show the wheels give equal points')
     ap.add_argument('--shapes', type=int, default=900, help='the column budget of the shape columns (the points files\' `shapes` and `tok_tables` records; shape_rel.py): the shapes most often unequal across a training point\'s table tokens, 6 columns each, 2 for a stable shape (0: none)')
-    ap.add_argument('--rounds', type=int, default=2000)
+    ap.add_argument('--rounds', type=int, help='with dev files, the most rounds (default 2000); with none, the count of rounds, which must be given')
     ap.add_argument('--early-stopping', type=int, default=50, help='stop after this many rounds without a better dev loss')
     ap.add_argument('--log-every', type=int, default=50)
     ap.add_argument('--num-leaves', type=int, default=63)
     ap.add_argument('--learning-rate', type=float, default=0.05)
     ap.add_argument('--min-data-in-leaf', type=int, default=100)
+    ap.add_argument('--min-sum-hessian', type=float, default=1e-3, help="LightGBM's min_sum_hessian_in_leaf: the least sum of hessians in a leaf (LightGBM's default 1e-3)")
+    ap.add_argument('--lambda-l2', type=float, default=0.0, help="LightGBM's lambda_l2: a leaf's output is -G/(H + lambda_l2) (LightGBM's default 0)")
+    ap.add_argument('--max-delta-step', type=float, default=0.0, help="LightGBM's max_delta_step: a cap on a leaf's output before the learning rate; 0 is no cap (LightGBM's default)")
     ap.add_argument('--feature-fraction', type=float, default=0.8)
     ap.add_argument('--threads', type=int, default=int(os.environ.get('ARC_HEAVY_CPUS', '1')))
     args = ap.parse_args()

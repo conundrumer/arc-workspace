@@ -8,7 +8,7 @@ The step ends when a refine pass runs on the engine, the checks of the present l
 
 - The engine gives two sets of facts as fact relations of a check program:
     - The structure facts describe a solver: its forms, clauses, atoms, sites, reads, declarations, blocks and alts.
-    - The run facts describe a run: row counts, whether each case solves each pair, output cells, determined values, and the evaluations stopped at a cap or a deadline.
+    - The run facts describe a run: row counts, whether each case solves each pair, output cells, determined values, and the evaluations stopped at a cap.
 - A check is arclog clauses in `engine/checks/*.arclog`. The columns of a check relation's rows are the code, the place and the parts of the message.
 - The engine runs the check program with the same evaluator. So a new check that reads only these facts is a text edit, and it runs at engine speed.
 
