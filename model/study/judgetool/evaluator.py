@@ -285,7 +285,7 @@ class ReplayEvaluator:
         self._gold_kept_cache[key]=deepcopy(result)
         return result
 
-    def gold_tables(self, program, *, full_rows=False, full_rows_entries=None, expected_tables_ref=None, full_rows_selector=None):
+    def gold_tables(self, program, *, full_rows=False, full_rows_selector=None):
         """Shared native execution; typed exporters opt into bounded full rows.
 
         The native flag changes packing only. It neither raises the projection
@@ -296,89 +296,20 @@ class ReplayEvaluator:
         if full_rows_selector is not None and (not full_rows or not callable(full_rows_selector)):
             raise ValueError('full-row selector requires full_rows=True and a callable')
         if full_rows_selector is not None:
-            if not full_rows or full_rows_entries is not None or expected_tables_ref is not None:
-                raise ValueError('metadata selection needs full_rows without an explicit entry mask')
-            signature = getattr(self.ev.gold_tables, '__text_signature__', '') or ''
-            if 'full_rows_entries' in signature and 'expected_tables_ref' in signature:
-                metadata, selection = self._select_gold_rows(program, full_rows_selector)
-                full_rows_entries = selection['entries']
-                expected_tables_ref = metadata['tables_ref']
-                self._packing_attempt['native_gold_tables_calls'] = 2
-            else:
-                # Select compatibility mode BEFORE execution. There is no
-                # retry after a stop, failed selection or rejected mask.
-                self._packing_attempt = dict(strategy='unmasked full rows; legacy native API',
-                                             native_gold_tables_calls=1)
-        if full_rows_entries is not None or expected_tables_ref is not None:
-            if not full_rows:
-                raise ValueError('entry-masked packing requires full_rows=True')
-            signature = getattr(self.ev.gold_tables, '__text_signature__', '') or ''
-            selected_only = 'selected_only' in signature
-            if self._packing_attempt is not None:
-                self._packing_attempt['selected_only'] = selected_only
-            options = dict(selected_only=True) if selected_only else {}
-            status, tables = self.ev.gold_tables(program, full_rows=True,
-                full_rows_entries=full_rows_entries, expected_tables_ref=expected_tables_ref, **options)
-        else:
-            status, tables = (self.ev.gold_tables(program, held_rows=True) if full_rows
-                              else self.ev.gold_tables(program))
+            # The engine gives the rows of every entry, with no mask, so the selector is not called.
+            self._packing_attempt = dict(strategy='unmasked full rows; legacy native API',
+                                         native_gold_tables_calls=1)
+        status, tables = (self.ev.gold_tables(program, held_rows=True) if full_rows
+                          else self.ev.gold_tables(program))
         report = json.loads(status) if isinstance(status, str) else status
-        if full_rows_entries is not None:
-            if (report.get('tables_ref') != expected_tables_ref or
-                    report.get('full_rows_entries') != sorted(full_rows_entries)):
-                raise ValueError('native masked packing report differs from its requested snapshot/entries')
-        if full_rows_entries is not None and 'selected_only' in locals() and selected_only:
-            if report.get('selected_only') is not True or report.get('projection_payload_omitted') is not True:
-                raise ValueError('native selected-only packing report differs from request')
         native = self.legacy.native(tables)
         self.captures.append(dict(program=program.sexp(), report=report, native=native))
         return status, tables
 
-    def _select_gold_rows(self, program, selector):
-        """Own the first packed snapshot only inside this scope.
-
-        Only JSON metadata and integer indices leave it. Thus every payload
-        owner/view is released before the same cached observation is repacked.
-        """
-        signature = getattr(self.ev.gold_tables, '__text_signature__', '') or ''
-        metadata_only = 'metadata_only' in signature
-        self._packing_attempt = dict(strategy='snapshot-bound kept TRAIN entry mask',
-                                     native_gold_tables_calls=1,
-                                     metadata_only=metadata_only, selected_only=False)
-        options = dict(metadata_only=True) if metadata_only else {}
-        status, payload = self.ev.gold_tables(program, **options)
-        metadata = json.loads(status) if isinstance(status, str) else status
-        self._packing_attempt['metadata_report'] = metadata
-        if metadata_only and (metadata.get('metadata_only') is not True or
-                              metadata.get('projection_payload_omitted') is not True):
-            raise ValueError('native metadata-only packing report differs from request')
-        if metadata.get('status') != 'complete':
-            raise ValueError('native gold tables did not complete: '+canonical(metadata))
-        if (metadata.get('entry_metadata_complete') is not True or
-                not metadata.get('tables_ref')):
-            raise ValueError('native packing metadata incomplete: '+canonical(metadata))
-        native = self.legacy.native(payload)
-        if metadata.get('entry_count') != len(native['_native_reader'].entries['table']):
-            raise ValueError('native default packing entry count differs')
-        # Round-trip prohibits leaking a packed view/owner from the callback.
-        selection = json.loads(canonical(selector(native)))
-        entries = selection['entries']
-        if (not isinstance(entries, list) or
-                any(type(i) is not int or not 0 <= i < metadata['entry_count'] for i in entries) or
-                len(entries) != len(set(entries))):
-            raise ValueError('canonical metadata selector returned invalid entry indices')
-        self._packing_attempt['selection'] = selection
-        return metadata, selection
-
     def _artifact(self, record, candidate, result):
         identity = dict(source=sha(record), candidate=candidate, settings=self.receipt)
         if result.get('full_rows'):
-            mode = result.get('packing_selection') or {}
-            identity['packing'] = dict(full_rows=True, metadata_only=mode.get('metadata_only', False),
-                                       selected_only=mode.get('selected_only', False))
-            selection = result.get('packing_selection', {}).get('selection')
-            if selection is not None:
-                identity['packing']['entries_sha256'] = sha(selection['entries'])
+            identity['packing'] = dict(full_rows=True)
         if result.get('assignment_mode')=='derived':identity['assignment_mode']='derived'
         if result.get('artifact_mode')=='metadata':identity['artifact_mode']='metadata'
         key = sha(identity)
@@ -465,7 +396,7 @@ class ReplayEvaluator:
         result['artifact'] = self._artifact(record, dict(clause=clause, profile=result['profile']), result)
         return result
 
-    def _coverage(self, record, capture, inserted=None, form=None, *, entry_mask=None, allow_test=False):
+    def _coverage(self, record, capture, inserted=None, form=None):
         n = capture['native']; ts = n['tables']
         if form is None:
             form = int(record['point'][0])+1
@@ -473,22 +404,6 @@ class ReplayEvaluator:
         if not indices:
             return dict(status='unknown', reason='inserted form has no returned table')
         t = indices[0]
-        if entry_mask is not None:
-            # Scope the canonical reader before decoding. Its buffers,
-            # assignments and validation remain shared with the original view.
-            from copy import copy
-            original = n['_native_reader']
-            if (not isinstance(entry_mask, list)
-                    or any(type(e) is not int or not 0 <= e < len(original.entries['table'])
-                           for e in entry_mask)
-                    or len(entry_mask) != len(set(entry_mask))):
-                raise ValueError('invalid admitted full-row coverage entry mask')
-            if any(original.entries['example_kind'][e] not in ((0, 1, 2) if allow_test else (0, 1)) for e in entry_mask):
-                raise ValueError('selected full-row coverage requires TRAIN/TASK entries')
-            allowed = set(entry_mask)
-            scoped = copy(original)
-            scoped.bytable = {t: [e for e in original.bytable[t] if e in allowed]}
-            n = dict(n, _native_reader=scoped, _row_cache={})
         _, train_entries, _ = self.legacy.rows_at(n, t)
         entries = list(train_entries)
         reader = n['_native_reader']
@@ -527,11 +442,8 @@ class ReplayEvaluator:
                     groups.append(dict(kept_assignment=a, **e))
         selected = {g['entry'] for g in groups}
         other = [e['entry'] for e in entries if e['entry'] not in selected]
-        scope = {} if entry_mask is None else dict(
-            entry_scope='selected_full_rows_train_task',
-            admitted_entries=list(entry_mask), entry_mask_sha256=sha(entry_mask))
         return dict(status='complete' if groups else 'unknown', table=t,
-                    **scope, unheld_det_relations=unheld,
+                    unheld_det_relations=unheld,
                     det_relations=ts['det_relations'][t], groups=groups,
                     other_assignment_entries=other,
                     rule='saved values on every table dependency slot; absent compatible entry is unknown')
@@ -593,21 +505,8 @@ class ReplayEvaluator:
                         result.update(engine='ran',derived_coverage=dict(
                             status='complete',assignment_scope='native Search',saved_kept_used=False))
                     else:
-                        coverage_options = {}
-                        if (full_rows_selector is not None and self._packing_attempt is not None
-                                and self._packing_attempt.get('selected_only') is True):
-                            selection = self._packing_attempt['selection']
-                            kinds = self.captures[-1]['native']['_native_reader'].entries['example_kind']
-                            has_test = any(kinds[e] == 2 for e in selection['entries'])
-                            # A mask with TEST entries needs the selector's explicit allowance.
-                            if (selection.get('test_entries_selected') is not has_test
-                                    or (has_test and selection.get('test_entries_allowed') is not True)
-                                    or report.get('full_rows_entries') != selection['entries']):
-                                raise ValueError('selected full-row coverage differs from admitted TRAIN/TASK mask')
-                            coverage_options['entry_mask'] = report['full_rows_entries']
-                            coverage_options['allow_test'] = has_test
                         result.update(engine='ran', kept_coverage=self._coverage(
-                            record, self.captures[-1], form=form, **coverage_options))
+                            record, self.captures[-1], form=form))
                         if result['kept_coverage']['status'] == 'unknown':
                             result['unknown'] = True
             except Exception as error:
