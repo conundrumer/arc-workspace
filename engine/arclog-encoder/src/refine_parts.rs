@@ -1273,7 +1273,7 @@ fn read_forms(forms: &[SExpr], export: &str, r: &RelationInput, s: Option<&Relat
     relations.insert("&r".to_string(), r.clone());
     let s_input = s.cloned().unwrap_or_else(|| {
         let arity = s_columns.len();
-        let all = if arity >= Mask::BITS as usize { Mask::MAX } else { (1 << arity).wrapping_sub(1) };
+        let all: Mask = if arity >= Mask::BITS as usize { Mask::MAX } else { (1 << arity) - 1 };
         RelationInput { columns: s_columns.to_vec(), keys: vec![all], low: vec![None; arity], high: vec![None; arity], within: Vec::new() }
     });
     relations.insert("&s".to_string(), s_input);
