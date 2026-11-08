@@ -197,14 +197,12 @@ impl Decoder<'_> {
             registry: self.context.registry, constructions: self.constructions, limits: &limits,
         };
         let mut live = false;
-        let mut leaves = 0;
         let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[_], unassigned: usize| {
             // Undefined domains remain visible in the canonical walker as missing
             // bindings. A partial leaf cannot certify that the written DETs live.
             // A DET whose values no pick reads is left out of `assigned`, and
             // the walk counts it in `unassigned`.
             stats::units(Phase::DetLiveness, 1);
-            leaves += 1;
             if assigned.len() + unassigned != dets.len() { return Ok(()); }
             for pick in picks {
                 let mut found = false;
@@ -225,7 +223,7 @@ impl Decoder<'_> {
             live = true;
             Ok(())
         };
-        let (_, end, stop) = descend_unread(inputs, dets, picks, root, self.context.settings.caps.assignments, &mut leaf, domains);
+        let (_, end, stop, leaves) = descend_unread(inputs, dets, picks, root, self.context.settings.caps.assignments, &mut leaf, domains);
         let verdict = match end {
             Err(End::Fault(fault)) => Err(DetRefusal::Fault(format!("{fault:?}"))),
             Err(End::Stop(found)) if matches!(found.bound, ReachedBound::Assignments { .. }) => Err(DetRefusal::Bound(found.bound)),

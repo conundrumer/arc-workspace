@@ -578,7 +578,8 @@ pub(crate) fn descend_with(
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
     domains: Option<&dyn Domains>,
 ) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
-    walk_dets(inputs, dets, None, root, cap, &mut |evaluation, assigned, _| leaf(evaluation, assigned), domains, false)
+    let (branching, end, stop, _) = walk_dets(inputs, dets, None, root, cap, &mut |evaluation, assigned, _| leaf(evaluation, assigned), domains, false);
+    (branching, end, stop)
 }
 
 /// [`descend_with`] for a walk of a table, where each step of the walk, a
@@ -595,7 +596,8 @@ pub(crate) fn descend_scoped(
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
     domains: Option<&dyn Domains>,
 ) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
-    walk_dets(inputs, dets, None, root, cap, &mut |evaluation, assigned, _| leaf(evaluation, assigned), domains, true)
+    let (branching, end, stop, _) = walk_dets(inputs, dets, None, root, cap, &mut |evaluation, assigned, _| leaf(evaluation, assigned), domains, true);
+    (branching, end, stop)
 }
 
 /// [`descend_with`] for a walk whose `leaf` reads the values that it holds
@@ -616,6 +618,13 @@ pub(crate) fn descend_scoped(
 /// values stand as the values would give them. `leaf` gets, as its last
 /// argument, the count of `DET`s of `dets` that `assigned` leaves out in this
 /// way.
+///
+/// The steps after an unread `DET` are the same at each of its values, and
+/// the walk takes them once: the later values add the leaves of that one
+/// taking to the count, and stop at the assignment cap where the count passes
+/// it. `leaf` is called once for those leaves, and the last element of the
+/// result is the count of leaves the walk reached, as the walk of each value
+/// would count them: more than `cap` where the walk stopped at the cap.
 pub(crate) fn descend_unread(
     inputs: EvaluationInputs<'_>,
     dets: &[Det],
@@ -624,7 +633,7 @@ pub(crate) fn descend_unread(
     cap: u64,
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment], usize) -> Result<(), End>,
     domains: Option<&dyn Domains>,
-) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
+) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>, u64) {
     walk_dets(inputs, dets, Some(readers), root, cap, leaf, domains, false)
 }
 
@@ -645,7 +654,7 @@ fn walk_dets(
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment], usize) -> Result<(), End>,
     domains: Option<&dyn Domains>,
     scoped: bool,
-) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
+) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>, u64) {
     let _timed = stats::span(Phase::TableWalk);
     stats::seen(Phase::TableWalk, || {
         let program = &inputs.program.program;
@@ -654,7 +663,7 @@ fn walk_dets(
     let unread = readers.map(|readers| unread_dets(inputs.program, dets, readers)).unwrap_or_default();
     let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf, domains, unread, skipped: 0, stop: None, scoped };
     let end = walk.descend(0, &mut Vec::new());
-    (walk.branching, end, walk.stop)
+    (walk.branching, end, walk.stop, walk.count)
 }
 
 /// The walk of one relation's joint assignments.
@@ -737,9 +746,7 @@ impl Walk<'_, '_> {
             let gauges = self.inputs.limits.request.gauges();
             if self.count > cap {
                 gauges.hit(crate::eval::Gauge::Assignments, self.count, cap);
-                let program = &self.inputs.program.program;
-                let form = self.dets.last().map_or_else(|| program.form_of(self.root), |det| program.form_of(det.node));
-                return Err(End::Stop(Stop { bound: ReachedBound::Assignments { cap }, form: form.clone() }));
+                return Err(self.past_cap());
             }
             gauges.note(crate::eval::Gauge::Assignments, self.count, cap);
             return (self.leaf)(&evaluation, assigned, self.skipped);
@@ -828,9 +835,44 @@ impl Walk<'_, '_> {
             self.branching.push(det.relation.clone());
         }
         self.skipped += 1;
-        let walked = (0..count).try_for_each(|_| self.descend(at + 1, assigned));
+        let walked = self.repeated(count, at, assigned);
         self.skipped -= 1;
         walked
+    }
+
+    /// The steps after `dets[at]` taken `times` times with `assigned` as it
+    /// is, which is `times` times the same steps: the walk takes them once,
+    /// and the leaves of that one taking stand for the leaves of the others.
+    /// A later taking would reach those leaves again, each with the same
+    /// verdict from `leaf`, and the same stops, so it adds the leaves to the
+    /// count, and ends at the assignment cap where the count passes it.
+    fn repeated(&mut self, times: usize, at: usize, assigned: &mut Vec<Assignment>) -> Result<(), End> {
+        if times == 0 {
+            return Ok(());
+        }
+        let before = self.count;
+        self.descend(at + 1, assigned)?;
+        let more = (times as u64 - 1).saturating_mul(self.count - before);
+        if more == 0 {
+            return Ok(());
+        }
+        let gauges = self.inputs.limits.request.gauges();
+        if self.count.saturating_add(more) > self.cap {
+            // The leaf that takes the count past the cap ends the walk, as it does when each taking is walked.
+            self.count = self.cap.saturating_add(1);
+            gauges.hit(crate::eval::Gauge::Assignments, self.count, self.cap);
+            return Err(self.past_cap());
+        }
+        self.count += more;
+        gauges.note(crate::eval::Gauge::Assignments, self.count, self.cap);
+        Ok(())
+    }
+
+    /// The stop at the assignment cap, at the form of the last `DET` walked.
+    fn past_cap(&self) -> End {
+        let program = &self.inputs.program.program;
+        let form = self.dets.last().map_or_else(|| program.form_of(self.root), |det| program.form_of(det.node));
+        End::Stop(Stop { bound: ReachedBound::Assignments { cap: self.cap }, form: form.clone() })
     }
 }
 
