@@ -494,14 +494,14 @@ pub(crate) fn relation_metadata(registry: &Registry, program: &CheckedProgram, f
         stats::units(Phase::TableLabelNames, program.program.program.value().forms.len());
         label_names(&program.program.program, registry).swap_remove(top)
     };
-    let label_text = |label: LabelId| named.iter().find(|(id, _)| *id == label).map(|(_, name)| name.clone()).expect("every label of the form is named");
+    let label_text = |label: LabelId| named.iter().find(|(id, _)| *id == label).map(|(_, name)| name.clone());
     let columns = names
         .into_iter()
         .zip(types)
         .zip(placements)
         .map(|((name, ty), placement)| {
             let label_id = placement.and_then(|placed| placed.label);
-            TableColumn { name, ty: ty.clone(), slot: placement.map(|placed| placed.slot), label_id, label: label_id.map(label_text) }
+            TableColumn { name, ty: ty.clone(), slot: placement.map(|placed| placed.slot), label_id, label: label_id.and_then(label_text) }
         })
         .collect();
     let flows = column_flows(program, relation.node, relation.output.as_deref(), &types, registry).into();
