@@ -48,7 +48,7 @@ def digest(x):
 
 def graph_names(outputs, entries):
     """{(function, name): graph table} for outputs [(function, name)], from entries [(function, name, assignment [[DET, value]], hash)], as
-    gold_union_tables.tables_of names them."""
+    gold_union_tables.tables_of names them: a table with no TableHash at some assignment is its own graph table."""
     tables_at = {}
     for f, _, asg, h in entries:
         for d, v in asg:
@@ -65,7 +65,12 @@ def graph_names(outputs, entries):
     for f, n, asg, h in entries:
         a = sorted([value_set[d], table_of.get((d, v), v)] for d, v in asg if d not in one_value)
         raw.setdefault((f, n), []).append([a, h or 'none'])
-    return {(f, n): 't' + digest(sorted(raw.get((f, n), []))) for f, n in outputs}
+    def name(f, n):
+        m = sorted(raw.get((f, n), []))
+        if any(h == 'none' or any(v == 'none' for _, v in a) for a, h in m):
+            return 't' + digest(['no TableHash', f, n])
+        return 't' + digest(m)
+    return {(f, n): name(f, n) for f, n in outputs}
 
 
 def row_store(rows, task):

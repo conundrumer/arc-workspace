@@ -2,6 +2,7 @@
 
 - A parameterized table is (QueryHash, Name). It maps each Assignment over the DETs it depends on to a table, the TableRows at that assignment. Its map is {Assignment → TableHash}, an Assignment being the sorted (DET QueryHash, value hash) pairs.
 - Two parameterized tables are one graph table when their maps are equal with each DET value written as the TableHash of the DET's table at that value, and each DET as the set of those TableHashes, so that DETs of different QueryHash pair by equal sets of value TableHashes (a value hash keeps the DET's column order, so it can differ where the table is equal), and with each DET of one value left out of the Assignments, since it gives every table that depends on it one choice. A graph table is named "t" and 16 hex digits of a hash of that map. This is a measurement, not an identity.
+- A parameterized table with no TableHash at some assignment, or with a DET value whose table has none (the row store entry's `hash` is null; the map writes `none` there), is its own graph table: its map is not a measurement of its content, so no other table is one with it. The graph table's name is "t" and 16 hex digits of a hash of its QueryHash and Name.
 - A parameterized table whose output stopped at the cap of the engine's walk is `capped`; its map holds the assignments the walk reached.
 - A union query is matched to its row store query by (union key, text), from the query's own line or one of its `alias` lines (a later union query of the same QueryHash). A union query with no match keeps its Python identity, and its parameterized tables are named "u<identity>.<Name>", each its own graph table.
 
@@ -12,6 +13,9 @@ from dataclasses import dataclass, field
 
 ROWS = os.environ.get('ARC_SAMPLE_OUT', '/Users/davidlu/code/arc-workspace/work/lm/data-study/samples') + '/%s/rows/%s.jsonl.gz'  # ARC_SAMPLE_OUT: the samples folder, as split.OUTD
 VERSIONS = os.environ.get('ROWS_VERSION', 'engine@site-exp30').split(',')  # the row store hash_versions accepted, separated by commas
+
+
+NONE = 'none'  # the map's mark for a table with no TableHash
 
 
 def digest(x):
@@ -27,6 +31,7 @@ class Tables:
     capped: dict = field(default_factory=dict)  # graph table -> whether a table of it stopped at the cap
     shared_value_sets: int = 0  # assignments in which two DETs have one set of value hashes, so the map can't tell them apart
     unmatched: list = field(default_factory=list)  # Python identities of union queries with no row store query
+    unhashed: list = field(default_factory=list)  # (QueryHash, Name) of the tables with no TableHash at some assignment
 
     def table(self, ident, name):
         """The graph table of the union query `ident` at output `name`."""
@@ -69,7 +74,7 @@ def tables_of(s, u):
     for e in entries:
         for d, v in e['assignment']:
             if d == e['function']:
-                tables_at.setdefault((d, v), set()).add(e.get('hash') or 'none')
+                tables_at.setdefault((d, v), set()).add(e.get('hash') or NONE)
     table_of = {k: min(v) if len(v) == 1 else digest(sorted(v)) for k, v in tables_at.items()}  # (DET, value hash) -> the TableHash of the DET's table at that value
     values = {}
     for e in entries:
@@ -82,12 +87,16 @@ def tables_of(s, u):
     for e in entries:
         a = sorted([value_set[d], table_of.get((d, v), v)] for d, v in e['assignment'] if d not in one_value)
         T.shared_value_sets += len({x for x, _ in a}) < len(a)
-        raw.setdefault((e['function'], e['name']), []).append([a, e.get('hash') or 'none'])
+        raw.setdefault((e['function'], e['name']), []).append([a, e.get('hash') or NONE])
     for r in queries:
         T.names.setdefault(r['id'], [o['name'] for o in r['outputs']])
         for n in T.names[r['id']]:
             m = sorted(raw.get((r['id'], n), []))
-            g = 't' + digest(m)
+            if any(h == NONE or any(v == NONE for _, v in a) for a, h in m):
+                T.unhashed.append((r['id'], n))
+                g = 't' + digest(['no TableHash', r['id'], n])
+            else:
+                g = 't' + digest(m)
             T.graph[r['id'], n] = g
             T.maps[g] = m
             T.capped[g] = T.capped.get(g, False) or (r['id'], n) in stopped

@@ -110,6 +110,8 @@ class Inputs:
                     else:
                         self.assignment_vecs[(r['query'], r['name'])] = r['values']
                 elif t == 'given':  # tables file record `given` (future name: `base`)
+                    if r['hash'] is None:
+                        raise ValueError(f'the base table {r["name"]} has no TableHash')
                     self.base[r['name']] = r['hash']
                 elif t == 'function':  # tables file record `function`, a query vector (future name: `query`)
                     self.query_vecs[r['function']] = r
@@ -147,7 +149,10 @@ def build(task: str, inp: Inputs, st: Counter[str]) -> tuple[list[dict], dict]:
 
     queries = inp.queries
     depth = depths(queries)
-    joined = {h for h in queries if h in inp.by_query and h in inp.query_vecs}
+    # a TableVector is keyed by its TableHash, so a query with a table that has none is not joined (its tables stand for nothing); it is counted
+    no_hash = {h for h, v in inp.by_query.items() if any(th is None for _, _, th in v)}
+    st['queries with a table that has no TableHash'] += len(no_hash & set(queries))
+    joined = {h for h in queries if h in inp.by_query and h in inp.query_vecs and h not in no_hash}
     used_vecs: set[str] = set(inp.base.values())
     qlines: list[dict] = []
     capped: dict[str, list[str]] = {}

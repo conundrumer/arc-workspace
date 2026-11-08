@@ -208,7 +208,7 @@ def main():
                 fk.write(json.dumps(dict(task=u['task'], set=u.get('set'), error='graph: %s: %s' % (type(e).__name__, str(e)[:200]))) + '\n')
                 print(u['task'], 'graph error', type(e).__name__, str(e)[:200], flush=True)
                 continue
-            task.update(tables_source='row store' if T else 'none', shared_value_sets=T.shared_value_sets if T else None, unmatched=len(T.unmatched) if T else None)
+            task.update(tables_source='row store' if T else 'none', shared_value_sets=T.shared_value_sets if T else None, unmatched=len(T.unmatched) if T else None, unhashed_tables=len(T.unhashed) if T else None)
             u_rows = [r for r in rows if r['table'].startswith('u')]
             if u_rows:  # a read with no row store table is a fault of the union, the store or the graph, so the task gets an error line
                 fk.write(json.dumps(dict(task=u['task'], set=u.get('set'), error='unmatched reads: %d tables, %s' % (len(u_rows), '; '.join('%s %s' % (r['table'], ','.join(r['members'])) for r in u_rows[:5])),

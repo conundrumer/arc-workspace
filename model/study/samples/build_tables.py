@@ -95,11 +95,9 @@ def assignment_vector_records(store: RS.Store, queries: set[str] | None = None) 
     table as `engine_features`; the `vec` records hold the wider Python TableVector, which the writer does not know. The capped flag of a parameterized
     table is the row store's `stopped` flag of its output."""
     w = sampler_writer()
-    vectors: dict[str, list[float]] = {}
     for t in [*store.tables, *store.given]:
         if len(t.engine_features) != len(w._TABLE_NAMES):
             raise ValueError(f'the row store holds {len(t.engine_features)} engine features for table {t.hash}; the writer takes {len(w._TABLE_NAMES)}')
-        vectors[t.hash] = t.engine_features
     at: dict[tuple[str, str], list[RS.StoredTable]] = {}
     for t in store.tables:
         if queries is None or t.function in queries:  # t.function: the table's query (future name: `query`)
@@ -107,11 +105,16 @@ def assignment_vector_records(store: RS.Store, queries: set[str] | None = None) 
     out = []
     for (qid, name), ts in at.items():
         capped = any(o.get('stopped') for o in store.functions.get(qid, {}).get('outputs', []) if o['o'] == ts[0].o)
-        out.append(dict(t='assignment_vector', query=qid, name=name, values=clean([float(x) for x in w.assignment_vector([(t.hash, vectors[t.hash]) for t in ts], capped)])))
+        out.append(dict(t='assignment_vector', query=qid, name=name, values=clean([float(x) for x in w.assignment_vector([(t.hash, t.engine_features) for t in ts], capped)])))
     if queries is None:
         for t in store.given:  # t.function: the base table's name
-            out.append(dict(t='assignment_vector', base=t.function, values=clean([float(x) for x in w.assignment_vector([(t.hash, vectors[t.hash])], False)])))
+            out.append(dict(t='assignment_vector', base=t.function, values=clean([float(x) for x in w.assignment_vector([(t.hash, t.engine_features)], False)])))
     return out
+
+
+def table_key(t: RS.StoredTable) -> Any:
+    """What two stored tables share a TableAt by: their TableHash. A table with no TableHash is shared with none."""
+    return t.hash if t.hash is not None else (t.function, t.o, t.assignment)
 
 
 def legacy_check(store: RS.Store) -> dict:
@@ -184,16 +187,18 @@ def build_task(task: str, src: Path, out: Path) -> dict:
     put(dict(t='header', task=task, split=store.header.get('split'), src=store.header['src'], rows_code=store.header['code'], code=code_sha(), schema=SCHEMA, hash_source=store.header['hash_source'], hash_version=store.header['hash_version'], engine_features_version=store.header['engine_features_version'],
              query_hash_version=store.header["query_hash_version"], names=TV.NAMES, assignment_vector_names=list(sampler_writer().assignment_vector_names()),
              function_names=FV.value_names(), use_names=FV.USE_NAMES))
-    cache: dict[str, TR.TableAt] = {}
+    cache: dict[Any, TR.TableAt] = {}
     vecs: set[str] = set()
     by_table: dict[FV.Ref, dict[RS.AssignKey, TR.TableAt]] = {}
 
     cmp = dict(compared=0, python_differs=0, dev_differs=0, dev_missing=0)
 
     def vec_of(t: RS.StoredTable) -> TR.TableAt:
-        tab = cache.get(t.hash)
+        tab = cache.get(table_key(t))
         if tab is None:
-            tab = cache[t.hash] = TR.table_at(t, n_train, n_test, native_example(store, t))
+            tab = cache[table_key(t)] = TR.table_at(t, n_train, n_test, native_example(store, t))
+            if t.hash is None:  # a vector is keyed by its TableHash, so a table with none has no `vec` record; its entry says `hash` null
+                return tab
             v = TV.table_vec(tab, ctx)
             put(dict(t='vec', hash=t.hash, kind='counts_only' if t.counts_only else 'content', values=clean(v)))
             if t.engine_features and not t.counts_only:  # the engine's features, against Python's and against the engine's from Python
@@ -227,7 +232,7 @@ def build_task(task: str, src: Path, out: Path) -> dict:
             put(dict(t='function', **{**r, 'values': clean(r['values']), 'per_use': [[u, clean(x)] for u, x in r['per_use']]}))
             n_fn += 1
     check = legacy_check(store)
-    put(dict(t='footer', tables=len(store.tables), vectors=len(cache), assignment_vectors=n_av['parameterized'], base_assignment_vectors=n_av['base'], functions=n_fn, **check, **cmp))
+    put(dict(t='footer', tables=len(store.tables), tables_without_hash=sum(t.hash is None for t in store.tables), vectors=len(cache), assignment_vectors=n_av['parameterized'], base_assignment_vectors=n_av['base'], functions=n_fn, **check, **cmp))
     w.close()
     os.replace(fd, out)
     return dict(tables=len(store.tables), vectors=len(cache), assignment_vectors=n_av['parameterized'], functions=n_fn, **check, **cmp)
