@@ -1395,6 +1395,9 @@ fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) 
     let families = arclog_encoder::generate::Generators::default();
     let summary = arclog_encoder::shapes_refresh::run(std::path::Path::new(rows), std::path::Path::new(out), &arguments.tasks, task, only.as_deref(), arguments.threads, &families)?;
     eprintln!("{summary}");
+    if arclog_encoder::bounds::enabled() {
+        eprint!("{}", arclog_encoder::bounds::summary());
+    }
     Ok(())
 }
 
