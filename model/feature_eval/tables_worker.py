@@ -21,6 +21,8 @@ from pathlib import Path
 REPO = Path('/Users/davidlu/code/arc-workspace')
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from query_structure import Reader, parse_forms, query_features, relation_of  # noqa: E402
+sys.path.insert(0, str(REPO / 'src'))
+from arclog_convert.readback import read_checked  # noqa: E402  the corpus is a gen/ directory
 
 CORPUS = REPO / 'work/arclog/gen'
 TASKS = REPO / 'data/tasks'
@@ -129,7 +131,7 @@ def worker(root, task):
     script = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(script)
     data = CORPUS / (task + '.arcdata')
-    cases = arclog.case_files(task, (CORPUS / (task + '.arclog')).read_text(), data.read_text() if data.exists() else '', str(CORPUS))
+    cases = arclog.case_files(task, read_checked(CORPUS / (task + '.arclog')), read_checked(data) if data.exists() else '', str(CORPUS))
     c = [x for x in cases if x.concept][0]
     settings = arclog.DecodeSettings()
     gold = arclog.StudyProgram.from_sexp(c.arclog, settings)

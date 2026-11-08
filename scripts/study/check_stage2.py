@@ -21,7 +21,7 @@ import tempfile
 from threading import Event, Lock, Thread
 import time
 
-from check_stage1_all import CaseDeadline, inventory
+from check_stage1_all import CaseDeadline, inventory, read_checked
 
 POLICY = "complete-domain-unique-text-gold-names-v7"
 READER = "complete-program-bindings-v2"
@@ -160,8 +160,8 @@ def check_task(args):
     import arclog
     names = json.loads(args.worklist.read_text())
     emit(dict(event="inventory", task=args.worker, expected_cases=names))
-    sources = arclog.case_files(args.worker, (args.corpus / f"{args.worker}.arclog").read_text(),
-                               (args.corpus / f"{args.worker}.arcdata").read_text(), str(args.corpus))
+    sources = arclog.case_files(args.worker, read_checked(args.corpus / f"{args.worker}.arclog"),
+                               read_checked(args.corpus / f"{args.worker}.arcdata"), str(args.corpus))
     sources = {case.case: case for case in sources}
     settings = (arclog.DecodeSettings(mutation_node_cap=args.domain_nodes, rule_tests=False)
                 if args.domain_nodes else arclog.DecodeSettings.corpus())

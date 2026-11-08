@@ -22,6 +22,9 @@ import sys
 import time
 import zipfile
 
+sys.path.insert(0, str(REPO_ROOT / "src"))
+from arclog_convert.readback import read_checked  # the corpus is a gen/ directory
+
 
 def npy(archive, name):
     with archive.open(name + ".npy") as src:
@@ -55,8 +58,8 @@ def check_task(args):
     import arclog
     cases, offsets, exported_ids, exported_model = inventory(args.export, args.worker, True)
     print(json.dumps({"task": args.worker, "expected_cases": cases}), flush=True)
-    files = arclog.case_files(args.worker, (args.corpus / f"{args.worker}.arclog").read_text(),
-                              (args.corpus / f"{args.worker}.arcdata").read_text(), str(args.corpus))
+    files = arclog.case_files(args.worker, read_checked(args.corpus / f"{args.worker}.arclog"),
+                              read_checked(args.corpus / f"{args.worker}.arcdata"), str(args.corpus))
     files = {case.case: case for case in files}
     task = arclog.Task.from_json((args.tasks / f"{args.worker}.json").read_text(), arclog.World.Closed)
     settings = arclog.DecodeSettings(rule_tests=False)
