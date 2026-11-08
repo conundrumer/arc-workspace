@@ -170,7 +170,7 @@ def arm_tree(a, arm):
 
 
 def parity_gate(a, out, arm, tasks):
-    """Refuses a live run whose worker gives a model other input rows than training rows: a short worker on a few tasks writes a sample of its points (WRITER_PARITY_DIR), and sampler/serving_parity.py rebuilds them at a session as rows make it. A stamp in the code's folder keeps a pass for this sampler code, site, tree and writer settings."""
+    """Refuses a live run whose worker gives a model other input rows than training rows: a short worker on a few tasks writes a sample of its points (WRITER_PARITY_DIR), and sampler/serving_parity.py rebuilds them at a session as rows make it. A stamp in search/parity-stamps/<code hash>/ keeps a pass for this sampler code, site, tree and writer settings, outside the code version."""
     samp = Path(a.code) / 'model/study/sampler'
     if not (samp / 'serving_parity.py').exists():
         raise SystemExit('this kit has no serving parity check: %s has no serving_parity.py. --no-parity runs it unchecked.' % samp)
@@ -178,7 +178,7 @@ def parity_gate(a, out, arm, tasks):
     code = hashlib.sha256(b''.join(p.read_bytes() for p in sorted(samp.glob('*.py')))).hexdigest()  # a change to the sampler's code needs a new check
     tree = arm_tree(a, arm)
     key = hashlib.sha256(json.dumps([a.site, str(tree), a.plan, settings, code] + (sorted(a.tok_env) if arm != 'base' else [])).encode()).hexdigest()[:16]
-    stamp = Path(a.code) / 'parity' / (key + '.json')
+    stamp = DATA_ROOT / 'search' / 'parity-stamps' / code[:16] / (key + '.json')  # outside the code version, which a run never writes into
     if stamp.exists():
         return
     folder = out / ('parity' if arm != 'base' else 'parity-base')  # each tree's check has its own folder
@@ -199,7 +199,7 @@ def parity_gate(a, out, arm, tasks):
     print(got.stdout[-3000:], flush=True)
     if got.returncode:
         raise SystemExit('serving parity failed: this run would read other rows than its model was fit on. Details above; --no-parity runs it anyway.')
-    stamp.parent.mkdir(exist_ok=True)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
     stamp.write_text(json.dumps(dict(site=a.site, tree=str(tree), plan=a.plan, settings=settings, report=got.stdout[-2000:])))
 
 
