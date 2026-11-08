@@ -1495,9 +1495,10 @@ impl<'c> Search<'c> {
         let mut passed = false;
         let path_unique = self.unique;
         self.unique = path_unique && distinct;
+        // Each value starts from these cursors, and puts them back after it.
+        let saved: Vec<(usize, (IndexNode<'t>, usize))> = sources.iter().map(|&a| (a, cursors[a])).collect();
         for value in candidates {
             self.tried.count(budget, 1)?;
-            let saved: Vec<(usize, (IndexNode<'t>, usize))> = sources.iter().map(|&a| (a, cursors[a])).collect();
             let mut held = true;
             for &a in &sources {
                 while held && at(&atoms[a], cursors[a].1) {
@@ -1512,7 +1513,7 @@ impl<'c> Search<'c> {
                 passed |= self.step(rank + 1, atoms, cursors, projected, rows, budget)?;
             }
             self.binding[usize::from(variable.0)] = None;
-            for (a, cursor) in saved {
+            for &(a, cursor) in &saved {
                 cursors[a] = cursor;
             }
             if passed && stops {
