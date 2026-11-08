@@ -139,9 +139,9 @@ class Solver:
     def __init__(self, task, text=None):
         """The task's solver, from its file in GEN, or from text in its place."""
         self.task = task
-        text = (GEN / (task + '.arclog')).read_text() if text is None else text
+        text = paths.read_gen(GEN / (task + '.arclog')) if text is None else text
         data = GEN / (task + '.arcdata')
-        cases = arclog.case_files(task, text, data.read_text() if data.exists() else ';; %s\n' % task, str(GEN))
+        cases = arclog.case_files(task, text, paths.read_gen(data) if data.exists() else ';; %s\n' % task, str(GEN))
         self.case = next((case for case in cases if case.concept), None)
         if self.case is None or not supported_case(self.case):
             raise ValueError(f'{task}: the concept case is not supported (it needs a program without DEMONSTRATED forms)')
