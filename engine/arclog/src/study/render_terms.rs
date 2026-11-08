@@ -104,7 +104,17 @@ pub fn decode(type_name: &str, packed: i64, registry: &Registry) -> Result<Value
             return Err(format!("invalid {type_name} orientation encoding {bits}"));
         }
     }
-    let term = Term::decode(TermId::from_encoding(bits), &ty);
+    // A lib name's cell in a packed row is its export cell, which is no number of this process.
+    let id = if matches!(ty, ValueType::LibName) {
+        let name = crate::terms::LibNameId::from_export_cell(bits as i32).ok_or_else(|| format!("no lib name of this process has the cell {bits}"))?;
+        match Term::Constant(Constant::LibName(name)).encode() {
+            Ok(id) => id,
+            Err(_) => return Err("a lib name encodes".into()),
+        }
+    } else {
+        TermId::from_encoding(bits)
+    };
+    let term = Term::decode(id, &ty);
     let value = match term {
         Term::Number(n) => json!({"kind":"number","value":n.0,"pretty":n.0.to_string()}),
         Term::Box(m) => {

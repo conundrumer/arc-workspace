@@ -17,7 +17,7 @@ pub(super) fn train(e: &Evaluation<'_>, output: &GraphRelation, judge: &judgemen
                 RelationValue::Undefined => {observed.observe(None);json!({"status":"complete","value_kind":"undefined","equals":false,
                     "grid_defined":false,"differing_cells":pair.output.rows().iter().map(|r|r.len()).sum::<usize>(),"reason":"undefined OUT"})},
                 RelationValue::Rows(value) => {
-                    let packed = match rows(value,budget,e.program.program.form_of(output.node)) {
+                    let packed = match out_rows(value,budget,e.program.program.form_of(output.node)) {
                         Ok(rows) => rows,
                         Err(end) => {model_end=Some(end);return ControlFlow::Break(());}
                     };

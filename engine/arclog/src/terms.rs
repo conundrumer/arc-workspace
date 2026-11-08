@@ -247,8 +247,20 @@ impl LibNameId {
     /// digest of its text. It is the same for equal texts in every process,
     /// where the name's number follows the order of interning.
     pub fn export_cell(self) -> i32 {
+        LibNameId::text_cell(&self.text())
+    }
+
+    /// The name whose [`LibNameId::export_cell`] is `cell`, among the names of
+    /// this process, or `None` where it has none.
+    pub fn from_export_cell(cell: i32) -> Option<LibNameId> {
+        let names = lib_names().read().expect("a table that no panic poisoned");
+        let at = names.texts.iter().position(|text| LibNameId::text_cell(text) == cell)?;
+        Some(LibNameId(u32::try_from(at).expect("fewer than 2^32 lib names")))
+    }
+
+    fn text_cell(text: &str) -> i32 {
         let mut hasher = crate::hash::StableHasher::new();
-        std::hash::Hasher::write(&mut hasher, self.text().as_bytes());
+        std::hash::Hasher::write(&mut hasher, text.as_bytes());
         (hasher.finish128().0 >> 96) as u32 as i32
     }
 }

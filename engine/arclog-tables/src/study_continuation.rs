@@ -4,6 +4,7 @@ use arclog::eval::determinations::Domain;
 use arclog::eval::join::Budget;
 use arclog::relations::Relation;
 use arclog::terms::TermKey;
+use std::collections::BTreeSet;
 
 #[path = "study_out.rs"]
 mod output;
@@ -24,6 +25,15 @@ fn rows(value: &Relation, budget: &mut Budget<'_>, at: &NodePath) -> Result<Stab
     charge_rows(value,budget,at)?;
     let mut found=StableHashSet::default();
     each_row(value,&mut |row| {found.insert(row.iter().map(|term|term.key()).collect());});
+    Ok(found)
+}
+
+/// The packed rows of an `OUT` relation, whose columns are a Position and a
+/// Color, so that their encodings are fixed.
+fn out_rows(value: &Relation, budget: &mut Budget<'_>, at: &NodePath) -> Result<BTreeSet<Vec<u32>>, End> {
+    charge_rows(value,budget,at)?;
+    let mut found=BTreeSet::new();
+    each_row(value,&mut |row| {found.insert(row.iter().map(|term|term.fixed_encoding()).collect());});
     Ok(found)
 }
 

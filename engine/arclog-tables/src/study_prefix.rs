@@ -106,11 +106,15 @@ pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession
             "definition_paths":frontier.program.forms_of(d.node).iter().map(arclog::mutation::path_json).collect::<Vec<_>>(),
             "types":frontier.types.columns(&relation).map(|types|types.iter().map(arclog::study::render_correspondence::type_json).collect::<Vec<_>>())})
     }).collect::<Vec<_>>();
+    let values:Vec<Value>={
+        let table=session.intern.read().expect("an intern table that no panic poisoned");
+        parents.iter().map(|a|assignment_json(a,&dets,&frontier,&table)).collect()
+    };
     let report=json!({"schema":"arclog-study-prefix-universe-v1","status":terminal.as_ref().map(|t|t["status"].clone()).unwrap_or(json!("complete")),
         "reason":terminal.as_ref().map(|t|t["reason"].clone()),"universe_ref":table_transport_ref(),
         "source_program_sexp":source.sexp(Registry::get()),"body_path":arclog::mutation::path_json(point),
         "frontier":checked_identity(&frontier,&decoder),"settings":format!("{settings:?}"),
-        "parameters":parameter_schema,"parent_assignments":parents.iter().enumerate().map(|(i,a)|json!({"parent":i,"values":assignment_json(a),"missing_parameters":missing[i]})).collect::<Vec<_>>(),
+        "parameters":parameter_schema,"parent_assignments":parents.iter().enumerate().map(|(i,a)|json!({"parent":i,"values":values[i],"missing_parameters":missing[i]})).collect::<Vec<_>>(),
         "timings":{"frontier_check_seconds":frontier_seconds,"domain_walk_seconds":walk_seconds},
         "receipt_reserved_bytes":allocation.bytes(),
         "coverage":{"enumeration_complete":complete,"assignment_values_complete":missing.iter().all(Vec::is_empty),
