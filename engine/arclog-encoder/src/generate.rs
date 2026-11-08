@@ -3002,7 +3002,7 @@ impl<'a> Walker<'a> {
                 return (found, 0);
             }
         }
-        // The count of distinct tuples of a `join`'s rows is read from its sides, with no tuples written.
+        // The count of distinct tuples of a `join`'s rows, of the rows of a `select` over it that compares two of its columns for inequality, and of the rows of a part that adds cells to each row, is read from its sides, with no rows written.
         if !number {
             let joined = match &self.values[id as usize] {
                 Val::Joined(joined) => Some(joined.clone()),
@@ -3010,7 +3010,8 @@ impl<'a> Walker<'a> {
             };
             if let Some(joined) = joined {
                 crate::bounds::begin();
-                if let Some(found) = joined.count_of(step) {
+                let second = (b != NO_TERM).then(|| &self.values[b as usize]);
+                if let Some(found) = joined.count_of(step).or_else(|| joined.count_over(step, second)) {
                     crate::bounds::end(false);
                     return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
                 }

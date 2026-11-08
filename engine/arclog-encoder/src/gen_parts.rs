@@ -1662,6 +1662,14 @@ impl PartTerm {
         self.second.as_ref()
     }
 
+    /// The columns, sorted and distinct, of the first relation that fix what the part adds to a row, where the part gives every row it takes with its own cells first, and then cells that the cells at those columns alone fix, for as many rows as they allow.
+    pub(crate) fn row_columns(&self) -> Option<Vec<u16>> {
+        let mut columns = self.step.row_list()?;
+        columns.sort_unstable();
+        columns.dedup();
+        Some(columns)
+    }
+
     /// Whether the part takes what it needs from the rows of `inside` as their boxes, where the relation has `width` columns.
     pub(crate) fn reads_boxes(&self, width: u16) -> bool {
         self.step.reads_boxes(width, self.set.is_some())
@@ -1730,8 +1738,19 @@ impl PartStep {
             PartStep::OneValue { keys, f } | PartStep::Several { keys, f } | PartStep::Determines { keys, f } => with(keys, &[*f]),
             PartStep::Extreme { keys, t, score, .. } => with(keys, &[*t, *score]),
             PartStep::NumberExtreme { n, .. } => Some(vec![*n]),
+            PartStep::CellsOn { p } | PartStep::ColorsUnder { p } | PartStep::Around { p } | PartStep::NeighborhoodClass { p } | PartStep::NeighborColorClass { p } | PartStep::SameColorNeighbors { p } | PartStep::Distance { p } | PartStep::FrameExtent { p } | PartStep::Complement { p } | PartStep::BoxCells { p, .. } | PartStep::HoleCells { p } | PartStep::DiffCells { p, .. } | PartStep::TopColorsUnder { p } | PartStep::FrameCells { p } | PartStep::ComplementParts { p } | PartStep::EveryPartStraight { p } | PartStep::OutlinesBox { p } | PartStep::LineSpacings { p } => Some(vec![*p]),
             PartStep::DeterminesFlag { keys, a, .. } => with(keys, &[*a]),
             PartStep::Occurs { keys, p, v, .. } => with(keys, &[*p, *v]),
+            _ => None,
+        }
+    }
+
+    /// The columns of the part's first relation that fix what it adds to each row, for a part that gives every row it takes with its own cells first and then the cells that those columns alone fix.
+    fn row_list(&self) -> Option<Vec<u16>> {
+        match self {
+            PartStep::DiffRows { p, .. } | PartStep::Neighbors { p } | PartStep::Split { p } | PartStep::Margin { p } | PartStep::CornerDist { p } | PartStep::Parity { p } | PartStep::BorderDistance { p } => Some(vec![*p]),
+            PartStep::BoxMargin { b } | PartStep::BoxExtent { b } => Some(vec![*b]),
+            PartStep::Displacement { a, b } => Some(vec![*a, *b]),
             _ => None,
         }
     }

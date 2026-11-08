@@ -1140,9 +1140,10 @@ impl Joined {
         }
     }
 
-    /// The count of rows that `step` gives over the join's rows, where it is a count of distinct tuples of its columns and needs no tuples written. `None` where `step` is not of that form.
+    /// The count of rows that `step` gives over the join's rows, where it is a count of distinct tuples of its columns, or a `select` that compares two columns of two nodes for inequality, and needs no rows written. `None` where `step` is not of that form.
     pub fn count_of(&self, step: &Step) -> Option<Option<u64>> {
         match step {
+            Step::Select { at, op: Op::Ne, other: Some(other), drop: None } => self.unequal_count(*at, *other),
             Step::Project { columns } => Some(self.distinct_count(columns)),
             // A count past a number's range has no value, which only a join of more rows than a number holds can reach.
             Step::Part(part) => match part.step() {
@@ -1151,6 +1152,58 @@ impl Joined {
             },
             _ => None,
         }
+    }
+
+    /// The count of rows of the join whose columns `at` and `other` differ, where the two stand in two nodes: the rows of the join, less those where they are equal, which are the rows of the join with that pair added to the key between the nodes. `None` where that join is not a value.
+    fn unequal_count(&self, at: u16, other: u16) -> Option<Option<u64>> {
+        let first = self.places.get(usize::from(at))?;
+        let second = self.places.get(usize::from(other))?;
+        if first.node == second.node {
+            return None;
+        }
+        let equal = match self.select(at, Op::Eq, Some(other), None)? {
+            Val::Joined(joined) => joined.rows(),
+            Val::Empty => 0,
+            _ => return None,
+        };
+        Some(Some(self.rows.saturating_sub(equal)))
+    }
+
+    /// The count of rows that `step` gives over the join's rows, where it is a part that gives every row it takes followed by cells that the cells at some of its columns fix. No rows of the join are written: the part runs over the distinct tuples at those columns, written as rows of the join's width with 0 at each other column, and each row it gives counts as many times as the join holds its tuple. `second` is the part's second relation, where it has one. `None` where `step` is not of that form.
+    pub fn count_over(&self, step: &Step, second: Option<&Val>) -> Option<Option<u64>> {
+        let Step::Part(part) = step else { return None };
+        let key = part.row_columns()?;
+        if matches!(second, Some(Val::None)) {
+            return Some(None);
+        }
+        let (tuples, weights) = self.grouped(&key, true)?;
+        let width = self.width();
+        let mut cells: Vec<Cell> = vec![0; weights.len() * width];
+        for (row, tuple) in cells.chunks_exact_mut(width).zip(tuples.chunks_exact(key.len())) {
+            for (column, cell) in key.iter().zip(tuple) {
+                row[usize::from(*column)] = *cell;
+            }
+        }
+        let wide = Table::new(width, cells);
+        let first = Val::of_table(wide.clone());
+        let children: Vec<&Val> = std::iter::once(&first).chain(second).collect();
+        let given = match part.step().run(&wide, &children) {
+            None | Some(Val::None) => return Some(None),
+            Some(Val::Empty) => return Some(Some(0)),
+            Some(given) => crate::gen_parts::flat(&given)?,
+        };
+        // The tuples stand sorted, so the tuple of a row of the part's rows is found by halving.
+        let sorted: Vec<&[Cell]> = tuples.chunks_exact(key.len()).collect();
+        let mut total = 0u64;
+        let mut probe: Vec<Cell> = vec![0; key.len()];
+        for row in given.rows() {
+            for (slot, column) in probe.iter_mut().zip(&key) {
+                *slot = row[usize::from(*column)];
+            }
+            let found = sorted.binary_search_by(|tuple| (*tuple).cmp(&probe[..])).ok()?;
+            total = total.saturating_add(weights[found]);
+        }
+        Some(Some(total))
     }
 
     /// A `select` over the rows of the join, as a join of the same nodes with the comparison applied. A comparison with 0, or of two columns of one node, filters that node's rows. An equality between columns of two nodes is one more pair of the key between them. Any other comparison between two nodes that are a node and its parent gives one node of the pairs of their rows that pass, in place of the two. No value where the form does not allow it.
