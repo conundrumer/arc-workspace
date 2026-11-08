@@ -158,51 +158,59 @@ pub type Grouping = (Vec<u32>, Vec<u32>);
 
 thread_local! {
     static SLOTS: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+    static SMALL_SLOTS: std::cell::RefCell<Vec<u32>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// The ids of `keys` in order of first appearance, and the place of the first appearance of each id. Where the keys span a range of at most `range` values from `least`, an array stands in for a hash table.
 pub fn first_ids(keys: &[u64], least: u64, range: u64) -> Grouping {
-    let len = keys.len();
+    first_ids_of(keys.len(), keys.iter().copied(), least, range)
+}
+
+/// `first_ids` over `len` keys that an iterator gives.
+fn first_ids_of(len: usize, keys: impl Iterator<Item = u64>, least: u64, range: u64) -> Grouping {
     let mut ids: Vec<u32> = Vec::with_capacity(len);
     let mut first: Vec<u32> = Vec::new();
     const EMPTY: u64 = u64::MAX;
-    SLOTS.with(|slots| {
-        let mut slots = slots.borrow_mut();
-        if range <= (4 * len as u64).max(64) {
-            // Each slot holds the id of a key, or EMPTY.
+    if range <= (4 * len as u64).max(64) {
+        // Each slot holds the id of a key, or `u32::MAX`.
+        SMALL_SLOTS.with(|slots| {
+            let mut slots = slots.borrow_mut();
             slots.clear();
-            slots.resize(range as usize, EMPTY);
-            for (place, key) in keys.iter().enumerate() {
-                let slot = &mut slots[(*key - least) as usize];
-                if *slot == EMPTY {
-                    *slot = first.len() as u64;
+            slots.resize(range as usize, u32::MAX);
+            for (place, key) in keys.enumerate() {
+                let slot = &mut slots[(key - least) as usize];
+                if *slot == u32::MAX {
+                    *slot = first.len() as u32;
                     first.push(place as u32);
                 }
-                ids.push(*slot as u32);
+                ids.push(*slot);
             }
-        } else {
-            // Each slot holds a key, then its id, in two words.
-            let capacity = (2 * len).next_power_of_two().max(16);
-            let shift = 64 - capacity.trailing_zeros();
-            slots.clear();
-            slots.resize(2 * capacity, EMPTY);
-            for (place, key) in keys.iter().enumerate() {
-                let mut at = (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> shift) as usize;
-                loop {
-                    let held = slots[2 * at];
-                    if held == EMPTY {
-                        slots[2 * at] = *key;
-                        slots[2 * at + 1] = first.len() as u64;
-                        ids.push(first.len() as u32);
-                        first.push(place as u32);
-                        break;
-                    }
-                    if held == *key {
-                        ids.push(slots[2 * at + 1] as u32);
-                        break;
-                    }
-                    at = (at + 1) & (capacity - 1);
+        });
+        return (ids, first);
+    }
+    SLOTS.with(|slots| {
+        let mut slots = slots.borrow_mut();
+        // Each slot holds a key, then its id, in two words.
+        let capacity = (2 * len).next_power_of_two().max(16);
+        let shift = 64 - capacity.trailing_zeros();
+        slots.clear();
+        slots.resize(2 * capacity, EMPTY);
+        for (place, key) in keys.enumerate() {
+            let mut at = (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> shift) as usize;
+            loop {
+                let held = slots[2 * at];
+                if held == EMPTY {
+                    slots[2 * at] = key;
+                    slots[2 * at + 1] = first.len() as u64;
+                    ids.push(first.len() as u32);
+                    first.push(place as u32);
+                    break;
                 }
+                if held == key {
+                    ids.push(slots[2 * at + 1] as u32);
+                    break;
+                }
+                at = (at + 1) & (capacity - 1);
             }
         }
     });
@@ -307,12 +315,11 @@ impl Table {
         columns[place].get_or_init(|| {
             let mut least = u32::MAX;
             let mut most = 0u32;
-            let keys: Vec<u64> = self.rows().map(|row| {
+            for row in self.rows() {
                 least = least.min(row[place]);
                 most = most.max(row[place]);
-                u64::from(row[place])
-            }).collect();
-            Arc::new(first_ids(&keys, u64::from(least), u64::from(most.saturating_sub(least)) + 1))
+            }
+            Arc::new(first_ids_of(self.len, self.rows().map(|row| u64::from(row[place])), u64::from(least), u64::from(most.saturating_sub(least)) + 1))
         }).clone()
     }
 
