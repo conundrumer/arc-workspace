@@ -395,7 +395,11 @@ impl<'e, 'a> Driver<'e, 'a> {
             let (value, cost) = limits.request.measure_holding(|| {
                 let mut budget = Budget::new(evaluation.limits, evaluation.session);
                 let Ok(value) = self.holding_stops::<Infallible>(&request, || {
-                    let relation = join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget);
+                    // The content of the part: the rows it reads and the rows it writes.
+                    let relation = budget
+                        .charge_reads(&part.nodes, inputs)
+                        .and_then(|()| join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget))
+                        .and_then(|relation| budget.charge_written(&relation).map(|()| relation));
                     Ok(match relation {
                         Ok(relation) => RelationValue::Rows(Arc::new(relation)),
                         Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
@@ -643,7 +647,12 @@ impl<'e, 'a> Driver<'e, 'a> {
         let evaluation = self.evaluation;
         let order = plan::variable_order(clause, &join::sizes(clause, inputs), &[]);
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
-        let value = match join::join(clause, &order, inputs, evaluation.registry, &mut budget) {
+        let all: Vec<usize> = (0..clause.nodes.len()).collect();
+        let joined = budget
+            .charge_reads(&all, inputs)
+            .and_then(|()| join::join(clause, &order, inputs, evaluation.registry, &mut budget))
+            .and_then(|relation| budget.charge_written(&relation).map(|()| relation));
+        let value = match joined {
             Ok(relation) => RelationValue::Rows(Arc::new(relation)),
             Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
         };
@@ -814,7 +823,9 @@ impl FormBodies<'_> {
         let evaluation=self.driver.evaluation;
         let order=plan::variable_order(clause,&join::sizes(clause, &inputs),&bound.iter().map(|(v,_)|*v).collect::<Vec<_>>());
         let mut budget=Budget::new(evaluation.limits,evaluation.session);
-        let value=match join::join_at(clause,&order,&inputs,evaluation.registry,bound,&mut budget) {Ok(rows)=>RelationValue::Rows(Arc::new(rows)),Err(bound)=>RelationValue::Stopped(Stop {bound,form:form.clone()})};
+        let all:Vec<usize>=(0..clause.nodes.len()).collect();
+        let joined=budget.charge_reads(&all,&inputs).and_then(|()|join::join_at(clause,&order,&inputs,evaluation.registry,bound,&mut budget)).and_then(|relation|budget.charge_written(&relation).map(|()|relation));
+        let value=match joined {Ok(rows)=>RelationValue::Rows(Arc::new(rows)),Err(bound)=>RelationValue::Stopped(Stop {bound,form:form.clone()})};
         record_whole(&budget,[&value]);Ok(value)
     }
 

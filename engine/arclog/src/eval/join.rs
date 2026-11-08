@@ -1,6 +1,10 @@
 //! Generic join over a clause's IR: it binds one variable at a time, in the
-//! clause's variable order, by intersecting the atoms that hold it, and
-//! counts its work and its rows against the caps per batch of bindings. A
+//! clause's variable order, by intersecting the atoms that hold it. It counts
+//! the bindings it tries as effort, which only the effort guard of the request
+//! bounds ([`Budget::charge_work`]), and the content of the evaluation against
+//! the caps ([`Budget::charge_content`]): the sizes of the relations that the
+//! evaluation reads and of the table it writes, which depend on the clause's
+//! content alone and not on the order that it is written or searched in. A
 //! body is joined part by part, as [`parts`] gives its parts, and its
 //! relation is their product, which no join counts: a reader that indexes
 //! or walks that product counts it as [`Budget::charge_product`] gives.
@@ -79,8 +83,9 @@ fn index_rows(relation: &Relation, order: &ColumnOrder, work: u64) -> u64 {
 }
 
 /// The counts of one evaluation against its caps and its other bounds: the
-/// bindings tried and the rows held. A native construction counts its own
-/// bindings and rows through the same counter. The rows it counts are those
+/// content counted (`bindings`, the units of [`Budget::charge_content`]) and
+/// the rows held. The bindings that a search tries stand in the effort of the
+/// request and in no count of the evaluation. The rows it counts are those
 /// of the evaluation it stands for: an evaluation nested in a join counts its
 /// own rows and adds none to the count around it, as [`Budget::nested`]
 /// gives.
@@ -121,13 +126,15 @@ impl<'a> Budget<'a> {
         self.session.caps
     }
 
-    /// Counts a batch of `bindings` tried, and checks the caps, the request's
-    /// work cap and the cancellation, and has the session evict its caches
-    /// where it is past its byte bound.
+    /// Counts `bindings` more tried by a search, as effort of the request
+    /// ([`RequestWork::charge_effort`]), and checks the row cap, the effort
+    /// guard and the cancellation, and has the session evict its caches where
+    /// it is past its byte bound.
     ///
-    /// The bindings add to the request's work ([`Limits::request`]) as well
-    /// as to this evaluation's count and to the observation's, so the stop
-    /// at the request's cap stands at the batch that passes it.
+    /// The effort bounds a runaway and decides no result, so the bindings add
+    /// to no cap of the evaluation, of the request or of an observation: those
+    /// count content ([`Budget::charge_content`]). A stop at the effort guard
+    /// is a fault of the call.
     ///
     /// The bytes of the rows counted since the last batch are charged here
     /// ([`Budget::flush_bytes`]). The session's byte bound is checked here as
@@ -139,35 +146,62 @@ impl<'a> Budget<'a> {
     /// against that work. A build that adds bytes in one piece, an index, is
     /// checked before it starts: [`Budget::charge_index_build`].
     pub fn charge_work(&mut self, bindings: u64) -> Result<(), ReachedBound> {
-        if let Some(log) = &mut self.log {
-            log.bindings = log.bindings.saturating_add(bindings);
-        }
-        self.bindings = self.bindings.saturating_add(bindings);
         let caps = self.session.caps;
         let gauges = self.limits.request.gauges();
-        if self.bindings > caps.bindings {
-            gauges.hit(Gauge::Bindings, self.bindings, caps.bindings);
-            return Err(ReachedBound::Bindings { cap: caps.bindings });
-        }
         if self.rows > caps.rows {
             gauges.hit(Gauge::Rows, self.rows, caps.rows);
             return Err(ReachedBound::Rows { cap: caps.rows });
         }
-        gauges.note(Gauge::Bindings, self.bindings, caps.bindings);
         gauges.note(Gauge::Rows, self.rows, caps.rows);
-        self.limits.request.charge(bindings)?;
+        self.limits.request.charge_effort(bindings)?;
         self.flush_bytes()?;
         let bytes = self.session.relieve(&self.limits.heap_starts, self.limits.byte_bound, 0);
         gauges.note(Gauge::SessionBytes, bytes as u64, self.limits.byte_bound.unwrap_or(self.session.bound).bytes as u64);
         if self.limits.cancellation.is_cancelled() {
             return Err(ReachedBound::Cancelled);
         }
-        // The observation's count takes the batch here, whether or not there is a count, so a cost holds it for a hit to charge.
-        super::tally_table(bindings);
+        Ok(())
+    }
+
+    /// Counts `units` of content: the rows that an evaluation reads from the
+    /// relations of its nodes, or writes in the table it gives, or that a walk
+    /// of a table visits. The units add to this evaluation's count, which the
+    /// binding cap bounds, to the request's work and to the observation's
+    /// count, and they depend on the content of the evaluation alone: no
+    /// written order of a clause, order of the search, index or cache changes
+    /// them. A cache hit charges the units that its entry recorded.
+    pub fn charge_content(&mut self, units: u64) -> Result<(), ReachedBound> {
+        if let Some(log) = &mut self.log {
+            log.bindings = log.bindings.saturating_add(units);
+        }
+        self.bindings = self.bindings.saturating_add(units);
+        let caps = self.session.caps;
+        let gauges = self.limits.request.gauges();
+        if self.bindings > caps.bindings {
+            gauges.hit(Gauge::Bindings, self.bindings, caps.bindings);
+            return Err(ReachedBound::Bindings { cap: caps.bindings });
+        }
+        gauges.note(Gauge::Bindings, self.bindings, caps.bindings);
+        self.limits.request.charge(units)?;
+        // The observation's count takes the units here, whether or not there is a count, so a cost holds them for a hit to charge.
+        super::tally_table(units);
         match &self.limits.table_work {
-            Some(work) => work.charge(bindings),
+            Some(work) => work.charge(units),
             None => Ok(()),
         }
+    }
+
+    /// Counts the content that the join of the nodes `nodes` reads: the rows
+    /// of the relations that the nodes and the clauses nested in them read in
+    /// `inputs` ([`read_size`]).
+    pub fn charge_reads(&mut self, nodes: &[usize], inputs: &JoinInputs) -> Result<(), ReachedBound> {
+        self.charge_content(read_size(nodes, inputs))
+    }
+
+    /// Counts the content of `relation`, the table that an evaluation writes:
+    /// the rows that its parts hold ([`Relation::held_rows`]).
+    pub fn charge_written(&mut self, relation: &Relation) -> Result<(), ReachedBound> {
+        self.charge_content(relation.held_rows())
     }
 
     /// Charges `bytes` that an evaluation allocates and holds: to the cost of
@@ -241,15 +275,15 @@ impl<'a> Budget<'a> {
         self.limits.request.charge(units)
     }
 
-    /// Counts the rows of the product of the parts of `relation` as bindings
-    /// tried, where it holds more than one part, before a walk of its rows
+    /// Counts the rows of the product of the parts of `relation` as content,
+    /// where it holds more than one part, before a walk of its rows
     /// or an index builds them: the join of each part counted that part's
     /// rows, and no join counts their product. The count is one charge, so
     /// a product past a cap stops before any of its rows is built.
     pub fn charge_product(&mut self, relation: &Relation) -> Result<(), ReachedBound> {
         match relation.parts() {
             [] | [_] => Ok(()),
-            _ => self.charge_work(relation.len()),
+            _ => self.charge_content(relation.len()),
         }
     }
 
@@ -425,7 +459,7 @@ impl<'a> Budget<'a> {
     /// evaluation that gave a value, so the counts of a search, and the place
     /// where it stops at a cap, are those of the search with no memo.
     fn replay(&mut self, charges: Charges) -> Result<(), ReachedBound> {
-        self.charge_work(charges.bindings)?;
+        self.charge_content(charges.bindings)?;
         self.charge_request(charges.request)?;
         self.charge_bytes_transient(charges.bytes)
     }
@@ -1011,6 +1045,23 @@ pub fn union(mut relations: Vec<Arc<Relation>>) -> Arc<Relation> {
     Arc::new(one_part(rows))
 }
 
+/// The rows that the join of `nodes` reads: the rows that the relations of
+/// the nodes hold, and of the nodes that the filters and unions among them
+/// nest, in `inputs`. A relation counts the rows its parts hold
+/// ([`Relation::held_rows`]), each time a node reads it. The size is a function
+/// of the relations' content, and so of the clause, whatever order its nodes
+/// are written in.
+pub fn read_size(nodes: &[usize], inputs: &JoinInputs) -> u64 {
+    fn of(input: &NodeInput) -> u64 {
+        match input {
+            NodeInput::Unread => 0,
+            NodeInput::Relation(relation) => relation.held_rows(),
+            NodeInput::Clauses(bodies) => bodies.iter().flat_map(|body| body.0.iter()).map(of).fold(0, u64::saturating_add),
+        }
+    }
+    nodes.iter().map(|&node| of(&inputs.0[node])).fold(0, u64::saturating_add)
+}
+
 /// The row and distinct column counts of `inputs`, for [`variable_order`].
 /// A unary index reads only the part that holds its column. The relation
 /// caches it and includes its retained storage in the index byte ledger.
@@ -1203,8 +1254,8 @@ struct Plan {
 
 impl Plan {
     /// The plan of the search of `nodes` and `tries` in `order`, with `bound`
-    /// bound before it. Each relation an atom reads is counted in `budget`
-    /// as [`Budget::charge_product`] gives, before its trie is built.
+    /// bound before it. The build of each atom's trie is effort in `budget`,
+    /// charged before the trie is built.
     fn new(
         clause: &ClauseIr,
         nodes: &[usize],
@@ -1232,9 +1283,9 @@ impl Plan {
             budget.charge_index_build(relation, &order, work)?;
             let (index, _) = relation.index_built(&order);
             // A build of one part walks that part's rows, which no count of bindings holds; a build of several parts was charged as `work` above.
-            // The rows count at each use, whether or not the relation held the index, so the count does not depend on what an earlier use built.
+            // Both are effort: which indexes a search builds depends on its variable order, and no result depends on it.
             if work == 0 {
-                budget.charge_request(index.walked())?;
+                budget.charge_work(index.walked())?;
                 // The bytes of a build that reads the part by its distinct projections are known when it ends.
                 if index_rows(relation, &order, work) == 0 {
                     budget.charge_bytes(index_bytes(index.walked(), order.0.len()))?;

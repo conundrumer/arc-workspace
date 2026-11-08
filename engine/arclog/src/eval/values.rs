@@ -5,7 +5,7 @@
 //! share them.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
@@ -842,10 +842,41 @@ impl Owner {
 static TOTAL: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
+    /// The depth of the [`uncounted`] scopes open on this thread.
+    static UNCOUNTED: Cell<u32> = const { Cell::new(0) };
     /// The request most recently begun on this thread ([`RequestWork::begin`]).
     static LATEST: RefCell<Option<RequestWork>> = const { RefCell::new(None) };
     /// What this thread charges, for the costs of entries ([`Tally`]).
     static TALLY: RefCell<Tally> = const { RefCell::new(Tally { frames: Vec::new(), unbilled: 0 }) };
+}
+
+/// Runs `run` with the sums that cut results turned off on this thread: a
+/// charge to the request's work ([`RequestWork::charge`]) or to an
+/// observation's count ([`TableWork::charge`]) counts as effort of the request
+/// ([`RequestWork::charge_effort`]) and adds to neither, and no cost fits or
+/// misfits against them. The measurements open still record the charges, so
+/// the cost of an entry that `run` computes is what it is anywhere, and a
+/// later hit on it, outside, charges that cost.
+///
+/// The mask of a decode runs its prefix checks in this scope: their work
+/// depends on the forms that the decode has finished, which are no part of the
+/// form that a count is the count of, so no count that cuts a result holds it.
+/// The scope passes to the tasks that [`super::pool::Pool::map`] runs.
+pub fn uncounted<T>(run: impl FnOnce() -> T) -> T {
+    struct Close;
+    impl Drop for Close {
+        fn drop(&mut self) {
+            UNCOUNTED.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        }
+    }
+    UNCOUNTED.with(|depth| depth.set(depth.get() + 1));
+    let _close = Close;
+    run()
+}
+
+/// Whether this thread runs in an [`uncounted`] scope.
+pub fn is_uncounted() -> bool {
+    UNCOUNTED.with(|depth| depth.get() > 0)
 }
 
 /// What a thread has charged, for the cost of an entry ([`Cost`]).
@@ -985,6 +1016,13 @@ pub struct Cost {
 }
 
 impl Cost {
+    /// This cost with no units for the request and none for the observation's
+    /// count: the cost of a computation that no count which cuts a result
+    /// holds ([`uncounted`]), whose hit charges its bytes alone.
+    pub fn without_counts(self) -> Cost {
+        Cost { request: 0, table: 0, ..self }
+    }
+
     /// Adds what a computation inside the one this cost counts charged.
     fn absorb(&mut self, inner: &Cost, same_request: bool) {
         if same_request {
@@ -1005,9 +1043,9 @@ impl Cost {
     /// caches stops at. The bytes count against `assignment`, the observation
     /// whose assignment budget they belong to.
     fn fits(&self, request: &RequestWork, table: Option<&TableWork>, assignment: Option<&TableWork>) -> bool {
-        request.count().saturating_add(self.request) <= request.cap()
+        (is_uncounted() || request.count().saturating_add(self.request) <= request.cap())
             && request.fits_bytes(self.bytes.peak)
-            && table.is_none_or(|table| table.fits(self.table))
+            && (is_uncounted() || table.is_none_or(|table| table.fits(self.table)))
             && assignment.is_none_or(|work| work.fits_bytes(self.bytes.peak))
     }
 
@@ -1206,8 +1244,9 @@ impl RequestWork {
     #[inline]
     pub fn charge(&self, units: u64) -> Result<(), ReachedBound> {
         let key = self.key();
-        let units = tally(|tally| {
-            let units = units.saturating_add(std::mem::take(&mut tally.unbilled));
+        let (units, unbilled) = tally(|tally| {
+            // The rows of index builds that waited for a charge are effort: which indexes a search builds depends on its order.
+            let unbilled = std::mem::take(&mut tally.unbilled);
             // Past 2^40 a charge is past every cap, and the clamp keeps the sum of a request's charges from wrapping.
             let units = units.min(1 << 40);
             if units > 0
@@ -1216,8 +1255,12 @@ impl RequestWork {
             {
                 top.cost.request = top.cost.request.saturating_add(units);
             }
-            units
+            (units, unbilled)
         });
+        self.charge_effort(unbilled)?;
+        if is_uncounted() {
+            return self.charge_effort(units);
+        }
         // A check that adds nothing reads the count alone.
         let count = if units == 0 {
             self.count.load(Ordering::Relaxed)
@@ -1635,6 +1678,9 @@ impl TableWork {
     /// Adds `bindings` to the count, and gives the stop once the count is past
     /// the cap. Each later call gives it too.
     pub fn charge(&self, bindings: u64) -> Result<(), ReachedBound> {
+        if is_uncounted() {
+            return Ok(());
+        }
         self.charge_parent(bindings);
         let Ok(before) = self.count.try_update(Ordering::Relaxed, Ordering::Relaxed, |count| Some(count.saturating_add(bindings))) else {
             unreachable!("an update that always gives a count")
@@ -1676,6 +1722,9 @@ impl TableWork {
     /// at the charge that [`TableWork::crossing`] gives, `before` and `after`
     /// bindings from the count now.
     pub fn charge_crossing(&self, bindings: u64, before: u64, after: u64) {
+        if is_uncounted() {
+            return;
+        }
         self.charge_parent(bindings);
         let Ok(from) = self.count.try_update(Ordering::Relaxed, Ordering::Relaxed, |count| Some(count.saturating_add(bindings))) else {
             unreachable!("an update that always gives a count")

@@ -17,7 +17,7 @@ pub struct Continuation {
 }
 
 fn charge_rows(value:&Relation,budget:&mut Budget<'_>,at:&NodePath)->Result<(),End> {
-    budget.charge_work(value.len().saturating_mul(u64::from(value.arity()).max(1)))
+    budget.charge_content(value.len().saturating_mul(u64::from(value.arity()).max(1)))
         .map_err(|bound| End::Stop(arclog::eval::Stop {bound, form:at.clone()}))
 }
 

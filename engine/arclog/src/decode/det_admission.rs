@@ -143,12 +143,14 @@ impl Decoder<'_> {
                 Charged::Misfit => {}
             }
         }
-        let (walk, cost) = work.measure(|| match self.walked(program, dets, picks, root) {
+        // The admission of a written `DET` is a prefix check: its work counts as effort, and a hit on its walk charges bytes alone.
+        let (walk, cost) = work.measure(|| crate::eval::uncounted(|| match self.walked(program, dets, picks, root) {
             (leaves, Ok(())) => PartWalk::Ended { leaves, live: true },
             (leaves, Err(DetRefusal::NoLiveAssignment)) => PartWalk::Ended { leaves, live: false },
             (_, Err(DetRefusal::Bound(ReachedBound::Assignments { .. }))) => PartWalk::PastCap,
             (_, Err(_)) => PartWalk::Stopped,
-        });
+        }));
+        let cost = cost.without_counts();
         // A walk that a stop at the request cap cut short is no walk of the part.
         if let Some(key) = key.filter(|_| !work.is_past_cap()) {
             memo.keep_part(scope, key, walk, cost);

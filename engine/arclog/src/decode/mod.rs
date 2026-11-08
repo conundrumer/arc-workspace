@@ -489,6 +489,12 @@ impl<'a> Decoder<'a> {
     /// [`Decoder::mask_over`], which stops at the first token it admits where
     /// `first` holds.
     fn mask_until(&self, ids: impl Iterator<Item = u32>, first: bool) -> Mask {
+        // The mask's prefix checks depend on the forms the decode has finished, so no count that cuts a result holds their work.
+        crate::eval::uncounted(|| self.mask_checks(ids, first))
+    }
+
+    /// The checks of [`Decoder::mask_until`].
+    fn mask_checks(&self, ids: impl Iterator<Item = u32>, first: bool) -> Mask {
         let vocabulary = &self.context.vocabulary;
         let work = self.request_work();
         let mut mask = TokenMask::new(vocabulary.len());
@@ -532,8 +538,8 @@ impl<'a> Decoder<'a> {
                     continue;
                 }
                 if self.state.mask_may_take(token) {
-                    // One unit for each candidate token that the mask checks.
-                    let _ = work.charge(1);
+                    // One unit of effort for each candidate token that the mask checks: the mask's checks are no content count.
+                    let _ = work.charge_effort(1);
                     if let Some(result) = class_of[id as usize].and_then(|class| admitted[class]) {
                         if result {
                             // A member shares the class's verdict, and takes its own
@@ -814,7 +820,8 @@ impl<'a> Decoder<'a> {
         let work = self.request_work();
         let measured = || {
             let (mut mask, cost) = work.measure(|| self.compute_mask());
-            mask.cost = cost;
+            // The mask's units were effort: a hit on the mask charges its bytes alone.
+            mask.cost = cost.without_counts();
             mask
         };
         let Some(key) = self.path_key() else { return measured() };

@@ -91,7 +91,7 @@ fn a_cell_a_mode_gives_stands_after_the_cell_it_reads_and_the_join_tries_few_bin
     let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
     let limits = Limits::new(None, Cancellation::default());
     join::join(&clause, &order, &inputs, Registry::get(), &mut Budget::new(&limits, &session)).expect("no bound reached");
-    let bindings = session.largest_counts().bindings;
+    let bindings = limits.request.effort();
     assert!(bindings < 10_000, "{bindings} bindings tried");
 }
 

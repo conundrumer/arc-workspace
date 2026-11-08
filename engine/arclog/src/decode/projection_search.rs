@@ -272,10 +272,10 @@ impl<'a, 'c, 'd> ProjectionSearch<'a, 'c, 'd> {
                 return Err(Refusal::Grammar(SPENT));
             }
             self.steps += 1;
-            // A step counts as one unit of the request's work. A request past
-            // its cap establishes nothing of the head: the search ends with a
+            // A step counts as one unit of the request's effort. A request past
+            // its guard establishes nothing of the head: the search ends with a
             // completion, as a stop at the table work cap admits.
-            if self.work.charge(1).is_err() {
+            if self.work.charge_effort(1).is_err() {
                 return Ok(());
             }
             stats::units(Phase::DecodeCompletes, 1);

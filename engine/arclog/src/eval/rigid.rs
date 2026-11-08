@@ -91,6 +91,12 @@ pub fn evaluate_assembly(
             }
         }
     };
+    // The content of the assembly: the rows of the table it writes.
+    if let Ok(found) = &rows
+        && let Err(bound) = budget.charge_content(found.len() as u64)
+    {
+        return Ok(RelationValue::Stopped(super::Stop { bound, form: form.clone() }));
+    }
     Ok(rows.map_or_else(|value| value, |rows| RelationValue::Rows(Arc::new(join::one_part(rows)))))
 }
 

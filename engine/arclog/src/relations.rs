@@ -452,6 +452,14 @@ impl Relation {
         self.parts.iter().fold(1, |count: u64, part| count.saturating_mul(part.rows.len() as u64))
     }
 
+    /// The count of rows that the relation's parts hold, the sum of the parts'
+    /// counts: the size of the relation as it is stored, where
+    /// [`Relation::len`] is the size of the table that the parts' product
+    /// makes. It is a function of the relation's content alone.
+    pub fn held_rows(&self) -> u64 {
+        self.parts.iter().fold(0, |count: u64, part| count.saturating_add(part.rows.len() as u64))
+    }
+
     /// Whether the relation holds no row: some part is empty.
     pub fn is_empty(&self) -> bool {
         self.parts.iter().any(|part| part.rows.is_empty())

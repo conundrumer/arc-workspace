@@ -95,6 +95,11 @@ pub fn evaluate_instance<'a>(
     let construct = |budget: &mut Budget<'a>, groups: &[Row], group_inputs: &[Vec<RowSet>]| -> Outcome<Vec<(GraphRelation, RelationValue)>> {
         let types: Vec<Box<[ValueType]>> = inputs.iter().map(|read| read.types.clone()).collect();
         let mut rows: Vec<RowSet> = widths.iter().map(|widths| RowSet::empty(shape.arity(widths) as u16)).collect();
+        // The content of the construction: the rows of the inputs it reads, and below, the rows of the outputs it writes.
+        let read: u64 = group_inputs.iter().flatten().map(|rows| rows.len() as u64).sum();
+        if let Err(bound) = budget.charge_content(read) {
+            return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() })));
+        }
         let mut context = ConstructionContext { session: evaluation.session, registry: evaluation.registry, budget };
         // The count of output rows that break each declared row, by output and declared row.
         let mut broken: std::collections::BTreeMap<(usize, usize), usize> = Default::default();
@@ -123,6 +128,10 @@ pub fn evaluate_instance<'a>(
                     rows.insert(laid_out(widths, key, values));
                 }
             }
+        }
+        let written: u64 = rows.iter().zip(&wanted).filter(|(_, wanted)| **wanted).map(|(rows, _)| rows.len() as u64).sum();
+        if let Err(bound) = context.budget.charge_content(written) {
+            return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() })));
         }
         if let Some(violations) = &evaluation.limits.copies {
             for ((output, row), rows) in broken {
