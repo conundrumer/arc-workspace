@@ -273,9 +273,9 @@ impl Table {
         Table::new(self.arity, cells)
     }
 
-    /// The table of `cells`, whose rows are distinct and whose hash is `hash`, which a read of the hash would give.
-    pub fn with_hash(arity: usize, cells: Vec<Cell>, hash: u128) -> Arc<Table> {
-        let table = Table::new(arity, cells);
+    /// The table of `cells`, whose rows are distinct and ascend, and whose hash is `hash`, which a read of the hash would give.
+    pub fn ascending_with_hash(arity: usize, cells: Vec<Cell>, hash: u128) -> Arc<Table> {
+        let table = Table::ascending(arity, cells);
         let _ = table.hash.set(hash);
         table
     }
