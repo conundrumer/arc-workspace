@@ -1378,32 +1378,6 @@ fn rows_over(rows: &[Vec<u32>], columns: &[String], names: &[String]) -> Option<
     Some(out)
 }
 
-/// Each rule's claim against evaluation, at each table of a tables file: a term a rule rejects is evaluated
-/// and compared with what the rule claims, and each kept term's keys, bounds and subset relations with its
-/// rows. Train pairs alone are read. It prints a counterexample for the first failures of a rule.
-/// The lists of a study of whole atoms, from the files of tables under INPUT: `atom-lists INPUT OUT --size D --threads N --families DIR [--names ORDERS]`. ATOM_ORIENT names a file of each orientation's
-/// code and name, and ATOM_IDLE the seconds without a new file after which it ends. A family's root names go to a file of the process's own under `--families`, beside the saved families.
-fn run_atom_lists(arguments: &Arguments, input: &str, out: &str) -> Result<(), String> {
-    use arclog_encoder::generate::{Generators, NameStore};
-    let orders: std::collections::BTreeMap<String, Option<Vec<usize>>> = match &arguments.names {
-        Some(path) => serde_json::from_str(&arclog_encoder::zio::read_text(path)?).map_err(|error| error.to_string())?,
-        None => Default::default(),
-    };
-    let orient: LookupMap<i64, String> = {
-        let text = arclog_encoder::zio::read_text(&std::env::var("ATOM_ORIENT").map_err(|_| "`atom-lists` reads ATOM_ORIENT".to_string())?)?;
-        let held: std::collections::BTreeMap<String, String> = serde_json::from_str(&text).map_err(|error| error.to_string())?;
-        held.into_iter().filter_map(|(key, value)| Some((key.parse().ok()?, value))).collect()
-    };
-    let mut families = Generators::default();
-    let saved = arguments.families.clone().ok_or("`atom-lists` reads --families")?;
-    std::fs::create_dir_all(&saved).map_err(|error| error.to_string())?;
-    families.names = NameStore::to_file(&saved.join(format!("names-{}.tsv.zst", std::process::id())).to_string_lossy())?;
-    families.saved = Some(saved);
-    families.saved_limit = 2_000_000;
-    let idle: u64 = std::env::var("ATOM_IDLE").ok().and_then(|text| text.parse().ok()).unwrap_or(1800);
-    arclog_encoder::atom_lists::run(std::path::Path::new(input), std::path::Path::new(out), &arguments.tasks, &families, arguments.size.max(1), &orders, &orient, arguments.threads, idle)
-}
-
 /// The `shapes` records of a task's tables from their stored rows: `shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR]`. ROWS_FILE holds a line `{"hash": HEX, "table": T}` for each table, with `T` as `stored_of`
 /// reads it. With `--shapes`, the records hold the listed shapes alone, in the file's order. With `--families`, a family that the run builds is saved under DIR, and a later run of the same binary reads it. It prints a line of counts.
 fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) -> Result<(), String> {
@@ -1430,6 +1404,9 @@ fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) 
     Ok(())
 }
 
+/// Each rule's claim against evaluation, at each table of a tables file: a term a rule rejects is evaluated
+/// and compared with what the rule claims, and each kept term's keys, bounds and subset relations with its
+/// rows. Train pairs alone are read. It prints a counterexample for the first failures of a rule.
 fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
     use arclog_encoder::generate::{leaves_at, Generated, NameStore, Walker};
     use arclog_encoder::refine::{bit, Claim};
@@ -2154,7 +2131,6 @@ fn main() {
         }
         ("shape-count", files) if !files.is_empty() => run_shape_count(&arguments, files),
         ("refine-check", [file]) => run_refine_check(&arguments, file),
-        ("atom-lists", [input, out]) => run_atom_lists(&arguments, input, out),
         ("shapes-refresh", [rows, task, out]) => run_shapes_refresh(&arguments, rows, task, out),
         ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),

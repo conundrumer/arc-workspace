@@ -2658,18 +2658,6 @@ impl<'a> Walker<'a> {
         Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_of: FastMap::default(), spilled: FastMap::default(), spill_dir: None, spill_serial: 0, spill_cost: SpillCost::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
     }
 
-    /// A walker that holds more between walks than [`Walker::new`], for many related tables.
-    pub fn with_budget(family: &'a Generated, cells: usize, entries: usize) -> Self {
-        let mut walker = Walker::new(family);
-        walker.budget = (cells, entries);
-        walker
-    }
-
-    /// The memo entries and the cells it holds.
-    pub fn held(&self) -> (usize, usize) {
-        (self.memo.len() + self.counts.len() + self.groupings.len() + self.group_counts.len() + self.values.len(), self.held_cells)
-    }
-
     /// Drops the values and the memos where they pass the budget. A later walk computes again
     /// what it needs.
     fn keep_within_budget(&mut self) {
