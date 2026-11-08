@@ -16,7 +16,6 @@
 //!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
 //!   feature-encoder generate-check TABLES_FILE [--size D] [--tables EVERY]
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
-//!   feature-encoder refine-check TABLES_FILE [--size D]
 //!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR] [--count-bounds]
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
 //!   feature-encoder family-names TYPE,TYPE,... [--size D]
@@ -53,7 +52,7 @@
 //! counts were on, and so does the first line of the file that `cap-hits` writes. A `term` line holds the
 //! term's text, so a run with the counts keeps the text of its terms, and reads and writes no saved family.
 //! The commands that read or print a term's text keep it always: `cap-hits`, `term-counts`,
-//! `generate-check`, `generate-check-solver`, `refine-check` and `term-stats`.
+//! `generate-check`, `generate-check-solver` and `term-stats`.
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -1355,29 +1354,6 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
     Ok(())
 }
 
-/// Each row of a value, or none where the value has none.
-fn value_rows(value: &arclog_encoder::native::Val) -> Option<Vec<Vec<u32>>> {
-    let value = &value.written();
-    if matches!(value, arclog_encoder::native::Val::None) {
-        return None;
-    }
-    Some(match arclog_encoder::gen_parts::flat(value) {
-        Some(table) if table.arity == 0 => if table.len > 0 { vec![Vec::new()] } else { Vec::new() },
-        Some(table) => table.rows().map(<[u32]>::to_vec).collect(),
-        None => return None,
-    })
-}
-
-/// Rows over the columns `names`, in that order, of rows whose columns are `columns`.
-fn rows_over(rows: &[Vec<u32>], columns: &[String], names: &[String]) -> Option<Vec<Vec<u32>>> {
-    let places: Option<Vec<usize>> = names.iter().map(|name| columns.iter().position(|own| own == name)).collect();
-    let places = places?;
-    let mut out: Vec<Vec<u32>> = rows.iter().map(|row| places.iter().map(|at| row[*at]).collect()).collect();
-    out.sort_unstable();
-    out.dedup();
-    Some(out)
-}
-
 /// The `shapes` records of a task's tables from their stored rows: `shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR]`. ROWS_FILE holds a line `{"hash": HEX, "table": T}` for each table, with `T` as `stored_of`
 /// reads it. With `--shapes`, the records hold the listed shapes alone, in the file's order. With `--families`, a family that the run builds is saved under DIR, and a later run of the same binary reads it. It prints a line of counts.
 fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) -> Result<(), String> {
@@ -1400,198 +1376,6 @@ fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) 
     eprintln!("{summary}{counts}");
     if arclog_encoder::bounds::enabled() {
         eprint!("{}", arclog_encoder::bounds::summary());
-    }
-    Ok(())
-}
-
-/// Each rule's claim against evaluation, at each table of a tables file: a term a rule rejects is evaluated
-/// and compared with what the rule claims, and each kept term's keys, bounds and subset relations with its
-/// rows. Train pairs alone are read. It prints a counterexample for the first failures of a rule.
-fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
-    use arclog_encoder::generate::{leaves_at, Generated, NameStore, Walker};
-    use arclog_encoder::refine::{bit, Claim};
-    use arclog_encoder::stored::Stored;
-    use arclog_encoder::table_vector::Grids;
-    use std::collections::{BTreeMap, BTreeSet};
-    let data: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(file)?).map_err(|error| error.to_string())?;
-    let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
-    let train = data["train"].as_u64().ok_or("a file's train")? as usize;
-    let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
-    let empty = Vec::new();
-    let tally_budget = CheckTally::new();
-    let store = NameStore::default();
-    let mut tally: BTreeMap<&'static str, [u64; 3]> = BTreeMap::new();
-    let mut shown: BTreeMap<&'static str, u32> = BTreeMap::new();
-    let mut facts: BTreeMap<&'static str, [u64; 2]> = BTreeMap::new();
-    let mut seen: BTreeSet<u128> = BTreeSet::new();
-    let items: Vec<serde_json::Value> = data["items"].as_array().unwrap_or(&empty).iter().flat_map(|item| {
-        let mut out = vec![item["gold"].clone()];
-        out.extend(item["mutants"].as_array().unwrap_or(&empty).iter().map(|mutant| mutant["table"].clone()));
-        out
-    }).collect();
-    let mut families: LookupMap<String, Generated> = LookupMap::new();
-    // With GENERATE_CHECK_TWO_TABLES, each table with the table before it, over the family of the two.
-    let two_tables = std::env::var_os("GENERATE_CHECK_TWO_TABLES").is_some();
-    let mut previous: Option<Stored> = None;
-    for item in &items {
-        if tally_budget.out_of_time() {
-            break;
-        }
-        let Some(stored) = Stored::of_json(item, train, 0) else { continue };
-        if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_TABLE_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
-            continue;
-        }
-        let other = if two_tables {
-            let Some(other) = previous.replace(stored.clone()) else { continue };
-            Some(other)
-        } else {
-            None
-        };
-        let family = match &other {
-            Some(other) => families.entry(format!("{} | {}", stored.key, other.key)).or_insert_with(|| Generated::of_two_tables(&stored.types, &other.types, &store, true)),
-            None => families.entry(stored.key.clone()).or_insert_with(|| Generated::of(&stored.types, arguments.size.max(1), &store, true)),
-        };
-        let (count, first) = family.counts();
-        let mut walker = Walker::new(family);
-        let example_of: Vec<usize> = (0..train).collect();
-        let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
-        let mut leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
-        if let Some(other) = &other {
-            leaves.push(other.rows.iter().take(train).map(|models| models.first().cloned().map_or(arclog_encoder::native::Val::None, arclog_encoder::native::Val::of_table)).collect());
-        }
-        let chosen = |at: usize| at >= first && !family.is_pair_term(at);
-        let mut values: LookupMap<usize, Vec<arclog_encoder::native::Val>> = LookupMap::new();
-        for (at, leaf) in leaves.iter().enumerate() {
-            values.insert(at, leaf.clone());
-        }
-        for (at, own) in walker.term_values(&leaves, train, &chosen) {
-            values.insert(at, own);
-        }
-        let texts: LookupMap<String, usize> = (first..count).map(|at| (family.term_info(at).0.to_string(), at)).collect();
-        let columns_of = |at: usize| -> Vec<String> { family.term_info(at).1.iter().map(|(name, _)| name.clone()).collect() };
-        // Each kept term's type against its rows.
-        for at in first..count {
-            if family.is_pair_term(at) {
-                continue;
-            }
-            let (Some(refined), Some(own)) = (family.term_refined(at), values.get(&at)) else { continue };
-            for pair in 0..train {
-                let Some(rows) = own.get(pair).and_then(value_rows) else { continue };
-                let mut fault: Option<(&'static str, String)> = None;
-                for key in &refined.keys {
-                    let mut heads: Vec<Vec<u32>> = rows.iter().map(|row| row.iter().enumerate().filter(|(column, _)| key & bit(*column as u16) != 0).map(|(_, cell)| *cell).collect()).collect();
-                    heads.sort_unstable();
-                    if heads.windows(2).any(|two| two[0] == two[1]) {
-                        fault = Some(("type-key", format!("key {key:b}")));
-                    }
-                    facts.entry("type-key").or_default()[0] += 1;
-                }
-                let types = family.term_info(at).1;
-                for column in 0..refined.arity() {
-                    if !matches!(types[column].1, arclog::types::ValueType::Int | arclog::types::ValueType::Nat) {
-                        continue;
-                    }
-                    for row in &rows {
-                        let number = arclog_encoder::gen_constants::number_of(row[column]) as i32;
-                        if refined.low[column].is_some_and(|low| number < low) || refined.high[column].is_some_and(|high| number > high) {
-                            fault = Some(("type-bound", format!("column {column}, {number}")));
-                        }
-                    }
-                    facts.entry("type-bound").or_default()[0] += 1;
-                }
-                for within in &refined.within {
-                    let Some(target) = values.get(&(within.of as usize)).and_then(|target| target.get(pair)).and_then(value_rows) else { continue };
-                    let target: BTreeSet<Vec<u32>> = target.iter().map(|row| within.at.iter().map(|column| row[usize::from(*column)]).collect()).collect();
-                    facts.entry("type-within").or_default()[0] += 1;
-                    if rows.iter().any(|row| !target.contains(&within.columns.iter().map(|column| row[usize::from(*column)]).collect::<Vec<u32>>())) {
-                        fault = Some(("type-within", format!("{:?} in {} at {:?}", within.columns, family.term_info(within.of as usize).0, within.at)));
-                    }
-                }
-                if let Some((rule, detail)) = fault {
-                    facts.entry(rule).or_default()[1] += 1;
-                    let held = shown.entry(rule).or_insert(0);
-                    *held += 1;
-                    if *held <= 6 {
-                        println!("fault {rule}: {} pair {pair}: {detail}", family.term_info(at).0);
-                    }
-                }
-            }
-        }
-        // Each rejected term against its rule's claim.
-        for term in &family.rejected {
-            let counts = tally.entry(term.rule).or_default();
-            let (Some(first_values), second_values) = (values.get(&(term.a as usize)), (term.b != u32::MAX).then(|| values.get(&(term.b as usize))).flatten()) else {
-                counts[2] += 1;
-                continue;
-            };
-            let a_columns = columns_of(term.a as usize);
-            let other = term.other.as_ref().and_then(|text| texts.get(text)).copied();
-            let mut tested = false;
-            let mut failed = None;
-            for pair in 0..train {
-                let (Some(first_value), second_value) = (first_values.get(pair), second_values.and_then(|held| held.get(pair))) else { continue };
-                if matches!(first_value, arclog_encoder::native::Val::None) {
-                    continue;
-                }
-                let own = Generated::rejected_value(&mut walker, term, first_value, second_value);
-                let (Some(own_rows), Some(a_rows)) = (value_rows(&own), value_rows(first_value)) else { continue };
-                let holds = match term.claim {
-                    Claim::Empty => own_rows.is_empty(),
-                    Claim::SameCount => own_rows.len() == a_rows.len(),
-                    Claim::SameRows => {
-                        // A column it adds holds one value, so its rows are its relation's over the columns of both.
-                        let shared: Vec<String> = term.columns.iter().filter(|name| a_columns.contains(name)).cloned().collect();
-                        own_rows.len() == a_rows.len() && rows_over(&own_rows, &term.columns, &shared) == rows_over(&a_rows, &a_columns, &shared)
-                    }
-                    Claim::Other => {
-                        let Some(partner) = other else { continue };
-                        let Some(partner_rows) = values.get(&partner).and_then(|held| held.get(pair)).and_then(value_rows) else { continue };
-                        let partner_columns = columns_of(partner);
-                        // The two orders can name one column differently, so a row compares by its cells.
-                        let cells = |rows: &[Vec<u32>]| { let mut out: Vec<Vec<u32>> = rows.iter().map(|row| { let mut row = row.clone(); row.sort_unstable(); row }).collect(); out.sort_unstable(); out };
-                        own_rows.len() == partner_rows.len() && (partner_columns.len() != term.columns.len() || cells(&own_rows) == cells(&partner_rows))
-                    }
-                    Claim::Follows => {
-                        // What holds over no column follows from whether its relation has rows, and a
-                        // term of its relation's columns is a `project` of it.
-                        let shared: Vec<String> = term.columns.iter().filter(|name| a_columns.contains(name)).cloned().collect();
-                        if term.rule == "select-twice" {
-                            // One comparison of a pair, or none: its rows are its relation's, or a part of them.
-                            own_rows.len() <= a_rows.len()
-                        } else if term.columns.is_empty() {
-                            (!own_rows.is_empty()) == (!a_rows.is_empty())
-                        } else if term.rule == "all-outer-key" {
-                            true
-                        } else {
-                            rows_over(&own_rows, &term.columns, &shared) == rows_over(&a_rows, &a_columns, &shared)
-                        }
-                    }
-                };
-                tested = true;
-                if !holds {
-                    failed = Some(format!("pair {pair}: {} rows, its relation {}, other {:?}", own_rows.len(), a_rows.len(), term.other));
-                    break;
-                }
-            }
-            match (tested, failed) {
-                (false, _) => counts[2] += 1,
-                (true, None) => counts[0] += 1,
-                (true, Some(detail)) => {
-                    counts[1] += 1;
-                    let held = shown.entry(term.rule).or_insert(0);
-                    *held += 1;
-                    if *held <= 6 {
-                        println!("fault {}: {}: {detail}", term.rule, term.text);
-                    }
-                }
-            }
-        }
-    }
-    for (rule, counts) in &tally {
-        println!("rule\t{rule}\tholds {}\tfails {}\tuntested {}", counts[0], counts[1], counts[2]);
-    }
-    for (fact, counts) in &facts {
-        println!("fact\t{fact}\ttested {}\tfails {}", counts[0], counts[1]);
     }
     Ok(())
 }
@@ -2130,7 +1914,6 @@ fn main() {
             Ok(())
         }
         ("shape-count", files) if !files.is_empty() => run_shape_count(&arguments, files),
-        ("refine-check", [file]) => run_refine_check(&arguments, file),
         ("shapes-refresh", [rows, task, out]) => run_shapes_refresh(&arguments, rows, task, out),
         ("generate-check-solver", [solver]) => run_generate_check_solver(&arguments, arguments.tables_per_task.max(1), solver),
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
