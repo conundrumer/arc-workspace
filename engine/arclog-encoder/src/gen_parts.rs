@@ -1990,11 +1990,15 @@ impl PartStep {
 
     /// The cells of the rows of `t` that a part kept by `weighted_list` keeps, where row number `at` of `t` stands for `weights[at]` rows.
     pub(crate) fn kept_rows(&self, t: &Table, weights: &[u64]) -> Option<Vec<Cell>> {
-        match self {
-            PartStep::MostFrequentRows { keys, v } => Some(frequent_rows(t, keys, *v, false, Some(weights))),
-            PartStep::SecondFrequentRows { keys, v } => Some(frequent_rows(t, keys, *v, true, Some(weights))),
-            _ => None,
-        }
+        let kept = match self {
+            PartStep::MostFrequentRows { keys, v } => frequent_rows(t, keys, *v, false, Some(weights)),
+            PartStep::SecondFrequentRows { keys, v } => frequent_rows(t, keys, *v, true, Some(weights)),
+            _ => return None,
+        };
+        Some(match kept {
+            Frequent::All => t.cells().to_vec(),
+            Frequent::Rows(out) => out,
+        })
     }
 
     /// The columns of the part's first relation that fix what it adds to each row, for a part that gives every row it takes with its own cells first and then the cells that those columns alone fix.
