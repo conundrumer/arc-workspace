@@ -5,7 +5,7 @@ mapped to the TableHash of that entry. `rows_replay.py` writes it on the engine 
 One file per task, `OUTD/SET/rows/<task>.jsonl.gz`, written to a temp file and renamed. It holds no feature, so a change of a feature re-runs
 `build_tables.py` over the store and never the replay. Lines:
 
-  header    task, src (the sha of the task's union record), versions (hash_version, query_hash_version), n_train, n_test
+  header    task, src (the sha of the task's union record), versions (hash_version, query_hash_version, table_hash_version), n_train, n_test
   function  one per query: id (its QueryHash, `StudyProgram.query_hash`, equal to the export's `query`), union_key, kind, text, reads, depth, dets (the DETs in its use closure), refmap
             (label in text -> function id), outputs (one per Name: types, labels, assignments seen, kept, stopped)
   alias     one per further (union_key, text) of a function's QueryHash, from a later form: id, union_key, text. `read_store` gives each function
@@ -258,7 +258,7 @@ class RowSink:
         self.f = GzWriter(self.tmp)
         self.put(dict(t='header', task=task, split=split if split is not None else os.environ.get('ARC_UNION_ROWS_SPLIT'), src=src, version=VERSION, hash_source='engine', hash_version='engine@' + DH.VERSION.split('+')[0], code=code_sha(),
                       query_hash_version=DH.VERSION, engine_feature_names=list(arclog.table_feature_names()),
-                      engine_features_version=arclog.table_features_version(), n_train=self.n_train, n_test=self.n_test, max_assignments=MAX_ASSIGNMENTS,
+                      engine_features_version=arclog.table_features_version(), table_hash_version=arclog.table_hash_version(), n_train=self.n_train, n_test=self.n_test, max_assignments=MAX_ASSIGNMENTS,
                       ident_source=os.environ.get('ARCLOG_IDENT_SOURCE')))
 
     def put(self, r: dict) -> None:

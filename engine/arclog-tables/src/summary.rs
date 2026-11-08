@@ -83,6 +83,10 @@ use crate::shape_rows::{ShapeExample, ShapeModel, ShapeRows, SharedShapeRows};
 use crate::split::{self, Part};
 use crate::tables::{example_axis, Contents, Point, Table, TableDet, TableRelation};
 
+/// The version of the TableHash's definition. A change to the TableHash of any table adds one. A store keyed by TableHash holds the version
+/// that wrote it (`arclog.table_hash_version()`), and two TableHashes compare only under one version.
+pub const TABLE_HASH_VERSION: u32 = 2;
+
 /// The reason of an assignment with no TableHash because the search for the order of its tied columns passed [`SEARCH_WORK_CAP`].
 pub const COLUMN_SEARCH_BOUND: &str = "ColumnSearch";
 

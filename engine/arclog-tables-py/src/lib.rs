@@ -37,6 +37,12 @@ fn table_features_version() -> String {
     arclog_features::version()
 }
 
+/// The version of the TableHash's definition ([`arclog_tables::summary::TABLE_HASH_VERSION`]).
+#[pyfunction]
+fn table_hash_version() -> u32 {
+    arclog_tables::summary::TABLE_HASH_VERSION
+}
+
 /// Registers the class and the functions of this crate.
 pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     let module = names.module();
@@ -64,6 +70,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.function(wrap_pyfunction!(step_tables::step_tables_split, module)?)?;
     names.function(wrap_pyfunction!(table_feature_names, module)?)?;
     names.function(wrap_pyfunction!(table_features_version, module)?)?;
+    names.function(wrap_pyfunction!(table_hash_version, module)?)?;
     names.function(wrap_pyfunction!(orientation::orientation_names, module)?)?;
     names.function(wrap_pyfunction!(orientation::orientation_types, module)?)
 }

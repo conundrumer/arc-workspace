@@ -82,7 +82,7 @@ def code_sha() -> str:
 
 def current_versions(tables_header: dict, rows_header: dict) -> bool:
     """Whether a tables file was built on the engine and the QueryHash version that the row store's header names."""
-    return all(tables_header.get(k) == rows_header.get(k) for k in ('hash_version', 'query_hash_version', 'engine_features_version'))
+    return all(tables_header.get(k) == rows_header.get(k) for k in ('hash_version', 'query_hash_version', 'engine_features_version', 'table_hash_version'))
 
 
 def clean(v: list[float]) -> list[float | None]:
@@ -181,7 +181,7 @@ def build_task(task: str, src: Path, out: Path) -> dict:
     def put(r: dict) -> None:
         w.write(json.dumps(r) + '\n')
 
-    put(dict(t='header', task=task, split=store.header.get('split'), src=store.header['src'], rows_code=store.header['code'], code=code_sha(), schema=SCHEMA, hash_source=store.header['hash_source'], hash_version=store.header['hash_version'], engine_features_version=store.header['engine_features_version'],
+    put(dict(t='header', task=task, split=store.header.get('split'), src=store.header['src'], rows_code=store.header['code'], code=code_sha(), schema=SCHEMA, hash_source=store.header['hash_source'], hash_version=store.header['hash_version'], engine_features_version=store.header['engine_features_version'], table_hash_version=store.header['table_hash_version'],
              query_hash_version=store.header["query_hash_version"], names=TV.NAMES, assignment_vector_names=list(sampler_writer().assignment_vector_names()),
              function_names=FV.value_names(), use_names=FV.USE_NAMES))
     cache: dict[str, TR.TableAt] = {}
