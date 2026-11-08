@@ -354,6 +354,15 @@ pub struct ColumnPosition(pub u16);
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Signature(pub crate::program::canonical::CanonicalForm);
 
+/// The version of the QueryHash's definition: the hash of a query's
+/// resolved content ([`ResolvedContent::content_hash`]), which `query_hash`
+/// gives, and the canonical hash of a query with its names as written,
+/// which `written_query_hash` gives. A change to either hash of any query
+/// adds one. A store keyed by QueryHash holds the version that wrote it
+/// (`arclog.query_hash_version()`), and two QueryHashes compare only under
+/// one version.
+pub const QUERY_HASH_VERSION: u32 = 1;
+
 /// The resolved content of a node of a case program: its canonical form,
 /// with each name it reads standing for the resolved content of what it
 /// resolves to, and, for a clause whose node keeps columns that differ, in

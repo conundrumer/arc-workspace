@@ -49,6 +49,12 @@ pub fn constructions() -> PyResult<&'static Constructions> {
     arclog_constructions::shared().map_err(PyRuntimeError::new_err)
 }
 
+/// The version of the QueryHash's definition ([`arclog::resolver::QUERY_HASH_VERSION`]).
+#[pyfunction]
+fn query_hash_version() -> u32 {
+    arclog::resolver::QUERY_HASH_VERSION
+}
+
 /// Registers the classes, the exceptions and the functions of this crate.
 pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     let module = names.module();
@@ -88,6 +94,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.function(wrap_pyfunction!(engine_stats::evidence_request_stats, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::work_total, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::registry_text, module)?)?;
+    names.function(wrap_pyfunction!(query_hash_version, module)?)?;
     names.class::<PyReplayProgress>()?;
     names.function(wrap_pyfunction!(streams::corpus_streams, module)?)?;
     names.function(wrap_pyfunction!(study::empty_gold_json, module)?)?;
