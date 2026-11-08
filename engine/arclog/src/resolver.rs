@@ -513,27 +513,6 @@ impl ResolvedProgram {
         resolved
     }
 
-    /// This program resolved so that each `DET` node that a read in the use
-    /// closure of the top-level form at `position` reads
-    /// ([`ResolvedProgram::use_closure`]) has the columns that the reads in
-    /// that closure name, with the columns that its marks name, and the nodes
-    /// whose columns that leaves fewer than this resolution keeps. A read in
-    /// a form outside the closure widens no node, so the columns of a node
-    /// are those that the closure and its query fix. `None` where every node
-    /// has the columns this resolution gives it, and where this resolution
-    /// takes its nodes from a concept program. The resolution is the
-    /// whole program's, with the positions of the forms and the nodes of
-    /// this one; the checks of the forms outside the closure, which read the
-    /// columns they name, are not for it.
-    pub(crate) fn narrowed_to_closure(&self, position: usize, registry: &Registry) -> Option<(Arc<ResolvedProgram>, Vec<GraphNodeIndex>)> {
-        if self.concept().is_some() {
-            return None;
-        }
-        let keep = self.use_closure(position)?;
-        let (exact, narrowed) = build::closure_columns(self, &keep)?;
-        Some((Arc::new(build::resolve_narrowed(self, &exact, registry)), narrowed))
-    }
-
     /// An identity for the statistics ([`crate::stats`]) of the forms this
     /// resolution layers over: the resolution that [`resolve_last`] took as
     /// `earlier`, or this one where it is no layered resolution.

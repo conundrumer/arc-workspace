@@ -3,14 +3,11 @@
 //! one of its `ONE` marks names, and the check of a column of a clause
 //! against them (`docs/arclog/arclog.md#sites`).
 
-use std::collections::BTreeMap;
-
 use super::Builder;
-use crate::check::reads::form_reads;
 use crate::hash::StableHashMap;
-use crate::program::path::{node_at, NodePath, NodeRef};
+use crate::program::path::{node_at, NodeRef};
 use crate::program::{Clause, ClauseKeyword, ColumnName, ProgramRelation};
-use crate::resolver::{add_columns, DependencyKind, GraphNodeIndex, Resolution, ResolvedProgram};
+use crate::resolver::{add_columns, DependencyKind, GraphNodeIndex, Resolution};
 
 /// A node whose relation has the columns that its reads name: the relation,
 /// and the columns that its `ONE` marks name, which its relation keeps
@@ -65,8 +62,7 @@ impl Builder<'_> {
     /// The column names that the sites of the reads of each read-named node
     /// name, and the columns that its marks name: the reads of the case,
     /// then the reads across the solver's cases that
-    /// [`SolverScope::read_columns`] gives. A node whose relation `exact`
-    /// lists has those columns alone.
+    /// [`SolverScope::read_columns`] gives.
     pub(super) fn read_columns(&mut self) {
         let nodes_read_named: Vec<Option<ReadNamed>> = (self.offset()..self.node_count()).map(|node| self.read_named(node)).collect();
         let mut named: Vec<Option<Vec<ColumnName>>> = vec![None; self.nodes.len()];
@@ -101,9 +97,6 @@ impl Builder<'_> {
             if let Some(names) = &mut named[index] {
                 add_columns(names, &found.marked);
             }
-            if let Some(columns) = self.exact.get(&found.relation) {
-                named[index] = Some(columns.clone());
-            }
         }
         self.read_columns = named;
     }
@@ -116,67 +109,4 @@ impl Builder<'_> {
     pub(super) fn keeps(&self, node: usize, column: &ColumnName) -> bool {
         self.slot(node).and_then(|slot| self.read_columns[slot].as_ref()).is_none_or(|names| names.contains(column))
     }
-}
-
-/// What `node` of `resolved` gives for the read-named rule, as
-/// [`Builder::read_named`] gives it for a node of the build of `resolved`.
-fn read_named_of(resolved: &ResolvedProgram, node: GraphNodeIndex) -> Option<ReadNamed> {
-    let kind = &resolved.graph.nodes[node.0 as usize].kind;
-    let root = NodeRef::Program(resolved.program.value());
-    let clauses = resolved.forms_of(node).iter().filter_map(|form| match node_at(root, form) {
-        Some(NodeRef::Clause(clause)) => Some(clause),
-        _ => None,
-    });
-    read_named(kind, clauses)
-}
-
-/// Whether a form of `node` of `resolved` is a clause with no columns of its
-/// own, whose relation takes its columns from its proposers, so that no read
-/// decides them.
-fn columns_fixed(resolved: &ResolvedProgram, node: GraphNodeIndex) -> bool {
-    let root = NodeRef::Program(resolved.program.value());
-    resolved.forms_of(node).iter().any(|form| matches!(node_at(root, form), Some(NodeRef::Clause(clause)) if clause.columns.is_empty()))
-}
-
-/// The columns that the reads in the forms that `keep` marks, the top-level
-/// forms of a use closure, name for each read-named node of `resolved` that
-/// those reads read, with the columns that its marks name, by the node's
-/// relation, and the nodes whose columns those reads leave fewer than
-/// `resolved` keeps. `None` where there is no such node, so the closure's
-/// resolution is `resolved` itself. A node whose columns its clause fixes is
-/// left out.
-pub(in crate::resolver) fn closure_columns(resolved: &ResolvedProgram, keep: &[bool]) -> Option<(Vec<(ProgramRelation, Vec<ColumnName>)>, Vec<GraphNodeIndex>)> {
-    let mut named: BTreeMap<u32, Vec<ColumnName>> = BTreeMap::new();
-    for (top, form) in resolved.program.value().forms.iter().enumerate() {
-        if !keep.get(top).copied().unwrap_or(false) {
-            continue;
-        }
-        let path = NodePath::top(top as u32);
-        for read in form_reads(form, &path) {
-            let Some(Resolution::Node(node)) = resolved.resolution(&path.join(&read.at)) else { continue };
-            if resolved.read_columns_of(*node).is_none() {
-                continue;
-            }
-            add_columns(named.entry(node.0).or_default(), read.atom.sites.iter().map(|site| &site.column));
-        }
-    }
-    let mut exact: Vec<(ProgramRelation, Vec<ColumnName>)> = Vec::new();
-    let mut narrowed = Vec::new();
-    for (node, mut columns) in named {
-        let node = GraphNodeIndex(node);
-        let Some(held) = resolved.read_columns_of(node) else { continue };
-        if columns_fixed(resolved, node) {
-            continue;
-        }
-        let Some(found) = read_named_of(resolved, node) else { continue };
-        add_columns(&mut columns, &found.marked);
-        if held.len() != columns.len() || !columns.iter().all(|column| held.contains(column)) {
-            narrowed.push(node);
-        }
-        match exact.iter_mut().find(|(relation, _)| *relation == found.relation) {
-            Some((_, kept)) => add_columns(kept, &columns),
-            None => exact.push((found.relation, columns)),
-        }
-    }
-    (!narrowed.is_empty()).then_some((exact, narrowed))
 }

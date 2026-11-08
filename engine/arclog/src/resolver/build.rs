@@ -77,9 +77,6 @@ struct Builder<'a> {
     /// The column names that the reads of each relation name across the
     /// solver's cases.
     solver_reads: &'a StableHashMap<ProgramRelation, Vec<ColumnName>>,
-    /// The columns of each read-named node whose relation is listed, in place
-    /// of the columns its reads name: those of the reads in a use closure.
-    exact: StableHashMap<ProgramRelation, Vec<ColumnName>>,
     /// The nodes this build gives, in the order of their indices. Each
     /// per-node list below holds the entries of these nodes alone, in the same
     /// order: the entry of the node at index `node` is at `node - offset`.
@@ -166,7 +163,6 @@ impl<'a> Builder<'a> {
             registry,
             derived: &scope.derived,
             solver_reads: &scope.read_columns,
-            exact: StableHashMap::default(),
             nodes: Vec::new(),
             index: StableHashMap::default(),
             offset: 0,
@@ -445,30 +441,6 @@ pub(super) fn resolve_reusing(earlier: &ResolvedProgram, scope: &SolverScope, re
     Some(builder.finish(None).value)
 }
 
-/// The resolution of `earlier`'s program in which each read-named node whose
-/// relation `exact` lists has the columns listed, in place of those its reads
-/// name. It is made as [`resolve_reusing`] makes a resolution, and, where
-/// that cannot be shown for the program, whole.
-pub(super) fn resolve_narrowed(earlier: &ResolvedProgram, exact: &[(ProgramRelation, Vec<ColumnName>)], registry: &Registry) -> ResolvedProgram {
-    let scope = SolverScope::default();
-    let exact: StableHashMap<ProgramRelation, Vec<ColumnName>> = exact.iter().cloned().collect();
-    let mut builder = Builder::new(&earlier.program, &scope, registry, None);
-    builder.exact = exact.clone();
-    builder.declare_and_read_whole(&earlier.program, None, registry);
-    if builder.contents_reusing(earlier).is_some() {
-        builder.sites();
-        builder.proposers();
-        return builder.finish(None).value;
-    }
-    let mut builder = Builder::new(&earlier.program, &scope, registry, None);
-    builder.exact = exact;
-    builder.declare_and_read_whole(&earlier.program, None, registry);
-    builder.contents();
-    builder.sites();
-    builder.proposers();
-    builder.finish(None).value
-}
-
 impl<'a> Builder<'a> {
     /// The passes of [`resolve`] before the content of the nodes: the facts
     /// and the declarations and the reads of each form of `case`, the columns
@@ -511,8 +483,6 @@ mod graph;
 
 #[path = "build_read_columns.rs"]
 mod read_columns;
-
-pub(super) use read_columns::closure_columns;
 
 #[path = "build_retarget.rs"]
 mod retarget;
