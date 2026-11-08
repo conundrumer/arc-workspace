@@ -2501,13 +2501,14 @@ struct Spilled {
 /// What a walker holds at most between walks.
 const HELD_CELLS: usize = 3_000_000;
 const HELD_MEMO: usize = 250_000;
-/// The cells that one term can be charged in a walk, by default ([`walk_cells`]): those of each input it reads and of each output it gives, at each instance, each as rows times columns.
-const WALK_CELLS: usize = 100_000_000;
+/// The cells that one term can be charged in a walk: those of each input it reads and of each output it gives, at each instance, each as rows times columns.
+/// It is twice the greatest charge of any term on the gold tables of 601 tasks, 108,519,541,200 cells (an `inside` of task 7e576d6e), as cap-hits measured it
+/// at commit e3be84c5d with no term cut. So no term on a gold table passes it.
+const WALK_CELLS: usize = 217_039_082_400;
 
-/// The cells that one term can be charged in a walk: `GENERATE_WALK_CELLS` where it is set, else [`WALK_CELLS`].
+/// The cells that one term can be charged in a walk.
 fn walk_cells() -> usize {
-    static LIMIT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *LIMIT.get_or_init(|| std::env::var("GENERATE_WALK_CELLS").ok().and_then(|text| text.parse().ok()).unwrap_or(WALK_CELLS))
+    WALK_CELLS
 }
 /// The cells of movable stored values (rows of at least `spill::MIN_CELLS` cells) that a walk keeps in memory between terms, once it moves the others to disk, by default ([`resident_cells`]).
 const RESIDENT_CELLS: usize = 100_000_000;
