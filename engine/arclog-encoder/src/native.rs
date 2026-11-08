@@ -809,6 +809,12 @@ impl<'a> Evaluator<'a> {
             if let Some(value) = read {
                 return value;
             }
+            // A step that takes its rows one at a time runs over the rows of a `join` a chunk at a time.
+            if let Val::Joined(joined) = held[0] {
+                if let Some(value) = self.apply_chunked(step, joined, held.get(1).copied()) {
+                    return value;
+                }
+            }
             let written: Vec<Val> = held.iter().map(|child| child.written()).collect();
             let held: Vec<&Val> = written.iter().collect();
             return self.apply(step, &held);
@@ -834,6 +840,80 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
+    }
+
+    /// Whether `step` takes the rows of its first relation one at a time, so that what it gives over some rows is the rows that it gives over each part of them, together: a `semijoin`, an `antijoin`, a `select`, and a part that gives each row it takes with cells that the cells at some of its columns fix.
+    pub fn per_row(step: &Step) -> bool {
+        match step {
+            Step::Semijoin { .. } | Step::Antijoin { .. } | Step::Select { .. } => true,
+            Step::Part(part) => part.row_columns().is_some(),
+            _ => false,
+        }
+    }
+
+    /// The value of `step` over the rows of `joined`, where `step` takes its rows one at a time and reads no more than the rows of the join: the rows go to the step a chunk at a time, and the rows that it gives for each chunk are put together. The rows of the join are never written whole. No value where `step` is another, or reads the join without its rows, or the rows pass the output limit, which leaves the rows to be written out. `second` is the step's second relation, where it has one.
+    pub fn apply_chunked(&mut self, step: &Step, joined: &crate::joined::Joined, second: Option<&Val>) -> Option<Val> {
+        if !Evaluator::per_row(step) || joined.reads(step) || !joined.fits() {
+            return None;
+        }
+        // A second relation that stands as the relations it comes from is read at the columns the step reads of it, or written out, once.
+        let second: Option<Val> = second.map(|value| {
+            let read = match value {
+                Val::Boxes(boxes) => boxes.read_second(step),
+                Val::Joined(other) => other.read_second(step),
+                _ => None,
+            };
+            read.unwrap_or_else(|| value.written())
+        });
+        if matches!(second, Some(Val::None)) {
+            return Some(Val::None);
+        }
+        let mut out: Vec<Cell> = Vec::new();
+        let mut arity: Option<usize> = None;
+        let mut failed = false;
+        joined.chunks(&mut |chunk| {
+            let first = Val::of_table(chunk);
+            let given = match &second {
+                Some(second) => self.apply(step, &[&first, second]),
+                None => self.apply(step, &[&first]),
+            };
+            let rows = match given {
+                Val::None => {
+                    failed = true;
+                    return false;
+                }
+                Val::Empty => return true,
+                other => match crate::gen_parts::flat(&other) {
+                    Some(rows) => rows,
+                    None => {
+                        failed = true;
+                        return false;
+                    }
+                },
+            };
+            arity = Some(rows.arity);
+            out.extend_from_slice(&rows.stored);
+            // The rows that the chunks give pass the limit as the rows of the whole would.
+            if out.len() > output_limit() {
+                passed_output_limit();
+                failed = true;
+                return false;
+            }
+            true
+        });
+        if failed {
+            return Some(Val::None);
+        }
+        let Some(arity) = arity else { return Some(Val::Empty) };
+        // A `select` that drops a column gives a row again for each row it drops the column from.
+        let table = if arity == 0 {
+            Table::unit(true)
+        } else if matches!(step, Step::Select { drop: Some(_), .. }) {
+            Table::distinct(arity, out)
+        } else {
+            Table::new(arity, out)
+        };
+        Some(Val::of_table(table))
     }
 
     /// The count of rows of `step` on `children`, with no rows built, where its form
