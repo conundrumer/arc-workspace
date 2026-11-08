@@ -344,13 +344,13 @@ fn sub_body_work(arclog: &str, masked: bool) -> u64 {
 #[test]
 fn the_work_of_a_form_alone_is_its_work_in_the_stream() {
     const FIRST: &str = "(RULE &first (input *P *Col))\n";
-    const UNRELATED: &str = "(RULE &unrelated (input *P *Col) (input P Col))\n";
+    const UNRELATED: &str = "(RULE &unrelated (input *P *Col) (input *Q Col))\n";
     const SECOND: &str = "(RULE &second (&first *P *Col))\n";
     // Each form with the streams that hold it: the forms it reads, then it, alone, and a stream with a form it does not read, with the mask asked at each token.
     let cases = [
         (format!("{FIRST}(RULE &output (&first *P *Col))\n"), format!("{FIRST}{UNRELATED}(RULE &output (&first *P *Col))\n")),
         (format!("{FIRST}{SECOND}(RULE &output (&second *P *Col))\n"), format!("{FIRST}{UNRELATED}{SECOND}(RULE &output (&second *P *Col))\n")),
-        (format!("{FIRST}(RULE &output (&first *P *Col) (&first P Col))\n"), format!("{UNRELATED}{FIRST}(RULE &output (&first *P *Col) (&first P Col))\n")),
+        (format!("{FIRST}(RULE &output (&first *P *Col) (&first *Q Col))\n"), format!("{UNRELATED}{FIRST}(RULE &output (&first *P *Col) (&first *Q Col))\n")),
     ];
     for (alone, stream) in &cases {
         let alone_work = sub_body_work(alone, false);
