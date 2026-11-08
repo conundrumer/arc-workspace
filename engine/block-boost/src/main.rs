@@ -11,6 +11,8 @@
 //!
 //! The objective and the tree growth are those of LightGBM's lambdarank, with the same parameters. A histogram entry holds
 //! the sums of a bin, and a leaf's rows add their sums to the blocks first, so one block's entries are read once for a leaf.
+//! Rows with the same blocks in every map have the same leaf in every tree, so `softmax` grows its trees over those pairs of rows, keeps one score for
+//! each pair, and goes over rows only for the gradient and for the sums of each pair's rows.
 
 use rayon::prelude::*;
 use serde_json::{Value, json};
@@ -667,8 +669,6 @@ struct UseData {
     map: usize,
     ptr: Mapped<u64>,
     bid: Mapped<u32>,
-    least: u32,
-    most: u32,
 }
 
 struct Store {
@@ -706,8 +706,6 @@ impl Store {
                     map: u["map"].as_u64().unwrap() as usize,
                     ptr: Mapped::open(&dir.join(format!("use{place}.ptr.u64"))),
                     bid: Mapped::open(&dir.join(format!("use{place}.bid.u32"))),
-                    least: u["least"].as_u64().unwrap() as u32,
-                    most: u["most"].as_u64().unwrap() as u32,
                 })
                 .collect(),
         }
@@ -841,81 +839,273 @@ impl Tree {
     }
 }
 
-/// A leaf's rows' sums per block of one map.
+/// A leaf's items' sums per block of one map.
 struct Sums {
     g: Vec<f64>,
     h: Vec<f64>,
     seen: Vec<bool>,
+    /// The blocks that hold an item of the leaf, in ascending order.
     touched: Vec<u32>,
+    /// A large leaf's items, grouped by the owner of their block, while the sums are added.
+    bucket: Vec<u32>,
 }
 
-/// Where each block of a use crosses from one range of bins to the next. The ranges tile the bins, so a block's entries in range r are
-/// `bid[ptr[b] + offsets[r] .. ptr[b] + offsets[r + 1]]`.
-fn range_offsets(data: &UseData, ranges: &[(u32, u32)]) -> Option<Vec<u16>> {
-    let blocks = data.ptr.len().saturating_sub(1);
-    let width = ranges.len() + 1;
-    if (0..blocks).into_par_iter().any(|b| data.ptr[b + 1] - data.ptr[b] > u16::MAX as u64) {
-        return None;
-    }
-    let mut out = vec![0u16; blocks * width];
-    out.par_chunks_mut(width * 4096).enumerate().for_each(|(chunk, part)| {
-        for (i, row) in part.chunks_mut(width).enumerate() {
-            let b = chunk * 4096 + i;
-            let entries = &data.bid[data.ptr[b] as usize..data.ptr[b + 1] as usize];
-            for (r, &(low, _)) in ranges.iter().enumerate() {
-                row[r] = if low == 0 { 0 } else { entries.partition_point(|&x| x < low) as u16 };
-            }
-            row[ranges.len()] = entries.len() as u16;
-        }
-    });
-    Some(out)
+/// What a tree is grown over. An item has one block in each map, a gradient and a Hessian, and stands for one or more rows. A row's leaf depends on
+/// its blocks alone, so rows with the same blocks are one item (`PairItems`), or each row is an item (`RowItems`).
+trait Items: Sync {
+    /// The count of items: item numbers are below it.
+    fn count(&self) -> usize;
+    /// The item's block in the map, or NONE.
+    fn block(&self, map: usize, item: u32) -> u32;
+    /// The item's gradient and Hessian sums.
+    fn weight(&self, item: u32) -> (f64, f64);
+    /// The count of rows the item stands for.
+    fn rows(&self, item: u32) -> usize;
+    /// The item that stands for the row.
+    fn item_of_row(&self, row: u32) -> u32;
 }
+
+/// Each row is an item.
+struct RowItems<'a> {
+    store: &'a Store,
+    grad: &'a [f32],
+    hess: &'a [f32],
+}
+
+impl Items for RowItems<'_> {
+    #[inline]
+    fn count(&self) -> usize {
+        self.store.rows
+    }
+    #[inline]
+    fn block(&self, map: usize, item: u32) -> u32 {
+        self.store.maps[map][item as usize]
+    }
+    #[inline]
+    fn weight(&self, item: u32) -> (f64, f64) {
+        (self.grad[item as usize] as f64, self.hess[item as usize] as f64)
+    }
+    #[inline]
+    fn rows(&self, _item: u32) -> usize {
+        1
+    }
+    #[inline]
+    fn item_of_row(&self, row: u32) -> u32 {
+        row
+    }
+}
+
+/// The distinct tuples of a row's blocks, one in each map, in ascending order of the tuple (the first map's block first), and which rows have each.
+struct Pairs {
+    maps: usize,
+    /// Pair p has block `block[p * maps + m]` in map m.
+    block: Vec<u32>,
+    /// Pair p has the rows `rows[start[p]..start[p + 1]]`, in ascending order.
+    start: Vec<u32>,
+    rows: Vec<u32>,
+    /// The pair of each row.
+    row_pair: Vec<u32>,
+}
+
+impl Pairs {
+    fn build(store: &Store) -> Pairs {
+        let maps = store.maps.len();
+        assert!(maps >= 1, "a store has a map");
+        assert!(store.rows < u32::MAX as usize, "a row number has 32 bits");
+        let rows = store.rows;
+        let first = &store.maps[0];
+        // The rows with no block in the first map stand in the last bucket.
+        let buckets = first.iter().filter(|&&b| b != NONE).map(|&b| b as usize + 1).max().unwrap_or(0) + 1;
+        let bucket_of = |row: usize| if first[row] == NONE { buckets - 1 } else { first[row] as usize };
+        let mut offset = vec![0u32; buckets + 1];
+        for row in 0..rows {
+            offset[bucket_of(row) + 1] += 1;
+        }
+        for b in 0..buckets {
+            offset[b + 1] += offset[b];
+        }
+        let mut sorted = vec![0u32; rows];
+        {
+            let mut next = offset.clone();
+            for row in 0..rows {
+                let b = bucket_of(row);
+                sorted[next[b] as usize] = row as u32;
+                next[b] += 1;
+            }
+        }
+        // In each bucket the rows go in ascending order of their blocks in the other maps, then of their numbers. A run of equal blocks is a pair, and
+        // a bucket's record lists each run as its place in the bucket and the blocks in the other maps.
+        let mut slices: Vec<&mut [u32]> = Vec::with_capacity(buckets);
+        let mut rest = sorted.as_mut_slice();
+        for b in 0..buckets {
+            let (here, after) = rest.split_at_mut((offset[b + 1] - offset[b]) as usize);
+            slices.push(here);
+            rest = after;
+        }
+        let records: Vec<Vec<u32>> = slices
+            .par_iter_mut()
+            .map(|here| {
+                let n = here.len();
+                let mut record = Vec::new();
+                if n == 0 {
+                    return record;
+                }
+                if maps == 1 {
+                    record.push(0);
+                    return record;
+                }
+                let k = maps - 1;
+                let keys: Vec<u32> = here.iter().flat_map(|&r| (1..maps).map(move |m| store.maps[m][r as usize])).collect();
+                let mut order: Vec<u32> = (0..n as u32).collect();
+                order.sort_unstable_by(|&a, &b| keys[a as usize * k..][..k].cmp(&keys[b as usize * k..][..k]).then(a.cmp(&b)));
+                let sorted_here: Vec<u32> = order.iter().map(|&i| here[i as usize]).collect();
+                here.copy_from_slice(&sorted_here);
+                let mut previous: Option<&[u32]> = None;
+                for (place, &i) in order.iter().enumerate() {
+                    let key = &keys[i as usize * k..][..k];
+                    if previous != Some(key) {
+                        record.push(place as u32);
+                        record.extend_from_slice(key);
+                        previous = Some(key);
+                    }
+                }
+                record
+            })
+            .collect();
+        let mut first_pair = vec![0usize; buckets + 1];
+        for b in 0..buckets {
+            first_pair[b + 1] = first_pair[b] + records[b].len() / maps;
+        }
+        let count = first_pair[buckets];
+        assert!(count < u32::MAX as usize, "a pair number has 32 bits");
+        let mut block = vec![0u32; count * maps];
+        let mut start = vec![0u32; count + 1];
+        let mut row_pair = vec![0u32; rows];
+        {
+            let (block_out, start_out, row_out) = (Disjoint(block.as_mut_ptr()), Disjoint(start.as_mut_ptr()), Disjoint(row_pair.as_mut_ptr()));
+            let (offset, first_pair, sorted, records) = (&offset, &first_pair, &sorted, &records);
+            (0..buckets).into_par_iter().for_each(|b| {
+                let record = &records[b];
+                let runs = record.len() / maps;
+                let here = &sorted[offset[b] as usize..offset[b + 1] as usize];
+                for i in 0..runs {
+                    let p = first_pair[b] + i;
+                    let at = record[i * maps] as usize;
+                    let to = if i + 1 < runs { record[(i + 1) * maps] as usize } else { here.len() };
+                    // Each bucket writes the pairs and the rows of its own.
+                    unsafe {
+                        *start_out.at(p) = offset[b] + at as u32;
+                        *block_out.at(p * maps) = if b == buckets - 1 { NONE } else { b as u32 };
+                        for m in 1..maps {
+                            *block_out.at(p * maps + m) = record[i * maps + m];
+                        }
+                        for &row in &here[at..to] {
+                            *row_out.at(row as usize) = p as u32;
+                        }
+                    }
+                }
+            });
+        }
+        start[count] = rows as u32;
+        Pairs { maps, block, start, rows: sorted, row_pair }
+    }
+
+    fn count(&self) -> usize {
+        self.start.len() - 1
+    }
+
+    /// A number that stands for the pairs' blocks and the rows' counts, to tell one store's pairs from another's.
+    fn fingerprint(&self) -> u64 {
+        let parts: Vec<u64> = self.block.par_chunks(1 << 16).map(|chunk| chunk.iter().fold(0u64, |a, &x| mix(a ^ x as u64))).collect();
+        let mut hash = mix(self.maps as u64);
+        for part in parts {
+            hash = mix(hash ^ part);
+        }
+        let sizes: Vec<u64> = self.start.par_chunks(1 << 16).map(|chunk| chunk.iter().fold(0u64, |a, &x| mix(a ^ x as u64))).collect();
+        for part in sizes {
+            hash = mix(hash ^ part);
+        }
+        hash
+    }
+}
+
+/// Each pair is an item, with the sums `g` and `h` of its rows' gradients and Hessians.
+struct PairItems<'a> {
+    pairs: &'a Pairs,
+    g: &'a [f64],
+    h: &'a [f64],
+}
+
+impl Items for PairItems<'_> {
+    #[inline]
+    fn count(&self) -> usize {
+        self.pairs.count()
+    }
+    #[inline]
+    fn block(&self, map: usize, item: u32) -> u32 {
+        self.pairs.block[item as usize * self.pairs.maps + map]
+    }
+    #[inline]
+    fn weight(&self, item: u32) -> (f64, f64) {
+        (self.g[item as usize], self.h[item as usize])
+    }
+    #[inline]
+    fn rows(&self, item: u32) -> usize {
+        (self.pairs.start[item as usize + 1] - self.pairs.start[item as usize]) as usize
+    }
+    #[inline]
+    fn item_of_row(&self, row: u32) -> u32 {
+        self.pairs.row_pair[row as usize]
+    }
+}
+
+/// The sums of each pair's rows' gradients and Hessians, in ascending order of the rows.
+fn pair_sums(pairs: &Pairs, grad: &[f32], hess: &[f32], g: &mut [f64], h: &mut [f64]) {
+    g.par_iter_mut().zip(h.par_iter_mut()).enumerate().with_min_len(2048).for_each(|(p, (g, h))| {
+        let (mut sum_g, mut sum_h) = (0.0f64, 0.0f64);
+        for &row in &pairs.rows[pairs.start[p] as usize..pairs.start[p + 1] as usize] {
+            sum_g += grad[row as usize] as f64;
+            sum_h += hess[row as usize] as f64;
+        }
+        *g = sum_g;
+        *h = sum_h;
+    });
+}
+
+/// The owners that share the blocks of a map when a large leaf's sums are added.
+const OWNERS: usize = 256;
+/// A histogram is read from private histograms of parts of the leaf's blocks, one part for each this many blocks, up to `MAX_PARTS`.
+const BLOCKS_PER_PART: usize = 8192;
+const MAX_PARTS: usize = 32;
+/// The private histograms together take at most about this many bytes, so a store with many bins has fewer parts.
+const PART_BYTES: usize = 64 << 20;
 
 struct Work {
     sums: Vec<Sums>,
     pool: Vec<Vec<Bin>>,
     seen: Vec<bool>,
+    /// Private histograms of zeros, for the parts of a large leaf's blocks.
+    parts: Vec<Vec<Bin>>,
     indices: Vec<u32>,
     scratch: Vec<u32>,
     flags: Vec<bool>,
-    ranges: Vec<(u32, u32)>,
-    /// For each use, where each of its blocks' entries cross from one range of bins to the next, as offsets from the block's first entry:
-    /// `ranges.len() + 1` of them a block. None where a block holds more entries than a u16 counts.
-    offsets: Vec<Option<Vec<u16>>>,
     /// For each use, what the latest split's column holds at each of its blocks (see `SplitTest`).
     memo: Vec<Vec<AtomicU32>>,
     stamp: u32,
 }
 
 impl Work {
-    fn new(store: &Store, threads: usize) -> Work {
+    fn new(store: &Store) -> Work {
         let sums = store
             .maps
             .iter()
             .map(|map| {
                 let blocks = map.iter().filter(|&&b| b != NONE).map(|&b| b as usize + 1).max().unwrap_or(0);
-                Sums { g: vec![0.0; blocks], h: vec![0.0; blocks], seen: vec![false; blocks], touched: Vec::new() }
+                Sums { g: vec![0.0; blocks], h: vec![0.0; blocks], seen: vec![false; blocks], touched: Vec::new(), bucket: Vec::new() }
             })
             .collect();
-        // Each range of bins holds about one share of the entries, and one thread at a time works on it.
-        let total: u64 = store.col_entries.iter().sum();
-        let shares = (threads * 2).max(1) as u64;
-        let mut ranges = Vec::new();
-        let (mut low, mut held) = (0u32, 0u64);
-        for k in 0..store.kept {
-            held += store.col_entries[k];
-            if held >= total / shares + 1 {
-                ranges.push((low, store.col_start[k + 1]));
-                low = store.col_start[k + 1];
-                held = 0;
-            }
-        }
-        if (low as usize) < store.bins {
-            ranges.push((low, store.bins as u32));
-        }
-        let offsets = store.uses.iter().map(|data| range_offsets(data, &ranges)).collect();
         let memo = store.uses.iter().map(|_| Vec::new()).collect();
-        Work { sums, pool: Vec::new(), seen: vec![false; store.bins], indices: Vec::new(), scratch: Vec::new(), flags: Vec::new(), ranges, offsets, memo, stamp: 0 }
+        Work { sums, pool: Vec::new(), seen: vec![false; store.bins], parts: Vec::new(), indices: Vec::new(), scratch: Vec::new(), flags: Vec::new(), memo, stamp: 0 }
     }
 
     /// A histogram of zeros.
@@ -937,15 +1127,14 @@ impl Work {
     }
 }
 
-/// Adds each row's gradient and Hessian to its block's sums, one map to a thread. A block's sums add its rows in the leaf's order, and
-/// `touched` lists the blocks in the order their first rows come, as a pass over the rows in one thread gives them.
-fn add_blocks(work: &mut Work, store: &Store, rows: std::ops::Range<usize>, grad: &[f32], hess: &[f32]) {
-    let here = &work.indices[rows];
-    let owners = rayon::current_num_threads();
-    work.sums.par_iter_mut().zip(store.maps.par_iter()).for_each(|(sums, map)| {
-        if here.len() < 1 << 16 || owners < 2 {
-            for &row in here {
-                let block = map[row as usize];
+/// Adds each item's gradient and Hessian to its block's sums, one map to a thread. `touched` lists the blocks in ascending order. A block's sums add its
+/// items in the order of `work.indices`.
+fn add_blocks<I: Items>(work: &mut Work, items: &I, range: std::ops::Range<usize>) {
+    let here = &work.indices[range];
+    work.sums.par_iter_mut().enumerate().for_each(|(m, sums)| {
+        if here.len() < 1 << 16 {
+            for &item in here {
+                let block = items.block(m, item);
                 if block == NONE {
                     continue;
                 }
@@ -954,44 +1143,90 @@ fn add_blocks(work: &mut Work, store: &Store, rows: std::ops::Range<usize>, grad
                     sums.seen[b] = true;
                     sums.touched.push(block);
                 }
-                sums.g[b] += grad[row as usize] as f64;
-                sums.h[b] += hess[row as usize] as f64;
+                let (g, h) = items.weight(item);
+                sums.g[b] += g;
+                sums.h[b] += h;
             }
+            sums.touched.sort_unstable();
             return;
         }
-        // Each owner takes a range of blocks and reads all the rows, so no two owners write one block's sums.
+        // The items go to the owner of their block, which adds them in their order, so no two owners write one block's sums. Three passes over the
+        // items do it: they count by chunk and owner, they move into buckets, and each owner adds its bucket.
+        const CHUNK: usize = 1 << 16;
         let blocks = sums.g.len();
+        if blocks == 0 {
+            return;
+        }
+        let owners = OWNERS.min(blocks);
+        let owner = |block: u32| (block as u64 * owners as u64 / blocks as u64) as usize;
+        let chunks = here.len().div_ceil(CHUNK);
+        let mut counts = vec![0u32; chunks * owners];
+        counts.par_chunks_mut(owners).zip(here.par_chunks(CHUNK)).for_each(|(count, part)| {
+            for &item in part {
+                let block = items.block(m, item);
+                if block != NONE {
+                    count[owner(block)] += 1;
+                }
+            }
+        });
+        // Owner o takes the places `first[o]..first[o + 1]`, and chunk c writes at `places[c * owners + o]` on.
+        let mut first = vec![0usize; owners + 1];
+        for o in 0..owners {
+            first[o + 1] = first[o] + (0..chunks).map(|c| counts[c * owners + o] as usize).sum::<usize>();
+        }
+        let mut places = vec![0usize; chunks * owners];
+        for o in 0..owners {
+            let mut at = first[o];
+            for c in 0..chunks {
+                places[c * owners + o] = at;
+                at += counts[c * owners + o] as usize;
+            }
+        }
+        if sums.bucket.len() < first[owners] {
+            sums.bucket.resize(first[owners], 0);
+        }
+        {
+            let out = Disjoint(sums.bucket.as_mut_ptr());
+            places.par_chunks(owners).zip(here.par_chunks(CHUNK)).for_each(|(place, part)| {
+                let mut place = place.to_vec();
+                for &item in part {
+                    let block = items.block(m, item);
+                    if block != NONE {
+                        let o = owner(block);
+                        // Each chunk writes at places that no other chunk writes at.
+                        unsafe { *out.at(place[o]) = item };
+                        place[o] += 1;
+                    }
+                }
+            });
+        }
         let (g, h, seen) = (Disjoint(sums.g.as_mut_ptr()), Disjoint(sums.h.as_mut_ptr()), Disjoint(sums.seen.as_mut_ptr()));
-        let found: Vec<Vec<(u32, u32)>> = (0..owners)
+        let bucket = &sums.bucket;
+        let first = &first;
+        let lists: Vec<Vec<u32>> = (0..owners)
             .into_par_iter()
-            .map(|owner| {
-                let (low, high) = (blocks * owner / owners, blocks * (owner + 1) / owners);
+            .map(|o| {
                 let mut mine = Vec::new();
-                for (i, &row) in here.iter().enumerate() {
-                    let block = map[row as usize];
-                    if block == NONE {
-                        continue;
-                    }
+                for &item in &bucket[first[o]..first[o + 1]] {
+                    let block = items.block(m, item);
                     let b = block as usize;
-                    if b < low || b >= high {
-                        continue;
-                    }
+                    let (wg, wh) = items.weight(item);
+                    // An owner writes the sums of its own blocks.
                     unsafe {
                         if !*seen.at(b) {
                             *seen.at(b) = true;
-                            mine.push((i as u32, block));
+                            mine.push(block);
                         }
-                        *g.at(b) += grad[row as usize] as f64;
-                        *h.at(b) += hess[row as usize] as f64;
+                        *g.at(b) += wg;
+                        *h.at(b) += wh;
                     }
                 }
+                mine.sort_unstable();
                 mine
             })
             .collect();
-        // A block's first row stands at one place in `here`, so the places order the blocks as one pass would.
-        let mut all = found.concat();
-        all.par_sort_unstable();
-        sums.touched.extend(all.iter().map(|&(_, block)| block));
+        // Owners take ascending ranges of blocks, so the lists together are in ascending order.
+        sums.touched.extend(lists.into_iter().flatten());
     });
 }
 
@@ -1025,62 +1260,88 @@ fn add_entries<const TRACK: bool>(slice: &mut [Bin], marks: &mut [bool], local: 
     }
 }
 
-/// Adds each touched block's sums to the bins of its entries. With `track`, gives each bin that holds an entry of these rows, once.
-fn fill_histogram(work: &mut Work, store: &Store, rows: std::ops::Range<usize>, grad: &[f32], hess: &[f32], hist: &mut [Bin], track: bool) -> Vec<u32> {
-    add_blocks(work, store, rows, grad, hess);
-    let mut seen = std::mem::take(&mut work.seen);
-    let mut slices: Vec<(u32, u32, &mut [Bin], &mut [bool])> = Vec::with_capacity(work.ranges.len());
-    let (mut rest, mut rest_seen) = (hist, seen.as_mut_slice());
-    let mut at = 0u32;
-    for &(low, high) in &work.ranges {
-        assert_eq!(low, at);
-        let (here, after) = rest.split_at_mut((high - low) as usize);
-        let (marks, after_marks) = rest_seen.split_at_mut((high - low) as usize);
-        slices.push((low, high, here, marks));
-        rest = after;
-        rest_seen = after_marks;
-        at = high;
-    }
-    let sums = &work.sums;
-    let (offsets, width) = (&work.offsets, work.ranges.len() + 1);
-    let lists: Vec<Vec<u32>> = slices.par_iter_mut().enumerate().map(|(r, (low, high, slice, marks))| {
-        let (low, high) = (*low, *high);
+/// Adds each touched block's sums to the bins of its entries. With `track`, gives each bin that the rows' entries make non-zero, once. (A row with a
+/// gradient has a Hessian above 0, so a bin with an entry of such a row has a sum other than 0. A row with a Hessian of 0 and a gradient other than 0
+/// would break this, because a bin could sum to 0 and still need its parent's value to be taken from it.)
+///
+/// A leaf with few blocks adds them in one thread, in ascending order of block. A leaf with many splits its blocks into parts of ascending blocks,
+/// adds each part to a private histogram, and then adds the private histograms to `hist`, bin by bin, in the order of the parts.
+fn fill_histogram<I: Items>(work: &mut Work, store: &Store, items: &I, range: std::ops::Range<usize>, hist: &mut [Bin], track: bool) -> Vec<u32> {
+    add_blocks(work, items, range);
+    let total: usize = store.uses.iter().map(|data| work.sums[data.map].touched.len()).sum();
+    let most_parts = (PART_BYTES / (store.bins.max(1) * std::mem::size_of::<Bin>())).clamp(1, MAX_PARTS);
+    let parts = (total / BLOCKS_PER_PART).min(most_parts);
+    let touched = if parts < 2 {
+        let mut marks = std::mem::take(&mut work.seen);
         let mut local = Vec::new();
-        for (place, data) in store.uses.iter().enumerate() {
-            if data.most < low || data.least >= high {
-                continue;
-            }
-            let held = &sums[data.map];
+        for data in &store.uses {
+            let held = &work.sums[data.map];
             for &block in &held.touched {
                 let b = block as usize;
-                let base = data.ptr[b] as usize;
-                let (g, h) = (held.g[b], held.h[b]);
-                let entries = match &offsets[place] {
-                    Some(offsets) => {
-                        let at = b * width + r;
-                        &data.bid[base + offsets[at] as usize..base + offsets[at + 1] as usize]
-                    }
-                    None => {
-                        let all = &data.bid[base..data.ptr[b + 1] as usize];
-                        let start = if low == 0 { 0 } else { all.partition_point(|&x| x < low) };
-                        let end = start + all[start..].partition_point(|&x| x < high);
-                        &all[start..end]
-                    }
-                };
+                let entries = &data.bid[data.ptr[b] as usize..data.ptr[b + 1] as usize];
                 if track {
-                    add_entries::<true>(slice, marks, &mut local, entries, low, g, h);
+                    add_entries::<true>(hist, &mut marks, &mut local, entries, 0, held.g[b], held.h[b]);
                 } else {
-                    add_entries::<false>(slice, marks, &mut local, entries, low, g, h);
+                    add_entries::<false>(hist, &mut marks, &mut local, entries, 0, held.g[b], held.h[b]);
                 }
             }
         }
+        for &b in &local {
+            marks[b as usize] = false;
+        }
+        work.seen = marks;
         local
-    }).collect();
-    let touched = lists.concat();
-    for &b in &touched {
-        seen[b as usize] = false;
-    }
-    work.seen = seen;
+    } else {
+        let mut buffers = std::mem::take(&mut work.parts);
+        while buffers.len() < parts {
+            buffers.push(vec![Bin::default(); store.bins]);
+        }
+        {
+            let sums = &work.sums;
+            buffers[..parts].par_iter_mut().enumerate().for_each(|(j, buffer)| {
+                let (mut no_marks, mut no_list): (Vec<bool>, Vec<u32>) = (Vec::new(), Vec::new());
+                for data in &store.uses {
+                    let held = &sums[data.map];
+                    let n = held.touched.len();
+                    for &block in &held.touched[n * j / parts..n * (j + 1) / parts] {
+                        let b = block as usize;
+                        let entries = &data.bid[data.ptr[b] as usize..data.ptr[b + 1] as usize];
+                        add_entries::<false>(buffer, &mut no_marks, &mut no_list, entries, 0, held.g[b], held.h[b]);
+                    }
+                }
+            });
+        }
+        // Each span of bins is added from the private histograms, which it clears, by one thread.
+        const SPAN: usize = 4096;
+        let pointers: Vec<Disjoint<Bin>> = buffers[..parts].iter_mut().map(|buffer| Disjoint(buffer.as_mut_ptr())).collect();
+        let lists: Vec<Vec<u32>> = hist
+            .par_chunks_mut(SPAN)
+            .enumerate()
+            .map(|(c, out)| {
+                let mut local = Vec::new();
+                for (i, bin) in out.iter_mut().enumerate() {
+                    let (mut g, mut h) = (0.0f64, 0.0f64);
+                    for part in &pointers {
+                        // A span of bins belongs to one thread.
+                        unsafe {
+                            let x = part.at(c * SPAN + i);
+                            g += (*x).g;
+                            h += (*x).h;
+                            *x = Bin::default();
+                        }
+                    }
+                    bin.g += g;
+                    bin.h += h;
+                    if track && (bin.g != 0.0 || bin.h != 0.0) {
+                        local.push((c * SPAN + i) as u32);
+                    }
+                }
+                local
+            })
+            .collect();
+        work.parts = buffers;
+        lists.concat()
+    };
     clear_blocks(work);
     touched
 }
@@ -1176,7 +1437,7 @@ fn best_split(store: &Store, used: &[u32], hist: &[Bin], total: (f64, f64, f64),
     let most = if config.min_tasks > 0 { 16 } else { 1 };
     let parent = leaf_gain(g, h + EPSILON, config);
     let (tops, open) = used
-        .par_chunks(4096)
+        .par_chunks(32)
         .map(|chunk| {
             let mut tops: Vec<Split> = Vec::new();
             let mut open = Vec::new();
@@ -1245,14 +1506,14 @@ const NO_ENTRY: u32 = 1;
 const GOES_LEFT: u32 = 2;
 const GOES_RIGHT: u32 = 3;
 
-/// `Store::left` for one split, for many rows. What a use says of a row depends on the row's block in the use's map alone, so it is found once for
-/// each block and kept, tagged with the split's stamp, in `memo`. The answer of a row is the answer of its first use whose block has an entry in the
+/// `Store::left` for one split, for many items. What a use says of an item depends on the item's block in the use's map alone, so it is found once for
+/// each block and kept, tagged with the split's stamp, in `memo`. The answer of an item is the answer of its first use whose block has an entry in the
 /// column, as in `Store::left`.
-struct SplitTest<'a> {
+struct SplitTest<'a, I: Items> {
     store: &'a Store,
+    items: &'a I,
     memo: &'a [Vec<AtomicU32>],
     stamp: u32,
-    column: usize,
     start: u32,
     end: u32,
     zero: u32,
@@ -1262,15 +1523,15 @@ struct SplitTest<'a> {
     mask: u64,
 }
 
-impl SplitTest<'_> {
+impl<I: Items> SplitTest<'_, I> {
     #[inline]
-    fn left(&self, row: u32) -> bool {
+    fn left(&self, item: u32) -> bool {
         let mut mask = self.mask;
         while mask != 0 {
             let place = mask.trailing_zeros() as usize;
             mask &= mask - 1;
             let data = &self.store.uses[place];
-            let block = self.store.maps[data.map][row as usize];
+            let block = self.items.block(data.map, item);
             if block == NONE {
                 continue;
             }
@@ -1310,8 +1571,9 @@ impl SplitTest<'_> {
     }
 }
 
-/// Stably partitions the leaf's rows `work.indices[start..start + len]` by whether they go left at `split`. It returns the count that go left.
-fn partition(work: &mut Work, store: &Store, start: usize, len: usize, column: u32, pos: u32, default_left: bool) -> usize {
+/// Stably partitions the leaf's items `work.indices[start..start + len]` by whether they go left at `split`. It returns the count of items that go left
+/// and the count of rows they stand for.
+fn partition<I: Items>(work: &mut Work, store: &Store, items: &I, start: usize, len: usize, column: u32, pos: u32, default_left: bool) -> (usize, usize) {
     let k = column as usize;
     let mask = store.col_uses[k];
     work.stamp += 1;
@@ -1327,9 +1589,9 @@ fn partition(work: &mut Work, store: &Store, start: usize, len: usize, column: u
     }
     let test = SplitTest {
         store,
+        items,
         memo: &work.memo,
         stamp: work.stamp,
-        column: k,
         start: store.col_start[k],
         end: store.col_start[k + 1],
         zero: store.zero_pos[k],
@@ -1338,22 +1600,36 @@ fn partition(work: &mut Work, store: &Store, start: usize, len: usize, column: u
         default_left,
         mask,
     };
-    debug_assert_eq!(test.column, k);
     work.flags.resize(len, false);
     {
-        let rows = &work.indices[start..start + len];
-        work.flags.par_iter_mut().zip(rows.par_iter()).with_min_len(1024).for_each(|(flag, &row)| {
-            *flag = test.left(row);
+        let here = &work.indices[start..start + len];
+        work.flags.par_iter_mut().zip(here.par_iter()).with_min_len(1024).for_each(|(flag, &item)| {
+            *flag = test.left(item);
         });
     }
-    // Each chunk's left rows go to the front of `scratch` after the left rows of the chunks before it, and its right rows after all left rows.
+    // Each chunk's left items go to the front of `scratch` after the left items of the chunks before it, and its right items after all left items.
     const CHUNK: usize = 1 << 16;
-    let lefts: Vec<usize> = work.flags.par_chunks(CHUNK).map(|chunk| chunk.iter().filter(|&&f| f).count()).collect();
-    let left_len: usize = lefts.iter().sum();
+    let lefts: Vec<(usize, usize)> = work
+        .flags
+        .par_chunks(CHUNK)
+        .zip(work.indices[start..start + len].par_chunks(CHUNK))
+        .map(|(flags, here)| {
+            let (mut count, mut rows) = (0usize, 0usize);
+            for (&flag, &item) in flags.iter().zip(here) {
+                if flag {
+                    count += 1;
+                    rows += items.rows(item);
+                }
+            }
+            (count, rows)
+        })
+        .collect();
+    let left_len: usize = lefts.iter().map(|x| x.0).sum();
+    let left_rows: usize = lefts.iter().map(|x| x.1).sum();
     let mut left_at = Vec::with_capacity(lefts.len());
     let mut right_at = Vec::with_capacity(lefts.len());
     let (mut l, mut r) = (0usize, left_len);
-    for (i, &count) in lefts.iter().enumerate() {
+    for (i, &(count, _)) in lefts.iter().enumerate() {
         left_at.push(l);
         right_at.push(r);
         l += count;
@@ -1364,7 +1640,7 @@ fn partition(work: &mut Work, store: &Store, start: usize, len: usize, column: u
     }
     {
         let out = Disjoint(work.scratch.as_mut_ptr());
-        let rows = &work.indices[start..start + len];
+        let here = &work.indices[start..start + len];
         let flags = &work.flags;
         (0..lefts.len()).into_par_iter().for_each(|i| {
             let (mut l, mut r) = (left_at[i], right_at[i]);
@@ -1372,10 +1648,10 @@ fn partition(work: &mut Work, store: &Store, start: usize, len: usize, column: u
             for j in from..(from + CHUNK).min(len) {
                 // Chunks write to places that no other chunk writes to.
                 if flags[j] {
-                    unsafe { *out.at(l) = rows[j] };
+                    unsafe { *out.at(l) = here[j] };
                     l += 1;
                 } else {
-                    unsafe { *out.at(r) = rows[j] };
+                    unsafe { *out.at(r) = here[j] };
                     r += 1;
                 }
             }
@@ -1383,8 +1659,9 @@ fn partition(work: &mut Work, store: &Store, start: usize, len: usize, column: u
     }
     let scratch = &work.scratch;
     work.indices[start..start + len].par_chunks_mut(CHUNK).zip(scratch[..len].par_chunks(CHUNK)).for_each(|(to, from)| to.copy_from_slice(from));
-    left_len
+    (left_len, left_rows)
 }
+
 
 /// Adds each leaf's value to the score of each row the leaf holds. A row stands in one leaf, so no two workers write one score.
 fn add_leaf_values(score: &mut [f64], indices: &[u32], places: &[(usize, usize)], values: &[f64]) {
@@ -1401,7 +1678,9 @@ fn add_leaf_values(score: &mut [f64], indices: &[u32], places: &[(usize, usize)]
 
 struct Leaf {
     start: usize,
+    /// The count of items, and of the rows they stand for.
     len: usize,
+    rows: usize,
     g: f64,
     h: f64,
     hist: Option<Vec<Bin>>,
@@ -1412,20 +1691,22 @@ struct Leaf {
     is_left: bool,
 }
 
-/// One tree over the rows in `active`, best leaf first. It leaves each leaf's rows in `work.indices` and gives each leaf's
-/// place in that array.
-fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &[f32], hess: &[f32], used: &[u32]) -> (Tree, Vec<(usize, usize)>) {
+/// One tree over the items in `active`, best leaf first. It leaves each leaf's items in `work.indices` and gives each leaf's
+/// place in that array. A leaf's count of rows is the count of rows its items stand for. `config.min_tasks` is for items that are rows.
+fn grow<I: Items>(work: &mut Work, store: &Store, config: &Config, items: &I, active: &[u32], used: &[u32]) -> (Tree, Vec<(usize, usize)>) {
     work.indices.clear();
     work.indices.extend_from_slice(active);
     let (mut g, mut h) = (0.0f64, EPSILON);
-    for &row in active {
-        g += grad[row as usize] as f64;
-        h += hess[row as usize] as f64;
+    for &item in active {
+        let (item_g, item_h) = items.weight(item);
+        g += item_g;
+        h += item_h;
     }
+    let total_rows: usize = active.par_iter().map(|&item| items.rows(item)).sum();
     let mut hist = work.take(store);
-    fill_histogram(work, store, 0..active.len(), grad, hess, &mut hist, false);
-    let (best, open) = best_split(store, used, &hist, (g, h, active.len() as f64), config, active);
-    let mut leaves = vec![Leaf { start: 0, len: active.len(), g, h, hist: Some(hist), touched: None, best, open, parent: -1, is_left: false }];
+    fill_histogram(work, store, items, 0..active.len(), &mut hist, false);
+    let (best, open) = best_split(store, used, &hist, (g, h, total_rows as f64), config, active);
+    let mut leaves = vec![Leaf { start: 0, len: active.len(), rows: total_rows, g, h, hist: Some(hist), touched: None, best, open, parent: -1, is_left: false }];
     let mut tree = Tree::default();
     while leaves.len() < config.num_leaves {
         let mut chosen = None;
@@ -1441,7 +1722,7 @@ fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &
         let Some(at) = chosen else { break };
         let split = leaves[at].best.take().unwrap();
         let (start, len) = (leaves[at].start, leaves[at].len);
-        let left_len = partition(work, store, start, len, split.column, split.pos, split.default_left);
+        let (left_len, left_rows) = partition(work, store, items, start, len, split.column, split.pos, split.default_left);
         let node = tree.column.len() as i32;
         tree.column.push(split.column);
         tree.pos.push(split.pos);
@@ -1462,13 +1743,14 @@ fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &
         let (left_g, left_h) = (split.left_g, split.left_h + EPSILON);
         let (right_g, right_h) = (total_g - split.left_g, (total_h - split.left_h).max(EPSILON));
         let right_len = len - left_len;
+        let right_rows = leaves[at].rows - left_rows;
         // The smaller child's histogram is read from its rows, and the larger's is what remains of its parent's. Where the
         // parent's histogram was given up, the larger child's is read from its rows too.
         let parent_hist = leaves[at].hist.take();
         let parent_touched = leaves[at].touched.take();
         let mut smaller = work.take(store);
         let (small_rows, large_rows) = if left_len < right_len { (start..start + left_len, start + left_len..start + len) } else { (start + left_len..start + len, start..start + left_len) };
-        let small_touched = fill_histogram(work, store, small_rows, grad, hess, &mut smaller, true);
+        let small_touched = fill_histogram(work, store, items, small_rows, &mut smaller, true);
         let (larger, large_touched) = match parent_hist {
             Some(mut larger) => {
                 for &b in &small_touched {
@@ -1481,22 +1763,22 @@ fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &
             }
             None => {
                 let mut larger = work.take(store);
-                let touched = fill_histogram(work, store, large_rows, grad, hess, &mut larger, true);
+                let touched = fill_histogram(work, store, items, large_rows, &mut larger, true);
                 (larger, Some(touched))
             }
         };
         let (left_hist, left_touched, right_hist, right_touched) = if left_len < right_len { (smaller, Some(small_touched), larger, large_touched) } else { (larger, large_touched, smaller, Some(small_touched)) };
         let open = std::mem::take(&mut leaves[at].open);
-        let (left_best, left_open) = best_split(store, &open, &left_hist, (left_g, left_h, left_len as f64), config, &work.indices[start..start + left_len]);
-        let (right_best, right_open) = best_split(store, &open, &right_hist, (right_g, right_h, right_len as f64), config, &work.indices[start + left_len..start + len]);
-        leaves[at] = Leaf { start, len: left_len, g: left_g, h: left_h, hist: None, touched: None, best: left_best, open: left_open, parent: node, is_left: true };
+        let (left_best, left_open) = best_split(store, &open, &left_hist, (left_g, left_h, left_rows as f64), config, &work.indices[start..start + left_len]);
+        let (right_best, right_open) = best_split(store, &open, &right_hist, (right_g, right_h, right_rows as f64), config, &work.indices[start + left_len..start + len]);
+        leaves[at] = Leaf { start, len: left_len, rows: left_rows, g: left_g, h: left_h, hist: None, touched: None, best: left_best, open: left_open, parent: node, is_left: true };
         if left_best.is_some() {
             leaves[at].hist = Some(left_hist);
             leaves[at].touched = left_touched;
         } else {
             work.give(left_hist, left_touched);
         }
-        let mut right = Leaf { start: start + left_len, len: right_len, g: right_g, h: right_h, hist: None, touched: None, best: right_best, open: right_open, parent: node, is_left: false };
+        let mut right = Leaf { start: start + left_len, len: right_len, rows: right_rows, g: right_g, h: right_h, hist: None, touched: None, best: right_best, open: right_open, parent: node, is_left: false };
         if right_best.is_some() {
             right.hist = Some(right_hist);
             right.touched = right_touched;
@@ -1671,8 +1953,8 @@ fn group_auc(groups: &Groups, held: &[bool], score: &[f64]) -> f64 {
 }
 
 /// Boosts over the active groups. With held groups, it stops once they have not improved for `patience` rounds.
-fn boost(store: &Store, groups: &Groups, active: &[bool], held: Option<&[bool]>, dev: Option<(&Store, &Groups)>, config: &Config, seed: u64, rounds: usize, threads: usize, name: &str) -> (Vec<Tree>, usize, Vec<f64>) {
-    let mut work = Work::new(store, threads);
+fn boost(store: &Store, groups: &Groups, active: &[bool], held: Option<&[bool]>, dev: Option<(&Store, &Groups)>, config: &Config, seed: u64, rounds: usize, name: &str) -> (Vec<Tree>, usize, Vec<f64>) {
+    let mut work = Work::new(store);
     let mut score = vec![0.0f64; store.rows];
     let (mut grad, mut hess) = (vec![0.0f32; store.rows], vec![0.0f32; store.rows]);
     let mut random = Random(mix(seed));
@@ -1707,7 +1989,10 @@ fn boost(store: &Store, groups: &Groups, active: &[bool], held: Option<&[bool]>,
         }
         let mut used = columns[..sampled].to_vec();
         used.sort_unstable();
-        let (tree, places) = grow(&mut work, store, config, &active_rows, &grad, &hess, &used);
+        let (tree, places) = {
+            let items = RowItems { store, grad: &grad, hess: &hess };
+            grow(&mut work, store, config, &items, &active_rows, &used)
+        };
         let empty = tree.column.is_empty();
         if let Some(admit) = &config.admit {
             for &k in &tree.column {
@@ -1819,11 +2104,11 @@ fn fit(file: &Path) {
         let held: Vec<u8> = read_all(Path::new(seeded["held"].as_str().unwrap()));
         let held: Vec<bool> = held.iter().map(|&x| x != 0).collect();
         let inner: Vec<bool> = held.iter().map(|&x| !x).collect();
-        let (trees, best_round, _) = boost(&store, &groups, &inner, Some(&held), dev_watch, &config, seed, config.max_rounds, count, &format!("seed {seed} inner"));
+        let (trees, best_round, _) = boost(&store, &groups, &inner, Some(&held), dev_watch, &config, seed, config.max_rounds, &format!("seed {seed} inner"));
         drop(trees);
         let rounds = best_round.max(10);
         let every = vec![true; groups.count()];
-        let (trees, _, score) = boost(&store, &groups, &every, None, None, &config, seed, rounds, count, &format!("seed {seed} final"));
+        let (trees, _, score) = boost(&store, &groups, &every, None, None, &config, seed, rounds, &format!("seed {seed} final"));
         let (mut gain, mut splits) = (vec![0.0f64; store.kept], vec![0u32; store.kept]);
         let mut model = BufWriter::new(File::create(out.join(format!("model.{seed}.jsonl"))).unwrap());
         for tree in &trees {
@@ -1921,48 +2206,51 @@ fn softmax_read(start: &[u32], label: &[u8], score: &[f64]) -> (f64, f64) {
     (loss / groups.max(1) as f64, top / groups.max(1) as f64)
 }
 
-/// Checks one grown tree against its rows. For each leaf it sums the gradients and Hessians of the rows that the partition put in it, and compares the leaf's
+/// Checks one grown tree against its items. For each leaf it sums the gradients and Hessians of the items that the partition put in it, and compares the leaf's
 /// value with -G/H x learning rate of those sums; it prints the leaf where they differ by a relative 1e-6, and the leaf with the largest value where that
-/// is above 50. With `full`, it prints every leaf, and it walks every row through the tree (`Store::left`) and counts the rows whose leaf differs from the partition's.
-fn audit_tree(store: &Store, tree: &Tree, places: &[(usize, usize)], indices: &[u32], grad: &[f32], hess: &[f32], config: &Config, round: usize, full: bool, biggest: &mut f64) {
+/// is above 50. With `full`, it prints every leaf, and it walks every row through the tree (`Store::left`) and counts the rows whose leaf differs from the
+/// leaf of the row's item.
+fn audit_tree<I: Items>(store: &Store, items: &I, tree: &Tree, places: &[(usize, usize)], indices: &[u32], config: &Config, round: usize, full: bool, biggest: &mut f64) {
     if tree.column.is_empty() {
         return;
     }
-    let sums: Vec<(f64, f64)> = places
+    let sums: Vec<(f64, f64, usize)> = places
         .par_iter()
         .map(|&(start, len)| {
-            let (mut g, mut h) = (0.0f64, 0.0f64);
-            for &row in &indices[start..start + len] {
-                g += grad[row as usize] as f64;
-                h += hess[row as usize] as f64;
+            let (mut g, mut h, mut rows) = (0.0f64, 0.0f64, 0usize);
+            for &item in &indices[start..start + len] {
+                let (item_g, item_h) = items.weight(item);
+                g += item_g;
+                h += item_h;
+                rows += items.rows(item);
             }
-            (g, h)
+            (g, h, rows)
         })
         .collect();
-    for (leaf, &(g, h)) in sums.iter().enumerate() {
+    for (leaf, &(g, h, rows)) in sums.iter().enumerate() {
         let implied = leaf_output(g, h + EPSILON, config) * config.learning_rate;
         let relative = (tree.value[leaf] - implied).abs() / implied.abs().max(1e-12);
         if relative > 1e-6 {
-            println!("audit round {round} leaf {leaf}: value {:.6e} but -G/H x rate of its {} rows is {implied:.6e} (G {g:.6e} H {h:.6e})", tree.value[leaf], places[leaf].1);
+            println!("audit round {round} leaf {leaf}: value {:.6e} but -G/H x rate of its {rows} rows is {implied:.6e} (G {g:.6e} H {h:.6e})", tree.value[leaf]);
         }
         if full {
-            println!("audit round {round} leaf {leaf}: rows {} G {g:.6e} H {h:.6e} value {:.6e} implied {implied:.6e}", places[leaf].1, tree.value[leaf]);
+            println!("audit round {round} leaf {leaf}: rows {rows} G {g:.6e} H {h:.6e} value {:.6e} implied {implied:.6e}", tree.value[leaf]);
         }
     }
     let largest = largest_leaf(tree);
     *biggest = biggest.max(tree.value[largest].abs());
     if tree.value[largest].abs() > 50.0 {
-        let (g, h) = sums[largest];
-        println!("big leaf round {round} leaf {largest}: value {:.4e} rows {} G {g:.4e} H {h:.4e}", tree.value[largest], places[largest].1);
+        let (g, h, rows) = sums[largest];
+        println!("big leaf round {round} leaf {largest}: value {:.4e} rows {rows} G {g:.4e} H {h:.4e}", tree.value[largest]);
     }
     if full {
-        let mut leaf_of_row = vec![0u32; store.rows];
+        let mut leaf_of_item = vec![0u32; items.count()];
         for (leaf, &(start, len)) in places.iter().enumerate() {
-            for &row in &indices[start..start + len] {
-                leaf_of_row[row as usize] = leaf as u32;
+            for &item in &indices[start..start + len] {
+                leaf_of_item[item as usize] = leaf as u32;
             }
         }
-        let wrong: Vec<u32> = (0..store.rows as u32).into_par_iter().filter(|&row| tree.leaf_of(store, row) != leaf_of_row[row as usize] as usize).collect();
+        let wrong: Vec<u32> = (0..store.rows as u32).into_par_iter().filter(|&row| tree.leaf_of(store, row) != leaf_of_item[items.item_of_row(row) as usize] as usize).collect();
         println!("audit round {round}: {} of {} rows walk to another leaf than the partition put them in; first {:?}", wrong.len(), store.rows, &wrong[..wrong.len().min(5)]);
     }
 }
@@ -2012,8 +2300,8 @@ fn tree_from_json(line: &Value, bounds: &[f64], bound_start: &[u32]) -> Tree {
     }
 }
 
-/// Partitions the rows of `active` as the tree's splits did when `grow` made it, and gives each leaf's place in `work.indices`, as `grow` does.
-fn replay(work: &mut Work, store: &Store, tree: &Tree, active: &[u32]) -> Vec<(usize, usize)> {
+/// Partitions the items of `active` as the tree's splits did when `grow` made it, and gives each leaf's place in `work.indices`, as `grow` does.
+fn replay<I: Items>(work: &mut Work, store: &Store, items: &I, tree: &Tree, active: &[u32]) -> Vec<(usize, usize)> {
     work.indices.clear();
     work.indices.extend_from_slice(active);
     let mut places = vec![(0usize, active.len())];
@@ -2029,7 +2317,7 @@ fn replay(work: &mut Work, store: &Store, tree: &Tree, active: &[u32]) -> Vec<(u
     for n in 0..tree.column.len() {
         let at = leaf_split[n];
         let (start, len) = places[at];
-        let left_len = partition(work, store, start, len, tree.column[n], tree.pos[n], tree.default_left[n]);
+        let (left_len, _) = partition(work, store, items, start, len, tree.column[n], tree.pos[n], tree.default_left[n]);
         assert_eq!(places.len(), n + 1);
         places[at] = (start, left_len);
         places.push((start + left_len, len - left_len));
@@ -2038,10 +2326,110 @@ fn replay(work: &mut Work, store: &Store, tree: &Tree, active: &[u32]) -> Vec<(u
     places
 }
 
+const CHECKPOINT_MAGIC: u64 = 0x4b43_5042_4f4f_5354;
+
+fn checkpoint_path(dir: &Path, trees: usize) -> PathBuf {
+    dir.join(format!("checkpoint.{trees}.zst"))
+}
+
+/// What a resume needs besides the trees, as a fit holds it after `trees` rounds.
+struct CheckpointState<'a> {
+    trees: usize,
+    /// The column sampler's state: the generator, and the order of the columns that its swaps made.
+    random: u64,
+    columns: &'a [u32],
+    gain: &'a [f64],
+    splits: &'a [u32],
+    biggest_leaf: f64,
+    /// The score of each pair of rows.
+    pair_score: &'a [f64],
+    /// `line_hash` of the model lines of the trees, so a checkpoint is used only with the lines it was made with.
+    model_hash: u64,
+}
+
+/// The hash of the model lines so far, with `line` (its bytes, with its newline) after them.
+fn line_hash(before: u64, line: &[u8]) -> u64 {
+    let mut hash = mix(before ^ line.len() as u64);
+    for chunk in line.chunks(8) {
+        let mut word = [0u8; 8];
+        word[..chunk.len()].copy_from_slice(chunk);
+        hash = mix(hash ^ u64::from_le_bytes(word));
+    }
+    hash
+}
+
+struct Loaded {
+    random: u64,
+    columns: Vec<u32>,
+    gain: Vec<f64>,
+    splits: Vec<u32>,
+    biggest_leaf: f64,
+    pair_score: Vec<f64>,
+}
+
+/// Writes a checkpoint as one zstd stream to `checkpoint.working` in `dir`, and then renames it to `checkpoint.<trees>.zst`. A rename is whole or absent,
+/// so a fit that stops while it writes leaves the last whole checkpoint.
+fn write_checkpoint(dir: &Path, fingerprint: u64, state: &CheckpointState) -> std::io::Result<PathBuf> {
+    let working = dir.join("checkpoint.working");
+    let mut out = zstd::stream::write::Encoder::new(BufWriter::new(File::create(&working)?), 1)?;
+    let header = [CHECKPOINT_MAGIC, fingerprint, state.trees as u64, state.random, state.columns.len() as u64, state.pair_score.len() as u64, state.biggest_leaf.to_bits(), state.model_hash];
+    out.write_all(bytes_of(&header))?;
+    out.write_all(bytes_of(state.columns))?;
+    out.write_all(bytes_of(state.gain))?;
+    out.write_all(bytes_of(state.splits))?;
+    out.write_all(bytes_of(state.pair_score))?;
+    out.write_all(bytes_of(&[CHECKPOINT_MAGIC]))?;
+    out.finish()?.flush()?;
+    let path = checkpoint_path(dir, state.trees);
+    fs::rename(&working, &path)?;
+    Ok(path)
+}
+
+fn read_array<T: Copy + Default>(input: &mut impl Read, len: usize, what: &str) -> Result<Vec<T>, String> {
+    let mut out = vec![T::default(); len];
+    input.read_exact(bytes_of_mut(&mut out)).map_err(|e| format!("{what}: {e}"))?;
+    Ok(out)
+}
+
+/// Reads a checkpoint of `trees` trees. It gives why it cannot where the file is cut short or was made for other settings or another store.
+fn read_checkpoint(path: &Path, fingerprint: u64, trees: usize, kept: usize, pairs: usize, model_hash: u64) -> Result<Loaded, String> {
+    let file = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut input = zstd::stream::read::Decoder::new(file).map_err(|e| e.to_string())?;
+    let header: Vec<u64> = read_array(&mut input, 8, "header")?;
+    if header[0] != CHECKPOINT_MAGIC {
+        return Err("not a checkpoint".to_string());
+    }
+    if header[1] != fingerprint {
+        return Err("made for other settings, seed or store".to_string());
+    }
+    if header[2] != trees as u64 || header[4] != kept as u64 || header[5] != pairs as u64 {
+        return Err("made for other counts of trees, columns or pairs".to_string());
+    }
+    if header[7] != model_hash {
+        return Err("made with other model lines".to_string());
+    }
+    let columns = read_array(&mut input, kept, "columns")?;
+    let gain = read_array(&mut input, kept, "gain")?;
+    let splits = read_array(&mut input, kept, "splits")?;
+    let pair_score = read_array(&mut input, pairs, "score")?;
+    let end: Vec<u64> = read_array(&mut input, 1, "end")?;
+    if end[0] != CHECKPOINT_MAGIC {
+        return Err("no end mark".to_string());
+    }
+    Ok(Loaded { random: header[3], columns, gain, splits, biggest_leaf: f64::from_bits(header[6]), pair_score })
+}
+
 /// Fits on the train groups and stops on the dev groups, as `fit_trees.py` does with LightGBM. Where the JSON has no `dev`, it
 /// reads no dev store, runs exactly `max_rounds` rounds, and writes no dev score and no best round.
+///
+/// A row's leaf depends on its blocks alone, so the trees grow over pairs of rows with the same blocks (`Pairs`), and a row's score is its pair's score.
+/// Only the gradient and the sums of a pair's rows go over rows.
+///
+/// Where the JSON has no `dev`, a fit writes a checkpoint in the folder `out` after every `checkpoint_every` rounds (default 10, 0 asks for none), and
+/// after the last round. It keeps the latest. A checkpoint holds what a resume would otherwise replay the trees for.
 /// Where the JSON has `resume` as {"model": FILE, "trees": k}, it starts from the first k trees of FILE, a `model.jsonl` of an earlier fit
-/// with the same train store, seed and settings, and runs the rounds after k as the earlier fit would have. It needs no dev store.
+/// with the same train store, seed and settings, and runs the rounds after k as the earlier fit would have. It reads the checkpoint of k trees from the
+/// folder of FILE where there is one, and replays the k trees where there is none. It needs no dev store.
 fn softmax(file: &Path) {
     let v = read_json(file);
     let count = v["threads"].as_u64().unwrap() as usize;
@@ -2063,6 +2451,7 @@ fn softmax(file: &Path) {
         min_tasks: 0,
         row_task: Vec::new(),
     };
+    let checkpoint_every = v["checkpoint_every"].as_u64().unwrap_or(10) as usize;
     let path = |name: &str| PathBuf::from(v[name].as_str().unwrap());
     let store = Store::open(&path("train"));
     // The dev store with its group starts and labels, where the JSON names a dev store.
@@ -2087,16 +2476,27 @@ fn softmax(file: &Path) {
     }
     let bounds: Vec<f64> = read_all(&path("train").join("bounds.f64"));
     let bound_start: Vec<u32> = read_all(&path("train").join("bound_start.u32"));
-    let mut work = Work::new(&store, count);
-    let mut score = vec![0.0f64; store.rows];
+    let pairs_started = Instant::now();
+    let pairs = Pairs::build(&store);
+    println!("pairs {} of {} rows, {:.2} rows a pair, {:.0}s", pairs.count(), store.rows, store.rows as f64 / pairs.count().max(1) as f64, pairs_started.elapsed().as_secs_f64());
+    let seed = v["seed"].as_u64().unwrap_or(0);
+    let settings = [config.learning_rate.to_bits(), config.num_leaves as u64, config.min_data_in_leaf.to_bits(), config.min_sum_hessian.to_bits(), config.lambda_l2.to_bits(), config.max_delta_step.to_bits(), config.fraction.to_bits(), seed, store.rows as u64, store.kept as u64, store.bins as u64];
+    let fingerprint = settings.iter().fold(pairs.fingerprint(), |a, &x| mix(a ^ x));
+    let mut work = Work::new(&store);
+    let mut pair_score = vec![0.0f64; pairs.count()];
+    let (mut pair_g, mut pair_h) = (vec![0.0f64; pairs.count()], vec![0.0f64; pairs.count()]);
     let mut dev_score = dev.as_ref().map_or(Vec::new(), |(dev_store, _, _)| vec![0.0f64; dev_store.rows]);
     let (mut grad, mut hess) = (vec![0.0f32; store.rows], vec![0.0f32; store.rows]);
-    let mut random = Random(mix(v["seed"].as_u64().unwrap_or(0)));
+    let mut random = Random(mix(seed));
     let mut columns: Vec<u32> = (0..store.kept as u32).collect();
     let sampled = ((config.fraction * store.kept as f64).round() as usize).clamp(1, store.kept.max(1));
-    let active: Vec<u32> = (0..store.rows as u32).collect();
+    let active: Vec<u32> = (0..pairs.count() as u32).collect();
     let dev_rows: Vec<u32> = dev.as_ref().map_or(Vec::new(), |(dev_store, _, _)| (0..dev_store.rows as u32).collect());
     let (mut gain, mut splits) = (vec![0.0f64; store.kept], vec![0u32; store.kept]);
+    if let Some(resume) = v.get("resume").filter(|r| !r.is_null()) {
+        let same = matches!((fs::canonicalize(resume["model"].as_str().unwrap()), fs::canonicalize(out.join("model.jsonl"))), (Ok(a), Ok(b)) if a == b);
+        assert!(!same, "a resume writes its own model.jsonl, so it cannot read the same file");
+    }
     let mut model = BufWriter::new(File::create(out.join("model.jsonl")).unwrap());
     let (mut best_loss, mut best_round, mut best_top) = (f64::INFINITY, 0usize, 0.0);
     let (first_loss, first_top) = match &dev {
@@ -2110,26 +2510,50 @@ fn softmax(file: &Path) {
     let audit_rounds: Vec<usize> = v["audit_rounds"].as_array().map_or(Vec::new(), |a| a.iter().filter_map(|x| x.as_u64()).map(|x| x as usize).collect());
     let mut biggest_leaf = 0.0f64;
     let mut resumed = 0usize;
+    let mut model_hash = 0u64;
     if let Some(resume) = v.get("resume").filter(|r| !r.is_null()) {
         assert!(dev.is_none(), "a resumed fit has no dev store");
         let (from, count) = (PathBuf::from(resume["model"].as_str().unwrap()), resume["trees"].as_u64().unwrap() as usize);
         assert!(count <= config.max_rounds, "resume trees {count} are above max_rounds");
+        let from_dir = from.parent().unwrap_or(Path::new(""));
+        let saved = checkpoint_path(from_dir, count);
         let mut input = BufReader::new(File::open(&from).unwrap_or_else(|e| panic!("{}: {e}", from.display())));
-        let replay_started = Instant::now();
-        // Exactly `count` lines are read; the earlier fit may be writing the next.
-        for tree_at in 1..=count {
+        // Exactly `count` lines are read; the earlier fit may be writing the next. The earlier fit's lines stand as written.
+        let mut lines = Vec::with_capacity(count);
+        for _ in 0..count {
             let mut line = String::new();
             input.read_line(&mut line).unwrap();
             assert!(line.ends_with('\n'), "{} has fewer than {count} whole lines", from.display());
-            let tree = tree_from_json(&serde_json::from_str(&line).unwrap(), &bounds, &bound_start);
-            // The earlier fit's line stands as written.
+            model_hash = line_hash(model_hash, line.as_bytes());
+            lines.push(line);
+        }
+        let loaded = if saved.exists() {
+            match read_checkpoint(&saved, fingerprint, count, store.kept, pairs.count(), model_hash) {
+                Ok(loaded) => Some(loaded),
+                Err(why) => {
+                    println!("{} is not used, so the {count} trees are replayed: {why}", saved.display());
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let replay_started = Instant::now();
+        for (tree_at, line) in (1..=count).zip(&lines) {
             model.write_all(line.as_bytes()).unwrap();
+            if loaded.is_some() {
+                continue;
+            }
+            let tree = tree_from_json(&serde_json::from_str(&line).unwrap(), &bounds, &bound_start);
             for i in 0..sampled {
                 let j = i + random.below(store.kept - i);
                 columns.swap(i, j);
             }
-            let places = replay(&mut work, &store, &tree, &active);
-            add_leaf_values(&mut score, &work.indices, &places, &tree.value);
+            let places = {
+                let items = PairItems { pairs: &pairs, g: &pair_g, h: &pair_h };
+                replay(&mut work, &store, &items, &tree, &active)
+            };
+            add_leaf_values(&mut pair_score, &work.indices, &places, &tree.value);
             for (&k, &g) in tree.column.iter().zip(&tree.gain) {
                 gain[k as usize] += g;
                 splits[k as usize] += 1;
@@ -2141,13 +2565,26 @@ fn softmax(file: &Path) {
                 println!("resumed {tree_at} of {count} trees {:.0}s", replay_started.elapsed().as_secs_f64());
             }
         }
+        if let Some(loaded) = loaded {
+            random = Random(loaded.random);
+            columns = loaded.columns;
+            gain = loaded.gain;
+            splits = loaded.splits;
+            biggest_leaf = loaded.biggest_leaf;
+            pair_score = loaded.pair_score;
+            println!("resumed {count} trees from {} {:.0}s", saved.display(), replay_started.elapsed().as_secs_f64());
+        }
         model.flush().unwrap();
         resumed = count;
     }
     let (mut last_train_loss, mut rounds_run) = (f64::NAN, resumed);
     let started = Instant::now();
+    // The seconds of the rounds so far in the gradient, in the pairs' sums, in growing the tree, and in the rest (the score, the model and the checkpoint).
+    let mut seconds = [0.0f64; 4];
+    let mut last_checkpoint: Option<PathBuf> = None;
     for round in resumed + 1..=config.max_rounds {
         let mut train_loss = 0.0;
+        let phase = Instant::now();
         {
             let (mut rest_g, mut rest_h) = (&mut grad[..], &mut hess[..]);
             let mut slices = Vec::with_capacity(start.len() - 1);
@@ -2161,23 +2598,36 @@ fn softmax(file: &Path) {
             }
             let total: f64 = slices
                 .into_par_iter()
-                .map_init(Vec::new, |terms, (g, here_g, here_h)| {
-                    let (a, b) = (start[g] as usize, start[g + 1] as usize);
-                    softmax_group(&score[a..b], &label[a..b], here_g, here_h, terms)
-                })
+                .map_init(
+                    || (Vec::<(f64, f64)>::new(), Vec::<f64>::new()),
+                    |(terms, scores), (g, here_g, here_h)| {
+                        let (a, b) = (start[g] as usize, start[g + 1] as usize);
+                        scores.clear();
+                        scores.extend(pairs.row_pair[a..b].iter().map(|&p| pair_score[p as usize]));
+                        softmax_group(scores, &label[a..b], here_g, here_h, terms)
+                    },
+                )
                 .sum();
             train_loss += total / (start.len() - 1).max(1) as f64;
         }
+        seconds[0] += phase.elapsed().as_secs_f64();
+        let phase = Instant::now();
+        pair_sums(&pairs, &grad, &hess, &mut pair_g, &mut pair_h);
+        seconds[1] += phase.elapsed().as_secs_f64();
+        let phase = Instant::now();
         for i in 0..sampled {
             let j = i + random.below(store.kept - i);
             columns.swap(i, j);
         }
         let mut used = columns[..sampled].to_vec();
         used.sort_unstable();
-        let (tree, places) = grow(&mut work, &store, &config, &active, &grad, &hess, &used);
+        let items = PairItems { pairs: &pairs, g: &pair_g, h: &pair_h };
+        let (tree, places) = grow(&mut work, &store, &config, &items, &active, &used);
         let empty = tree.column.is_empty();
-        audit_tree(&store, &tree, &places, &work.indices, &grad, &hess, &config, round, audit_rounds.contains(&round), &mut biggest_leaf);
-        add_leaf_values(&mut score, &work.indices, &places, &tree.value);
+        audit_tree(&store, &items, &tree, &places, &work.indices, &config, round, audit_rounds.contains(&round), &mut biggest_leaf);
+        seconds[2] += phase.elapsed().as_secs_f64();
+        let phase = Instant::now();
+        add_leaf_values(&mut pair_score, &work.indices, &places, &tree.value);
         rounds_run = round;
         last_train_loss = train_loss;
         for (&k, &g) in tree.column.iter().zip(&tree.gain) {
@@ -2186,12 +2636,42 @@ fn softmax(file: &Path) {
         }
         let Some((dev_store, dev_start, dev_label)) = &dev else {
             // No dev set: every round runs, and each tree is on disk once it is made.
-            writeln!(model, "{}", tree_json(&tree, &bounds, &bound_start, &store.has_nan)).unwrap();
+            let line = format!("{}\n", tree_json(&tree, &bounds, &bound_start, &store.has_nan));
+            model.write_all(line.as_bytes()).unwrap();
+            model_hash = line_hash(model_hash, line.as_bytes());
             model.flush().unwrap();
+            if checkpoint_every > 0 && (round % checkpoint_every == 0 || round == config.max_rounds) {
+                let checkpoint_started = Instant::now();
+                let state = CheckpointState { trees: round, random: random.0, columns: &columns, gain: &gain, splits: &splits, biggest_leaf, pair_score: &pair_score, model_hash };
+                match write_checkpoint(&out, fingerprint, &state) {
+                    Ok(saved) => {
+                        let bytes = fs::metadata(&saved).map_or(0, |m| m.len());
+                        if let Some(older) = last_checkpoint.replace(saved.clone()) {
+                            if older != saved {
+                                let _ = fs::remove_file(older);
+                            }
+                        }
+                        println!("checkpoint of {round} trees, {:.0} MB, {:.1}s", bytes as f64 / 1e6, checkpoint_started.elapsed().as_secs_f64());
+                    }
+                    Err(why) => println!("checkpoint of {round} trees was not written: {why}"),
+                }
+            }
+            seconds[3] += phase.elapsed().as_secs_f64();
             if round % 25 == 0 || round == config.max_rounds || empty {
-                let seconds = started.elapsed().as_secs_f64();
-                let rate = (round - resumed) as f64 / seconds;
-                println!("round {round} of {} train loss {train_loss:.4}{} max |leaf| so far {biggest_leaf:.1} {rate:.2} rounds/s eta {:.0}s rss {:.2} GiB", config.max_rounds, if empty { " (no split)" } else { "" }, (config.max_rounds - round) as f64 / rate, resident_gib());
+                let elapsed = started.elapsed().as_secs_f64();
+                let done = (round - resumed) as f64;
+                let rate = done / elapsed;
+                println!(
+                    "round {round} of {} train loss {train_loss:.4}{} max |leaf| so far {biggest_leaf:.1} {rate:.2} rounds/s eta {:.0}s rss {:.2} GiB; a round: gradient {:.2}s pair sums {:.2}s tree {:.2}s rest {:.2}s",
+                    config.max_rounds,
+                    if empty { " (no split)" } else { "" },
+                    (config.max_rounds - round) as f64 / rate,
+                    resident_gib(),
+                    seconds[0] / done,
+                    seconds[1] / done,
+                    seconds[2] / done,
+                    seconds[3] / done
+                );
             }
             continue;
         };
