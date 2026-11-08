@@ -2,7 +2,7 @@
 //!
 //! A [`Joined`] holds tables, the nodes, and equalities between a column of one node and a column of another. Its rows are every choice of one row from each node that agrees on each equality. The nodes and the node pairs that the equalities name form a tree, and each node after the first has a parent. A node pair holds all its equalities as one key. A `join` of two tables is two nodes and the pairs of its columns. A `join` or a `select` over a [`Joined`] adds nodes, equalities or a filter of one node's rows, and never the rows themselves.
 //!
-//! The count of the rows is the sum, over the rows of the first node, of the product over its children of the sum over their rows at its key, and so on down the tree. A count of rows grouped by some columns, and the distinct tuples of the rows at some columns, are read from the nodes that hold the columns and the nodes that join them: a node with no column asked for tells only whether a row has a partner. An operator whose value depends on the distinct tuples of the rows at some columns reads those tuples. Any other operator reads the rows written out, once.
+//! The count of the rows is the sum, over the rows of the first node, of the product over its children of the sum over their rows at its key, and so on down the tree. A count of rows grouped by some columns, and the distinct tuples of the rows at some columns, are read from the nodes that hold the columns and the nodes that join them: a node with no column asked for tells only whether a row has a partner. An operator whose value depends on the distinct tuples of the rows at some columns reads those tuples. An operator that takes its rows one at a time reads them a chunk at a time. Any other operator reads the rows written out, once.
 //!
 //! A relation's rows are a set, so the rows of the join are distinct: each row holds a row of every node, and each column of a node is a column of the join or equals one.
 
@@ -26,6 +26,9 @@ const SKETCH_KEPT: usize = 1 << 18;
 
 /// The cells of rows that a read of the rows of a join holds at once, where it gives them to its reader a chunk at a time.
 const CHUNK_CELLS: usize = 1 << 20;
+
+/// The cells of rows that a step which takes its rows one at a time holds at once, where it reads the rows of a join a chunk at a time.
+const STEP_CHUNK_CELLS: usize = 1 << 24;
 
 /// The id of a row of a parent that no row of its child pairs with.
 const NO_PARTNER: u32 = u32::MAX;
@@ -62,6 +65,8 @@ struct Flow<'a> {
     by_id: &'a [(Vec<usize>, Vec<u32>)],
     emit: &'a [(usize, usize, u16)],
     limit: usize,
+    /// Set by the reader of the rows, to end the walk before its last row.
+    stop: &'a std::cell::Cell<bool>,
 }
 
 pub struct Joined {
@@ -834,7 +839,7 @@ impl Joined {
             return Val::None;
         }
         let emit = self.emitted();
-        let cells = self.stream(&emit, self.rows as usize * emit.len(), usize::MAX, &mut |_| {});
+        let cells = self.stream(&emit, self.rows as usize * emit.len(), usize::MAX, &std::cell::Cell::new(false), &mut |_| {});
         let columns: Box<[u16]> = emit.iter().map(|(_, _, position)| *position).collect();
         Val::Rows(Arc::new(vec![Part { table: Table::new(emit.len(), cells), columns }]))
     }
@@ -846,8 +851,8 @@ impl Joined {
         emit
     }
 
-    /// The rows of the join, each with the cells that `emit` names, in the order of the first node's rows. Where `limit` cells or more stand, they are given to `sink` and no longer held, so that no more than `limit` cells and one row stand in memory. The cells that stand when the rows end are returned. `capacity` is the count of cells that the buffer is made for.
-    fn stream(&self, emit: &[(usize, usize, u16)], capacity: usize, limit: usize, sink: &mut dyn FnMut(&[Cell])) -> Vec<Cell> {
+    /// The rows of the join, each with the cells that `emit` names, in the order of the first node's rows. Where `limit` cells or more stand, they are given to `sink` and no longer held, so that no more than `limit` cells and one row stand in memory. The cells that stand when the rows end are returned. `capacity` is the count of cells that the buffer is made for. The walk ends before its last row where `stop` is set.
+    fn stream(&self, emit: &[(usize, usize, u16)], capacity: usize, limit: usize, stop: &std::cell::Cell<bool>, sink: &mut dyn FnMut(&[Cell])) -> Vec<Cell> {
         let below = self.below();
         // The rows of each node after the first that stand below a row, by the id of their key, in the order they stand.
         let mut by_id: Vec<(Vec<usize>, Vec<u32>)> = Vec::with_capacity(self.links.len());
@@ -871,16 +876,36 @@ impl Joined {
             }
             by_id.push((starts, rows));
         }
-        let flow = Flow { by_id: &by_id, emit, limit };
+        let flow = Flow { by_id: &by_id, emit, limit, stop };
         let mut cells: Vec<Cell> = Vec::with_capacity(capacity.min(limit.saturating_add(emit.len())));
         let mut chosen = vec![0usize; self.nodes.len()];
         for row in 0..self.nodes[0].len {
+            if stop.get() {
+                break;
+            }
             if below[0][row] > 0 {
                 chosen[0] = row;
                 self.write_below(1, &mut chosen, &flow, &mut cells, sink);
             }
         }
         cells
+    }
+
+    /// The rows of the join as tables with the columns in order, given to `sink` one at a time until it gives false. The rows of the tables are distinct. A table holds a bounded count of cells, and the rows are never held whole.
+    pub(crate) fn chunks(&self, sink: &mut dyn FnMut(Arc<Table>) -> bool) {
+        let width = self.width();
+        // The cells of a row stand in the order of the join's columns.
+        let emit: Vec<(usize, usize, u16)> = self.places.iter().enumerate().map(|(position, place)| (place.node, place.at, position as u16)).collect();
+        let stop = std::cell::Cell::new(false);
+        let mut give = |cells: &[Cell]| {
+            if !stop.get() && !sink(Table::new(width, cells.to_vec())) {
+                stop.set(true);
+            }
+        };
+        let rest = self.stream(&emit, STEP_CHUNK_CELLS, STEP_CHUNK_CELLS, &stop, &mut give);
+        if !stop.get() && !rest.is_empty() {
+            sink(Table::new(width, rest));
+        }
     }
 
     /// The rows of the join that agree with the rows `chosen` of the nodes before `depth`, written to `cells`, which go to `sink` and are emptied where they reach the limit of `flow`.
@@ -899,6 +924,9 @@ impl Joined {
         let id = link.parent_ids[chosen[link.parent]] as usize;
         let (starts, rows) = &flow.by_id[depth - 1];
         for row in &rows[starts[id]..starts[id + 1]] {
+            if flow.stop.get() {
+                return;
+            }
             chosen[depth] = *row as usize;
             self.write_below(depth + 1, chosen, flow, cells, sink);
         }
@@ -1315,7 +1343,7 @@ impl Joined {
                 }
             }
         };
-        let rest = self.stream(&emit, CHUNK_CELLS, CHUNK_CELLS, &mut add);
+        let rest = self.stream(&emit, CHUNK_CELLS, CHUNK_CELLS, &std::cell::Cell::new(false), &mut add);
         add(&rest);
         let mut out: Vec<Cell> = Vec::with_capacity(sums.len() * (keys.len() + 1));
         for (key, sum) in sums.into_sorted_vec() {

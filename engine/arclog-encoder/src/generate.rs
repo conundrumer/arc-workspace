@@ -2983,9 +2983,29 @@ impl<'a> Walker<'a> {
         crate::joined::extend(step, first, second)
     }
 
+    /// The value of a step that takes its rows one at a time over the rows of a `join`, where the join is the first relation: the step runs on the rows a chunk at a time, and they are never written whole. No value where the first relation is another, or the step is another, or the join is read otherwise.
+    fn chunked(&mut self, step: &Step, a: u32, b: u32) -> Option<Val> {
+        if !crate::native::Evaluator::per_row(step) {
+            return None;
+        }
+        let Val::Joined(joined) = &self.values[a as usize] else { return None };
+        let joined = joined.clone();
+        let second = if b == NO_TERM {
+            None
+        } else {
+            let written = self.written_id(step, b, false);
+            Some(self.values[written as usize].clone())
+        };
+        self.eval.apply_chunked(step, &joined, second.as_ref())
+    }
+
     fn apply(&mut self, step: &Step, a: u32, b: u32) -> Val {
         crate::bounds::begin();
         if let Some(value) = self.lazy_extension(step, a, b) {
+            crate::bounds::end(a == 0 || (b != NO_TERM && b == 0));
+            return value;
+        }
+        if let Some(value) = self.chunked(step, a, b) {
             crate::bounds::end(a == 0 || (b != NO_TERM && b == 0));
             return value;
         }
