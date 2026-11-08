@@ -79,6 +79,109 @@ struct Sketch {
     wide: OnceLock<Arc<Table>>,
 }
 
+/// The distinct tuples of the rows of a join at the columns `key`, in order, each with the count of rows of the join that hold it.
+struct Counted {
+    tuples: Vec<Cell>,
+    weights: Vec<u64>,
+    /// The tuples as rows of the join's width, with 0 at each column that is not in the key, once something has read them.
+    wide: OnceLock<Arc<Table>>,
+}
+
+impl Counted {
+    /// The tuples as rows of `width` cells, with 0 at each column that is not in `key`.
+    fn wide(&self, key: &[u16], width: usize) -> Arc<Table> {
+        self.wide
+            .get_or_init(|| {
+                let mut cells: Vec<Cell> = vec![0; self.weights.len() * width];
+                for (row, tuple) in cells.chunks_exact_mut(width).zip(self.tuples.chunks_exact(key.len())) {
+                    for (column, cell) in key.iter().zip(tuple) {
+                        row[usize::from(*column)] = *cell;
+                    }
+                }
+                Table::new(width, cells)
+            })
+            .clone()
+    }
+}
+
+/// The most cells that the answers a thread keeps for later reads hold in all.
+const SHARED_CELLS: usize = 8_000_000;
+
+/// What the reads of the joins on one thread keep for later reads, by the join's hash and the key. It holds the answers that a join does not keep itself, because they pass `SKETCH_KEPT`, so that a second read of the same join at the same columns does not group the join's rows again.
+#[derive(Default)]
+struct Shared {
+    sketches: FastMap<u128, Arc<Sketch>>,
+    counted: FastMap<u128, Arc<Counted>>,
+    cells: usize,
+}
+
+thread_local! {
+    static SHARED: std::cell::RefCell<Shared> = std::cell::RefCell::new(Shared::default());
+}
+
+/// Drops what this thread keeps of the joins' answers.
+pub fn clear_shared() {
+    SHARED.with(|shared| *shared.borrow_mut() = Shared::default());
+}
+
+/// Keeps `sketch`, which is at `at`, for later reads and counts `cells` more cells held, where `cells` pass no more than the most that a thread keeps. Where the thread has kept that much already, it drops all it kept first.
+fn share_sketch(at: u128, sketch: &Arc<Sketch>, cells: usize) -> bool {
+    if cells > SHARED_CELLS {
+        return false;
+    }
+    SHARED.with(|shared| {
+        let mut shared = shared.borrow_mut();
+        if shared.cells + cells > SHARED_CELLS {
+            *shared = Shared::default();
+        }
+        shared.cells += cells;
+        shared.sketches.insert(at, sketch.clone());
+    });
+    true
+}
+
+/// The place of the tuple that `row` holds at the columns `key` among `tuples`, which stand in order, `key.len()` cells each. The search starts at place `near` and runs on from it, so that rows asked in order of their tuples find theirs after a few steps, and a row asked out of order is found all the same.
+fn tuple_place(tuples: &[Cell], key: &[u16], row: &[Cell], near: usize) -> Option<usize> {
+    let stride = key.len();
+    let count = tuples.len().checked_div(stride)?;
+    if count == 0 {
+        return None;
+    }
+    let order = |at: usize| -> Ordering { tuples[at * stride..(at + 1) * stride].iter().zip(key).map(|(cell, column)| cell.cmp(&row[usize::from(*column)])).find(|order| order.is_ne()).unwrap_or(Ordering::Equal) };
+    let near = near.min(count - 1);
+    // The places from `low` on, up to `high`, hold the first tuple that is not below the row's, if there is one.
+    let (mut low, mut high) = match order(near) {
+        Ordering::Equal => return Some(near),
+        Ordering::Greater => (0, near),
+        Ordering::Less => {
+            let mut low = near + 1;
+            let mut step = 1;
+            let high = loop {
+                let probe = near + step;
+                if probe >= count {
+                    break count;
+                }
+                if order(probe) == Ordering::Less {
+                    low = probe + 1;
+                    step *= 2;
+                } else {
+                    break probe + 1;
+                }
+            };
+            (low, high)
+        }
+    };
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if order(middle) == Ordering::Less {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    (low < count && order(low) == Ordering::Equal).then_some(low)
+}
+
 impl Drop for Joined {
     fn drop(&mut self) {
         crate::native::lazy_dropped(self.written.get());
@@ -832,16 +935,50 @@ impl Joined {
         match held {
             Some(sketch) => sketch,
             None => {
+                let at = self.shared_key(key);
+                if let Some(found) = SHARED.with(|shared| shared.borrow().sketches.get(&at).cloned()) {
+                    return found;
+                }
                 let sketch = Arc::new(Sketch { tuples: self.build_tuples(key), wide: OnceLock::new() });
-                let mut kept = self.sketches.lock().expect("a sketch lock");
                 let cells = sketch.tuples.as_ref().map_or(0, |table| table.cell_count());
+                let mut kept = self.sketches.lock().expect("a sketch lock");
                 if kept.0 + cells <= SKETCH_KEPT {
                     kept.0 += cells;
                     kept.1.insert(key.into(), sketch.clone());
+                } else {
+                    drop(kept);
+                    share_sketch(at, &sketch, cells);
                 }
                 sketch
             }
         }
+    }
+
+    /// The key of what a thread keeps of this join's answer at the columns `key`.
+    fn shared_key(&self, key: &[u16]) -> u128 {
+        hash_words([self.hash as u64, (self.hash >> 64) as u64, key.len() as u64].into_iter().chain(key.iter().map(|column| u64::from(*column))))
+    }
+
+    /// The distinct tuples of the rows of the join at the columns `key`, which stand sorted and distinct, each with the count of rows of the join that hold it, from what a thread kept of an earlier read where it holds this one. No value where a column is not one of the join.
+    fn counted(&self, key: &[u16]) -> Option<Arc<Counted>> {
+        let at = self.shared_key(key);
+        if let Some(found) = SHARED.with(|shared| shared.borrow().counted.get(&at).cloned()) {
+            return Some(found);
+        }
+        let (tuples, weights) = self.grouped(key, true)?;
+        let cells = tuples.len() + weights.len() * (2 + self.width());
+        let found = Arc::new(Counted { tuples, weights, wide: OnceLock::new() });
+        if cells <= SHARED_CELLS {
+            SHARED.with(|shared| {
+                let mut shared = shared.borrow_mut();
+                if shared.cells + cells > SHARED_CELLS {
+                    *shared = Shared::default();
+                }
+                shared.cells += cells;
+                shared.counted.insert(at, found.clone());
+            });
+        }
+        Some(found)
     }
 
     /// The columns `columns` in order.
@@ -872,9 +1009,17 @@ impl Joined {
             }
             Table::new(width, out)
         };
+        let cells = wide.cell_count();
         let mut kept = self.sketches.lock().expect("a sketch lock");
-        if kept.0 + wide.cell_count() <= SKETCH_KEPT && sketch.wide.set(wide.clone()).is_ok() {
-            kept.0 += wide.cell_count();
+        if kept.0 + cells <= SKETCH_KEPT {
+            if sketch.wide.set(wide.clone()).is_ok() {
+                kept.0 += cells;
+            }
+        } else {
+            drop(kept);
+            if share_sketch(self.shared_key(&key), &sketch, cells) {
+                let _ = sketch.wide.set(wide.clone());
+            }
         }
         Some(wide)
     }
@@ -899,6 +1044,10 @@ impl Joined {
         self.at(key)?;
         if key.is_empty() {
             return Some(Table::unit(true));
+        }
+        // A count of the tuples that an earlier read kept holds them.
+        if let Some(found) = SHARED.with(|shared| shared.borrow().counted.get(&self.shared_key(key)).cloned()) {
+            return Some(Table::new(key.len(), found.tuples.clone()));
         }
         let (tuples, _) = self.grouped(key, false)?;
         // The tuples stand in order, each once.
@@ -1068,20 +1217,22 @@ impl Joined {
         if self.at(&unique).is_none() {
             return Val::None;
         }
-        let Some((tuples, weights)) = self.grouped(&unique, true) else { return Val::None };
+        let Some(counted) = self.counted(&unique) else { return Val::None };
         // Keys that are the distinct keys already give each tuple once.
-        let (tuples, counts) = if keys == unique.as_slice() {
-            (tuples, weights)
+        let regrouped;
+        let (tuples, counts): (&[Cell], &[u64]) = if keys == unique.as_slice() {
+            (counted.tuples.as_slice(), counted.weights.as_slice())
         } else {
             let picks: Vec<usize> = keys.iter().map(|key| unique.binary_search(key).expect("a key is one of the distinct keys")).collect();
-            let mut ordered: Vec<Cell> = Vec::with_capacity(weights.len() * keys.len());
-            for tuple in tuples.chunks_exact(unique.len()) {
+            let mut ordered: Vec<Cell> = Vec::with_capacity(counted.weights.len() * keys.len());
+            for tuple in counted.tuples.chunks_exact(unique.len()) {
                 ordered.extend(picks.iter().map(|place| tuple[*place]));
             }
-            sum_runs(&ordered, keys.len(), &weights)
+            regrouped = sum_runs(&ordered, keys.len(), &counted.weights);
+            (regrouped.0.as_slice(), regrouped.1.as_slice())
         };
         let mut out: Vec<Cell> = Vec::with_capacity(counts.len() * (keys.len() + 1));
-        for (tuple, count) in tuples.chunks_exact(keys.len()).zip(&counts) {
+        for (tuple, count) in tuples.chunks_exact(keys.len()).zip(counts) {
             // A count past a number's range has no value.
             let Ok(count) = i32::try_from(*count) else { return Val::None };
             out.extend_from_slice(tuple);
@@ -1200,23 +1351,15 @@ impl Joined {
         if matches!(second, Some(Val::None)) {
             return Some(None);
         }
-        let (tuples, weights) = self.grouped(&key, true)?;
+        let counted = self.counted(&key)?;
+        let weights = &counted.weights;
         let width = self.width();
-        let mut cells: Vec<Cell> = vec![0; weights.len() * width];
-        for (row, tuple) in cells.chunks_exact_mut(width).zip(tuples.chunks_exact(key.len())) {
-            for (column, cell) in key.iter().zip(tuple) {
-                row[usize::from(*column)] = *cell;
-            }
-        }
-        let wide = Table::new(width, cells);
-        // The count of the rows of the join that hold the tuple of a row of the wide table, found by halving over the sorted tuples.
-        let sorted: Vec<&[Cell]> = tuples.chunks_exact(key.len()).collect();
+        let wide = counted.wide(&key, width);
+        // The count of the rows of the join that hold the tuple of a row of the wide table, found among the sorted tuples from the place of the last row's tuple on.
+        let near = std::cell::Cell::new(0usize);
         let weight_of = |row: &[Cell]| -> Option<u64> {
-            let at = sorted
-                .binary_search_by(|tuple| {
-                    tuple.iter().zip(&key).map(|(cell, column)| cell.cmp(&row[usize::from(*column)])).find(|order| order.is_ne()).unwrap_or(Ordering::Equal)
-                })
-                .ok()?;
+            let at = tuple_place(&counted.tuples, &key, row, near.get())?;
+            near.set(at);
             Some(weights[at])
         };
         let mut total = 0u64;

@@ -985,6 +985,7 @@ pub fn clear_views() {
     RIGHT_KEYS.with(|keys| keys.borrow_mut().clear());
     OCCURS.with(|held| *held.borrow_mut() = OccurHeld::default());
     GROUPS.with(|groups| *groups.borrow_mut() = Groups::default());
+    crate::joined::clear_shared();
 }
 
 /// A relation's keys at columns, sorted, held while its table stands.
