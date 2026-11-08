@@ -254,8 +254,9 @@ impl Evaluation<'_> {
     /// `docs/engine/synthesis.md#factorized-bodies` gives. The kept
     /// conjuncts' relation holds the clause's columns whose labels they
     /// hold, as [`ir::compile_conjuncts`] gives. Where the kept conjuncts do
-    /// not compile, this gives a [`RunFault`] at `form`.
+    /// not compile, this gives a [`RunFault`] at `form`. A factor of more
+    /// than one model that the body reads takes its first model.
     pub fn body(&self, form: &crate::program::path::NodePath, kept: &[u32], example: Option<Example>) -> Outcome<BodyValue> {
-        Driver::new(self).body(form, kept, example).map(BodyValue)
+        Driver::taking_first_models(self).body(form, kept, example).map(BodyValue)
     }
 }

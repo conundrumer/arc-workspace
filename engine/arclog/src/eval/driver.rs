@@ -43,11 +43,20 @@ pub(super) struct Driver<'e, 'a> {
     pub(super) trace: Option<&'e RefCell<RunTrace>>,
     /// The `DET` relations whose values this driver has read.
     pub(super) determined: std::cell::Cell<u64>,
+    /// Whether a factor of more than one model, met outside an enumeration,
+    /// takes its first model, as [`Evaluation::body`] has it, and not a fault.
+    pub(super) first_model: bool,
 }
 
 impl<'e, 'a> Driver<'e, 'a> {
     pub(super) fn new(evaluation: &'e Evaluation<'a>) -> Self {
-        Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default(), det: None, trace: None, determined: std::cell::Cell::new(0) }
+        Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default(), det: None, trace: None, determined: std::cell::Cell::new(0), first_model: false }
+    }
+
+    /// The driver of a body in progress, which reads a factor of several
+    /// models at its first model.
+    pub(super) fn taking_first_models(evaluation: &'e Evaluation<'a>) -> Self {
+        Driver { first_model: true, ..Driver::new(evaluation) }
     }
 
     /// The driver of `evaluation`, a nested one of a driver that keeps

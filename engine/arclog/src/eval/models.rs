@@ -286,6 +286,9 @@ fn choice(
         Err(bound) => return Ok(stopped(bound)),
     };
     if driver.met.borrow().is_none() {
+        if driver.first_model {
+            return Ok(first);
+        }
         return match draw.next() {
             Ok(None) => Ok(first),
             Ok(Some(_)) => many.map_or(Ok(first), |message| Err(fault(message))),
