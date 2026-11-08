@@ -2016,22 +2016,46 @@ pub(crate) fn semijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16
     Some(Val::of_table(Table::new(table.arity, cells)))
 }
 
+/// The domain's outer values at which every row has its key among the body's keys at `right_at`, or, with no outer column, whether every row does. A check stops at the first row that fails it.
 pub(crate) fn all(domain: &Val, body: &Val, left_at: &[u16], right_at: &[u16], outer: &[u16]) -> Option<Val> {
     if matches!(domain, Val::Empty) {
         return Some(Val::Empty);
     }
     let table = crate::gen_parts::flat(domain)?;
+    if table.arity == 0 {
+        return outer.is_empty().then(|| Val::of_parts(Vec::new()));
+    }
     let keys = if matches!(body, Val::Empty) { Arc::new(Vec::new()) } else { crate::gen_parts::keys_of(body, right_at)? };
-    let held = rows_in(&table, left_at, &keys);
+    // With no key, every row fails.
+    if keys.is_empty() {
+        return Some(if table.len == 0 && outer.is_empty() { Val::of_parts(Vec::new()) } else { Val::Empty });
+    }
     if outer.is_empty() {
-        return Some(if held.iter().any(|kept| !*kept) { Val::Empty } else { Val::of_table(Table::unit(true)) });
+        let holds = match left_at {
+            [one] => {
+                let place = usize::from(*one);
+                let grouping = table.column_grouping(place);
+                grouping.1.iter().all(|first| keys.binary_search(&u64::from(table.cells[*first as usize * table.arity + place])).is_ok())
+            }
+            _ => table.rows().all(|row| keys.binary_search(&row_word(row, left_at)).is_ok()),
+        };
+        return Some(if holds { Val::of_parts(Vec::new()) } else { Val::Empty });
     }
     // A value of the outer column stays where every row at it has its key.
     let at = usize::from(outer[0]);
     let grouping = table.column_grouping(at);
-    let mut fails = vec![false; grouping.1.len()];
-    for (id, kept) in grouping.0.iter().zip(&held) {
-        fails[*id as usize] |= !*kept;
+    let groups = grouping.1.len();
+    let mut fails = vec![false; groups];
+    let mut failing = 0;
+    for (row, id) in table.rows().zip(&grouping.0) {
+        if fails[*id as usize] || keys.binary_search(&row_word(row, left_at)).is_ok() {
+            continue;
+        }
+        fails[*id as usize] = true;
+        failing += 1;
+        if failing == groups {
+            return Some(Val::Empty);
+        }
     }
     let mut out: Vec<Cell> = grouping.1.iter().zip(&fails).filter(|(_, fails)| !**fails).map(|(first, _)| table.cells[*first as usize * table.arity + at]).collect();
     out.sort_unstable();
