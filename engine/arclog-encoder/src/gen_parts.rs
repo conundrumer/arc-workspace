@@ -437,10 +437,10 @@ pub fn flat(value: &Val) -> Option<Arc<Table>> {
     };
     FLATS.with(|flats| {
         let mut flats = flats.borrow_mut();
-        flats.1 += built.cells.len();
+        flats.1 += built.cell_count();
         if flats.1 > HELD_GROUP_CELLS {
             flats.0.clear();
-            flats.1 = built.cells.len();
+            flats.1 = built.cell_count();
         }
         flats.0.insert(key, built.clone());
     });
@@ -472,7 +472,7 @@ fn flat_product(value: &Val, parts: &[crate::native::Part], arity: usize) -> Opt
         let (width, rows) = (part.table.arity, part.table.len);
         let mut at = 0usize;
         while at < total {
-            for own in part.table.cells.chunks_exact(width) {
+            for own in part.table.cells().chunks_exact(width) {
                 for _ in 0..stride {
                     for (cell, column) in own.iter().zip(part.columns.iter()) {
                         cells[at * arity + usize::from(*column)] = *cell;
@@ -557,7 +557,7 @@ pub fn key_ids<'t>(table: &'t Table, keys: &[u16]) -> (Arc<Grouping>, Vec<&'t [C
         built
     });
     let arity = table.arity.max(1);
-    let first = grouping.1.iter().map(|at| &table.cells[*at as usize * arity..(*at as usize + 1) * arity]).collect();
+    let first = grouping.1.iter().map(|at| &table.cells()[*at as usize * arity..(*at as usize + 1) * arity]).collect();
     (grouping, first)
 }
 
@@ -853,7 +853,7 @@ fn shifted(m: [i32; 4], dr: i32, dc: i32) -> Option<Cell> {
 
 fn rows_with(table: &Table, extra: usize, mut each: impl FnMut(&[Cell], &mut Vec<Cell>)) -> Val {
     let arity = table.arity + extra;
-    let mut out: Vec<Cell> = Vec::with_capacity(table.cells.len() * 2);
+    let mut out: Vec<Cell> = Vec::with_capacity(table.cell_count() * 2);
     for row in table.rows() {
         each(row, &mut out);
     }

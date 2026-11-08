@@ -96,12 +96,15 @@ fn hash_row(row: &[Cell]) -> u128 {
     hash_words(row.iter().map(|cell| u64::from(*cell)))
 }
 
-/// A set of rows of one arity, whose rows stand in ascending order. Its hash depends on the set alone, and two tables of one hash hold the same rows in the same order.
+/// A set of rows of one arity. Its hash depends on the set alone. The rows are stored in the order they were built in, and nothing outside this type reads that order: `rows` and `cells` give the rows in ascending order, sorting once on the first such read, and the other reads (the hash, the counts, `any_row`, `all_rows`, `sum_rows`, `filter_rows`, the column filters and the column's distinct values) give the same result for any order of the rows.
 #[derive(Debug)]
 pub struct Table {
     pub arity: usize,
     pub len: usize,
-    pub cells: Box<[Cell]>,
+    /// The rows in the order they were built in.
+    stored: Box<[Cell]>,
+    /// The rows in ascending order, once something has read them in order: none where the stored rows ascend already.
+    ordered: std::sync::OnceLock<Option<Box<[Cell]>>>,
     /// Its hash, once something has read it. A term that counts rows never does.
     hash: std::sync::OnceLock<u128>,
     /// For each column, a 64-bit filter of its values: two columns whose filters
@@ -175,15 +178,59 @@ pub fn first_ids(keys: &[u64], least: u64, range: u64) -> Grouping {
 }
 
 impl Table {
-    /// The table of `cells`, whose rows are distinct, in any order. Its rows stand in ascending order.
+    /// The table of `cells`, whose rows are distinct, in any order. It keeps them as they stand, and sorts them when something first reads them in order.
     pub fn new(arity: usize, cells: Vec<Cell>) -> Arc<Table> {
-        Table::assemble(arity, sorted_rows(arity, cells, false))
+        Table::assemble(arity, cells, std::sync::OnceLock::new())
     }
 
-    /// The table whose `cells` are rows in ascending order, each once.
-    fn assemble(arity: usize, cells: Vec<Cell>) -> Arc<Table> {
+    /// The table of `cells`, with `ordered` set to none where the rows ascend.
+    fn assemble(arity: usize, cells: Vec<Cell>, ordered: std::sync::OnceLock<Option<Box<[Cell]>>>) -> Arc<Table> {
         let len = cells.len().checked_div(arity).unwrap_or(0);
-        Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new(), factors: std::sync::OnceLock::new() })
+        Arc::new(Table { arity, len, stored: cells.into_boxed_slice(), ordered, hash: std::sync::OnceLock::new(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new(), factors: std::sync::OnceLock::new() })
+    }
+
+    /// The rows in ascending order, as one run of cells.
+    pub fn cells(&self) -> &[Cell] {
+        match self.ordered.get_or_init(|| if rows_ascend(self.arity, &self.stored) { None } else { Some(sorted_rows(self.arity, self.stored.to_vec(), false).into_boxed_slice()) }) {
+            Some(sorted) => sorted,
+            None => &self.stored,
+        }
+    }
+
+    /// The count of cells, which is the count of rows times the arity.
+    pub fn cell_count(&self) -> usize {
+        self.stored.len()
+    }
+
+    /// The rows in the order they are stored, for a read whose result does not depend on that order.
+    fn stored_rows(&self) -> impl Iterator<Item = &[Cell]> {
+        self.stored.chunks_exact(self.arity.max(1))
+    }
+
+    /// Whether some row passes `test`.
+    pub fn any_row(&self, test: impl Fn(&[Cell]) -> bool) -> bool {
+        self.stored_rows().any(test)
+    }
+
+    /// Whether every row passes `test`.
+    pub fn all_rows(&self, test: impl Fn(&[Cell]) -> bool) -> bool {
+        self.stored_rows().all(test)
+    }
+
+    /// The sum of `value` over the rows, wrapping.
+    pub fn sum_rows(&self, value: impl Fn(&[Cell]) -> u64) -> u64 {
+        self.stored_rows().fold(0u64, |sum, row| sum.wrapping_add(value(row)))
+    }
+
+    /// The table of the rows that pass `keep`.
+    pub fn filter_rows(&self, keep: impl Fn(&[Cell]) -> bool) -> Arc<Table> {
+        let mut cells = Vec::with_capacity(self.stored.len());
+        for row in self.stored_rows() {
+            if keep(row) {
+                cells.extend_from_slice(row);
+            }
+        }
+        Table::new(self.arity, cells)
     }
 
     /// A hash of the set of rows, which their order does not change.
@@ -191,7 +238,7 @@ impl Table {
         *self.hash.get_or_init(|| {
             let mut hash = 0u128;
             if self.arity > 0 {
-                for row in self.cells.chunks_exact(self.arity) {
+                for row in self.stored.chunks_exact(self.arity) {
                     hash = hash.wrapping_add(hash_row(row));
                 }
             }
@@ -203,7 +250,7 @@ impl Table {
     pub fn mask(&self, place: usize) -> u64 {
         self.masks.get_or_init(|| {
             let mut masks = vec![0u64; self.arity];
-            for row in self.rows() {
+            for row in self.stored_rows() {
                 for (mask, cell) in masks.iter_mut().zip(row) {
                     *mask |= 1 << (mix(u64::from(*cell)) >> 58);
                 }
@@ -237,7 +284,7 @@ impl Table {
         }
         let columns = self.sorted.get_or_init(|| (0..self.arity).map(|_| std::sync::OnceLock::new()).collect());
         columns[place].get_or_init(|| {
-            let mut held: Vec<Cell> = self.rows().map(|row| row[place]).collect();
+            let mut held: Vec<Cell> = self.stored_rows().map(|row| row[place]).collect();
             held.sort_unstable();
             held.dedup();
             held.into()
@@ -246,17 +293,18 @@ impl Table {
 
     /// The table of `cells`, whose rows may repeat, in any order.
     pub fn distinct(arity: usize, cells: Vec<Cell>) -> Arc<Table> {
-        Table::assemble(arity, sorted_rows(arity, cells, true))
+        Table::assemble(arity, sorted_rows(arity, cells, true), std::sync::OnceLock::from(None))
     }
 
     /// The table of no columns, with one row where `holds`.
     pub fn unit(holds: bool) -> Arc<Table> {
         let len = usize::from(holds);
-        Arc::new(Table { arity: 0, len, cells: Box::new([]), hash: std::sync::OnceLock::new(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new(), factors: std::sync::OnceLock::new() })
+        Arc::new(Table { arity: 0, len, stored: Box::new([]), ordered: std::sync::OnceLock::from(None), hash: std::sync::OnceLock::new(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new(), factors: std::sync::OnceLock::new() })
     }
 
+    /// The rows in ascending order.
     pub fn rows(&self) -> impl Iterator<Item = &[Cell]> {
-        self.cells.chunks_exact(self.arity.max(1))
+        self.cells().chunks_exact(self.arity.max(1))
     }
 
     /// The table's finest split into groups of columns whose product it is, which `make` gives the first time something asks.
@@ -767,7 +815,7 @@ impl<'a> Evaluator<'a> {
                 }
                 let (l, l_rest, l_places) = one_part(left_parts, left)?;
                 let (r, r_rest, r_places) = one_part(right_parts, right)?;
-                if l.table.cells.len() > CELL_CAP || r.table.cells.len() > CELL_CAP {
+                if l.table.cell_count() > CELL_CAP || r.table.cell_count() > CELL_CAP {
                     return None;
                 }
                 if l_places.iter().zip(&r_places).any(|(a, b)| l.table.mask(*a) & r.table.mask(*b) == 0) {
@@ -792,7 +840,7 @@ impl<'a> Evaluator<'a> {
                 }
                 let (l, l_rest, l_places) = one_part(left_parts, left)?;
                 let (r, _, r_places) = one_part(right_parts, right)?;
-                if l.table.cells.len() > CELL_CAP || r.table.cells.len() > CELL_CAP {
+                if l.table.cell_count() > CELL_CAP || r.table.cell_count() > CELL_CAP {
                     return None;
                 }
                 if l_places.iter().zip(&r_places).any(|(a, b)| l.table.mask(*a) & r.table.mask(*b) == 0) {
@@ -1045,7 +1093,7 @@ impl<'a> Evaluator<'a> {
         spent.0 += 1;
         spent.1 += started.elapsed().as_secs_f64();
         let outputs = Arc::new(found);
-        let cells: usize = outputs.iter().flatten().map(|table| table.cells.len()).sum();
+        let cells: usize = outputs.iter().flatten().map(|table| table.cell_count()).sum();
         if self.output_cells + cells > HELD_OUTPUT_CELLS {
             self.outputs.clear();
             self.output_cells = 0;
@@ -1516,7 +1564,7 @@ fn merge<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
         return None;
     };
     if let [one] = parts {
-        return Some(Merged { columns, cells: std::borrow::Cow::Borrowed(&one.table.cells) });
+        return Some(Merged { columns, cells: std::borrow::Cow::Borrowed(one.table.cells()) });
     }
     let width = columns.len();
     let mut cells: Vec<Cell> = vec![0; total * width];
@@ -1529,7 +1577,7 @@ fn merge<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
         let mut at = 0usize;
         while at < total {
             for own in 0..rows {
-                let from = &part.table.cells[own * arity..(own + 1) * arity];
+                let from = &part.table.cells()[own * arity..(own + 1) * arity];
                 for _ in 0..repeat {
                     cells[at * width + offset..at * width + offset + arity].copy_from_slice(from);
                     at += 1;
@@ -1545,7 +1593,7 @@ fn merge<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
 /// The rows of the parts that a step reads. One part is its own rows, read in place at any size; several parts are written as a product, which `site` bounds.
 fn touched_rows<'p>(parts: &[&'p Part], site: Bound) -> Option<Merged<'p>> {
     if let [one] = parts {
-        return Some(Merged { columns: one.columns.to_vec(), cells: std::borrow::Cow::Borrowed(&one.table.cells) });
+        return Some(Merged { columns: one.columns.to_vec(), cells: std::borrow::Cow::Borrowed(one.table.cells()) });
     }
     merge(parts, site)
 }
@@ -1656,8 +1704,8 @@ fn select_across(from: &Part, to: &Part, rest: Vec<Part>, at: u16, op: Op, other
     // The rows of `to` in order of the compared column, as a signed number, so that the rows that one row of `from` passes stand in at most two runs. Rows of one value keep their order.
     let (a_arity, b_arity) = (from.table.arity, to.table.arity);
     let mut order: Vec<u32> = (0..to.table.len as u32).collect();
-    order.sort_by_key(|row| to.table.cells[*row as usize * b_arity + b_place] as i32);
-    let sorted: Vec<i32> = order.iter().map(|row| to.table.cells[*row as usize * b_arity + b_place] as i32).collect();
+    order.sort_by_key(|row| to.table.cells()[*row as usize * b_arity + b_place] as i32);
+    let sorted: Vec<i32> = order.iter().map(|row| to.table.cells()[*row as usize * b_arity + b_place] as i32).collect();
     let end = sorted.len();
     let runs = |value: Cell| -> [(usize, usize); 2] {
         let value = value as i32;
@@ -1690,7 +1738,7 @@ fn select_across(from: &Part, to: &Part, rest: Vec<Part>, at: u16, op: Op, other
         for (start, stop) in runs(row[a_place]) {
             for at_sorted in start..stop {
                 let own = order[at_sorted] as usize;
-                pair[a_arity..].copy_from_slice(&to.table.cells[own * b_arity..(own + 1) * b_arity]);
+                pair[a_arity..].copy_from_slice(&to.table.cells()[own * b_arity..(own + 1) * b_arity]);
                 cells.extend(kept_places.iter().map(|place| pair[*place]));
             }
         }
@@ -1949,7 +1997,7 @@ fn join_nodes(nodes: &[(&Part, u32)], members: &[usize], links: &[Link], right_a
         let (part, side) = nodes[node];
         if joined.is_empty() {
             tags = part.columns.iter().map(|column| side | u32::from(*column)).collect();
-            cells = part.table.cells.to_vec();
+            cells = part.table.cells().to_vec();
         } else {
             // The places of the key in the rows so far, and in this node's rows.
             let (mut have, mut own): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
@@ -1975,7 +2023,7 @@ fn join_nodes(nodes: &[(&Part, u32)], members: &[usize], links: &[Link], right_a
                 if let Some(key) = index.get(key_word(row, &have)) {
                     for at in &by_key[starts[key as usize] as usize..starts[key as usize + 1] as usize] {
                         next.extend_from_slice(row);
-                        next.extend_from_slice(&part.table.cells[*at as usize * arity..(*at as usize + 1) * arity]);
+                        next.extend_from_slice(&part.table.cells()[*at as usize * arity..(*at as usize + 1) * arity]);
                     }
                 }
                 if next.len() > CELL_CAP {
@@ -2022,7 +2070,7 @@ fn rows_in(table: &Table, at: &[u16], keys: &[u64]) -> Vec<bool> {
     if let [one] = at {
         let place = usize::from(*one);
         let grouping = table.column_grouping(place);
-        let present: Vec<bool> = grouping.1.iter().map(|first| keys.binary_search(&u64::from(table.cells[*first as usize * table.arity + place])).is_ok()).collect();
+        let present: Vec<bool> = grouping.1.iter().map(|first| keys.binary_search(&u64::from(table.cells()[*first as usize * table.arity + place])).is_ok()).collect();
         return grouping.0.iter().map(|id| present[*id as usize]).collect();
     }
     table.rows().map(|row| keys.binary_search(&row_word(row, at)).is_ok()).collect()
@@ -2038,7 +2086,7 @@ pub(crate) fn semijoin(left: &Val, right: &Val, left_at: &[u16], right_at: &[u16
     if held.iter().all(|kept| *kept) {
         return Some(left.clone());
     }
-    let mut cells = Vec::with_capacity(table.cells.len());
+    let mut cells = Vec::with_capacity(table.cell_count());
     for (row, kept) in table.rows().zip(&held) {
         if *kept {
             cells.extend_from_slice(row);
@@ -2066,7 +2114,7 @@ pub(crate) fn all(domain: &Val, body: &Val, left_at: &[u16], right_at: &[u16], o
             [one] => {
                 let place = usize::from(*one);
                 let grouping = table.column_grouping(place);
-                grouping.1.iter().all(|first| keys.binary_search(&u64::from(table.cells[*first as usize * table.arity + place])).is_ok())
+                grouping.1.iter().all(|first| keys.binary_search(&u64::from(table.cells()[*first as usize * table.arity + place])).is_ok())
             }
             _ => table.rows().all(|row| keys.binary_search(&row_word(row, left_at)).is_ok()),
         };
@@ -2088,7 +2136,7 @@ pub(crate) fn all(domain: &Val, body: &Val, left_at: &[u16], right_at: &[u16], o
             return Some(Val::Empty);
         }
     }
-    let mut out: Vec<Cell> = grouping.1.iter().zip(&fails).filter(|(_, fails)| !**fails).map(|(first, _)| table.cells[*first as usize * table.arity + at]).collect();
+    let mut out: Vec<Cell> = grouping.1.iter().zip(&fails).filter(|(_, fails)| !**fails).map(|(first, _)| table.cells()[*first as usize * table.arity + at]).collect();
     out.sort_unstable();
     Some(Val::of_table(Table::new(1, out)))
 }

@@ -69,7 +69,7 @@ fn area_of(held: Cell, h: i32, w: i32) -> u64 {
 impl Boxes {
     /// The rows of `inside` over `table`, whose boxes stand at column `at`, in the grid `grid`, whose table hashes as `grid_hash`.
     pub fn of(table: &Arc<Table>, at: u16, grid: Arc<GridView>, grid_hash: u128) -> Val {
-        let rows: u64 = table.rows().map(|row| area_of(row[usize::from(at)], grid.h, grid.w)).sum();
+        let rows: u64 = table.sum_rows(|row| area_of(row[usize::from(at)], grid.h, grid.w));
         if rows == 0 {
             return Val::Empty;
         }
@@ -101,16 +101,10 @@ impl Boxes {
     pub fn support(&self) -> Arc<Table> {
         self.support.get_or_init(|| {
             let at = usize::from(self.at);
-            if self.table.rows().all(|row| self.area(row[at]) > 0) {
+            if self.table.all_rows(|row| self.area(row[at]) > 0) {
                 return self.table.clone();
             }
-            let mut cells = Vec::new();
-            for row in self.table.rows() {
-                if self.area(row[at]) > 0 {
-                    cells.extend_from_slice(row);
-                }
-            }
-            Table::new(self.table.arity, cells)
+            self.table.filter_rows(|row| self.area(row[at]) > 0)
         }).clone()
     }
 
@@ -204,8 +198,8 @@ impl Boxes {
         }
         let wide = Table::new(width + 2, out);
         let mut kept = self.sketches.lock().expect("a sketch lock");
-        if kept.0 + wide.cells.len() <= SKETCH_KEPT && sketch.wide.set(wide.clone()).is_ok() {
-            kept.0 += wide.cells.len();
+        if kept.0 + wide.cell_count() <= SKETCH_KEPT && sketch.wide.set(wide.clone()).is_ok() {
+            kept.0 += wide.cell_count();
         }
         Some(wide)
     }
@@ -233,7 +227,7 @@ impl Boxes {
             None => {
                 let sketch = Arc::new(Sketch { tuples: self.build_sketch(key), wide: OnceLock::new() });
                 let mut kept = self.sketches.lock().expect("a sketch lock");
-                let cells = sketch.tuples.as_ref().map_or(0, |table| table.cells.len());
+                let cells = sketch.tuples.as_ref().map_or(0, |table| table.cell_count());
                 if kept.0 + cells <= SKETCH_KEPT {
                     kept.0 += cells;
                     kept.1.insert(key.into(), sketch.clone());
@@ -303,7 +297,7 @@ impl Boxes {
         // The pairs of each tuple of the relation's columns: where its pairs start, and the end of the last.
         let mut starts: Vec<usize> = Vec::new();
         for pair in 0..pairs.len {
-            if pair == 0 || pairs.cells[pair * stride..pair * stride + relation.len()] != pairs.cells[(pair - 1) * stride..(pair - 1) * stride + relation.len()] {
+            if pair == 0 || pairs.cells()[pair * stride..pair * stride + relation.len()] != pairs.cells()[(pair - 1) * stride..(pair - 1) * stride + relation.len()] {
                 starts.push(pair);
             }
         }
@@ -348,7 +342,7 @@ impl Boxes {
             out = Vec::with_capacity(total * arity_out);
             for tuple in 0..tuples {
                 union_of(tuple, &mut union[..]);
-                let prefix = &pairs.cells[tuple_at(tuple)];
+                let prefix = &pairs.cells()[tuple_at(tuple)];
                 for (at, word) in union.iter().enumerate() {
                     let mut bits = *word;
                     while bits != 0 {
@@ -380,7 +374,7 @@ impl Boxes {
                 if (out.len() / arity_out + colors.len()).saturating_mul(arity) > CELL_CAP {
                     return None;
                 }
-                let prefix = &pairs.cells[tuple_at(tuple)];
+                let prefix = &pairs.cells()[tuple_at(tuple)];
                 for color in &colors {
                     out.extend_from_slice(prefix);
                     out.push(*color);
