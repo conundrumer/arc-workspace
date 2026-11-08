@@ -17,16 +17,16 @@ at most `CHUNK` solvers, then exiting so that none keeps the memory of a
 chunk."""
 
 import hashlib
+import os
 import re
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from arclog_convert import paths
-from arclog_convert.row_parity import bound_to_one_cpu
 from checker.plan_cache import hash_solver_files
 from engine import checkout, rwlock
 from engine.memo import write_whole
-from engine.pool import pool_size
+from engine.pool import pool_size, share_env
 
 
 PLAN_HASH = "inputs sha256: "
@@ -37,6 +37,12 @@ NO_COVER = re.compile(r"  \w+\(\d+\)")
 CHUNK = 16
 """The most solvers one worker process takes before it exits. A process
 that made 32 plans, the largest among them, peaked at 0.44 GiB."""
+
+
+def bound_to_one_cpu() -> None:
+    """The initializer of a worker: its environment is `share_env(1)`, so the
+    Souffle runs it makes in process take a bound of one."""
+    os.environ.update(share_env(1))
 
 
 def inputs_hash(stem: str, solvers: Path) -> str:

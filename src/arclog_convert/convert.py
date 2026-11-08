@@ -26,7 +26,7 @@ Souffle texts that derive the rows of the relations the converter adds
 (`arclog_convert.parity_text`): `<stem>.dl`, which the runs of the cases add to
 the solver's program, and `<stem>.determination.dl`, which the determination's
 run adds. Beside gen/, the directory
-`row_parity.CORPUS` holds, for the row-parity check alone, a copy of each
+`paths.CORPUS` holds, for the row-parity check alone, a copy of each
 converted program with the check relations of the relations it folds
 (`arclog_convert.checks`) and the clauses of the relations the projection pass
 removes from `gen/`; nothing else reads it.
@@ -72,12 +72,12 @@ which it gives a fault (the checker refuses the case program read alone), have n
 the summary gives the number of such cases of each solver. A solver none of whose cases has files gets no case files.
 The passes read Souffle's rows of the whole program (`pull_up.Rows.single`).
 Each file the run writes under `gen/` (`<stem>.arclog`, `<stem>.arcdata` and each case file) is read-only, and begins with
-the two comment lines of `arclog_convert.readback.header`: `;; inputs <inputs hash> programs/solvers/<stem>.dl` and
+the two comment lines of `arclog_convert.provenance.header`: `;; inputs <inputs hash> programs/solvers/<stem>.dl` and
 `;; converter <code hash>`. The inputs hash is `plans.inputs_hash` (the solver file, task file and witness file of the
-solver), and the code hash is `readback.code_digest` (the modules this file imports, followed through their imports, the
-files of `src/arclog_convert/`, the sources of the Souffle runs, and the lib's files).
+solver), and the code hash is `provenance.code_digest` (the modules this file imports, followed through their imports,
+the sources of the Souffle runs, and the lib's files).
 After a solver's files stand, `case_records/` beside `gen/` holds a file `<stem>.sha256`, the record of
-`arclog_convert.readback`: the inputs hash and the code hash, the sha256 of the `.arclog`, of the `.arcdata` and of each
+`arclog_convert.provenance`: the inputs hash and the code hash, the sha256 of the `.arclog`, of the `.arcdata` and of each
 case file, a line `skipped <n>` where the run skipped `n` cases for a fault, and a line `error <JSON string>` where the
 case files stopped with an error. A record is current only where its inputs hash is the solver's and its code hash is
 the current one, so that a change in the converter, the lib or a solver's files makes the case files of the solver
@@ -112,8 +112,8 @@ from arclog_convert.lint_alts import alt_blocks, derived, placements, selects_ca
 from arclog_convert.lint_read import L, read
 from arclog_convert import paths
 from arclog_convert.phases import phase, use_out
-from arclog_convert import readback
-from arclog_convert.readback import CASES, Record
+from arclog_convert import provenance
+from arclog_convert.provenance import CASES, Record
 
 from arclog_convert.forms import (
     MERGES,
@@ -388,13 +388,13 @@ def _standing(stem: str, inputs: str, arclog: str, arcdata: str) -> "Cased | Non
     `arcdata` the sha256 of the two files the run just wrote: that its case files stand, where the record is current
     (see the head of this file) and the files on disk are those it holds, or the error that stopped them, where the
     record holds one; none where the solver's case files are to be made."""
-    record = readback.read_record(stem)
-    if record is None or (record.inputs, record.code) != (inputs, readback.code_digest()) \
+    record = provenance.read_record(stem)
+    if record is None or (record.inputs, record.code) != (inputs, provenance.code_digest()) \
             or (record.arclog, record.arcdata) != (arclog, arcdata):
         return None
     if record.error is not None:
         return Cased(stem, 0, False, record.error, record.skipped)
-    if readback.case_faults(stem, record):
+    if provenance.case_faults(stem, record):
         return None
     return Cased(stem, 0, True, None, record.skipped)
 
@@ -426,8 +426,8 @@ def _prepare_cases(stem: str, answers: Answers) -> Prepared:
     from arclog import case_files
     try:
         gen = paths.OUT_DIR
-        arclog_text = readback.strip_header((gen / f"{stem}.arclog").read_text())
-        arcdata_text = readback.strip_header((gen / f"{stem}.arcdata").read_text())
+        arclog_text = provenance.strip_header((gen / f"{stem}.arclog").read_text())
+        arcdata_text = provenance.strip_header((gen / f"{stem}.arcdata").read_text())
         excluded = _excluded(arcdata_text)
         files = case_files(stem, arclog_text, arcdata_text, str(gen))
         skipped = sum(1 for f in files if f.fault is not None)
@@ -565,7 +565,7 @@ def _write_cases(stem: str, answers: Answers, part: CaseTexts, head: str) -> tup
     tests, then `_equality_bindings`. Deletion reads only the checked program, and `_equality_bindings` the decoder on
     the task's inputs, not task rows.
 
-    Each file is read-only and begins with the comment lines `head` (`readback.header`). Gives the stem, the number of
+    Each file is read-only and begins with the comment lines `head` (`provenance.header`). Gives the stem, the number of
     cases it wrote files of, the error that stopped it, and the sha256 of each file it wrote, by file name."""
     try:
         from arclog import DecodeSettings, StudyProgram
@@ -601,7 +601,7 @@ def _write_cases(stem: str, answers: Answers, part: CaseTexts, head: str) -> tup
             directory.mkdir(parents=True, exist_ok=True)
         for file, text, arcdata in written:
             for name, body in ((f"{file}.arclog", text), (f"{file}.arcdata", arcdata)):
-                hashes[name] = readback.write_gen(directory / name, readback.with_header(body, head))
+                hashes[name] = provenance.write_gen(directory / name, provenance.with_header(body, head))
     except Exception as e:  # noqa: BLE001
         return stem, 0, f"{type(e).__name__}: {e}", {}
     return stem, len(written), None, hashes
@@ -649,7 +649,7 @@ def convert_cases(pool: Executor | None, workers: int, asked: Mapping[str, Answe
     Gives the outcome of each solver, the largest solver file first."""
     order = sorted(asked, key=lambda t: -(paths.SOLVERS / f"{t}.dl").stat().st_size)
     inputs = {stem: inputs_hash(stem, paths.SOLVERS) for stem in order}
-    code = readback.code_digest()
+    code = provenance.code_digest()
     outcomes: dict[str, Cased] = {}
     for stem in order:
         if (standing := _standing(stem, inputs[stem], *written_files[stem])) is not None:
@@ -666,10 +666,10 @@ def convert_cases(pool: Executor | None, workers: int, asked: Mapping[str, Answe
         error = errors.get(stem)
         arclog, arcdata = written_files[stem]
         if error is None:
-            readback.write_record(stem, Record(inputs[stem], code, arclog, arcdata, hashes[stem], None, skipped[stem]))
+            provenance.write_record(stem, Record(inputs[stem], code, arclog, arcdata, hashes[stem], None, skipped[stem]))
         elif error.partition(":")[0] in REPEATABLE:
             shutil.rmtree(paths.OUT_DIR / CASES / stem, ignore_errors=True)
-            readback.write_record(stem, Record(inputs[stem], code, arclog, arcdata, {}, error, skipped[stem]))
+            provenance.write_record(stem, Record(inputs[stem], code, arclog, arcdata, {}, error, skipped[stem]))
         else:
             _drop_cases(stem)
         outcomes[stem] = Cased(stem, written[stem], False, error, skipped[stem])
@@ -689,7 +689,7 @@ def convert_cases(pool: Executor | None, workers: int, asked: Mapping[str, Answe
                     size = max(PART_CASES, -(-len(prepared.cases) // (workers * PARTS_PER_WORKER)))
                     parts = [prepared.cases[i:i + size] for i in range(0, len(prepared.cases), size)]
                     left[stem] = len(parts)
-                    head = readback.header(stem, inputs[stem], code)
+                    head = provenance.header(stem, inputs[stem], code)
                     pending |= {_submit(pool, _write_cases, stem, prepared.answers, part, head) for part in parts}
             else:
                 stem, count, error, made = future.result()
@@ -723,12 +723,11 @@ def main(argv: list[str]) -> int:
 def convert_into(stems: list[str], out: Path) -> list[str]:
     """Convert `stems` into `out` over a process pool, print the
     summary, and give the stems it converted. The files it writes under
-    `out` are read-only and begin with `readback.header`, and each converted
+    `out` are read-only and begin with `provenance.header`, and each converted
     solver gets its record in `case_records/`."""
     from concurrent.futures import ProcessPoolExecutor
-    from arclog_convert.row_parity import CORPUS
     out.mkdir(parents=True, exist_ok=True)
-    corpus = out.parent / CORPUS
+    corpus = out.parent / paths.CORPUS
     total = Counter()
     per_kind_solvers = Counter()
     merges: Counter[str] = Counter()
@@ -748,16 +747,16 @@ def convert_into(stems: list[str], out: Path) -> list[str]:
     asked: dict[str, Answers] = {}
     stubbed: list[str] = []
     written_files: dict[str, tuple[str, str]] = {}
-    code = readback.code_digest()
+    code = provenance.code_digest()
     for stem, arclog, arcdata, kinds, m, um, mis, err, checked, answers in results:
         if err is not None:
             failed.append((stem, err))
             continue
         converted.append(stem)
         inputs = inputs_hash(stem, paths.SOLVERS)
-        head = readback.header(stem, inputs, code)
-        written_files[stem] = (readback.write_gen(out / f"{stem}.arclog", head + arclog),
-                               readback.write_gen(out / f"{stem}.arcdata", head + arcdata))
+        head = provenance.header(stem, inputs, code)
+        written_files[stem] = (provenance.write_gen(out / f"{stem}.arclog", head + arclog),
+                               provenance.write_gen(out / f"{stem}.arcdata", head + arcdata))
         if checked is not None:
             corpus.mkdir(exist_ok=True)
             (corpus / f"{stem}.arclog").write_text(checked[0])
@@ -767,11 +766,11 @@ def convert_into(stems: list[str], out: Path) -> list[str]:
             # a parse the key of a read widens, so each case of the solver fails its checks
             stubbed.append(stem)
             _drop_cases(stem)
-            readback.write_record(stem, Record(inputs, code, *written_files[stem], {}))
+            provenance.write_record(stem, Record(inputs, code, *written_files[stem], {}))
         elif answers is not None:
             asked[stem] = answers
         else:
-            readback.write_record(stem, Record(inputs, code, *written_files[stem], {}))
+            provenance.write_record(stem, Record(inputs, code, *written_files[stem], {}))
         merges += m
         unmerged += um
         mismatched += [(stem, name, own, prop) for name, (own, prop) in mis.items()]

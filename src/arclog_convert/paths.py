@@ -18,6 +18,9 @@ SOLVERS_ENV = "ARCLOG_SOLVERS"
 """Set, the directory the converter reads solver files from, in place of `programs/solvers`."""
 SOLVERS = Path(os.environ[SOLVERS_ENV]) if os.environ.get(SOLVERS_ENV) else ROOT / "programs" / "solvers"
 WITNESSES = ROOT / "programs" / "witnesses"
+CORPUS = "gen_check"
+"""The directory beside `gen/` that `arclog_convert.convert` writes the copies of the converted programs for the row-parity check to
+(`arclog_convert.row_parity`)."""
 
 
 def out_dirs() -> tuple[Path, Path, Path, Path, Path]:
