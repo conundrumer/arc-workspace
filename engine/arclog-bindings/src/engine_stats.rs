@@ -33,7 +33,10 @@ pub(crate) fn engine_stats<'py>(py: Python<'py>, reset: bool) -> PyResult<Bound<
 /// request of the call that returned last.
 ///
 /// The dict holds `work` and `cap`, the units of work that the request counted
-/// and its cap (`docs/engine/synthesis.md#decode-settings`), `bytes` and
+/// (its content: the rows its steps read and write) and its cap
+/// (`docs/engine/synthesis.md#decode-settings`), `effort` and `effort_cap`, the
+/// bindings that its searches tried and the guard on them (a request past the
+/// guard raises `arclog.EffortExhausted`), `bytes` and
 /// `byte_cap`, the bytes that the request holds now and its byte budget (the
 /// gauge `request_bytes` gives the most it held), and `gauges`, a
 /// dict from the name of each capped quantity to a dict of `max`, the largest

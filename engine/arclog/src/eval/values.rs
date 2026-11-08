@@ -41,6 +41,11 @@ pub struct Caps {
 }
 
 impl Caps {
+    /// The binding cap counts content now (the rows an evaluation reads and
+    /// writes), and the values below were set from counts of bindings tried,
+    /// so they stand until the cap audit sets them again from the content
+    /// counts of the gold programs.
+    ///
     /// The caps of every task session: the binding cap, the row cap, the
     /// node cap and the assignment cap are each set from the engine's counts
     /// on the corpus, and the model cap from the corpus survey's bound from
