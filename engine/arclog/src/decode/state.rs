@@ -188,7 +188,7 @@ const PREFIX_BYTES: usize = 16 * 1024 * 1024;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum PrefixKind { Check, SingleCheck, DetAdmission }
 
-/// A verdict, and the cost of the computation that gave it ([`crate::eval::Cost`]), which a hit charges again where the verdict is of the written `DET`s' admission.
+/// A verdict, and the cost of the computation that gave it ([`crate::eval::Cost`]), which a hit charges again.
 type Verdict = (Result<(), super::Refusal>, crate::eval::Cost);
 
 type PrefixEntries = crate::hash::StableHashMap<(PrefixKind, Vec<u8>), Verdict>;
@@ -559,31 +559,19 @@ impl State {
     /// node for the prefix with source key `key`, which `compute` gives and
     /// this state keeps until a form finishes. The checks of that verdict read
     /// the prefix's source, its open path and the finished forms, which the
-    /// key and the cache's lifetime fix.
-    pub(super) fn cached_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
-        let single = (PrefixKind::SingleCheck, key);
-        // The oracle of the mask reads each verdict apart.
-        #[cfg(not(feature = "admissible-reference"))]
-        if let Some(hit) = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&single) {
-            crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
-            return hit.without_request();
-        }
-        self.cached_verdict(PrefixKind::Check, single.1, &|| true, None, compute)
+    /// key and the cache's lifetime fix. The verdict is kept with the cost of
+    /// its computation, and a hit charges that cost to `work` and `session`.
+    /// A mask's verdict and a single token's verdict are kept apart, as the
+    /// two modes of the checks give different costs.
+    pub(super) fn cached_prefix(&self, key: Vec<u8>, work: &crate::eval::RequestWork, session: &crate::session::TaskSession, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
+        self.cached_verdict(PrefixKind::Check, key, &|| true, work, session, compute)
     }
 
     /// [`State::cached_prefix`] for a verdict that the checks give outside the
-    /// mask's mode, as a single token's step does. A mask gives one verdict
-    /// with a step, so a prefix that a mask passed takes that pass; a mask's
-    /// refusal is kept apart, as a step gives each refusal's place and text.
-    pub(super) fn cached_single_prefix(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
-        let mask = (PrefixKind::Check, key);
-        // The oracle of the mask reads each verdict apart.
-        #[cfg(not(feature = "admissible-reference"))]
-        if let Some(Ok(())) = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&mask).map(Hit::without_request) {
-            crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
-            return Ok(());
-        }
-        self.cached_verdict(PrefixKind::SingleCheck, mask.1, &|| true, None, compute)
+    /// mask's mode, as a single token's step does. A step gives each refusal's
+    /// place and text, which a mask's verdict does not hold.
+    pub(super) fn cached_single_prefix(&self, key: Vec<u8>, work: &crate::eval::RequestWork, session: &crate::session::TaskSession, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
+        self.cached_verdict(PrefixKind::SingleCheck, key, &|| true, work, session, compute)
     }
 
     /// The verdict of the written `DET`s' admission at a prefix. The verdict is
@@ -592,36 +580,28 @@ impl State {
     /// verdict is kept with the cost of its computation, and a hit charges that
     /// cost to `work`.
     pub(super) fn cached_det_prefix(&self, key: Vec<u8>, keep: &dyn Fn() -> bool, work: &crate::eval::RequestWork, session: &crate::session::TaskSession, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
-        self.cached_verdict(PrefixKind::DetAdmission, key, keep, Some((work, session)), compute)
+        self.cached_verdict(PrefixKind::DetAdmission, key, keep, work, session, compute)
     }
 
-    fn cached_verdict(&self, kind: PrefixKind, key: Vec<u8>, keep: &dyn Fn() -> bool, charged: Option<(&crate::eval::RequestWork, &crate::session::TaskSession)>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
+    /// The verdict kept for `key` of `kind`, or the verdict of `compute`,
+    /// which is kept where the key is short and `keep` holds after it. A hit
+    /// charges the cost of the computation that was kept to `work`; a hit
+    /// whose cost would pass the request's caps is no hit, and the verdict is
+    /// computed again.
+    fn cached_verdict(&self, kind: PrefixKind, key: Vec<u8>, keep: &dyn Fn() -> bool, work: &crate::eval::RequestWork, session: &crate::session::TaskSession, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
         let key = (kind, key);
         let held = self.prefixes.lock().expect("the prefix cache is not poisoned").get(&key);
-        if let Some(hit) = held {
-            match charged {
-                None => {
-                    crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
-                    return hit.without_request();
-                }
-                // A hit whose cost would pass the request's cap is no hit: the verdict is computed again, and the computation stops where it stops with empty caches.
-                Some((work, session)) => {
-                    if let Some(verdict) = hit.charge(work, None, session).value() {
-                        crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
-                        return verdict;
-                    }
-                }
-            }
+        if let Some(hit) = held
+            && let Some(verdict) = hit.charge(work, None, session).value()
+        {
+            crate::stats::tick(crate::stats::Phase::DecodePrefixHit);
+            return verdict;
         }
+        // A hit whose cost would pass the request's cap is no hit: the verdict is computed again, and the computation stops where it stops with empty caches.
         crate::stats::tick(crate::stats::Phase::DecodePrefixMiss);
-        // A prefix check is no content: its work counts as effort, and a hit on its verdict charges its bytes and its effort alone.
-        let (verdict, cost) = match charged {
-            Some((work, _)) => {
-                let (verdict, cost) = work.measure(|| crate::eval::uncounted(compute));
-                (verdict, cost.without_counts())
-            }
-            None => (compute(), crate::eval::Cost::default()),
-        };
+        // A prefix check is no content: its work counts as effort, and a hit on its verdict charges its bytes and its effort alone. The measurement of a written `DET`'s admission owns the prefix content that its checks count.
+        let (verdict, cost) = work.measure_owning(kind == PrefixKind::DetAdmission, || crate::eval::uncounted(compute));
+        let cost = cost.without_counts();
         if key.1.len() <= PREFIX_KEY_BYTES && keep() {
             self.prefixes.lock().expect("the prefix cache is not poisoned").insert(key, (verdict.clone(), cost));
         }

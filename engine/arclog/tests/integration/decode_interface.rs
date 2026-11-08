@@ -10,7 +10,7 @@ use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::decode::{step_batch, Consistency, Decoder, Refusal, Projections};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
-use arclog::eval::{Caps, ReachedBound, RelationValue, RequestWork};
+use arclog::eval::{Caps, Gauge, ReachedBound, RelationValue, RequestWork};
 use arclog::judge::candidates::{PairCandidates, Section, World};
 use arclog::program::ProgramRelation;
 use arclog::relations::Relation;
@@ -370,4 +370,40 @@ fn the_work_of_a_body_is_the_same_in_any_written_order_of_its_conjuncts() {
     let works: Vec<u64> = orders.iter().map(|order| sub_body_work(&format!("{READS}{order}"), false)).collect();
     assert!(works[0] > 0, "the body counts some work");
     assert!(works.iter().all(|work| *work == works[0]), "the work of each written order of one body: {works:?}");
+}
+
+/// The largest value and the cap of each gauge of the request that the last
+/// call began on this thread, but for the session's own ledger, which depends
+/// on the machine's heap, and the labeling nodes, which are the process's.
+fn request_gauges() -> Vec<(&'static str, u64, u64)> {
+    let request = RequestWork::latest().expect("the request of the call");
+    request.all_gauges().into_iter().filter(|(gauge, ..)| !matches!(gauge, Gauge::SessionBytes | Gauge::LabelingNodes)).map(|(gauge, max, cap, _)| (gauge.name(), max, cap)).collect()
+}
+
+/// The gauges of the request that `admits` of every token of the vocabulary
+/// begins at the state after all tokens but the last of `arclog`, where the
+/// decode has the caches of the state filled by another request first if
+/// `warm`.
+fn gauges_of_admits(arclog: &str, warm: bool) -> Vec<(&'static str, u64, u64)> {
+    let inputs = inputs(INPUT, Caps::CORPUS);
+    let mut decoder = decoder(&inputs);
+    let tokens = model_tokens(arclog);
+    let (end, prefix) = tokens.split_last().expect("a stream");
+    assert_eq!(*end, Token::Control(Control::End));
+    walk(&mut decoder, prefix);
+    let ids: Vec<u32> = (0..u32::try_from(decoder.vocabulary().len()).expect("fewer than 2^32 tokens")).collect();
+    if warm {
+        let _ = decoder.fork().admits(&ids);
+    }
+    let _ = decoder.admits(&ids);
+    request_gauges()
+}
+
+#[test]
+fn the_gauges_of_a_request_are_the_same_with_cold_caches_and_with_caches_another_request_filled() {
+    for arclog in ["(DET &pick (ex_input *E *P *Col) (ONE E P))\n", "(RULE &output (input *P *Col) (input P Col))\n"] {
+        let cold = gauges_of_admits(arclog, false);
+        let warm = gauges_of_admits(arclog, true);
+        assert_eq!(cold, warm, "the gauges of a request on {arclog}");
+    }
 }

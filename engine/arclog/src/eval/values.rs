@@ -654,6 +654,8 @@ impl Gauges {
         }
         if is_carried(gauge) {
             tally_note(gauge, value, cap, 0);
+        } else if gauge == Gauge::PrefixContent {
+            tally_owned_note(gauge, value, cap, 0);
         }
     }
 
@@ -664,15 +666,21 @@ impl Gauges {
         self.slot(gauge).hits.fetch_add(1, Ordering::Relaxed);
         if is_carried(gauge) {
             tally_note(gauge, value, cap, 1);
+        } else if gauge == Gauge::PrefixContent {
+            tally_owned_note(gauge, value, cap, 1);
         }
     }
 
     /// Records again what a computation noted in `gauge`: its largest value
-    /// `max` under `cap`, and `hits` hits ([`Note`]).
+    /// `max` under `cap`, and `hits` hits ([`Note`]). The note stands in the
+    /// innermost open measurement too, where `gauge` is one that a cost
+    /// carries or one that a measurement owns ([`RequestWork::measure_owning`]).
     fn replay(&self, gauge: Gauge, max: u64, cap: u64, hits: u32) {
         self.note(gauge, max, cap);
         if hits > 0 {
             self.slot(gauge).hits.fetch_add(u64::from(hits), Ordering::Relaxed);
+        }
+        if hits > 0 || !is_carried(gauge) {
             tally_note(gauge, max, cap, hits);
         }
     }
@@ -1048,6 +1056,13 @@ pub fn is_effort_unmetered() -> bool {
 /// request, the bindings and rows ([`Cost`]'s own fields), the bytes, the
 /// session's own ledger, and the counts of an observation, which a hit
 /// charges again where it charges the observation ([`TableWork`]).
+///
+/// The gauge `prefix_content` is the count of a prefix check's own
+/// observation, so what an evaluation notes in it is the count so far of an
+/// observation that may have begun before the evaluation. The cost of an
+/// entry carries that gauge only through the measurement that owns the
+/// prefix checks in it ([`RequestWork::measure_owning`]), which holds the
+/// largest content of the checks it ran and replays it for a hit.
 const fn is_carried(gauge: Gauge) -> bool {
     !matches!(
         gauge,
@@ -1140,7 +1155,7 @@ fn merge_notes(into: &mut Vec<Note>, from: &[Note]) {
 /// rest of what `run` charges in it.
 pub(crate) fn noting<T>(run: impl FnOnce() -> T) -> (T, NoteId) {
     tally(|tally| {
-        tally.frames.push(Frame { request: 0, effort: 0, notes: Vec::new(), held: 0, assignment: None, cost: Cost::default() });
+        tally.frames.push(Frame { request: 0, effort: 0, notes: Vec::new(), owner: false, held: 0, assignment: None, cost: Cost::default() });
     });
     let mut open = Unwind(true);
     let value = run();
@@ -1208,6 +1223,20 @@ fn tally_note(gauge: Gauge, value: u64, cap: u64, hits: u32) {
     });
 }
 
+/// Notes in the innermost open measurement that owns the prefix checks in it
+/// ([`RequestWork::measure_owning`]) that `gauge` reached `value` under `cap`,
+/// with `hits` more hits. Where no such measurement is open, nothing keeps the
+/// note.
+fn tally_owned_note(gauge: Gauge, value: u64, cap: u64, hits: u32) {
+    let _ = TALLY.try_with(|tally| {
+        if let Ok(mut tally) = tally.try_borrow_mut()
+            && let Some(owner) = tally.frames.iter_mut().rev().find(|frame| frame.owner)
+        {
+            merge_notes(&mut owner.notes, &[Note { gauge: gauge as u8, max: value, cap, hits }]);
+        }
+    });
+}
+
 /// What a thread has charged, for the cost of an entry ([`Cost`]).
 ///
 /// An entry is computed on one thread, which runs no task of the pool while
@@ -1237,6 +1266,10 @@ struct Frame {
     /// What the evaluations in the measurement noted in the gauges that a cost
     /// carries ([`is_carried`]).
     notes: Vec<Note>,
+    /// Whether the measurement owns the prefix checks that run in it
+    /// ([`RequestWork::measure_owning`]), so that it keeps what they note in
+    /// the gauge `prefix_content`.
+    owner: bool,
     /// The rows that were unbilled when the measurement began, which belong
     /// to the work around it.
     held: u64,
@@ -1278,6 +1311,7 @@ pub(crate) fn tally_gauges(bindings: u64, rows: u64) {
         if let Some(top) = tally.frames.last_mut() {
             top.cost.bindings = top.cost.bindings.max(bindings);
             top.cost.rows = top.cost.rows.max(rows);
+            top.cost.gauged = true;
         }
     });
 }
@@ -1354,6 +1388,14 @@ pub struct Cost {
     /// gauges.
     bindings: u64,
     rows: u64,
+    /// Whether an evaluation noted its bindings and rows ([`tally_gauges`]),
+    /// so that a hit notes the gauges `bindings` and `rows` and their caps
+    /// only where the computation did.
+    gauged: bool,
+    /// Whether the computation charged bytes ([`RequestWork::charge_bytes`]),
+    /// so that a hit notes the gauge `request_bytes` and its cap only where
+    /// the computation did.
+    bytes_noted: bool,
     /// The largest counts that the session recorded.
     counts: Counts,
     /// What the computation noted in the gauges that no other part of the cost
@@ -1375,6 +1417,7 @@ impl Cost {
         if same_request {
             self.request = self.request.saturating_add(inner.request);
             self.bytes.absorb(inner.bytes);
+            self.bytes_noted |= inner.bytes_noted;
         }
         if same_effort {
             self.effort = self.effort.saturating_add(inner.effort);
@@ -1382,6 +1425,7 @@ impl Cost {
         self.table = self.table.saturating_add(inner.table);
         self.bindings = self.bindings.max(inner.bindings);
         self.rows = self.rows.max(inner.rows);
+        self.gauged |= inner.gauged;
         self.counts.bindings = self.counts.bindings.max(inner.counts.bindings);
         self.counts.rows = self.counts.rows.max(inner.counts.rows);
     }
@@ -1412,13 +1456,15 @@ impl Cost {
         let charged = request
             .charge(self.request)
             .and_then(|()| request.charge_effort(self.effort))
-            .and_then(|()| request.charge_hit_bytes(self.bytes))
+            .and_then(|()| if self.bytes_noted { request.charge_hit_bytes(self.bytes) } else { Ok(()) })
             .and_then(|()| table.map_or(Ok(()), |table| table.charge(self.table)))
-            .and_then(|()| assignment.map_or(Ok(()), |work| work.charge_hit_bytes(self.bytes)));
+            .and_then(|()| assignment.filter(|_| self.bytes_noted).map_or(Ok(()), |work| work.charge_hit_bytes(self.bytes)));
         let caps = session.caps;
-        request.gauges().note(Gauge::Bindings, self.bindings, caps.bindings);
-        request.gauges().note(Gauge::Rows, self.rows, caps.rows);
-        tally_gauges(self.bindings, self.rows);
+        if self.gauged {
+            request.gauges().note(Gauge::Bindings, self.bindings, caps.bindings);
+            request.gauges().note(Gauge::Rows, self.rows, caps.rows);
+            tally_gauges(self.bindings, self.rows);
+        }
         session.record_counts(self.counts);
         for note in notes_of(self.notes).iter() {
             request.gauges().replay(Gauge::ALL[usize::from(note.gauge)], note.max, note.cap, note.hits);
@@ -1433,8 +1479,7 @@ impl Cost {
 /// The value comes out of a hit only through [`Hit::charge`] or
 /// [`Hit::charge_if`], which charge the cost again, so a caller cannot use a
 /// cached value and leave its cost out of the counts. `Cost::fits` and
-/// `Cost::charge` are private to this module for the same reason. A caller
-/// that has no request to charge says so with [`Hit::without_request`].
+/// `Cost::charge` are private to this module for the same reason.
 #[derive(Clone, Debug)]
 pub struct Hit<T> {
     value: T,
@@ -1507,11 +1552,6 @@ impl<T> Hit<T> {
             Ok(()) => Charged::Value(self.value),
             Err(bound) => Charged::Stopped(self.value, bound),
         }
-    }
-
-    /// The value, for a lookup made where no request counts work.
-    pub fn without_request(self) -> T {
-        self.value
     }
 }
 
@@ -1849,6 +1889,7 @@ impl RequestWork {
                 && top.request == key
             {
                 with(&mut top.cost.bytes);
+                top.cost.bytes_noted = true;
             }
         });
     }
@@ -1875,9 +1916,24 @@ impl RequestWork {
     /// freed: they were the scratch of `run` and the values of the entries it
     /// read. A hit on the entry holds the bytes that the value holds.
     pub fn measure_holding<T>(&self, run: impl FnOnce() -> T, held_by: impl FnOnce(&T) -> u64) -> (T, Cost) {
+        self.measure_with(false, run, held_by)
+    }
+
+    /// [`RequestWork::measure`], where `owner` says whether the measurement
+    /// owns the prefix checks that run in it: the observations that they count
+    /// in begin inside it, so what they note in the gauge `prefix_content` is
+    /// a function of the computation, and the cost keeps it for a hit to note
+    /// again. An entry that is no such measurement keeps none of it, as the
+    /// count that an evaluation notes in an observation that began before the
+    /// entry does depend on what came before.
+    pub fn measure_owning<T>(&self, owner: bool, run: impl FnOnce() -> T) -> (T, Cost) {
+        self.measure_with(owner, run, |_| 0)
+    }
+
+    fn measure_with<T>(&self, owner: bool, run: impl FnOnce() -> T, held_by: impl FnOnce(&T) -> u64) -> (T, Cost) {
         tally(|tally| {
             let held = std::mem::take(&mut tally.unbilled);
-            tally.frames.push(Frame { request: self.key(), effort: self.effort_key(), notes: Vec::new(), held, assignment: None, cost: Cost::default() });
+            tally.frames.push(Frame { request: self.key(), effort: self.effort_key(), notes: Vec::new(), owner, held, assignment: None, cost: Cost::default() });
         });
         let mut open = Unwind(true);
         let value = run();

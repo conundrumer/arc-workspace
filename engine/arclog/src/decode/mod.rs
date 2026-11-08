@@ -469,7 +469,7 @@ impl<'a> Decoder<'a> {
     /// - [`State::awaits_component`] and [`State::grammar_only_candidate`]
     ///   take the grammar step alone.
     /// - [`State::native_classes`] shares one verdict among candidates.
-    /// - [`State::cached_prefix`] shares the verdict of a repeated prefix.
+    /// - [`State::cached_prefix`] shares the verdict of a repeated prefix, and a hit charges the cost of the computation it serves.
     fn compute_mask(&self) -> Mask {
         self.mask_over(0..u32::try_from(self.context.vocabulary.len()).expect("fewer than 2^32 tokens"))
     }
@@ -1152,7 +1152,8 @@ impl<'a> Decoder<'a> {
         // reads the verdict alone, so it shares that of a completed form too.
         if candidate == Candidate::Any && (open.is_some() || checks.is_mask()) {
             if let Some(key) = prefix_key::key(program.value().forms.last().unwrap(), open) {
-                return if checks.is_mask() { self.state.cached_prefix(key, check) } else { self.state.cached_single_prefix(key, check) };
+                let work = self.request_work();
+                return if checks.is_mask() { self.state.cached_prefix(key, &work, self.session, check) } else { self.state.cached_single_prefix(key, &work, self.session, check) };
             }
         }
         check()

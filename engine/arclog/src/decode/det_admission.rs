@@ -148,8 +148,8 @@ impl Decoder<'_> {
                 Charged::Misfit => {}
             }
         }
-        // The admission of a written `DET` is a prefix check: its work counts as effort, and a hit on its walk charges its bytes and its effort alone.
-        let (walk, cost) = work.measure(|| crate::eval::uncounted(|| match self.walked(program, dets, picks, root) {
+        // The admission of a written `DET` is a prefix check: its work counts as effort, and a hit on its walk charges its bytes and its effort alone, and notes again the content that the walk counted.
+        let (walk, cost) = work.measure_owning(true, || crate::eval::uncounted(|| match self.walked(program, dets, picks, root) {
             (leaves, Ok(())) => PartWalk::Ended { leaves, live: true },
             (leaves, Err(DetRefusal::NoLiveAssignment)) => PartWalk::Ended { leaves, live: false },
             (_, Err(DetRefusal::Bound(ReachedBound::Assignments { .. }))) => PartWalk::PastCap,
