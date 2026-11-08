@@ -8,7 +8,9 @@ With no file, checks every arclog and arcdata file under gen/ of
 `arclog_convert.out` and every arcscene file directly under
 `arclog_convert.out`. An arcdata file reads the names
 of the arclog file of its stem, and an arcscene file reads the arclog and
-arcdata files of its stem under gen/. Prints each
+arcdata files of its stem under gen/. A file under
+gen/ is read through `arclog_convert.readback.read_checked`; one that is not current gets the violation `stale`.
+Prints each
 violation as `file:line: code: message`, four per code over more than 20
 files unless --all, then a count per code. The reader of the text
 (`arclog_convert.lint_read`) and the analysis of its alternatives
@@ -23,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from arclog_convert import libmap, out
+from arclog_convert.readback import Stale, read_checked
 from arclog_convert.lint_alts import (
     CLAIMS, DECL_HEADS, Placed, alt_blocks, alt_repeats, alts_map, claims_of, placements, reads, restated_outs, unstated_combinations)
 from arclog_convert.lint_read import L, Str, Sym, flat, leaves, read, walk
@@ -30,6 +33,13 @@ from arclog_convert.lint_source import bare_read_source
 from arclog_convert.lib import ALGEBRA_MODES, DET_COLS, PROPOSER_COLS, SIGNATURE, Lib, pascal, takes_set_mark
 
 GEN = out() / "gen"
+
+
+def read_file(path: Path) -> str:
+    """The text of the file `path`: through `read_checked` where it stands under `GEN`, and `read_text` elsewhere."""
+    return read_checked(path) if GEN.resolve() in path.resolve().parents else path.read_text()
+
+
 FACTS = {"input": ["P", "Col"], "ex_input": ["E", "P", "Col"], "ex_output": ["E", "P", "Col"]}
 OPS = {"=", "!=", "<", "<=", ">", ">="}
 FORMS = {"OR", "IF", "ALL", "NOT"}
@@ -125,7 +135,7 @@ class Scope:
 class Linter:
     def __init__(self, path: Path, text: str | None = None, pre: bool = True):
         self.path = path
-        self.text = path.read_text() if text is None else text
+        self.text = read_file(path) if text is None else text
         # a first pass over the file, for the columns each alt's blocks declare
         self.pre: Linter | None = None
         if pre and path.suffix == ".arclog":
@@ -178,7 +188,7 @@ class Linter:
                 data = arclog.with_suffix(".arcdata")
                 if data.exists():
                     try:
-                        self.imported.params = {x.items[1].text for x in read(data.read_text())
+                        self.imported.params = {x.items[1].text for x in read(read_file(data))
                                                 if isinstance(x, L) and x.head == "param" and len(x.items) > 1
                                                 and isinstance(x.items[1], Sym)}
                     except SyntaxError:
@@ -1640,7 +1650,7 @@ def structure(lt: Linter, forms) -> None:
         if data.exists():
             try:
                 excluded = [frozenset(x.text for x in f.items[1].items if isinstance(x, Sym))
-                            for f in read(data.read_text()) if isinstance(f, L) and f.head == "exclude"
+                            for f in read(read_file(data)) if isinstance(f, L) and f.head == "exclude"
                             and len(f.items) > 1 and isinstance(f.items[1], L)]
             except SyntaxError:
                 pass
@@ -2046,7 +2056,7 @@ def arcdata_errs(path: Path, imp: Linter | None = None) -> list[tuple[int, str, 
     """The faults of an arcdata file: its forms, their order and heads, the
     names it takes from its arclog file, its params and its witnesses."""
     errs: list[tuple[int, str, str]] = []
-    text = path.read_text()
+    text = read_file(path)
     try:
         forms = read(text)
     except SyntaxError as e:
@@ -2353,13 +2363,16 @@ def lint_group(paths: list[Path]) -> list[tuple[Path, list]]:
     linted: dict[Path, Linter] = {}
     out = []
     for p in sorted(paths, key=lambda x: x.suffix == ".arcdata"):
-        if p.suffix == ".arcdata":
-            errs = arcdata_errs(p, linted.get(p.with_suffix(".arclog")))
-        else:
-            lt = Linter(p)
-            lt.run()
-            errs = lt.errs
-            linted[p] = lt
+        try:
+            if p.suffix == ".arcdata":
+                errs = arcdata_errs(p, linted.get(p.with_suffix(".arclog")))
+            else:
+                lt = Linter(p)
+                lt.run()
+                errs = lt.errs
+                linted[p] = lt
+        except Stale as e:
+            errs = [(0, "stale", str(e))]
         out.append((p, errs))
     return out
 
