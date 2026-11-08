@@ -30,8 +30,11 @@ def rigid_table(text, label, path):
     """The export's name of the table that the read `&label<path>` of a RIGID_DET in the program `text` takes. On an engine with arclog.rigid_slot_name (site-exp50 and later), that name: 'slot <i>' by the part's position in the form's canonical form, or 'pose'. On an older engine, 'slot N' for `.rN` and 'pose' for `.pose`. Else ''."""
     try:
         import arclog
+    except ImportError:
+        return old_rigid_table(path)
+    try:
         return arclog.rigid_slot_name(text, '&' + label + path).split('.')[0] if hasattr(arclog, 'rigid_slot_name') else old_rigid_table(path)
-    except (ImportError, ValueError):
+    except arclog.Refusal:
         return old_rigid_table(path)
 
 

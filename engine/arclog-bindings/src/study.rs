@@ -561,7 +561,7 @@ pub(crate) fn empty_gold_json(py: Python<'_>, corpus: &str, tasks: &str, task: &
 /// output of a `RIGID_DET` form of `text`. The call runs with the GIL released.
 #[pyfunction]
 pub(crate) fn rigid_slot_name(py: Python<'_>, text: &str, read: &str) -> PyResult<String> {
-    py.detach(|| {
+    py.detach(|| -> Result<String, StudyError> {
         let read_text = arclog::read::read_arclog(text, arclog::layout::SourceFile::Arclog).map_err(|d| StudyError::of_diagnostics(&d))?;
         if read_text.diagnostics.iter().any(|d| d.severity == arclog::diagnostic::Severity::Error) {
             return Err(StudyError::of_diagnostics(&read_text.diagnostics));

@@ -116,7 +116,7 @@ def query_of(got, f, lines, program):
     i = lines.index(f['line'])
     try:
         h = Q.query_hash(lines[:i], lines[i])
-    except ValueError:
+    except Q.arclog.Refusal:
         h = None
     if g is None:
         got[f['ident']] = [h, program, False]

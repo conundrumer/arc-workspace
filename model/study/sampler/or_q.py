@@ -780,7 +780,7 @@ def sorted_fields(text, sess, scope):
     except (ValueError, KeyError):
         return text
     except Exception as e:  # noqa: BLE001
-        if not isinstance(e, arclog.Refusal) and 'Check(' not in str(e):
+        if not isinstance(e, arclog.Refusal):
             raise
         return text
     return text if form.written is None else form.text(form.written)
@@ -821,7 +821,7 @@ def order_walker(sampler, task, case, point, scope, kind, sess, task_json, secon
             fresh, fresh_json, _ = live_try.session_of(task)
             rec = walk_order(sampler, task, case, point, scope, text, fresh, fresh_json, kind, scoped=[None], seconds=seconds)
         except Exception as e:  # noqa: BLE001
-            refused = isinstance(e, live.arclog.Refusal) or 'Check(' in str(e)  # a mode, type or safety check of the engine
+            refused = isinstance(e, live.arclog.Refusal)  # a mode, type or safety check of the engine
             return dict(bits=None, marks=None, why='decoder' if refused else 'error', detail='%s: %s' % (type(e).__name__, str(e)[:160]))
         if not clean(rec):
             return dict(bits=None, marks=rec['marks'], why='walk', detail=str((rec['bad'] or [rec['dead']] if (rec['bad'] or rec['dead']) else ['left %d' % rec['left']])[0])[:120], rec=rec)

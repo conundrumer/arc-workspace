@@ -359,7 +359,7 @@ def run_case(arclog, np, c, task, tasks, task_json, query=None, *, settings=None
         settings = arclog.DecodeSettings()
     try:
         program = arclog.StudyProgram.from_sexp(text, settings)
-    except ValueError as e:
+    except arclog.Refusal as e:
         return None, 'refused: %s' % e
     evaluator = arclog.StudyTaskEvaluator(task, str(tasks.resolve()), settings)
     # The runtime can hold an engine older than this file. Both arguments give each entry's rows; the newer one gives a large product as its parts.

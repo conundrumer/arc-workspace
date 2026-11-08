@@ -245,10 +245,7 @@ def lifts(session, forms, tables, deadline=None, tally=None):
                 return
             text, new = choose(forms, i, tables, list(cols), list(decided), texts)
             changed = lifted(forms, i, text, new)
-            try:
-                got = O.probe(session, changed, base=base, at=i + 1)
-            except ValueError:  # the text does not type
-                got = O.Probe(kind='Ill-typed')
+            got = O.probe(session, changed, base=base, at=i + 1)  # a text that does not type gives kind 'Refused'
             if tally is not None:
                 tally[shape + ' ' + got.kind] += 1
             if got.kind == 'Stopped':  # the other shapes of this key read the same table, and stop too

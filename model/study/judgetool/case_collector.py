@@ -157,14 +157,14 @@ def _supported_observers(ev,forms,observers,plans,source_export,gaps):
     observed=assembled(observers)
     try:
         return observed,plans,_observed_bindings(ev,source_export,observed)
-    except (ValueError,KeyError,IndexError,TypeError):
+    except (ev.arclog.Refusal,ValueError,KeyError,IndexError,TypeError):
         pass
     supported=[];kept=[];export=source_export
     for observer,plan in zip(observers,plans):
         candidate=assembled(supported+[observer])
         try:
             candidate_export=_observed_bindings(ev,source_export,candidate)
-        except (ValueError,KeyError,IndexError,TypeError) as error:
+        except (ev.arclog.Refusal,ValueError,KeyError,IndexError,TypeError) as error:
             gaps.append(dict(kind='body',body_path=plan['body_path'],
                 phase='native_observer_validation',reason=str(error),error_type=type(error).__name__))
             continue

@@ -538,7 +538,7 @@ def union_nonredundancy(ev,record,adapter,ntrain,ntest):
             receipt['reason']='current redundancy search found a verified recovery of X from an available source'
         elif not complete:
             receipt['reason']='current nonredundancy proof has an incomplete or bounded source search'
-    except (ValueError,KeyError,IndexError,TypeError,OSError) as error:
+    except (ev.arclog.Refusal,ValueError,KeyError,IndexError,TypeError,OSError) as error:
         receipt['reason']='current nonredundancy evidence unavailable: '+str(error)
     ev.target_cache[key]=receipt
     return receipt

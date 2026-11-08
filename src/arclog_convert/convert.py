@@ -494,11 +494,11 @@ def _typed_membership(text: str) -> str:
     redundant, as `arclog_convert.implied` gives for an atom on a lib relation: the types of the columns of the program's
     relations are those that the checker gives the sites in `StudyProgram.render_json` (`typed_sites.arguments`,
     `column_type`), which the pass in Python cannot infer. A text that the engine does not read stays as it is."""
-    from arclog import DecodeSettings, StudyProgram
+    from arclog import DecodeSettings, Refusal, StudyProgram
     while True:
         try:
             arguments = json.loads(StudyProgram.from_sexp(text, DecodeSettings.corpus()).render_json())["typed_sites"]["arguments"]
-        except ValueError:
+        except Refusal:
             return text
         columns = {tuple(a["site_path"]): a["column_type"] for a in arguments if a["column_type"]}
         step = drop_typed_membership(text, lambda path, types: columns.get(path) in types)

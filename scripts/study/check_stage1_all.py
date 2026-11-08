@@ -86,9 +86,9 @@ def check_task(args):
                     checks = sorted(set(re.findall(r"Check\((\w+)\)", message)))
                     category = "+".join(checks) if checks else (
                         "echo_mismatch" if "echo mismatch" in message else
-                        "refusal" if type(exc).__name__ == "Refusal" else
                         "missing_out" if "through OUT" in message else
-                        "unsupported_form" if "standalone case" in message else type(exc).__name__)
+                        "unsupported_form" if "standalone case" in message else
+                        "refusal" if type(exc).__name__ == "Refusal" else type(exc).__name__)
                     row["failures"].append(dict(phase=label, category=category, exception=type(exc).__name__, message=message))
                     return None
 

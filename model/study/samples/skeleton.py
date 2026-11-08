@@ -339,7 +339,7 @@ class Writer:
             scope, text = self.program(graph_query, uses)
             try:
                 h = query_hash.query_hash(scope, text)
-            except ValueError as e:
+            except query_hash.arclog.Refusal as e:
                 self.stats.counts['graph queries the engine refused over these members'] += 1
                 self.stats.refused.setdefault(graph_query.ident, str(e).splitlines()[0][:200])
                 self.memo[key] = got = None

@@ -155,7 +155,7 @@ def run_program(cli, arclog, np, text, task, tasks, task_json, deadline=None):
     settings = arclog.DecodeSettings()
     try:
         program = arclog.StudyProgram.from_sexp(text, settings)
-    except ValueError as e:
+    except arclog.Refusal as e:
         return None, 'refused: %s' % e, None
     evaluator = arclog.StudyTaskEvaluator(task, str(tasks.resolve()), settings)
     rows = 'held_rows' if 'held_rows' in type(evaluator).gold_tables.__text_signature__ else 'full_rows'  # as run_case does
@@ -265,7 +265,7 @@ def sampler_outcome(env, task_json, text):
     sess = arclog.Session(arclog.Task.from_json(json.dumps(d), arclog.World.Open), arclog.DecodeSettings(**SAMPLER), session_bytes=2 << 30)
     try:
         ids, model, _ = arclog.StudyProgram.from_sexp(text, sess.settings).decode_stream()
-    except ValueError as e:
+    except arclog.Refusal as e:
         return 'does not parse: %s' % str(e)[:150]
     dec = sess.decoder()
     try:
@@ -316,7 +316,7 @@ def sampler_decode(env, task_json, text):
         return None
     try:
         ids, model, _ = arclog.StudyProgram.from_sexp(text, sess.settings).decode_stream()
-    except ValueError as e:
+    except arclog.Refusal as e:
         return 'does not parse: %s' % str(e)[:150]
     got = sess.check_stream(ids, model)
     return 'ok' if got is None else 'refused: %s at token %d' % (str(got[1])[:150], got[0])

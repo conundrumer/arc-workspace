@@ -388,7 +388,7 @@ def check(ev,record,*,native_base):
         elif type(result['fits_test']) is bool:
             result.update(status='complete',reason=None)
         else:result['reason']=result['receipt'].get('test_unavailable','TEST outcomes incomplete for TRAIN-fitting assignments')
-    except (ValueError,KeyError,IndexError,TypeError,OSError) as error:
+    except (ev.arclog.Refusal,ValueError,KeyError,IndexError,TypeError,OSError) as error:
         result['reason']=f'{type(error).__name__}: {error}'
     finally:
         result['receipt'].update(wall_seconds=time.monotonic()-start,

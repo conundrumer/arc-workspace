@@ -176,7 +176,7 @@ class Solver:
                 dropped.append(dict(key=(), stop=ct.materialization_stop))
             tb.selection = dict(status=status.get('status'), mode='ordinary', dropped_assignments=dropped,
                                 report=status)
-        except ValueError as error:
+        except (arclog.Refusal, ValueError) as error:
             raise RuntimeError(str(error)) from error
         if not all_assignments:
             needed = self.solving_key(tb, task_json) if pin is None else self.pinned_key(tb, pin)

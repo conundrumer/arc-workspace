@@ -148,7 +148,7 @@ def check(ev,record,*,ntrain,ntest,gold_cache=None):
             if comparison['status']=='equal':
                 result.update(fits_test=True,complete=True,reason='whole mutant OUT equals full gold OUT on every kept TEST input')
             else:result['reason']='TEST OUT differs or comparison stopped; additional-output fit is not proved'
-    except (ValueError,KeyError,IndexError,TypeError,OSError) as error:
+    except (ev.arclog.Refusal,ValueError,KeyError,IndexError,TypeError,OSError) as error:
         result['reason']=str(error)
     evaluations.update(gold_replays=len(gold_budget.operations),mutant_replays=len(mutant_budget.operations))
     receipt['operations']=dict(gold=gold_budget.operations,mutant=mutant_budget.operations)

@@ -12,7 +12,7 @@ READER_OUT = '(OUT (input ^P ^Col))'  # the reader takes whole programs; this cl
 
 
 def query_hash(scope: list[str], text: str) -> str:
-    """The hash of the query `text` over the lines of `scope`, which hold every query that `text` uses and whose labels `text` names; 32 hex digits. Raises ValueError where the engine refuses the program."""
+    """The hash of the query `text` over the lines of `scope`, which hold every query that `text` uses and whose labels `text` names; 32 hex digits. Raises arclog.Refusal where the engine refuses the program."""
     if os.environ.get('ARCLOG_IDENT_SOURCE') != 'value':
         raise RuntimeError('QueryHash needs ARCLOG_IDENT_SOURCE=value')
     program = arclog.StudyProgram.from_sexp('\n'.join([*scope, text, READER_OUT]))

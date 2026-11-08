@@ -70,7 +70,7 @@ class PairLabeler:
             try:
                 record = self.sources.record(base)
                 value = worker.process(base, record, existing)
-            except (OSError, EOFError, ValueError, KeyError, IndexError, TypeError, StopIteration) as error:
+            except (worker.legacy.arclog.Refusal, OSError, EOFError, ValueError, KeyError, IndexError, TypeError, StopIteration) as error:
                 value = dict(pair_id=pair_id, source_sha256=base['source_sha256'],
                     base_result_sha256=row[4], task_receipt=task_receipt, evaluations=0,
                     reader_difference=dict(read_difference=None, reason=str(error),

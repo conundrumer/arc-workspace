@@ -278,7 +278,7 @@ class Worker:
                     self.contexts.clear();self.screen_ev.close();self.verify_ev.close();self.task=job['task']
                 self.guard.check();started=time.monotonic()
                 try:result=self.process(job,base)
-                except (ValueError,KeyError,IndexError,OSError,EOFError,StopIteration,TypeError) as error:
+                except (self.screen_ev.arclog.Refusal,ValueError,KeyError,IndexError,OSError,EOFError,StopIteration,TypeError) as error:
                     result=dict(schema='mech4-lib-result-v1',pair_id=job['pair_id'],target_id='G',
                         source_sha256=job['source_sha256'],source=job['source'],base_result_ref=job['base_result_ref'],
                         search_status='unavailable',reason=str(error),error_type=type(error).__name__,

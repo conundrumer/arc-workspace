@@ -23,7 +23,7 @@ def mode_holds(rel, bound, unbound):
     text = '(RULE &x %s (%s %s))\n(RULE &y (input (:P *P) (:Col *Col)))\n(OUT (&y ^P ^Col))' % (' '.join('(= *%s 0)' % x for _, x in atom if x[0] == 'B'), rel, ' '.join('(:%s %s)' % x for x in atom))
     try:
         arclog.StudyProgram.from_sexp(text, arclog.DecodeSettings())
-    except ValueError as e:
+    except arclog.Refusal as e:
         return 'no mode of the atom' not in str(e)
     return True
 

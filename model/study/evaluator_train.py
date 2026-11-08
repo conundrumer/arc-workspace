@@ -795,7 +795,7 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest, test_rows=False
                 output['reason'] = 'case native table lacks required kept TRAIN entries'
             if item['selector']['fact'] == 'ex_input':
                 output['input'] = _input_train(packet)
-        except (ValueError, KeyError, IndexError, TypeError) as error:
+        except (ev.arclog.Refusal, ValueError, KeyError, IndexError, TypeError) as error:
             output.update(status='unknown', reason=str(error), error_type=type(error).__name__)
         if output['status'] != 'complete':
             gaps.append(dict(kind='train_table', table_id=item['table_id'],
