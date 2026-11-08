@@ -22,6 +22,8 @@ cases skipped for a fault and the error that stopped the case files. Its lines a
 
 A record is current where its inputs hash is that of the solver's files now and its code hash is `code_digest()`.
 A file matches the record where its bytes have the recorded sha256 and its header holds the recorded hashes.
+A program that reads a file under `gen/` reads it through `read_checked`, which raises `Stale` where the header's
+inputs hash is not the solver's now or the file does not match its record.
 
     uv run python -m arclog_convert.readback [--out <dir>] [<stem> ...]
 
@@ -41,7 +43,6 @@ from pathlib import Path
 from typing import NamedTuple
 
 from arclog_convert import paths
-from arclog_convert.plans import inputs_hash
 from engine import checkout
 from engine.memo import hash_files, write_whole
 
@@ -167,13 +168,20 @@ class Record(NamedTuple):
     """The number of cases that `arclog.case_files` gave a fault, and that got no files."""
 
 
-def read_record(stem: str) -> Record | None:
-    """The record of `stem` in `case_records/`; none where there is no file, or it is not in the form of
-    `write_record`."""
+def current_inputs(stem: str) -> str:
+    """The inputs hash of the solver `stem` now (`plans.inputs_hash` over `paths.SOLVERS`). `plans` is imported here,
+    so that a module that `plans` imports can import this one."""
+    from arclog_convert.plans import inputs_hash
+    return inputs_hash(stem, paths.SOLVERS)
+
+
+def read_record(stem: str, records: Path | None = None) -> Record | None:
+    """The record of `stem` in the directory `records`, `paths.CASE_RECORDS` where none is given; none where there is
+    no file, or it is not in the form of `write_record`."""
     try:
         fields: dict[str, str] = {}
         cases: dict[str, str] = {}
-        for line in (paths.CASE_RECORDS / f"{stem}.sha256").read_text().splitlines():
+        for line in ((records or paths.CASE_RECORDS) / f"{stem}.sha256").read_text().splitlines():
             key, _, rest = line.partition(" ")
             if key == "case":
                 digest, _, name = rest.partition(" ")
@@ -202,7 +210,7 @@ def write_record(stem: str, record: Record) -> None:
 def record_faults(stem: str, record: Record) -> list[str]:
     """The kinds of fault of `record` itself: its inputs hash is not that of the solver's files now, or its code hash
     is not `code_digest()`."""
-    return [*(["inputs hash not current"] if record.inputs != inputs_hash(stem, paths.SOLVERS) else []),
+    return [*(["inputs hash not current"] if record.inputs != current_inputs(stem) else []),
             *(["code hash not current"] if record.code != code_digest() else [])]
 
 
@@ -255,23 +263,54 @@ def faults(stem: str) -> list[str]:
 
 
 class Stale(Exception):
-    """A file under `gen/` does not match a current record."""
+    """A file under `gen/` is not current: its header's inputs hash is not that of the solver's files now, or it does
+    not match its record."""
+
+
+def locate(path: Path) -> tuple[Path, str, str | None]:
+    """The directory `gen/` that holds the file `path`, the solver's stem, and, for a file of `cases/<stem>/`, the
+    file's name there; none for the name where the file is `<stem>.arclog` or `<stem>.arcdata`."""
+    path = path.resolve()
+    if path.parent.parent.name == CASES:
+        return path.parent.parent.parent, path.parent.name, path.name
+    return path.parent, path.name.partition(".")[0], None
 
 
 def read_checked(path: Path) -> str:
-    """The text of the file `path` under `paths.OUT_DIR`, a `<stem>.arclog`, a `<stem>.arcdata` or a file of
-    `cases/<stem>/`, where its record is current and the file matches it; raises `Stale` otherwise."""
-    parts = path.resolve().relative_to(paths.OUT_DIR.resolve()).parts
-    stem, name = (parts[1], parts[2]) if len(parts) == 3 and parts[0] == CASES else (Path(parts[0]).stem, None)
-    record = read_record(stem)
+    """The text of the file `path`, a `<stem>.arclog`, a `<stem>.arcdata` or a file of `cases/<stem>/` of a `gen/`
+    directory, where it is current; raises `Stale` otherwise. It is current where:
+      - its header's inputs hash is the inputs hash of the solver's files now, so that a solver file edited and not
+        converted again makes it stale;
+      - the record of its solver, in `case_records/` beside `gen/`, holds that inputs hash and the sha256 of the
+        file's bytes.
+    One hash of the solver's files and one of the file are computed. The code hash is not compared: the reader may
+    run in a checkout whose code differs from the converter's, and `faults` and the command of this module check it."""
+    gen, stem, name = locate(path)
+    try:
+        data = path.read_bytes()
+    except OSError as e:
+        raise Stale(f"{path}: {e.strerror}") from e
+    text = data.decode()
+    head = read_header(text)
+    if head is None:
+        raise Stale(f"{path}: no header")
+    try:
+        current = current_inputs(stem)
+    except OSError as e:
+        raise Stale(f"{path}: the solver's files cannot be read, {e.strerror}") from e
+    if head[0] != current:
+        raise Stale(f"{path}: the solver's files changed since the conversion")
+    record = read_record(stem, gen.parent / "case_records")
     if record is None:
         raise Stale(f"{path}: no record")
     want = record.cases.get(name) if name is not None else record.arclog if path.suffix == ".arclog" else record.arcdata
-    data = _bytes(path)
-    found = [*record_faults(stem, record), *file_faults(path, data, want, record)]
-    if found or data is None:
-        raise Stale(f"{path}: {', '.join(found)}")
-    return data.decode()
+    if record.inputs != current:
+        raise Stale(f"{path}: the record is of other files of the solver")
+    if want is None:
+        raise Stale(f"{path}: not in the record")
+    if sha256(data) != want:
+        raise Stale(f"{path}: bytes differ from the record")
+    return text
 
 
 def main(argv: list[str]) -> int:
