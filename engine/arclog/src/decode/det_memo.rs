@@ -855,7 +855,7 @@ impl Domains for SessionDomains<'_> {
             Domain::Rows(values) => Domain::Rows(
                 values
                     .iter()
-                    .map(|value| match results.held_relation(value) {
+                    .map(|value| match results.held_laid_relation(value) {
                         Some(kept) if kept.laid_out_as(value) => kept,
                         _ => Arc::clone(value),
                     })

@@ -61,7 +61,7 @@ pub struct ResultKey {
 /// stop at the same bound. Two values under one key hold the same rows.
 fn alike(a: &CachedValue, b: &CachedValue) -> bool {
     match (a, b) {
-        (RelationValue::Rows(a), RelationValue::Rows(b)) => a.parts().len() == b.parts().len() && a.parts().iter().zip(b.parts()).all(|(a, b)| a.columns == b.columns),
+        (RelationValue::Rows(a), RelationValue::Rows(b)) => same_layout(a, b),
         (RelationValue::Undefined, RelationValue::Undefined) => true,
         (RelationValue::Stopped(a), RelationValue::Stopped(b)) => a == b,
         _ => false,
@@ -92,11 +92,14 @@ pub type Costed = Hit<CachedValue>;
 /// programs that share an entry hold its clause at different paths.
 ///
 /// The cache holds each relation that an entry's key reads or that an
-/// entry's value is once, under its id, and counts its bytes once, and the
-/// rows that several of its relations share, such as a part's rows that a
-/// body's relation holds too, once. A
-/// relation that no entry holds any longer leaves the cache, and a relation
-/// made again with its rows then takes a new id.
+/// entry's value is once, under its id, and counts its bytes once. An id of
+/// a key's relation is interned by its rows alone. A value is held under an
+/// id interned by its rows and the columns of its parts in their order, so
+/// that a hit gives the value in the layout that was stored. The cache
+/// counts the rows that several of its relations share, such as a part's
+/// rows that a body's relation holds too, once. A relation that no entry
+/// holds any longer leaves the cache, and a relation made again with its rows
+/// then takes a new id.
 #[derive(Debug, Default)]
 pub struct ResultCache {
     state: Mutex<CacheState>,
@@ -244,10 +247,10 @@ struct HeldRelation {
     holders: usize,
     /// The storage of relations whose rows a comparison found equal to this
     /// relation's, at most [`SAME_STORAGE`] of them, so that a later lookup
-    /// of one of them compares no rows. No relation with these rows has
-    /// another id while this one is held, so a lookup gives the id it would
-    /// give by comparing. The tags keep no rows, and `bytes` counts each of
-    /// them at [`StorageTag::BYTES`].
+    /// of one of them compares no rows. The cache holds a relation of these
+    /// rows under another id for each other layout in parts that a value
+    /// of an entry has ([`CacheState::find_laid`]). The tags keep no rows, and
+    /// `bytes` counts each of them at [`StorageTag::BYTES`].
     same: Vec<StorageTag>,
 }
 
@@ -557,6 +560,16 @@ impl ResultCache {
         Some(Arc::clone(&state.relations[&id].relation))
     }
 
+    /// The relation that the cache holds with the rows of `relation` in
+    /// parts of its columns, in their order, or `None` where it holds none.
+    /// A value of an entry is held so.
+    pub(crate) fn held_laid_relation(&self, relation: &Relation) -> Option<Arc<Relation>> {
+        let hash = relation.rows_hash();
+        let mut state = self.state.lock().expect(UNPOISONED);
+        let id = state.identify_laid(hash, relation)?;
+        Some(Arc::clone(&state.relations[&id].relation))
+    }
+
     /// The id of a relation that the cache holds with the rows of
     /// `relation`, or `None` where it holds none.
     pub fn find_id(&self, relation: &Relation) -> Option<RelationId> {
@@ -663,6 +676,14 @@ impl CacheState {
                 None => relations.get(&hash)?.iter().find(|held| same_rows(held, relation)).cloned(),
             }
         };
+        // The same, for a value, which the cache holds laid out as it is stored.
+        let held_laid = |relations: &Added, relation: &Arc<Relation>| -> Option<Arc<Relation>> {
+            let hash = relation.rows_hash();
+            match self.find_laid(hash, relation) {
+                Some(id) => Some(Arc::clone(&self.relations[&id].relation)),
+                None => relations.get(&hash)?.iter().find(|held| same_layout(held, relation) && same_rows(held, relation)).cloned(),
+            }
+        };
         let entry = |entries: &Stored<'_>, key: &RecordedKey, digest: u64| -> Option<CachedValue> {
             if let Some(found) = self.held_key(key).and_then(|key| self.entries.get(&key)).filter(|entry| entry.found_under(self.view)) {
                 return Some(found.value.clone());
@@ -692,7 +713,7 @@ impl CacheState {
                         continue;
                     }
                     let value = match value {
-                        RelationValue::Rows(relation) => RelationValue::Rows(held(&relations, relation).unwrap_or_else(|| {
+                        RelationValue::Rows(relation) => RelationValue::Rows(held_laid(&relations, relation).unwrap_or_else(|| {
                             relations.entry(relation.rows_hash()).or_default().push(Arc::clone(relation));
                             Arc::clone(relation)
                         })),
@@ -706,15 +727,26 @@ impl CacheState {
     }
 
     fn find(&self, hash: StableHash, relation: &Relation) -> Option<RelationId> {
+        // The first id in the order of the ids' making, so that a relation of these rows has
+        // the same id whatever layout it has.
         let ids = self.by_rows.get(&hash)?;
-        let same = ids.iter().copied().find(|id| self.relations[id].same.iter().any(|tag| relation.has_storage(tag)));
-        same.or_else(|| ids.iter().copied().find(|id| same_rows(&self.relations[id].relation, relation)))
+        ids.iter().copied().find(|id| {
+            let held = &self.relations[id];
+            held.relation.shares_storage(relation) || held.same.iter().any(|tag| relation.has_storage(tag)) || same_rows(&held.relation, relation)
+        })
     }
 
     /// [`CacheState::find`], which keeps the storage of `relation` with the
     /// held relation it found.
     fn identify(&mut self, hash: StableHash, relation: &Relation) -> Option<RelationId> {
         let id = self.find(hash, relation)?;
+        self.keep_storage(id, relation);
+        Some(id)
+    }
+
+    /// Keeps the storage of `relation`, which holds the rows of the relation
+    /// held under `id`, with that relation.
+    fn keep_storage(&mut self, id: RelationId, relation: &Relation) {
         let held = self.relations.get_mut(&id).expect("a held relation");
         if !held.relation.shares_storage(relation) && !held.same.iter().any(|tag| relation.has_storage(tag)) {
             let before = held.same.len() * StorageTag::BYTES;
@@ -727,6 +759,25 @@ impl CacheState {
             held.bytes = held.bytes - before + after;
             self.bytes = self.bytes - before + after;
         }
+    }
+
+    /// The id of the relation held with the rows of `relation` in parts of
+    /// its columns, in their order. A value of an entry is held under such an
+    /// id, so that a hit gives the layout that was stored.
+    fn find_laid(&self, hash: StableHash, relation: &Relation) -> Option<RelationId> {
+        let ids = self.by_rows.get(&hash)?;
+        ids.iter().copied().find(|id| {
+            let held = &self.relations[id];
+            same_layout(&held.relation, relation)
+                && (held.relation.shares_storage(relation) || held.same.iter().any(|tag| relation.has_storage(tag)) || same_rows(&held.relation, relation))
+        })
+    }
+
+    /// [`CacheState::find_laid`], which keeps the storage of `relation` with
+    /// the held relation it found.
+    fn identify_laid(&mut self, hash: StableHash, relation: &Relation) -> Option<RelationId> {
+        let id = self.find_laid(hash, relation)?;
+        self.keep_storage(id, relation);
         Some(id)
     }
 
@@ -758,7 +809,7 @@ impl CacheState {
         let (value, rows) = match value {
             RelationValue::Rows(relation) => {
                 let hash = relation.rows_hash();
-                let id = self.identify(hash, &relation).unwrap_or_else(|| self.add(hash, relation));
+                let id = self.identify_laid(hash, &relation).unwrap_or_else(|| self.add(hash, relation));
                 self.hold(id);
                 (RelationValue::Rows(self.relations[&id].relation.clone()), Some(id))
             }
@@ -854,6 +905,12 @@ impl CacheState {
             self.remove_entry(&key);
         }
     }
+}
+
+/// Whether `a` and `b` hold their columns in the same parts, in the same
+/// order, each part with its columns in the same order.
+pub fn same_layout(a: &Relation, b: &Relation) -> bool {
+    a.parts().len() == b.parts().len() && a.parts().iter().zip(b.parts()).all(|(a, b)| a.columns == b.columns)
 }
 
 /// Whether `a` and `b` hold the same rows. Where their parts split the

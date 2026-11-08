@@ -47,6 +47,7 @@ mod record_sites;
 mod registry_file;
 mod replay_panic;
 mod resolver;
+mod result_cache_layout;
 mod scope_checks;
 mod scope_types;
 mod session_dead;
