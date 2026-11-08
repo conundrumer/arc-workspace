@@ -217,38 +217,3 @@ member($SkipEmptyBoxes(), B) :- shape(B, _).
 
 handed($EveryBoxMember($EmptyBoxErases()), B, Col) :-
     outlines.box($U(), B), !shape(B, _), params.background(Col).
-
-.comp Determine {
-    .type ExColor = [e: Example, col: Color]
-
-    // The colors other than the background that each train input holds.
-    .decl ink(e: Example, col: Color)
-    ink(E, Col) :- ex_in(E, _, Col), ex_out(E, _, _), !params.background(Col).
-
-    // The outlines that each such color draws.
-    .init drawn = Outlines<ExColor>
-    drawn.node([E, Col], P) :- ink(E, Col), ex_in(E, P, Col).
-
-    // A color that draws an outline in some train input and none in another.
-    .decl outline_defect(col: Color)
-    outline_defect(Col) :-
-        drawn.box([_, Col], _), ex_out(E, _, _), !drawn.box([E, Col], _).
-
-    // The color that draws an outline in every train input.
-    .decl frame_color(c: Color)
-    frame_color(Col) :- drawn.box([_, Col], _), !outline_defect(Col).
-
-    // The bounding box of each such color's cells.
-    .init extent = Bbox<ExColor>
-    extent.cell([E, Col], P) :- ink(E, Col), ex_in(E, P, Col).
-
-    // A color with a cell off the ring of its bounding box in some train
-    // input.
-    .decl ring_defect(col: Color)
-    ring_defect(Col) :- extent.box([E, Col], B), ex_in(E, P, Col), interior(P, B).
-
-    // The color whose cells, in each train input that holds it, lie on the
-    // ring of their bounding box.
-    .decl line_color(c: Color)
-    line_color(Col) :- extent.box([_, Col], _), !ring_defect(Col).
-}
