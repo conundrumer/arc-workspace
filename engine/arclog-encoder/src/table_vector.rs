@@ -160,8 +160,8 @@ fn combined(table: RootTable, example_of: &[usize], examples: usize, train: usiz
 
 /// A root's numbers at an ARC example: the mean over its tables, where a default counts as 0.
 fn mean_over_models(held: &[&Slot]) -> Slot {
-    // With no table, the slot is the default, which is 0.
-    let Some(first) = held.first() else { return Slot::default() };
+    // An example with no instance has no table, so its root has no value. An example whose table is empty has an instance, and its roots have values.
+    let Some(first) = held.first() else { return Slot { state: SlotState::NoValue, ..Slot::default() } };
     if held.len() == 1 {
         return **first;
     }

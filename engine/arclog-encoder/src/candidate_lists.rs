@@ -30,7 +30,7 @@ struct Written {
     /// any example has NaN for all three, since no value differs from a default.
     graded: Vec<(u64, f32, f32, f32)>,
     /// How many examples each graded shape has a value for, and those values, shape by shape. A
-    /// default is 0, as is an example past the shape's scope, and no value is NaN.
+    /// default is 0, and no value is NaN, as is an example past the shape's scope.
     pairs: usize,
     at_pairs: Vec<f32>,
 }
@@ -48,8 +48,8 @@ fn stable_of(owner: serde_json::Value, vector: &TableVector) -> Written {
         } else if count == 0 || least != 0.0 || most != 0.0 {
             graded.push((vector.shapes[shape], least as f32, mean as f32, most as f32));
             at_pairs.extend(vector.at(shape).iter().enumerate().map(|(example, slot)| match slot.state {
-                // An example past the shape's scope is written as 0.
-                _ if example >= vector.scope(shape) => 0.0,
+                // An example past the shape's scope has no value.
+                _ if example >= vector.scope(shape) => f32::NAN,
                 SlotState::NoValue => f32::NAN,
                 SlotState::Default => 0.0,
                 SlotState::Value => slot.greatest.float() as f32,
@@ -59,7 +59,7 @@ fn stable_of(owner: serde_json::Value, vector: &TableVector) -> Written {
     Written { owner, ids, values, graded, pairs: vector.examples, at_pairs }
 }
 
-/// A table's list of named shapes. A shape that reads the output has the train pairs as its scope, and past them it is 0. Under `only_output`, the
+/// A table's list of named shapes. A shape that reads the output has the train pairs as its scope, and past them it has no value, which is NaN. Under `only_output`, the
 /// list holds only those.
 fn named_of(owner: serde_json::Value, table: &Stored, grids: &Grids, families: &Generators, examples: usize, only_output: bool) -> Written {
     let shapes = named_shapes(table, &grids.facts, &grids.test_facts, &grids.input_facts);
@@ -97,7 +97,7 @@ fn written_shapes(owner: serde_json::Value, shapes: Vec<crate::catalog_lists::Na
             let least = values.iter().copied().fold(f64::INFINITY, f64::min) as f32;
             let most = values.iter().copied().fold(f64::NEG_INFINITY, f64::max) as f32;
             let mean = (values.iter().sum::<f64>() / values.len() as f64) as f32;
-            let at: Vec<f32> = shape.at.iter().enumerate().map(|(example, value)| if example >= scope { 0.0 } else { value.map_or(f32::NAN, |value| value as f32) }).collect();
+            let at: Vec<f32> = shape.at.iter().enumerate().map(|(example, value)| if example >= scope { f32::NAN } else { value.map_or(f32::NAN, |value| value as f32) }).collect();
             others.push(((hash as u64, least, mean, most), at));
         }
     }
@@ -214,13 +214,13 @@ fn pooled(owner: String, pairs: &[&PairValues]) -> Written {
     Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded: pool_values(pairs), pairs: 0, at_pairs: Vec::new() }
 }
 
-/// A shape over several tables of a state, at each example: its greatest value over the tables, where a table with no value counts as 0.
+/// A shape over several tables of a state, at each example: its greatest value over the tables, where a table with no value, or an example past the shape's scope, counts as 0.
 fn pooled_each(owner: String, pairs: &[&PairValues], examples: usize) -> Written {
     let mut held: BTreeMap<u64, Vec<f32>> = BTreeMap::new();
     for pair in pairs {
         for (place, shape) in pair.shapes.iter().enumerate() {
             for (example, value) in pair.at[place * examples..(place + 1) * examples].iter().enumerate() {
-                if *value != 0.0 {
+                if !value.is_nan() && *value != 0.0 {
                     let entry = held.entry(*shape).or_insert_with(|| vec![0.0; examples]);
                     entry[example] = entry[example].max(*value);
                 }
@@ -250,7 +250,7 @@ struct PairValues {
     means: Vec<f32>,
     /// Whether a shape has a value at some example.
     counted: Vec<bool>,
-    /// With `each`, each shape's value at each example: 0 where it has none, or past its scope.
+    /// With `each`, each shape's value at each example: 0 at a default, and NaN where it has no value or the example is past its scope.
     at: Vec<f32>,
 }
 
@@ -266,8 +266,12 @@ impl PairValues {
             counted.push(seen != 0);
             if each {
                 let scope = vector.scope(shape);
-                // A slot with no value is written as 0 here, as an example past the scope and a default are. The other lists in this file write NaN for it.
-                at.extend(vector.at(shape).iter().enumerate().map(|(example, slot)| if example < scope && slot.state == SlotState::Value { slot.greatest.float() as f32 } else { 0.0 }));
+                at.extend(vector.at(shape).iter().enumerate().map(|(example, slot)| match slot.state {
+                    _ if example >= scope => f32::NAN,
+                    SlotState::NoValue => f32::NAN,
+                    SlotState::Default => 0.0,
+                    SlotState::Value => slot.greatest.float() as f32,
+                }));
             }
         }
         PairValues { shapes: vector.shapes.clone(), means, counted, at }
