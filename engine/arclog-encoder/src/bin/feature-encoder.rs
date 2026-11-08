@@ -2283,7 +2283,7 @@ fn main() {
         ("term-stats", [types]) => run_term_stats(&arguments, types),
         ("family-names", [types]) => run_family_names(&arguments, types),
         ("refine-explain", [call, arity, key]) => {
-            println!("{}", arclog_encoder::refine_parts::explain(call, arity.parse().unwrap_or(1), u32::from_str_radix(key, 2).unwrap_or(0)));
+            println!("{}", arclog_encoder::refine_parts::explain(call, arity.parse().unwrap_or(1), arclog_encoder::refine::Mask::from_str_radix(key, 2).unwrap_or(0)));
             Ok(())
         }
         ("shape-count", files) if !files.is_empty() => run_shape_count(&arguments, files),
