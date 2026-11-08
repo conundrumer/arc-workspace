@@ -8,7 +8,7 @@
 //! completion of the head that those tokens give is refused by the checks.
 //! It refuses with no verdict only where it has spent [`PROJECTION_STEP_CAP`]
 //! steps. The cap is a bound on the time of one search, which a valid program
-//! is not meant to reach, and [`measures`] reports each search that does.
+//! is not meant to reach.
 //!
 //! A walk with no cut comes first, for [`QUICK_STEPS`] steps. A completion
 //! it finds passes the checks, and where it ends with no completion it has
@@ -31,12 +31,6 @@
 //!   ([`crate::check::instance_inputs::HeadNeeds::required`]).
 //! - A head that must read a label of the key body, and reads none yet, has
 //!   a site that can still read one ([`crate::check::instance_inputs::HeadNeeds::key_labels`]).
-//!
-//! The switch of [`measures`] runs the search that
-//! [`Decoder::legacy_completes_projection`] holds beside this one, to count the
-//! verdicts that differ.
-
-use std::sync::OnceLock;
 
 use super::state::{OpenProjection, ReadsExample, State};
 use super::{Decoder, Refusal};
@@ -51,30 +45,12 @@ use crate::stream::{Control, Token};
 /// the refusal match on it.
 const SPENT: &str = "the completion search of a projection spent its budget";
 
-/// The steps that the search of [`Decoder::legacy_completes_projection`]
-/// takes.
-const LEGACY_STEPS: usize = 96;
-
 /// The steps of the walk with no cut that starts a search.
 const QUICK_STEPS: usize = 8;
 
 /// The most steps that one search takes, a step being one token tried at a
 /// head site. A search that spends them is refused with [`SPENT`].
 const PROJECTION_STEP_CAP: usize = 4096;
-
-/// Whether each search runs the search of
-/// [`Decoder::legacy_completes_projection`] as well, and prints one line
-/// with both verdicts to the standard error: `ARCLOG_PROJECTION_MEASURE`
-/// set to a value other than `0` or empty, read once. The line reads
-/// `arclog-projection-measure old=<ok|none|budget> new=<ok|none|cap>
-/// old_steps=<n> new_steps=<n>`, with ` MISMATCH` after it where the old
-/// search completed or found no completion in its steps and the new verdict
-/// differs, and `new=cap` where the new search spent its steps. It changes no
-/// verdict.
-fn measures() -> bool {
-    static MEASURES: OnceLock<bool> = OnceLock::new();
-    *MEASURES.get_or_init(|| std::env::var("ARCLOG_PROJECTION_MEASURE").is_ok_and(|v| !v.is_empty() && v != "0"))
-}
 
 /// What a search gives.
 struct Outcome {
@@ -371,9 +347,6 @@ impl<'d> Decoder<'d> {
             let outcome = search(cap).decide(state, true);
             Outcome { steps: outcome.steps + quick.steps, ..outcome }
         };
-        if measures() {
-            self.print_measure(state, checks, reads_example, &outcome);
-        }
         // The steps of the search that the bound counted, and a hit where it spent them.
         let (steps, bound) = (outcome.steps as u64, cap as u64);
         if outcome.capped {
@@ -382,57 +355,5 @@ impl<'d> Decoder<'d> {
             work.gauges().note(crate::eval::Gauge::ProjectionSteps, steps, bound);
         }
         outcome.verdict
-    }
-
-    /// Prints the line of [`measures`] for `outcome`, the outcome of the
-    /// search from `state`.
-    fn print_measure(&self, state: &State, checks: &PrefixChecks<'_>, reads_example: ReadsExample<'_>, outcome: &Outcome) {
-        let mut left = LEGACY_STEPS;
-        let steps = &mut left;
-        let old = self.legacy_completes_projection(state, checks, reads_example, 1, steps).or_else(|_| self.legacy_completes_projection(state, checks, reads_example, usize::MAX, steps));
-        let old_steps = LEGACY_STEPS - left;
-        let old_kind = match &old {
-            Ok(()) => "ok",
-            Err(Refusal::Grammar(SPENT)) => "budget",
-            Err(_) => "none",
-        };
-        let new_kind = match (&outcome.verdict, outcome.capped) {
-            (Ok(()), _) => "ok",
-            (Err(_), true) => "cap",
-            (Err(_), false) => "none",
-        };
-        let agrees = matches!((old_kind, new_kind), ("ok", "ok") | ("none", "none") | ("budget", _));
-        eprintln!("arclog-projection-measure old={old_kind} new={new_kind} old_steps={old_steps} new_steps={}{}", outcome.steps, if agrees { "" } else { " MISMATCH" });
-    }
-
-    /// The search that [`Decoder::completes_projection`] was before its cuts,
-    /// kept to count against: the walk over every token of
-    /// [`State::head_site_completions`] with `limit` at each head site, one
-    /// step for each token tried, and a refusal where `steps` is spent.
-    fn legacy_completes_projection(&self, state: &State, checks: &PrefixChecks<'_>, reads_example: ReadsExample<'_>, limit: usize, steps: &mut usize) -> Result<(), Refusal> {
-        let Some(tokens) = state.head_site_completions(limit) else { return Ok(()) };
-        let conflicts = if checks.is_mask() { state.fixed_label_conflicts(self.context.registry, &|relation, column| self.fixed_column_type(checks, relation, column)) } else { Vec::new() };
-        let mut refusal = Refusal::Grammar("a projection has no completion");
-        for token in tokens {
-            if *steps == 0 {
-                return Err(Refusal::Grammar(SPENT));
-            }
-            *steps -= 1;
-            if matches!(&token, Token::Label(label) if conflicts.contains(label)) {
-                continue;
-            }
-            let next = match state.step(&self.context, &token, reads_example) {
-                Ok((next, _, _)) => next,
-                Err(unexpected) => {
-                    refusal = Refusal::Grammar(unexpected);
-                    continue;
-                }
-            };
-            match self.check_state(&next, Candidate::Any, checks).and_then(|()| self.legacy_completes_projection(&next, checks, reads_example, limit, steps)) {
-                Ok(()) => return Ok(()),
-                Err(next) => refusal = next,
-            }
-        }
-        Err(refusal)
     }
 }

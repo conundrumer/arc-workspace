@@ -312,16 +312,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         let all: Vec<usize> = (0..body.clause.nodes.len()).collect();
         let reads = self.reads(&body.clause, &all, &inputs);
         let shape = || carry::body_shape(&body);
-        let measured = ir::measures().then(|| (crate::clock::Stopwatch::start(), super::RequestWork::latest().map_or(0, |request| request.count())));
-        let value = self.cached(form, &reads.request(&content, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example)));
-        if let Some((start, before)) = measured {
-            let work = super::RequestWork::latest().map_or(0, |request| request.count()).saturating_sub(before);
-            if work > 0 {
-                let path: Vec<String> = form.0.iter().map(|step| step.0.to_string()).collect();
-                eprintln!("arclog-join-measure form={} nodes={} work={work} ns={}", path.join("."), body.clause.nodes.len(), start.elapsed().nanos());
-            }
-        }
-        value
+        self.cached(form, &reads.request(&content, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example)))
     }
 
     /// The relation of the conjuncts at `kept` of the body of the clause at

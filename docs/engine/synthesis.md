@@ -88,8 +88,6 @@ The step ends when each of these holds, or the difference is reported as a fault
 - Environment variables that remain:
     - `ARCLOG_THREADS`: the thread count of a corpus run.
     - `ARCLOG_STATS`: the switch of the per-phase timing, which costs time.
-    - `ARCLOG_PROJECTION_MEASURE`: a diagnosis that runs the search of `Decoder::legacy_completes_projection` beside the exact one and prints the verdicts that differ.
-    - `ARCLOG_JOIN_MEASURE`: a diagnosis that prints to the standard error, for each clause that did work, its form path, node count, work and time. It costs time and changes no result.
     - `GOLD_PRUNE_SCOPE`, `GOLD_PRUNE_PYTHON`, `GOLD_PRUNE_MANIFEST`, `GOLD_PRUNE_OUTPUT`, `GOLD_PRUNE_ACQUISITION_KEY`: the scope and the files of the gold normalization audit.
     - `ARCLOG_IDENTITY_PAIRS`, `ARCLOG_TASKS`, `ARCLOG_PAIR_FILTER`, `ARCLOG_TABLE_WORK_CAP`, `ARCLOG_SHOW`, `ARCLOG_SHOW_TASK`, `STORED_PRUNE_FIXTURES`: the input paths and the filter of a test or audit.
     - `GENERATE_SPILL_DIR` and `GENERATE_RESIDENT_CELLS`: the folder of the `feature-encoder` tool's copies on disk and the cells that its walks keep in memory. Neither changes what the tool builds or prints.

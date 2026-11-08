@@ -241,16 +241,6 @@ impl Hash for ClauseIr {
     }
 }
 
-/// Whether the driver prints, to the standard error, one line for each clause
-/// whose evaluation did work: `arclog-join-measure form=<path> nodes=<n>
-/// work=<n> ns=<n>`. The work and the time include those of the clauses it
-/// reads. `ARCLOG_JOIN_MEASURE` set to a value other than `0` or empty, read
-/// once. It changes no result.
-pub fn measures() -> bool {
-    static MEASURES: OnceLock<bool> = OnceLock::new();
-    *MEASURES.get_or_init(|| std::env::var("ARCLOG_JOIN_MEASURE").is_ok_and(|value| !value.is_empty() && value != "0"))
-}
-
 impl ClauseIr {
     /// A clause whose nodes stand in the order they are given, which is also
     /// the order they are joined in.
