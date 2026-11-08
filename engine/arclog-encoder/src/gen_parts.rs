@@ -1861,6 +1861,17 @@ fn set_relation<K: Ord>(own: &[K], theirs: &[K], fill: Option<(usize, usize)>) -
     relation(shared < own.len(), shared < theirs.len(), shared > 0, fill.is_some_and(|(area, there)| area == own.len() + there))
 }
 
+/// The columns of `keys` and then `more`, each once, for a part whose columns may name one column twice.
+fn distinct(keys: &[u16], more: &[u16]) -> Option<Vec<u16>> {
+    let mut out: Vec<u16> = Vec::new();
+    for column in keys.iter().chain(more) {
+        if !out.contains(column) {
+            out.push(*column);
+        }
+    }
+    Some(out)
+}
+
 /// A part with the columns that it reads of its relations, which are listed once when the part is made.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(into = "PartStep", try_from = "PartStep")]
@@ -1979,6 +1990,13 @@ impl PartStep {
             PartStep::CellsOn { p } | PartStep::ColorsUnder { p } | PartStep::Around { p } | PartStep::NeighborhoodClass { p } | PartStep::NeighborColorClass { p } | PartStep::SameColorNeighbors { p } | PartStep::Distance { p } | PartStep::FrameExtent { p } | PartStep::Complement { p } | PartStep::BoxCells { p, .. } | PartStep::HoleCells { p } | PartStep::DiffCells { p, .. } | PartStep::TopColorsUnder { p } | PartStep::FrameCells { p } | PartStep::ComplementParts { p } | PartStep::EveryPartStraight { p } | PartStep::OutlinesBox { p } | PartStep::LineSpacings { p } => Some(vec![*p]),
             PartStep::DeterminesFlag { keys, a, .. } => with(keys, &[*a]),
             PartStep::Occurs { keys, p, v, .. } => with(keys, &[*p, *v]),
+            PartStep::SameShape { keys, a, .. } => distinct(keys, &[*a]),
+            PartStep::GroupsWord { p, left, .. } => distinct(left, &[*p]),
+            PartStep::AgreeWord { p, x, .. } => distinct(&[], &[*p, *x]),
+            PartStep::DeterminesJointly { p, v, w } => distinct(&[], &[*p, *v, *w]),
+            PartStep::SetWord { a, .. } | PartStep::LeastDistance { a, .. } | PartStep::GreatestCount { a, .. } | PartStep::ColumnMeasure { a, .. } | PartStep::SameValues { a, .. } => Some(vec![*a]),
+            PartStep::OnBoundary { .. } | PartStep::NeighborsIn { .. } | PartStep::OnBorder { .. } => Some(vec![0]),
+            PartStep::OneBoxCells { b, .. } | PartStep::BoxMeasure { b, .. } => Some(vec![*b]),
             _ => None,
         }
     }
@@ -2019,6 +2037,11 @@ impl PartStep {
     fn second_list(&self) -> Option<Vec<u16>> {
         match self {
             PartStep::DeterminesFlag { b, .. } | PartStep::SharedLine { b, .. } => Some(vec![*b]),
+            PartStep::SetWord { b, .. } | PartStep::LeastDistance { b, .. } | PartStep::SameValues { b, .. } | PartStep::OnBoundary { b } | PartStep::NeighborsIn { b } | PartStep::OnBorder { b } => Some(vec![*b]),
+            PartStep::BoxMeasure { f, .. } | PartStep::OneBoxCells { f, .. } => Some(vec![*f]),
+            PartStep::GroupsWord { q, right, .. } => distinct(right, &[*q]),
+            PartStep::AgreeWord { q, y, .. } => distinct(&[], &[*q, *y]),
+            PartStep::SameShape { others, b, .. } => distinct(others, &[*b]),
             _ => None,
         }
     }

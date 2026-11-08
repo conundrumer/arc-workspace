@@ -496,6 +496,9 @@ impl Val {
 
     /// Whether `step` takes what it needs from a lazy value as its first relation or, where `first` is false, as its second, without writing the rows.
     pub fn lazy_reads(&self, step: &Step, first: bool) -> bool {
+        if self.is_lazy() && compares_counts(step) {
+            return true;
+        }
         match self {
             Val::Boxes(boxes) => if first { boxes.reads(step) } else { boxes.reads_second(step) },
             Val::Joined(joined) => if first { joined.reads(step) } else { joined.reads_second(step) },
@@ -776,6 +779,14 @@ impl<'a> Evaluator<'a> {
             // A `join` or a `select` over the rows of a `join` adds to the join where it can.
             if let Some(value) = crate::joined::extend(step, children[0], children.get(1).copied()) {
                 return value;
+            }
+            // A comparison of the counts of rows of two relations reads the count of each, which a lazy value holds.
+            if let Step::Part(part) = step {
+                if let crate::gen_parts::PartStep::CountWord { less } = part.step() {
+                    let rows = |child: &Val| if child.is_lazy() { rows_held(child) } else { crate::gen_parts::flat(child).map(|table| table.len as u64) };
+                    let (Some(own), Some(other)) = (rows(children[0]), rows(children[1])) else { return Val::None };
+                    return Val::of_table(Table::unit(if *less { own < other } else { own == other }));
+                }
             }
             // The rows of `inside` and of a `join` serve an operator that takes what it needs from the relations they come from as they are. Any other reads them written out.
             let second = match children.get(1) {
@@ -1543,6 +1554,11 @@ fn ascending(columns: &[u16]) -> Option<(Vec<usize>, Vec<u16>)> {
     }
     let key = order.iter().map(|place| columns[*place]).collect();
     Some((order, key))
+}
+
+/// Whether `step` compares the counts of rows of its two relations, and reads nothing else of them.
+fn compares_counts(step: &Step) -> bool {
+    matches!(step, Step::Part(part) if matches!(part.step(), crate::gen_parts::PartStep::CountWord { .. }))
 }
 
 /// The count of rows of a value that stands as one table or as the relations its rows come from, which a product of parts gives as the product of their counts.

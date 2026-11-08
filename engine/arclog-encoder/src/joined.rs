@@ -24,6 +24,9 @@ const JOINED_WORD: u64 = 0x4a6f_696e_6564_5273;
 /// The most cells of the tables of `Joined::rows_at` that one value keeps for later readers.
 const SKETCH_KEPT: usize = 1 << 18;
 
+/// The cells of rows that a read of the rows of a join holds at once, where it gives them to its reader a chunk at a time.
+const CHUNK_CELLS: usize = 1 << 20;
+
 /// The id of a row of a parent that no row of its child pairs with.
 const NO_PARTNER: u32 = u32::MAX;
 
@@ -52,6 +55,13 @@ struct Link {
     parent_ids: Vec<u32>,
     /// For each id, the count of rows below the node, summed over its rows at the id.
     weights: Vec<u64>,
+}
+
+/// What a walk down the nodes of a join reads at each node: the rows of each node after the first that stand below a row, by the id of their key, the columns written, and the count of cells at which they are given away.
+struct Flow<'a> {
+    by_id: &'a [(Vec<usize>, Vec<u32>)],
+    emit: &'a [(usize, usize, u16)],
+    limit: usize,
 }
 
 pub struct Joined {
@@ -789,6 +799,21 @@ impl Joined {
         if !self.fits() {
             return Val::None;
         }
+        let emit = self.emitted();
+        let cells = self.stream(&emit, self.rows as usize * emit.len(), usize::MAX, &mut |_| {});
+        let columns: Box<[u16]> = emit.iter().map(|(_, _, position)| *position).collect();
+        Val::Rows(Arc::new(vec![Part { table: Table::new(emit.len(), cells), columns }]))
+    }
+
+    /// The columns of each row that a walk down the nodes writes, as the node, the place in its table and the column of the join, node by node.
+    fn emitted(&self) -> Vec<(usize, usize, u16)> {
+        let mut emit: Vec<(usize, usize, u16)> = self.places.iter().enumerate().map(|(position, place)| (place.node, place.at, position as u16)).collect();
+        emit.sort_unstable();
+        emit
+    }
+
+    /// The rows of the join, each with the cells that `emit` names, in the order of the first node's rows. Where `limit` cells or more stand, they are given to `sink` and no longer held, so that no more than `limit` cells and one row stand in memory. The cells that stand when the rows end are returned. `capacity` is the count of cells that the buffer is made for.
+    fn stream(&self, emit: &[(usize, usize, u16)], capacity: usize, limit: usize, sink: &mut dyn FnMut(&[Cell])) -> Vec<Cell> {
         let below = self.below();
         // The rows of each node after the first that stand below a row, by the id of their key, in the order they stand.
         let mut by_id: Vec<(Vec<usize>, Vec<u32>)> = Vec::with_capacity(self.links.len());
@@ -812,35 +837,36 @@ impl Joined {
             }
             by_id.push((starts, rows));
         }
-        // The rows hold the columns of each node that the join names, node by node.
-        let mut emit: Vec<(usize, usize, u16)> = self.places.iter().enumerate().map(|(position, place)| (place.node, place.at, position as u16)).collect();
-        emit.sort_unstable();
-        let mut cells: Vec<Cell> = Vec::with_capacity(self.rows as usize * emit.len());
+        let flow = Flow { by_id: &by_id, emit, limit };
+        let mut cells: Vec<Cell> = Vec::with_capacity(capacity.min(limit.saturating_add(emit.len())));
         let mut chosen = vec![0usize; self.nodes.len()];
         for row in 0..self.nodes[0].len {
             if below[0][row] > 0 {
                 chosen[0] = row;
-                self.write_below(1, &mut chosen, &by_id, &emit, &mut cells);
+                self.write_below(1, &mut chosen, &flow, &mut cells, sink);
             }
         }
-        let columns: Box<[u16]> = emit.iter().map(|(_, _, position)| *position).collect();
-        Val::Rows(Arc::new(vec![Part { table: Table::new(emit.len(), cells), columns }]))
+        cells
     }
 
-    /// The rows of the join that agree with the rows `chosen` of the nodes before `depth`, written to `cells`.
-    fn write_below(&self, depth: usize, chosen: &mut [usize], by_id: &[(Vec<usize>, Vec<u32>)], emit: &[(usize, usize, u16)], cells: &mut Vec<Cell>) {
+    /// The rows of the join that agree with the rows `chosen` of the nodes before `depth`, written to `cells`, which go to `sink` and are emptied where they reach the limit of `flow`.
+    fn write_below(&self, depth: usize, chosen: &mut [usize], flow: &Flow, cells: &mut Vec<Cell>, sink: &mut dyn FnMut(&[Cell])) {
         if depth == self.nodes.len() {
-            for (node, at, _) in emit {
+            for (node, at, _) in flow.emit {
                 cells.push(self.nodes[*node].cells()[chosen[*node] * self.nodes[*node].arity + *at]);
+            }
+            if cells.len() >= flow.limit {
+                sink(cells);
+                cells.clear();
             }
             return;
         }
         let link = &self.links[depth - 1];
         let id = link.parent_ids[chosen[link.parent]] as usize;
-        let (starts, rows) = &by_id[depth - 1];
+        let (starts, rows) = &flow.by_id[depth - 1];
         for row in &rows[starts[id]..starts[id + 1]] {
             chosen[depth] = *row as usize;
-            self.write_below(depth + 1, chosen, by_id, emit, cells);
+            self.write_below(depth + 1, chosen, flow, cells, sink);
         }
     }
 
@@ -1226,6 +1252,45 @@ impl Joined {
         }))
     }
 
+    /// The rows of `ClassOf` over `keys`: each tuple of the keys' columns, with the wrapping sum, over the join's rows that hold it, of a hash of their cells at the columns that are no key. The rows stand in memory a chunk at a time, and the sums of the chunks add, so the sum is the one that the rows written out give. No value where a key is not a column of the join.
+    fn class_of(&self, keys: &[u16]) -> Option<Val> {
+        let width = self.width();
+        if keys.iter().any(|key| usize::from(*key) >= width) {
+            return None;
+        }
+        let emit = self.emitted();
+        // Where each column of the join stands in a row that `stream` gives.
+        let mut slot = vec![0usize; width];
+        for (at, (_, _, position)) in emit.iter().enumerate() {
+            slot[usize::from(*position)] = at;
+        }
+        let key_slots: Vec<usize> = keys.iter().map(|key| slot[usize::from(*key)]).collect();
+        let rest_slots: Vec<usize> = (0..width).filter(|at| !keys.contains(&(*at as u16))).map(|at| slot[at]).collect();
+        let mut sums: FastMap<Vec<Cell>, u128> = FastMap::default();
+        let mut probe: Vec<Cell> = Vec::with_capacity(keys.len());
+        let mut add = |cells: &[Cell]| {
+            for row in cells.chunks_exact(width) {
+                probe.clear();
+                probe.extend(key_slots.iter().map(|at| row[*at]));
+                let word = hash_words(rest_slots.iter().map(|at| u64::from(row[*at])));
+                match sums.get_mut(probe.as_slice()) {
+                    Some(sum) => *sum = sum.wrapping_add(word),
+                    None => {
+                        sums.insert(probe.clone(), word);
+                    }
+                }
+            }
+        };
+        let rest = self.stream(&emit, CHUNK_CELLS, CHUNK_CELLS, &mut add);
+        add(&rest);
+        let mut out: Vec<Cell> = Vec::with_capacity(sums.len() * (keys.len() + 1));
+        for (key, sum) in sums.into_sorted_vec() {
+            out.extend_from_slice(&key);
+            out.push(sum as u32);
+        }
+        Some(Val::of_table(Table::new(keys.len() + 1, out)))
+    }
+
     /// The rows of `Count` over `keys`: each tuple of the keys' columns, with the count of the join's rows that hold it.
     pub fn counts(&self, keys: &[u16]) -> Val {
         if keys.is_empty() {
@@ -1265,7 +1330,7 @@ impl Joined {
     pub fn reads(&self, step: &Step) -> bool {
         match step {
             Step::Project { .. } | Step::All { .. } => true,
-            Step::Part(part) => matches!(part.step(), PartStep::Count { .. }) || part.set_columns().is_some(),
+            Step::Part(part) => matches!(part.step(), PartStep::Count { .. } | PartStep::ClassOf { .. }) || part.set_columns().is_some(),
             _ => false,
         }
     }
@@ -1299,6 +1364,7 @@ impl Joined {
             }
             Step::Part(part) => match part.step() {
                 PartStep::Count { keys } => Some(self.counts(keys)),
+                PartStep::ClassOf { keys } => self.class_of(keys),
                 other => {
                     let columns = part.set_columns()?;
                     Some(match self.rows_at(columns) {
