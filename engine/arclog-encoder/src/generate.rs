@@ -2633,7 +2633,7 @@ impl<'a> Walker<'a> {
     /// Whether the value at `id` is a lazy value that `step` cannot read as its first relation and that passes `CELL_CAP` cells written out: a bound cuts it off.
     fn cut_by_cap(&self, step: &Step, id: u32) -> bool {
         let held = &self.values[id as usize];
-        held.is_lazy() && !held.lazy_reads(step, true) && !held.lazy_fits()
+        held.is_lazy() && !held.lazy_takes(step, true) && !held.lazy_fits()
     }
 
     /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` or of a `join` that `step` would write out past `CELL_CAP` cells.
@@ -2644,7 +2644,7 @@ impl<'a> Walker<'a> {
     /// Whether the value at `id` gives `step` no value as its second relation: no value, or the rows of `inside` or of a `join` that `step` would write out past `CELL_CAP` cells.
     fn second_has_no_value(&self, step: &Step, id: u32) -> bool {
         let held = &self.values[id as usize];
-        matches!(held, Val::None) || (held.is_lazy() && !held.lazy_reads(step, false) && !held.lazy_fits())
+        matches!(held, Val::None) || (held.is_lazy() && !held.lazy_takes(step, false) && !held.lazy_fits())
     }
 
     /// The count of rows that an idle term gives at one instance, as the evaluation gives it: no value where the first relation has none, or the second has none. Any other idle term has no rows.
@@ -2656,8 +2656,25 @@ impl<'a> Walker<'a> {
         }
     }
 
+    /// The `join` or `select` of the rows of a `join` that `step` makes, kept as the tables it joins, where its form allows that.
+    fn lazy_extension(&self, step: &Step, a: u32, b: u32) -> Option<Val> {
+        if !crate::joined::Joined::extends(step) {
+            return None;
+        }
+        let first = &self.values[a as usize];
+        let second = (b != NO_TERM).then(|| &self.values[b as usize]);
+        if !matches!(first, Val::Joined(_)) && !second.is_some_and(|second| matches!(second, Val::Joined(_))) {
+            return None;
+        }
+        crate::joined::extend(step, first, second)
+    }
+
     fn apply(&mut self, step: &Step, a: u32, b: u32) -> Val {
         crate::bounds::begin();
+        if let Some(value) = self.lazy_extension(step, a, b) {
+            crate::bounds::end(a == 0 || (b != NO_TERM && b == 0));
+            return value;
+        }
         let a = self.written_id(step, a, true);
         let b = if b == NO_TERM { b } else { self.written_id(step, b, false) };
         let first = self.values[a as usize].clone();
@@ -2728,6 +2745,10 @@ impl<'a> Walker<'a> {
         // The count of a `join` or an `antijoin` is read from its sides' histograms, with no rows written. Their sides are written where they stand as the rows of `inside` or of a `join`.
         if !number && matches!(step, Step::Join { .. } | Step::Antijoin { .. }) {
             crate::bounds::begin();
+            if let Some(value) = self.lazy_extension(step, id, b) {
+                crate::bounds::end(id == 0 || b == 0);
+                return (count_of(&value), 0);
+            }
             let first_id = self.written_id(step, id, true);
             let second_id = self.written_id(step, b, false);
             let first = self.values[first_id as usize].clone();
@@ -2810,7 +2831,7 @@ impl<'a> Walker<'a> {
             if idle && scope > 0 && crate::bounds::enabled() {
                 for id in &first[..scope] {
                     let held = &self.values[*id as usize];
-                    if held.is_lazy() && !held.lazy_reads(step, true) && !held.lazy_fits() {
+                    if held.is_lazy() && !held.lazy_takes(step, true) && !held.lazy_fits() {
                         crate::bounds::mark_term(if matches!(held, Val::Joined(_)) { crate::bounds::Bound::JoinOutput } else { crate::bounds::Bound::InsideCells });
                     }
                 }

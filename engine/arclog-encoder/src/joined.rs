@@ -1,78 +1,81 @@
-//! The rows of a `join`, as the two relations they come from.
+//! The rows of a `join`, as the relations they come from.
 //!
-//! A `join` pairs the rows of its two sides at some columns. For each value of the paired columns,
-//! its rows are every row of the left side at that value with every row of the right side at it. A
-//! [`Joined`] holds the two sides and, for each row, the id of its value of the paired columns. The
-//! count of the join's rows is the sum over those values of the product of the two sides' counts
-//! there, and a count of rows keyed by some columns is the same product per key. An operator whose
-//! value depends on the distinct tuples of the rows at some columns reads those tuples from the
-//! sides: the tuples of each side at its columns, paired at each value of the paired columns. Any
-//! other operator reads the rows written out, once, up to `CELL_CAP` cells.
+//! A [`Joined`] holds tables, the nodes, and equalities between a column of one node and a column of another. Its rows are every choice of one row from each node that agrees on each equality. The nodes and the node pairs that the equalities name form a tree, and each node after the first has a parent. A node pair holds all its equalities as one key. A `join` of two tables is two nodes and the pairs of its columns. A `join` or a `select` over a [`Joined`] adds nodes, equalities or a filter of one node's rows, and never the rows themselves.
 //!
-//! A relation's rows are a set, so the rows of the join are distinct: each holds the left row and
-//! the right row's columns that no pair names.
+//! The count of the rows is the sum, over the rows of the first node, of the product over its children of the sum over their rows at its key, and so on down the tree. A count of rows grouped by some columns, and the distinct tuples of the rows at some columns, are read from the nodes that hold the columns and the nodes that join them: a node with no column asked for tells only whether a row has a partner. An operator whose value depends on the distinct tuples of the rows at some columns reads those tuples. Any other operator reads the rows written out, once, up to `CELL_CAP` cells.
+//!
+//! A relation's rows are a set, so the rows of the join are distinct: each row holds a row of every node, and each column of a node is a column of the join or equals one.
 
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::bounds::Bound;
 use crate::boxes::second_columns;
+use crate::expression::Op;
 use crate::gen_constants::number_bits;
 use crate::gen_parts::PartStep;
-use crate::native::{all, hash_words, key_word, project, Cell, FastMap, KeyIndex, Part, Step, Table, Val, CELL_CAP};
+use crate::native::{all, hash_words, holds, key_word, project, Cell, FastMap, KeyIndex, Part, Step, Table, Val, CELL_CAP};
 
 /// Marks the hash of a [`Joined`], which no other value's hash has.
 const JOINED_WORD: u64 = 0x4a6f_696e_6564_5273;
 
-/// Marks the hash of a [`Joined`] that a `select` makes, which no other value's hash has.
-const ACROSS_WORD: u64 = 0x4163_726f_7373_5373;
-
 /// The most cells of the tables of `Joined::rows_at` that one value keeps for later readers.
 const SKETCH_KEPT: usize = 1 << 18;
 
-/// The id of a left row that no right row pairs with.
+/// The id of a row of a parent that no row of its child pairs with.
 const NO_PARTNER: u32 = u32::MAX;
 
 /// The most rows of a side that a count of distinct tuples reads, over all the tuples it groups.
 const COUNT_WORK: usize = 1 << 24;
 
-/// Where a column of the join stands: at a place of the left table or of the right table.
-#[derive(Clone, Copy, Debug)]
-enum Place {
-    Left(usize),
-    Right(usize),
+/// The most pairs of rows that a `select` over two nodes tests.
+const PAIR_WORK: usize = 1 << 26;
+
+/// Where a column of the join stands: a place of a node's table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Place {
+    node: usize,
+    at: usize,
+}
+
+/// An equality between two places, which stand in two nodes or in one.
+type Equality = (Place, Place);
+
+/// How a node stands to its parent, and what the key of the two tells.
+struct Link {
+    parent: usize,
+    /// The places of the key in the node's table, and in the parent's table, pair by pair.
+    own: Vec<usize>,
+    parent_places: Vec<usize>,
+    /// The id of each of the node's rows' key.
+    ids: Vec<u32>,
+    /// The id of each of the parent's rows' key, or `NO_PARTNER` where no row of the node holds it.
+    parent_ids: Vec<u32>,
+    /// For each id, the count of rows below the node, summed over its rows at the id.
+    weights: Vec<u64>,
 }
 
 pub struct Joined {
-    left: Arc<Table>,
-    right: Arc<Table>,
-    /// The places of the paired columns in the left table, and in the right table.
-    left_places: Vec<usize>,
-    /// The places of the right table's columns that no pair names, in order.
-    right_kept: Vec<usize>,
-    /// The column of the join that each column of the written rows stands for: the left table's, then the kept right ones.
-    columns: Vec<u16>,
+    nodes: Vec<Arc<Table>>,
+    /// The link of node `at` is `links[at - 1]`, and the parent of a node stands before it.
+    links: Vec<Link>,
     /// For each column of the join, where it stands.
     places: Vec<Place>,
-    /// The id of each left row's value of the paired columns, or `NO_PARTNER`.
-    left_ids: Vec<u32>,
-    /// The id of each right row's value of the paired columns.
-    right_ids: Vec<u32>,
-    /// For each id, the count of left rows and of right rows at it.
-    left_counts: Vec<u32>,
-    right_counts: Vec<u32>,
     hash: u128,
     /// The count of rows of the join.
     rows: u64,
     /// The rows, once written: no value where they pass `CELL_CAP` cells.
     written: OnceLock<Val>,
+    /// For each node, whether each of its rows stands in a row of the join.
+    live: OnceLock<Vec<Vec<bool>>>,
     /// The tables of `rows_at`, by their columns, and the cells that they hold.
     sketches: Mutex<(usize, FastMap<Box<[u16]>, Option<Arc<Table>>>)>,
 }
 
 impl std::fmt::Debug for Joined {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(out, "Joined {{ left rows: {}, right rows: {}, rows: {} }}", self.left.len, self.right.len, self.rows)
+        write!(out, "Joined {{ nodes: {}, rows: {} }}", self.nodes.len(), self.rows)
     }
 }
 
@@ -127,6 +130,253 @@ fn sum_runs(flat: &[Cell], stride: usize, weights: Option<&[u64]>) -> (Vec<Cell>
     (rows, sums)
 }
 
+/// The table of the rows of `table` that `keep` holds of; the table itself where all of them pass.
+fn filtered(table: &Arc<Table>, keep: impl Fn(&[Cell]) -> bool) -> Arc<Table> {
+    let mut cells: Vec<Cell> = Vec::new();
+    for row in table.rows() {
+        if keep(row) {
+            cells.extend_from_slice(row);
+        }
+    }
+    if cells.len() == table.cells.len() {
+        table.clone()
+    } else {
+        Table::new(table.arity, cells)
+    }
+}
+
+/// The nodes, equalities and columns of a join in the making.
+struct Lifted {
+    nodes: Vec<Arc<Table>>,
+    equalities: Vec<Equality>,
+    places: Vec<Place>,
+}
+
+impl Lifted {
+    /// A value as nodes: a join as its own, and rows of one part as that part's table. No value for any other.
+    fn of(value: &Val) -> Option<Lifted> {
+        match value {
+            Val::Joined(joined) => Some(Lifted { nodes: joined.nodes.clone(), equalities: joined.equalities(), places: joined.places.clone() }),
+            Val::Rows(parts) => {
+                let [part] = parts.as_slice() else { return None };
+                if part.table.arity == 0 || part.columns.len() != part.table.arity {
+                    return None;
+                }
+                let places: Vec<Place> = (0..part.columns.len() as u16).map(|column| part.columns.iter().position(|own| *own == column).map(|at| Place { node: 0, at })).collect::<Option<_>>()?;
+                Some(Lifted { nodes: vec![part.table.clone()], equalities: Vec::new(), places })
+            }
+            _ => None,
+        }
+    }
+}
+
+/// The value of `step` over `first` and `second`, where one of them is the rows of a `join` and the step is a `join` or a `select`: the join of more tables, or one with a node filtered. No value where the form does not allow it, which leaves the rows to be written out.
+pub fn extend(step: &Step, first: &Val, second: Option<&Val>) -> Option<Val> {
+    match step {
+        Step::Join { left, right, kept, left_arity } => {
+            let second = second?;
+            if !matches!(first, Val::Joined(_)) && !matches!(second, Val::Joined(_)) {
+                return None;
+            }
+            if matches!(first, Val::Empty) || matches!(second, Val::Empty) {
+                return Some(Val::Empty);
+            }
+            let (l, r) = (Lifted::of(first)?, Lifted::of(second)?);
+            join_lifted(l, r, left, right, kept, *left_arity)
+        }
+        Step::Select { at, op, other, drop } => match first {
+            Val::Joined(joined) => joined.select(*at, *op, *other, *drop),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The join of two lifted values on the paired columns `left_at` and `right_at`, where `kept` is the right columns that no pair names and the left has `left_arity` columns.
+fn join_lifted(left: Lifted, right: Lifted, left_at: &[u16], right_at: &[u16], kept: &[u16], left_arity: u16) -> Option<Val> {
+    if left_at.is_empty() || left_at.len() != right_at.len() || left.places.len() != usize::from(left_arity) {
+        return None;
+    }
+    let offset = left.nodes.len();
+    let moved = |place: Place| Place { node: place.node + offset, at: place.at };
+    let mut equalities = left.equalities;
+    equalities.extend(right.equalities.iter().map(|(a, b)| (moved(*a), moved(*b))));
+    for (l, r) in left_at.iter().zip(right_at) {
+        equalities.push((*left.places.get(usize::from(*l))?, moved(*right.places.get(usize::from(*r))?)));
+    }
+    let mut places = left.places;
+    for column in kept {
+        places.push(moved(*right.places.get(usize::from(*column))?));
+    }
+    let mut nodes = left.nodes;
+    nodes.extend(right.nodes);
+    build(nodes, equalities, places)
+}
+
+/// The join of the tables in `nodes` whose equalities are `equalities`, with the columns `places`. The tables of nodes that an equality between two of their own columns names are filtered. No value where the equalities between nodes do not form a tree. The first node stays the first.
+fn build(mut nodes: Vec<Arc<Table>>, equalities: Vec<Equality>, places: Vec<Place>) -> Option<Val> {
+    let mut same: Vec<Vec<(usize, usize)>> = vec![Vec::new(); nodes.len()];
+    let mut edges: BTreeMap<(usize, usize), Vec<(usize, usize)>> = BTreeMap::new();
+    for (a, b) in equalities {
+        if a.node == b.node {
+            same[a.node].push((a.at, b.at));
+        } else if a.node < b.node {
+            edges.entry((a.node, b.node)).or_default().push((a.at, b.at));
+        } else {
+            edges.entry((b.node, a.node)).or_default().push((b.at, a.at));
+        }
+    }
+    for (node, pairs) in same.iter().enumerate() {
+        if !pairs.is_empty() {
+            nodes[node] = filtered(&nodes[node], |row| pairs.iter().all(|(a, b)| row[*a] == row[*b]));
+        }
+    }
+    if nodes.iter().any(|table| table.len == 0) {
+        return Some(Val::Empty);
+    }
+    for pairs in edges.values_mut() {
+        pairs.sort_unstable();
+        pairs.dedup();
+    }
+    // The node pairs must make a tree of all the nodes.
+    let count = nodes.len();
+    let mut root: Vec<usize> = (0..count).collect();
+    fn find(root: &mut [usize], mut at: usize) -> usize {
+        while root[at] != at {
+            root[at] = root[root[at]];
+            at = root[at];
+        }
+        at
+    }
+    for (a, b) in edges.keys() {
+        let (ra, rb) = (find(&mut root, *a), find(&mut root, *b));
+        if ra == rb {
+            return None;
+        }
+        root[ra] = rb;
+    }
+    if edges.len() + 1 != count {
+        return None;
+    }
+    if count == 1 {
+        // One table is the rows themselves.
+        let table = nodes.pop()?;
+        let mut columns = vec![u16::MAX; table.arity];
+        for (position, place) in places.iter().enumerate() {
+            if place.node != 0 || place.at >= table.arity || columns[place.at] != u16::MAX {
+                return None;
+            }
+            columns[place.at] = position as u16;
+        }
+        if columns.contains(&u16::MAX) {
+            return None;
+        }
+        return Some(Val::Rows(Arc::new(vec![Part { table, columns: columns.into_boxed_slice() }])));
+    }
+    // The nodes in order of their distance from the first, so that a parent stands before its children.
+    let mut adjacent: Vec<Vec<usize>> = vec![Vec::new(); count];
+    for (a, b) in edges.keys() {
+        adjacent[*a].push(*b);
+        adjacent[*b].push(*a);
+    }
+    let mut order: Vec<usize> = vec![0];
+    let mut parent_of: Vec<usize> = vec![usize::MAX; count];
+    let mut seen = vec![false; count];
+    seen[0] = true;
+    let mut head = 0;
+    while head < order.len() {
+        let node = order[head];
+        head += 1;
+        let mut next = adjacent[node].clone();
+        next.sort_unstable();
+        for other in next {
+            if !seen[other] {
+                seen[other] = true;
+                parent_of[other] = node;
+                order.push(other);
+            }
+        }
+    }
+    let mut rank = vec![0usize; count];
+    for (at, node) in order.iter().enumerate() {
+        rank[*node] = at;
+    }
+    let tables: Vec<Arc<Table>> = order.iter().map(|node| nodes[*node].clone()).collect();
+    let places: Vec<Place> = places.into_iter().map(|place| Place { node: rank[place.node], at: place.at }).collect();
+    let mut links: Vec<Link> = Vec::with_capacity(count - 1);
+    for (at, node) in order.iter().enumerate().skip(1) {
+        let parent = parent_of[*node];
+        let pairs = &edges[&(parent.min(*node), parent.max(*node))];
+        let (parent_places, own): (Vec<usize>, Vec<usize>) = if parent < *node { pairs.iter().copied().unzip() } else { pairs.iter().map(|(a, b)| (*b, *a)).unzip() };
+        let keys: Vec<u64> = tables[at].rows().map(|row| key_word(row, &own)).collect();
+        let (index, ids) = KeyIndex::of(&keys);
+        let groups = ids.iter().max().map_or(0, |last| *last as usize + 1);
+        let parent_ids: Vec<u32> = tables[rank[parent]].rows().map(|row| index.get(key_word(row, &parent_places)).unwrap_or(NO_PARTNER)).collect();
+        links.push(Link { parent: rank[parent], own, parent_places, ids, parent_ids, weights: vec![0; groups] });
+    }
+    // The rows below each node, from the last node up.
+    let mut below: Vec<Vec<u64>> = tables.iter().map(|table| vec![1u64; table.len]).collect();
+    for at in (1..count).rev() {
+        let mut weights = vec![0u64; links[at - 1].weights.len()];
+        for (row, id) in links[at - 1].ids.iter().enumerate() {
+            weights[*id as usize] = weights[*id as usize].saturating_add(below[at][row]);
+        }
+        let parent = links[at - 1].parent;
+        for (row, id) in links[at - 1].parent_ids.iter().enumerate() {
+            let weight = if *id == NO_PARTNER { 0 } else { weights[*id as usize] };
+            below[parent][row] = below[parent][row].saturating_mul(weight);
+        }
+        links[at - 1].weights = weights;
+    }
+    let rows = below[0].iter().fold(0u64, |total, own| total.saturating_add(*own));
+    if rows == 0 {
+        return Some(Val::Empty);
+    }
+    let mut words: Vec<u64> = vec![JOINED_WORD, count as u64];
+    for table in &tables {
+        let hash = table.hash();
+        words.extend([hash as u64, (hash >> 64) as u64]);
+    }
+    for link in &links {
+        words.extend([link.parent as u64, link.own.len() as u64]);
+        words.extend(link.own.iter().map(|at| *at as u64));
+        words.extend(link.parent_places.iter().map(|at| *at as u64));
+    }
+    words.push(u64::MAX);
+    for place in &places {
+        words.extend([place.node as u64, place.at as u64]);
+    }
+    let hash = hash_words(words);
+    Some(Val::Joined(Arc::new(Joined { nodes: tables, links, places, hash, rows, written: OnceLock::new(), live: OnceLock::new(), sketches: Mutex::new((0, FastMap::default())) })))
+}
+
+/// The rows of `grouped` of one node: for each key of the node's parent, the tuples of the key columns below the node, with their counts.
+struct Rel {
+    /// The index into the key of each column of a tuple.
+    cols: Vec<usize>,
+    stride: usize,
+    flat: Vec<Cell>,
+    weights: Vec<u64>,
+    /// For each id of the node's key, the first entry and the end of its run.
+    ranges: Vec<(usize, usize)>,
+}
+
+/// The tuples of the entries of `rels` that the `ids` pick, appended to `head`, with the product of their counts, for each of the choices.
+fn expand(rels: &[&Rel], ids: &[u32], head: &mut Vec<Cell>, weight: u64, flat: &mut Vec<Cell>, weights: &mut Vec<u64>) {
+    let Some((rel, rest)) = rels.split_first() else {
+        flat.extend_from_slice(head);
+        weights.push(weight);
+        return;
+    };
+    let (from, to) = rel.ranges[ids[0] as usize];
+    let mark = head.len();
+    for entry in from..to {
+        head.extend_from_slice(&rel.flat[entry * rel.stride + 1..(entry + 1) * rel.stride]);
+        expand(rest, &ids[1..], head, weight.saturating_mul(rel.weights[entry]), flat, weights);
+        head.truncate(mark);
+    }
+}
+
 impl Joined {
     /// The join of `left` and `right` on the paired columns `left_at` and `right_at`, where `left_columns` and `right_columns` give the column of each table's columns, `kept` is the right columns that no pair names, and the left has `left_arity` columns: no rows where no row of one side has a partner. No value where a column is not at a table.
     #[allow(clippy::too_many_arguments)]
@@ -135,39 +385,23 @@ impl Joined {
         if left_columns.len() != usize::from(left_arity) {
             return None;
         }
-        let left_places: Vec<usize> = left_at.iter().map(|at| place(&left_columns, *at)).collect::<Option<_>>()?;
         let right_places: Vec<usize> = right_at.iter().map(|at| place(&right_columns, *at)).collect::<Option<_>>()?;
-        let right_kept: Vec<usize> = (0..right_columns.len()).filter(|at| !right_places.contains(at)).collect();
-        if right_kept.len() != kept.len() {
+        let unpaired: Vec<usize> = (0..right_columns.len()).filter(|at| !right_places.contains(at)).collect();
+        if unpaired.len() != kept.len() || unpaired.iter().any(|at| !kept.contains(&right_columns[*at])) {
             return None;
         }
-        // The kept right columns stand after the left ones, in the order of `kept`.
-        let new_column = |column: u16| kept.iter().position(|own| *own == column).map(|at| left_arity + at as u16);
-        let mut columns = left_columns.clone();
-        for at in &right_kept {
-            columns.push(new_column(right_columns[*at])?);
+        let mut equalities: Vec<Equality> = Vec::with_capacity(left_at.len());
+        for (l, r) in left_at.iter().zip(&right_places) {
+            equalities.push((Place { node: 0, at: place(&left_columns, *l)? }, Place { node: 1, at: *r }));
         }
-        let mut places: Vec<Place> = Vec::with_capacity(columns.len());
-        for column in 0..columns.len() as u16 {
-            places.push(if column < left_arity {
-                Place::Left(place(&left_columns, column)?)
-            } else {
-                Place::Right(place(&right_columns, *kept.get(usize::from(column - left_arity))?)?)
-            });
+        let mut places: Vec<Place> = Vec::with_capacity(left_columns.len() + kept.len());
+        for column in 0..left_arity {
+            places.push(Place { node: 0, at: place(&left_columns, column)? });
         }
-        let tail: Vec<u64> = left_columns
-            .iter()
-            .map(|column| u64::from(*column))
-            .chain([u64::MAX])
-            .chain(right_columns.iter().map(|column| u64::from(*column)))
-            .chain([u64::MAX])
-            .chain(left_places.iter().map(|at| *at as u64))
-            .chain([u64::MAX])
-            .chain(right_places.iter().map(|at| *at as u64))
-            .chain([u64::MAX])
-            .chain(columns.iter().map(|column| u64::from(*column)))
-            .collect();
-        Self::assemble(left, right, left_places, &right_places, right_kept, columns, places, &tail)
+        for column in kept {
+            places.push(Place { node: 1, at: place(&right_columns, *column)? });
+        }
+        build(vec![left, right], equalities, places)
     }
 
     /// The join of `left` and `right` that a `select` makes of two parts, where it equates the column at `left_at` of the left table with the column at `right_at` of the right table, and drops the right one. `left_out` and `right_out` give the column of the select's rows for each column of each table; the right column at `right_at` has none. They name each column of the select's rows once. No value where they do not.
@@ -175,59 +409,69 @@ impl Joined {
         if left_out.len() != left.arity || right_out.len() != right.arity || left_at >= left.arity || right_at >= right.arity {
             return None;
         }
-        let right_kept: Vec<usize> = (0..right.arity).filter(|place| *place != right_at).collect();
-        let mut columns: Vec<u16> = left_out.to_vec();
-        columns.extend(right_kept.iter().map(|place| right_out[*place]));
-        let mut slots: Vec<Option<Place>> = vec![None; columns.len()];
-        for (written, column) in columns.iter().enumerate() {
-            let place = if written < left.arity { Place::Left(written) } else { Place::Right(right_kept[written - left.arity]) };
-            let slot = slots.get_mut(usize::from(*column))?;
+        let mut slots: Vec<Option<Place>> = vec![None; left.arity + right.arity - 1];
+        let own = (0..left.arity).map(|at| (Place { node: 0, at }, left_out[at])).chain((0..right.arity).filter(|at| *at != right_at).map(|at| (Place { node: 1, at }, right_out[at])));
+        for (place, column) in own {
+            let slot = slots.get_mut(usize::from(column))?;
             if slot.is_some() {
                 return None;
             }
             *slot = Some(place);
         }
         let places: Vec<Place> = slots.into_iter().collect::<Option<_>>()?;
-        let tail: Vec<u64> = [ACROSS_WORD]
-            .into_iter()
-            .chain(left_out.iter().map(|column| u64::from(*column)))
-            .chain([u64::MAX])
-            .chain(right_out.iter().map(|column| u64::from(*column)))
-            .chain([u64::MAX, left_at as u64, u64::MAX, right_at as u64])
-            .collect();
-        Self::assemble(left, right, vec![left_at], &[right_at], right_kept, columns, places, &tail)
+        build(vec![left, right], vec![(Place { node: 0, at: left_at }, Place { node: 1, at: right_at })], places)
     }
 
-    /// The join of the tables whose paired places are `left_places` and `right_places`, where `columns` and `places` say where the columns of its rows come from, and `tail` is what its hash holds beyond the two tables.
-    #[allow(clippy::too_many_arguments)]
-    fn assemble(left: Arc<Table>, right: Arc<Table>, left_places: Vec<usize>, right_places: &[usize], right_kept: Vec<usize>, columns: Vec<u16>, places: Vec<Place>, tail: &[u64]) -> Option<Val> {
-        let right_keys: Vec<u64> = right.rows().map(|row| key_word(row, right_places)).collect();
-        let (index, right_ids) = KeyIndex::of(&right_keys);
-        let groups = right_ids.iter().max().map_or(0, |last| *last as usize + 1);
-        let mut right_counts = vec![0u32; groups];
-        for id in &right_ids {
-            right_counts[*id as usize] += 1;
-        }
-        let mut left_counts = vec![0u32; groups];
-        let mut left_ids: Vec<u32> = Vec::with_capacity(left.len);
-        let mut rows = 0u64;
-        for row in left.rows() {
-            match index.get(key_word(row, &left_places)) {
-                Some(id) => {
-                    left_counts[id as usize] += 1;
-                    rows += u64::from(right_counts[id as usize]);
-                    left_ids.push(id);
-                }
-                None => left_ids.push(NO_PARTNER),
+    /// The equalities that join each node to its parent.
+    fn equalities(&self) -> Vec<Equality> {
+        let mut out = Vec::new();
+        for (at, link) in self.links.iter().enumerate() {
+            for (parent_place, own) in link.parent_places.iter().zip(&link.own) {
+                out.push((Place { node: link.parent, at: *parent_place }, Place { node: at + 1, at: *own }));
             }
         }
-        if rows == 0 {
-            return Some(Val::Empty);
+        out
+    }
+
+    /// The children of each node, in order.
+    fn children(&self) -> Vec<Vec<usize>> {
+        let mut out: Vec<Vec<usize>> = vec![Vec::new(); self.nodes.len()];
+        for (at, link) in self.links.iter().enumerate() {
+            out[link.parent].push(at + 1);
         }
-        let (left_hash, right_hash) = (left.hash(), right.hash());
-        let words = [JOINED_WORD, left_hash as u64, (left_hash >> 64) as u64, right_hash as u64, (right_hash >> 64) as u64].into_iter().chain(tail.iter().copied());
-        let hash = hash_words(words);
-        Some(Val::Joined(Arc::new(Joined { left, right, left_places, right_kept, columns, places, left_ids, right_ids, left_counts, right_counts, hash, rows, written: OnceLock::new(), sketches: Mutex::new((0, FastMap::default())) })))
+        out
+    }
+
+    /// For each row of each node, the count of rows of the join below it: the product, over the node's children, of the count at its key.
+    fn below(&self) -> Vec<Vec<u64>> {
+        let mut below: Vec<Vec<u64>> = self.nodes.iter().map(|table| vec![1u64; table.len]).collect();
+        for link in &self.links {
+            for (row, id) in link.parent_ids.iter().enumerate() {
+                let weight = if *id == NO_PARTNER { 0 } else { link.weights[*id as usize] };
+                below[link.parent][row] = below[link.parent][row].saturating_mul(weight);
+            }
+        }
+        below
+    }
+
+    /// For each node, whether each of its rows stands in a row of the join.
+    fn live(&self) -> &Vec<Vec<bool>> {
+        self.live.get_or_init(|| {
+            let mut live: Vec<Vec<bool>> = self.below().iter().map(|rows| rows.iter().map(|count| *count > 0).collect()).collect();
+            for (at, link) in self.links.iter().enumerate() {
+                // A row of the node stands in a row of the join where its key is the key of a parent row that does.
+                let mut reached = vec![false; link.weights.len()];
+                for (row, id) in link.parent_ids.iter().enumerate() {
+                    if *id != NO_PARTNER && live[link.parent][row] {
+                        reached[*id as usize] = true;
+                    }
+                }
+                for (row, id) in link.ids.iter().enumerate() {
+                    live[at + 1][row] = live[at + 1][row] && reached[*id as usize];
+                }
+            }
+            live
+        })
     }
 
     /// The count of rows of the join.
@@ -244,9 +488,9 @@ impl Joined {
         self.places.len()
     }
 
-    /// The cells that the sides and the ids of the join hold, which a walker counts as held.
+    /// The cells that the nodes and the ids of the join hold, which a walker counts as held.
     pub fn held_cells(&self) -> usize {
-        self.left.cells.len() + self.right.cells.len() + self.left_ids.len() + self.right_ids.len() + self.left_counts.len() + self.right_counts.len()
+        self.nodes.iter().map(|table| table.cells.len()).sum::<usize>() + self.links.iter().map(|link| link.ids.len() + link.parent_ids.len() + 2 * link.weights.len()).sum::<usize>()
     }
 
     /// Whether the rows of the join can be written out, in at most `CELL_CAP` cells.
@@ -267,76 +511,157 @@ impl Joined {
         if !self.fits() {
             return Val::None;
         }
-        // The right rows of each id, in the order the right rows stand.
-        let mut starts: Vec<usize> = vec![0; self.right_counts.len() + 1];
-        for id in &self.right_ids {
-            starts[*id as usize + 1] += 1;
+        let below = self.below();
+        // The rows of each node after the first that stand below a row, by the id of their key, in the order they stand.
+        let mut by_id: Vec<(Vec<usize>, Vec<u32>)> = Vec::with_capacity(self.links.len());
+        for (at, link) in self.links.iter().enumerate() {
+            let mut starts: Vec<usize> = vec![0; link.weights.len() + 1];
+            for (row, id) in link.ids.iter().enumerate() {
+                if below[at + 1][row] > 0 {
+                    starts[*id as usize + 1] += 1;
+                }
+            }
+            for id in 1..starts.len() {
+                starts[id] += starts[id - 1];
+            }
+            let mut next = starts.clone();
+            let mut rows: Vec<u32> = vec![0; starts[starts.len() - 1]];
+            for (row, id) in link.ids.iter().enumerate() {
+                if below[at + 1][row] > 0 {
+                    rows[next[*id as usize]] = row as u32;
+                    next[*id as usize] += 1;
+                }
+            }
+            by_id.push((starts, rows));
         }
-        for at in 1..starts.len() {
-            starts[at] += starts[at - 1];
+        // The rows hold the columns of each node that the join names, node by node.
+        let mut emit: Vec<(usize, usize, u16)> = self.places.iter().enumerate().map(|(position, place)| (place.node, place.at, position as u16)).collect();
+        emit.sort_unstable();
+        let mut cells: Vec<Cell> = Vec::with_capacity(self.rows as usize * emit.len());
+        let mut chosen = vec![0usize; self.nodes.len()];
+        for row in 0..self.nodes[0].len {
+            if below[0][row] > 0 {
+                chosen[0] = row;
+                self.write_below(1, &mut chosen, &by_id, &emit, &mut cells);
+            }
         }
-        let mut next = starts.clone();
-        let mut by_id: Vec<u32> = vec![0; self.right_ids.len()];
-        for (row, id) in self.right_ids.iter().enumerate() {
-            by_id[next[*id as usize]] = row as u32;
-            next[*id as usize] += 1;
+        let columns: Box<[u16]> = emit.iter().map(|(_, _, position)| *position).collect();
+        Val::Rows(Arc::new(vec![Part { table: Table::new(emit.len(), cells), columns }]))
+    }
+
+    /// The rows of the join that agree with the rows `chosen` of the nodes before `depth`, written to `cells`.
+    fn write_below(&self, depth: usize, chosen: &mut [usize], by_id: &[(Vec<usize>, Vec<u32>)], emit: &[(usize, usize, u16)], cells: &mut Vec<Cell>) {
+        if depth == self.nodes.len() {
+            for (node, at, _) in emit {
+                cells.push(self.nodes[*node].cells[chosen[*node] * self.nodes[*node].arity + *at]);
+            }
+            return;
         }
-        let right_width = self.right.arity;
-        let mut cells: Vec<Cell> = Vec::with_capacity(self.rows as usize * self.width());
-        for (row, id) in self.left.rows().zip(&self.left_ids) {
-            if *id == NO_PARTNER {
+        let link = &self.links[depth - 1];
+        let id = link.parent_ids[chosen[link.parent]] as usize;
+        let (starts, rows) = &by_id[depth - 1];
+        for row in &rows[starts[id]..starts[id + 1]] {
+            chosen[depth] = *row as usize;
+            self.write_below(depth + 1, chosen, by_id, emit, cells);
+        }
+    }
+
+    /// The places of the columns `key` of the join: no value where a column is not one of the join.
+    fn at(&self, key: &[u16]) -> Option<Vec<Place>> {
+        key.iter().map(|column| self.places.get(usize::from(*column)).copied()).collect()
+    }
+
+    /// The distinct tuples of the rows of the join at the columns `key`, which stand sorted and distinct, each with the count of rows of the join that hold it: no value where the tuples a node passes to its parent pass `CELL_CAP` cells at `per_row` cells a tuple. The tuples stand in order, the cells of each in the order of `key`. Without `weighted`, the counts are not the rows' counts.
+    fn grouped(&self, key: &[u16], per_row: usize, weighted: bool) -> Option<(Vec<Cell>, Vec<u64>)> {
+        let count = self.nodes.len();
+        let at = self.at(key)?;
+        let children = self.children();
+        // The nodes whose subtree holds a column of the key.
+        let mut has = vec![false; count];
+        for place in &at {
+            has[place.node] = true;
+        }
+        for node in (1..count).rev() {
+            if has[node] {
+                has[self.links[node - 1].parent] = true;
+            }
+        }
+        let live = self.live();
+        let mut rels: Vec<Option<Rel>> = (0..count).map(|_| None).collect();
+        let mut result: Option<(Vec<Cell>, Vec<u64>)> = None;
+        for node in (0..count).rev() {
+            if !has[node] {
                 continue;
             }
-            for at in &by_id[starts[*id as usize]..starts[*id as usize + 1]] {
-                let other = &self.right.cells[*at as usize * right_width..(*at as usize + 1) * right_width];
-                cells.extend_from_slice(row);
-                cells.extend(self.right_kept.iter().map(|place| other[*place]));
-            }
-        }
-        Val::Rows(Arc::new(vec![Part { table: Table::new(self.width(), cells), columns: self.columns.clone().into_boxed_slice() }]))
-    }
-
-    /// The places of the table of each side that hold the columns `key` of the join, and for each column of `key` the side and the index into its places: no value where a column is not one of the join.
-    #[allow(clippy::type_complexity)]
-    fn split(&self, key: &[u16]) -> Option<(Vec<usize>, Vec<usize>, Vec<(bool, usize)>)> {
-        let (mut lefts, mut rights, mut at) = (Vec::new(), Vec::new(), Vec::new());
-        for column in key {
-            match self.places.get(usize::from(*column))? {
-                Place::Left(place) => {
-                    at.push((true, lefts.len()));
-                    lefts.push(*place);
+            let wanted: Vec<usize> = children[node].iter().copied().filter(|child| has[*child]).collect();
+            let unwanted: Vec<usize> = children[node].iter().copied().filter(|child| !has[*child]).collect();
+            let own: Vec<(usize, usize)> = at.iter().enumerate().filter(|(_, place)| place.node == node).map(|(index, place)| (index, place.at)).collect();
+            let up = usize::from(node > 0);
+            // The rows of the node, grouped by their key to the parent, their own columns, and the keys to the children that hold columns.
+            let width = up + own.len() + wanted.len();
+            let mut flat: Vec<Cell> = Vec::new();
+            let mut weights: Vec<u64> = Vec::new();
+            for (row, cells) in self.nodes[node].rows().enumerate() {
+                if !live[node][row] {
+                    continue;
                 }
-                Place::Right(place) => {
-                    at.push((false, rights.len()));
-                    rights.push(*place);
+                if node > 0 {
+                    flat.push(self.links[node - 1].ids[row]);
                 }
+                flat.extend(own.iter().map(|(_, place)| cells[*place]));
+                flat.extend(wanted.iter().map(|child| self.links[*child - 1].parent_ids[row]));
+                // A child with no column of the key tells how many rows it adds.
+                weights.push(if weighted { unwanted.iter().fold(1u64, |total, child| total.saturating_mul(self.links[*child - 1].weights[self.links[*child - 1].parent_ids[row] as usize])) } else { 1 });
+            }
+            let (groups, counts) = sum_runs(&flat, width, Some(&weights));
+            let below: Vec<&Rel> = wanted.iter().map(|child| rels[*child].as_ref().expect("a child below a node is done first")).collect();
+            let cols: Vec<usize> = own.iter().map(|(index, _)| *index).chain(below.iter().flat_map(|rel| rel.cols.iter().copied())).collect();
+            let stride = up + cols.len();
+            let mut total = 0usize;
+            for group in groups.chunks_exact(width) {
+                let product = below.iter().enumerate().fold(1usize, |product, (slot, rel)| {
+                    let (from, to) = rel.ranges[group[up + own.len() + slot] as usize];
+                    product.saturating_mul(to - from)
+                });
+                total = total.saturating_add(product);
+            }
+            if total.saturating_mul(per_row) > CELL_CAP {
+                return None;
+            }
+            let mut tuples: Vec<Cell> = Vec::with_capacity(total * stride);
+            let mut tuple_counts: Vec<u64> = Vec::with_capacity(total);
+            let mut head: Vec<Cell> = Vec::with_capacity(stride);
+            for (group, weight) in groups.chunks_exact(width).zip(&counts) {
+                head.clear();
+                head.extend_from_slice(&group[..up + own.len()]);
+                expand(&below, &group[up + own.len()..], &mut head, *weight, &mut tuples, &mut tuple_counts);
+            }
+            let (tuples, tuple_counts) = sum_runs(&tuples, stride, Some(&tuple_counts));
+            if node == 0 {
+                // The key's own order.
+                let mut put = vec![0usize; key.len()];
+                for (place, index) in cols.iter().enumerate() {
+                    put[*index] = place;
+                }
+                let mut ordered: Vec<Cell> = Vec::with_capacity(tuples.len());
+                for tuple in tuples.chunks_exact(stride) {
+                    ordered.extend(put.iter().map(|place| tuple[*place]));
+                }
+                result = Some(sum_runs(&ordered, key.len(), Some(&tuple_counts)));
+            } else {
+                let mut ranges = vec![(0usize, 0usize); self.links[node - 1].weights.len()];
+                for (id, from, to) in runs(&tuples, stride) {
+                    ranges[id as usize] = (from, to);
+                }
+                rels[node] = Some(Rel { cols, stride, flat: tuples, weights: tuple_counts, ranges });
             }
         }
-        Some((lefts, rights, at))
+        result
     }
 
-    /// The left rows that have a partner, as the id and the cells at `picks`, each once, in order.
-    fn left_tuples(&self, picks: &[usize]) -> Arc<Table> {
-        let mut flat: Vec<Cell> = Vec::new();
-        for (row, id) in self.left.rows().zip(&self.left_ids) {
-            if *id != NO_PARTNER {
-                flat.push(*id);
-                flat.extend(picks.iter().map(|place| row[*place]));
-            }
-        }
-        Table::distinct(1 + picks.len(), flat)
-    }
-
-    /// The right rows that have a partner, as the id and the cells at `picks`, each once, in order.
-    fn right_tuples(&self, picks: &[usize]) -> Arc<Table> {
-        let mut flat: Vec<Cell> = Vec::new();
-        for (row, id) in self.right.rows().zip(&self.right_ids) {
-            if self.left_counts[*id as usize] > 0 {
-                flat.push(*id);
-                flat.extend(picks.iter().map(|place| row[*place]));
-            }
-        }
-        Table::distinct(1 + picks.len(), flat)
+    /// The places of the table of each node that hold the columns `key`, node by node.
+    fn places_in(&self, key: &[u16], node: usize) -> Vec<usize> {
+        key.iter().filter_map(|column| self.places.get(usize::from(*column))).filter(|place| place.node == node).map(|place| place.at).collect()
     }
 
     /// A table in which the distinct tuples of the rows of the join stand at `columns`, as rows of the join's width with 0 at each other column: no value where they pass `CELL_CAP` cells. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
@@ -367,33 +692,15 @@ impl Joined {
 
     fn build_tuples(&self, key: &[u16]) -> Option<Arc<Table>> {
         let width = self.width();
-        let (lefts, rights, _) = self.split(key)?;
+        self.at(key)?;
         if key.is_empty() {
             return Some(Table::new(width, vec![0; width]));
         }
-        let (a, b) = (self.left_tuples(&lefts), self.right_tuples(&rights));
-        let pairs = common(&runs(&a.cells, a.arity), &runs(&b.cells, b.arity));
-        let total: usize = pairs.iter().map(|((a0, a1), (b0, b1))| (a1 - a0) * (b1 - b0)).sum();
-        if total.saturating_mul(width) > CELL_CAP {
-            return None;
-        }
-        let from_left: Vec<usize> = key.iter().filter(|column| matches!(self.places[usize::from(**column)], Place::Left(_))).map(|column| usize::from(*column)).collect();
-        let from_right: Vec<usize> = key.iter().filter(|column| matches!(self.places[usize::from(**column)], Place::Right(_))).map(|column| usize::from(*column)).collect();
-        let mut out: Vec<Cell> = Vec::with_capacity(total * width);
-        let mut row = vec![0 as Cell; width];
-        for ((a0, a1), (b0, b1)) in pairs {
-            for x in a0..a1 {
-                let own = &a.cells[x * a.arity..(x + 1) * a.arity];
-                for (column, cell) in from_left.iter().zip(&own[1..]) {
-                    row[*column] = *cell;
-                }
-                for y in b0..b1 {
-                    let other = &b.cells[y * b.arity..(y + 1) * b.arity];
-                    for (column, cell) in from_right.iter().zip(&other[1..]) {
-                        row[*column] = *cell;
-                    }
-                    out.extend_from_slice(&row);
-                }
+        let (tuples, _) = self.grouped(key, width, false)?;
+        let mut out: Vec<Cell> = vec![0; tuples.len() / key.len() * width];
+        for (row, tuple) in out.chunks_exact_mut(width).zip(tuples.chunks_exact(key.len())) {
+            for (column, cell) in key.iter().zip(tuple) {
+                row[usize::from(*column)] = *cell;
             }
         }
         Some(Table::distinct(width, out))
@@ -404,21 +711,124 @@ impl Joined {
         let mut key: Vec<u16> = columns.to_vec();
         key.sort_unstable();
         key.dedup();
-        let (lefts, rights, _) = self.split(&key)?;
+        self.at(&key)?;
         if key.is_empty() {
             return Some(1);
         }
+        if self.nodes.len() == 2 {
+            return self.pair_count(&key);
+        }
+        if let Some(count) = self.tree_count(&key) {
+            return Some(count);
+        }
+        match self.grouped(&key, key.len(), false) {
+            Some((tuples, _)) => Some((tuples.len() / key.len()) as u64),
+            None => {
+                crate::bounds::mark(Bound::CountOutput);
+                None
+            }
+        }
+    }
+
+    /// The count of distinct tuples at `key` where the key of each node's link is told by the columns of `key`, so that rows at two keys never give one tuple: each node counts the distinct tuples below it at each of its parent's keys. No value where some link below a column of `key` is not told.
+    fn tree_count(&self, key: &[u16]) -> Option<u64> {
+        let count = self.nodes.len();
+        let at = self.at(key)?;
+        let children = self.children();
+        let mut has = vec![false; count];
+        for place in &at {
+            has[place.node] = true;
+        }
+        for node in (1..count).rev() {
+            if has[node] {
+                has[self.links[node - 1].parent] = true;
+            }
+        }
+        for node in 1..count {
+            let link = &self.links[node - 1];
+            let told = link.parent_places.iter().zip(&link.own).all(|(parent_place, own)| at.contains(&Place { node: link.parent, at: *parent_place }) || at.contains(&Place { node, at: *own }));
+            if has[node] && !told {
+                return None;
+            }
+        }
+        let live = self.live();
+        let mut below: Vec<Vec<u64>> = vec![Vec::new(); count];
+        let mut total = 0u64;
+        for node in (0..count).rev() {
+            if !has[node] {
+                continue;
+            }
+            let wanted: Vec<usize> = children[node].iter().copied().filter(|child| has[*child]).collect();
+            let own: Vec<usize> = at.iter().filter(|place| place.node == node).map(|place| place.at).collect();
+            let up = usize::from(node > 0);
+            let width = up + own.len() + wanted.len();
+            let mut flat: Vec<Cell> = Vec::new();
+            for (row, cells) in self.nodes[node].rows().enumerate() {
+                if live[node][row] {
+                    if node > 0 {
+                        flat.push(self.links[node - 1].ids[row]);
+                    }
+                    flat.extend(own.iter().map(|place| cells[*place]));
+                    flat.extend(wanted.iter().map(|child| self.links[*child - 1].parent_ids[row]));
+                }
+            }
+            if node > 0 {
+                below[node] = vec![0; self.links[node - 1].weights.len()];
+            }
+            let groups = Table::distinct(width, flat);
+            for group in groups.rows() {
+                let product = wanted.iter().enumerate().fold(1u64, |product, (slot, child)| product.saturating_mul(below[*child][group[up + own.len() + slot] as usize]));
+                if node == 0 {
+                    total = total.saturating_add(product);
+                } else {
+                    let slot = &mut below[node][group[0] as usize];
+                    *slot = slot.saturating_add(product);
+                }
+            }
+        }
+        Some(total)
+    }
+
+    /// The rows of a node of a join of two, which have a partner, as the id and the cells at `picks`, each once, in order.
+    fn side_tuples(&self, node: usize, picks: &[usize]) -> Arc<Table> {
+        let live = &self.live()[node];
+        let ids = if node == 0 { &self.links[0].parent_ids } else { &self.links[0].ids };
+        let mut flat: Vec<Cell> = Vec::new();
+        for ((row, id), held) in self.nodes[node].rows().zip(ids).zip(live) {
+            if *held {
+                flat.push(*id);
+                flat.extend(picks.iter().map(|place| row[*place]));
+            }
+        }
+        Table::distinct(1 + picks.len(), flat)
+    }
+
+    /// The count of distinct tuples at `picks` of the rows of one node of a join of two that have a partner.
+    fn one_side_count(&self, node: usize, picks: &[usize]) -> u64 {
+        let mut flat: Vec<Cell> = Vec::new();
+        for (row, held) in self.nodes[node].rows().zip(&self.live()[node]) {
+            if *held {
+                flat.extend(picks.iter().map(|place| row[*place]));
+            }
+        }
+        Table::distinct(picks.len(), flat).len as u64
+    }
+
+    /// The count of distinct tuples at `key` of the rows of a join of two tables.
+    fn pair_count(&self, key: &[u16]) -> Option<u64> {
+        let (lefts, rights) = (self.places_in(key, 0), self.places_in(key, 1));
         if rights.is_empty() {
-            return Some(self.one_side_count(&lefts, true));
+            return Some(self.one_side_count(0, &lefts));
         }
         if lefts.is_empty() {
-            return Some(self.one_side_count(&rights, false));
+            return Some(self.one_side_count(1, &rights));
         }
-        let (a, b) = (self.left_tuples(&lefts), self.right_tuples(&rights));
+        let (a, b) = (self.side_tuples(0, &lefts), self.side_tuples(1, &rights));
         let (a_runs, b_runs) = (runs(&a.cells, a.arity), runs(&b.cells, b.arity));
         let pairs = common(&a_runs, &b_runs);
         // Two values of the paired columns that the tuples do not tell apart can give a tuple twice; where the tuples hold each paired column, they cannot.
-        if self.left_places.iter().all(|place| lefts.contains(place)) {
+        let link = &self.links[0];
+        if link.parent_places.iter().zip(&link.own).all(|(parent_place, own)| lefts.contains(parent_place) || rights.contains(own)) {
             return Some(pairs.iter().map(|((a0, a1), (b0, b1))| ((a1 - a0) as u64).saturating_mul((b1 - b0) as u64)).fold(0u64, u64::saturating_add));
         }
         // A left tuple pairs with the right tuples of each id that it has. Left tuples with the same ids pair with the same right tuples, so each set of ids is counted once.
@@ -459,57 +869,27 @@ impl Joined {
         }))
     }
 
-    /// The count of distinct tuples at `picks` of the rows of one side that have a partner.
-    fn one_side_count(&self, picks: &[usize], left: bool) -> u64 {
-        let (table, ids) = if left { (&self.left, &self.left_ids) } else { (&self.right, &self.right_ids) };
-        let mut flat: Vec<Cell> = Vec::new();
-        for (row, id) in table.rows().zip(ids) {
-            if (left && *id != NO_PARTNER) || (!left && self.left_counts[*id as usize] > 0) {
-                flat.extend(picks.iter().map(|place| row[*place]));
-            }
-        }
-        Table::distinct(picks.len(), flat).len as u64
-    }
-
     /// The rows of `Count` over `keys`: each tuple of the keys' columns, with the count of the join's rows that hold it.
     pub fn counts(&self, keys: &[u16]) -> Val {
         if keys.is_empty() {
             return Val::of_table(Table::new(1, vec![number_bits(i64::try_from(self.rows).unwrap_or(i64::MAX))]));
         }
-        let Some((lefts, rights, at)) = self.split(keys) else { return Val::None };
-        // The rows of each side, grouped by id and the cells at the side's keys, with the count of each group.
-        let side = |table: &Table, ids: &[u32], picks: &[usize], left: bool| -> (Vec<Cell>, Vec<u64>) {
-            let mut flat: Vec<Cell> = Vec::new();
-            for (row, id) in table.rows().zip(ids) {
-                if (left && *id != NO_PARTNER) || (!left && self.left_counts[*id as usize] > 0) {
-                    flat.push(*id);
-                    flat.extend(picks.iter().map(|place| row[*place]));
-                }
-            }
-            sum_runs(&flat, 1 + picks.len(), None)
-        };
-        let (a, a_counts) = side(&self.left, &self.left_ids, &lefts, true);
-        let (b, b_counts) = side(&self.right, &self.right_ids, &rights, false);
-        let (a_stride, b_stride) = (1 + lefts.len(), 1 + rights.len());
-        let pairs = common(&runs(&a, a_stride), &runs(&b, b_stride));
-        let total: usize = pairs.iter().map(|((a0, a1), (b0, b1))| (a1 - a0) * (b1 - b0)).sum();
-        if total.saturating_mul(keys.len() + 1) > CELL_CAP {
-            crate::bounds::mark(Bound::CountOutput);
+        let mut unique: Vec<u16> = keys.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        if self.at(&unique).is_none() {
             return Val::None;
         }
-        let mut flat: Vec<Cell> = Vec::with_capacity(total * keys.len());
-        let mut weights: Vec<u64> = Vec::with_capacity(total);
-        for ((a0, a1), (b0, b1)) in pairs {
-            for x in a0..a1 {
-                for y in b0..b1 {
-                    for (left, index) in &at {
-                        flat.push(if *left { a[x * a_stride + 1 + index] } else { b[y * b_stride + 1 + index] });
-                    }
-                    weights.push(a_counts[x] * b_counts[y]);
-                }
-            }
+        let Some((tuples, weights)) = self.grouped(&unique, keys.len() + 1, true) else {
+            crate::bounds::mark(Bound::CountOutput);
+            return Val::None;
+        };
+        let picks: Vec<usize> = keys.iter().map(|key| unique.binary_search(key).expect("a key is one of the distinct keys")).collect();
+        let mut ordered: Vec<Cell> = Vec::with_capacity(weights.len() * keys.len());
+        for tuple in tuples.chunks_exact(unique.len()) {
+            ordered.extend(picks.iter().map(|place| tuple[*place]));
         }
-        let (tuples, counts) = sum_runs(&flat, keys.len(), Some(&weights));
+        let (tuples, counts) = sum_runs(&ordered, keys.len(), Some(&weights));
         let mut out: Vec<Cell> = Vec::with_capacity(counts.len() * (keys.len() + 1));
         for (tuple, count) in tuples.chunks_exact(keys.len()).zip(&counts) {
             // A count past a number's range has no value.
@@ -520,7 +900,7 @@ impl Joined {
         Val::of_table(Table::new(keys.len() + 1, out))
     }
 
-    /// Whether `step` takes what it needs from the join's sides as its first relation, without writing the rows.
+    /// Whether `step` takes what it needs from the join's nodes as its first relation, without writing the rows.
     pub fn reads(&self, step: &Step) -> bool {
         match step {
             Step::Project { .. } | Step::All { .. } => true,
@@ -529,9 +909,14 @@ impl Joined {
         }
     }
 
-    /// Whether `step` takes what it needs from the join's sides as its second relation, without writing the rows.
+    /// Whether `step` takes what it needs from the join's nodes as its second relation, without writing the rows.
     pub fn reads_second(&self, step: &Step) -> bool {
         second_columns(step).is_some()
+    }
+
+    /// Whether `step` is a `join` or a `select`, which [`extend`] gives as more nodes, equalities or a filter where the form allows it, and which otherwise reads the rows written out.
+    pub fn extends(step: &Step) -> bool {
+        matches!(step, Step::Join { .. } | Step::Select { .. })
     }
 
     /// The relation that `step` reads in place of the join as its second relation, where `reads_second` holds of it: no value where the tuples pass `CELL_CAP` cells.
@@ -579,5 +964,114 @@ impl Joined {
             },
             _ => None,
         }
+    }
+
+    /// A `select` over the rows of the join, as a join of the same nodes with the comparison applied. A comparison with 0, or of two columns of one node, filters that node's rows. An equality between columns of two nodes is one more pair of the key between them. Any other comparison between two nodes that are a node and its parent gives one node of the pairs of their rows that pass, in place of the two. No value where the form does not allow it.
+    fn select(&self, at: u16, op: Op, other: Option<u16>, drop: Option<u16>) -> Option<Val> {
+        let width = self.places.len();
+        let inside = |column: u16| usize::from(column) < width;
+        if !inside(at) || !other.is_none_or(inside) || !drop.is_none_or(inside) {
+            return None;
+        }
+        // A column that is dropped equals another or a constant, so that no row of a node is lost.
+        if let Some(dropped) = drop {
+            if op != Op::Eq || (dropped != at && Some(dropped) != other) {
+                return None;
+            }
+        }
+        let first = self.places[usize::from(at)];
+        let second = other.map(|other| self.places[usize::from(other)]);
+        let places: Vec<Place> = self.places.iter().enumerate().filter(|(position, _)| Some(*position as u16) != drop).map(|(_, place)| *place).collect();
+        // A relation of no columns is not rows of a join.
+        if places.is_empty() {
+            return None;
+        }
+        let mut nodes = self.nodes.clone();
+        let mut equalities = self.equalities();
+        match second {
+            None => nodes[first.node] = filtered(&nodes[first.node], |row| holds(op, row[first.at], 0)),
+            Some(second) if second.node == first.node => nodes[first.node] = filtered(&nodes[first.node], |row| holds(op, row[first.at], row[second.at])),
+            Some(second) if op == Op::Eq => equalities.push((first, second)),
+            Some(second) => return self.merged(op, first, second, drop),
+        }
+        build(nodes, equalities, places)
+    }
+
+    /// A `select` that compares the column at `first` with the column at `second` of the node's parent or child, as one node of the pairs of rows that stand in a row of the join and pass, in place of the two. No value where that is not so, or more than `PAIR_WORK` pairs are tested, or the pairs pass `CELL_CAP` cells.
+    fn merged(&self, op: Op, first: Place, second: Place, drop: Option<u16>) -> Option<Val> {
+        if drop.is_some() {
+            return None;
+        }
+        let child = (1..self.nodes.len()).find(|at| {
+            let parent = self.links[*at - 1].parent;
+            (parent == first.node && *at == second.node) || (parent == second.node && *at == first.node)
+        })?;
+        let link = &self.links[child - 1];
+        let parent = link.parent;
+        let live = self.live();
+        let mut starts: Vec<usize> = vec![0; link.weights.len() + 1];
+        for (row, id) in link.ids.iter().enumerate() {
+            if live[child][row] {
+                starts[*id as usize + 1] += 1;
+            }
+        }
+        for id in 1..starts.len() {
+            starts[id] += starts[id - 1];
+        }
+        let mut next = starts.clone();
+        let mut by_id: Vec<u32> = vec![0; starts[starts.len() - 1]];
+        for (row, id) in link.ids.iter().enumerate() {
+            if live[child][row] {
+                by_id[next[*id as usize]] = row as u32;
+                next[*id as usize] += 1;
+            }
+        }
+        let (parent_table, child_table) = (&self.nodes[parent], &self.nodes[child]);
+        let (parent_arity, child_arity) = (parent_table.arity, child_table.arity);
+        // The comparison's two operands, as read from a parent row and a child row.
+        let value = |place: Place, parent_row: &[Cell], child_row: &[Cell]| if place.node == parent { parent_row[place.at] } else { child_row[place.at] };
+        let mut cells: Vec<Cell> = Vec::new();
+        let mut work = 0usize;
+        for (row, (parent_row, id)) in parent_table.rows().zip(&link.parent_ids).enumerate() {
+            if !live[parent][row] || *id == NO_PARTNER {
+                continue;
+            }
+            let run = &by_id[starts[*id as usize]..starts[*id as usize + 1]];
+            work += run.len();
+            if work > PAIR_WORK {
+                return None;
+            }
+            for at in run {
+                let child_row = &child_table.cells[*at as usize * child_arity..(*at as usize + 1) * child_arity];
+                if holds(op, value(first, parent_row, child_row), value(second, parent_row, child_row)) {
+                    cells.extend_from_slice(parent_row);
+                    cells.extend_from_slice(child_row);
+                }
+            }
+            if cells.len() > CELL_CAP {
+                return None;
+            }
+        }
+        if cells.is_empty() {
+            return Some(Val::Empty);
+        }
+        let merged = Table::new(parent_arity + child_arity, cells);
+        // The pair stands where the parent stood, and the child's columns follow the parent's.
+        let moved = |place: Place| {
+            let node = if place.node == child { parent } else { place.node };
+            let at = if place.node == child { place.at + parent_arity } else { place.at };
+            Place { node: node - usize::from(node > child), at }
+        };
+        let mut nodes: Vec<Arc<Table>> = Vec::with_capacity(self.nodes.len() - 1);
+        for (at, table) in self.nodes.iter().enumerate() {
+            if at == parent {
+                nodes.push(merged.clone());
+            } else if at != child {
+                nodes.push(table.clone());
+            }
+        }
+        let equalities: Vec<Equality> = self.equalities().into_iter().filter(|(_, own)| own.node != child).map(|(a, b)| (moved(a), moved(b))).collect();
+        let places: Vec<Place> = self.places.iter().map(|place| moved(*place)).collect();
+        build(nodes, equalities, places)
     }
 }

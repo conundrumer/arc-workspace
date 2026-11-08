@@ -28,8 +28,8 @@
 //!   what those forms compute.
 //! - [`boxes`]: the rows of `inside`, as the boxes they come from, written out where an
 //!   operator needs the rows themselves.
-//! - [`joined`]: the rows of a `join`, as the two sides they come from, written out where an
-//!   operator needs the rows themselves.
+//! - [`joined`]: the rows of a `join`, as the tables they come from and the equalities between
+//!   their columns, written out where an operator needs the rows themselves.
 pub mod atom_lists;
 pub mod body_features;
 pub mod bounds;

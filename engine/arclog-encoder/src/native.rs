@@ -8,7 +8,7 @@
 //! on one: most give an empty relation, `antijoin` with an empty right side gives
 //! its left, and a component runs on its empty input.
 //!
-//! The rows of `inside` stand as their boxes ([`Val::Boxes`]), and the rows of a `join` as its two sides ([`Val::Joined`]), until an operator needs the rows themselves.
+//! The rows of `inside` stand as their boxes ([`Val::Boxes`]), and the rows of a `join` as the tables it joins ([`Val::Joined`]), until an operator needs the rows themselves.
 
 use std::hash::Hasher;
 use std::sync::Arc;
@@ -333,7 +333,7 @@ pub enum Val {
     /// The rows of `inside`, as the relation and the grid they come from. An operator that needs
     /// the rows themselves writes them out; the others, and the count of rows, read the boxes.
     Boxes(Arc<crate::boxes::Boxes>),
-    /// The rows of a `join`, as its two sides and how many rows each has at each value of the paired columns. An operator that needs the rows themselves writes them out; the others, and the count of rows, read the sides.
+    /// The rows of a `join`, as the tables it joins and the equalities between their columns. An operator that needs the rows themselves writes them out; the others, and the count of rows, read the tables.
     Joined(Arc<crate::joined::Joined>),
 }
 
@@ -359,6 +359,11 @@ impl Val {
             Val::Joined(joined) => if first { joined.reads(step) } else { joined.reads_second(step) },
             _ => false,
         }
+    }
+
+    /// Whether `step` takes a lazy value as its first relation or, where `first` is false, its second, either by reading what it needs from it (`lazy_reads`) or, for the rows of a `join`, as a part of the join or select that `step` makes of it, which `crate::joined::extend` gives where the form allows it and otherwise leaves the rows to be written out.
+    pub fn lazy_takes(&self, step: &Step, first: bool) -> bool {
+        self.lazy_reads(step, first) || (matches!(self, Val::Joined(_)) && crate::joined::Joined::extends(step))
     }
 
     /// Whether the rows of a lazy value can be written out, in at most `CELL_CAP` cells.
@@ -582,6 +587,10 @@ impl<'a> Evaluator<'a> {
             return Val::None;
         }
         if children.iter().any(|child| child.is_lazy()) {
+            // A `join` or a `select` over the rows of a `join` adds to the join where it can.
+            if let Some(value) = crate::joined::extend(step, children[0], children.get(1).copied()) {
+                return value;
+            }
             // The rows of `inside` and of a `join` serve an operator that takes what it needs from the relations they come from as they are. Any other reads them written out.
             let second = match children.get(1) {
                 Some(Val::Boxes(boxes)) => boxes.read_second(step),
@@ -1517,7 +1526,7 @@ pub(crate) fn project(value: &Val, columns: &[u16]) -> Val {
     Val::of_parts(out)
 }
 
-fn holds(op: Op, a: Cell, b: Cell) -> bool {
+pub(crate) fn holds(op: Op, a: Cell, b: Cell) -> bool {
     match op {
         Op::Eq => a == b,
         Op::Ne => a != b,
