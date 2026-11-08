@@ -756,15 +756,24 @@ pub mod ambient {
     /// request: a load and a compare while it is no new largest and holds.
     #[inline]
     fn note(gauge: Gauge, value: u64, cap: u64) {
-        let _ = AMBIENT.try_with(|ambient| {
-            if let Some(gauges) = ambient.borrow().as_ref() {
-                if value > cap {
-                    gauges.hit(gauge, value, cap);
+        let noted = AMBIENT
+            .try_with(|ambient| {
+                if let Some(gauges) = ambient.borrow().as_ref() {
+                    if value > cap {
+                        gauges.hit(gauge, value, cap);
+                    } else {
+                        gauges.note(gauge, value, cap);
+                    }
+                    true
                 } else {
-                    gauges.note(gauge, value, cap);
+                    false
                 }
-            }
-        });
+            })
+            .unwrap_or(false);
+        // With no request to note in, the measurement open still keeps the note, for the entry it makes.
+        if !noted {
+            super::tally_note(gauge, value, cap, u32::from(value > cap));
+        }
     }
 
     /// Records the margin `extent` of a Box that a term packs.
@@ -1123,6 +1132,68 @@ fn merge_notes(into: &mut Vec<Note>, from: &[Note]) {
             None => into.push(*note),
         }
     }
+}
+
+/// The value of `run`, and the notes that its evaluations made in the gauges a
+/// cost carries, which a read of a cached value notes again
+/// ([`replay_notes`]). The notes also stand in the measurement around, and the
+/// rest of what `run` charges in it.
+pub(crate) fn noting<T>(run: impl FnOnce() -> T) -> (T, NoteId) {
+    tally(|tally| {
+        tally.frames.push(Frame { request: 0, effort: 0, notes: Vec::new(), held: 0, assignment: None, cost: Cost::default() });
+    });
+    let mut open = Unwind(true);
+    let value = run();
+    open.0 = false;
+    let frame = tally(|tally| {
+        let frame = tally.frames.pop().expect("the measurement this call opened");
+        if let Some(outer) = tally.frames.last_mut() {
+            outer.cost.absorb(&frame.cost, false, false);
+            merge_notes(&mut outer.notes, &frame.notes);
+        }
+        frame
+    });
+    (value, intern_notes(frame.notes))
+}
+
+/// Notes again in the gauges of this thread's request what `id` holds.
+pub(crate) fn replay_notes(id: NoteId) {
+    if id.0 == 0 {
+        return;
+    }
+    let notes = notes_of(id);
+    let replayed = AMBIENT
+        .try_with(|ambient| {
+            if let Some(gauges) = ambient.borrow().as_ref() {
+                for note in notes.iter() {
+                    gauges.replay(Gauge::ALL[usize::from(note.gauge)], note.max, note.cap, note.hits);
+                }
+                true
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false);
+    if !replayed {
+        for note in notes.iter() {
+            tally_note(Gauge::ALL[usize::from(note.gauge)], note.max, note.cap, note.hits);
+        }
+    }
+}
+
+/// The value in `cell`, made by `make` on the first call, which also keeps
+/// what `make` noted in the gauges a cost carries. Each later call notes
+/// that again, as a read of a cache entry does ([`Cost`]).
+pub(crate) fn once_noted<T>(cell: &std::sync::OnceLock<(T, NoteId)>, make: impl FnOnce() -> T) -> &T {
+    let mut made = false;
+    let held = cell.get_or_init(|| {
+        made = true;
+        noting(make)
+    });
+    if !made {
+        replay_notes(held.1);
+    }
+    &held.0
 }
 
 /// Notes in the innermost open measurement that `gauge` reached `value` under

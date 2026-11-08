@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use crate::eval::pool::InFlight;
-use crate::eval::{Caps, Cost, Hit, ReachedBound, RelationValue};
+use crate::eval::{noting, replay_notes, Caps, Cost, Hit, NoteId, ReachedBound, RelationValue};
 use crate::hash::{StableHash, StableHashMap};
 use crate::relations::{Relation, RelationPart, SharedRows, StorageTag};
 use crate::program::FactRelation;
@@ -962,11 +962,11 @@ pub struct TaskSession {
     largest_rows: Arc<AtomicU64>,
     /// The fact relations built so far, one per fact and example, each
     /// built on its first use. A session serves one task.
-    facts: Arc<Mutex<StableHashMap<(FactRelation, Option<Example>), Arc<Relation>>>>,
+    facts: Arc<Mutex<StableHashMap<(FactRelation, Option<Example>), (Arc<Relation>, NoteId)>>>,
     /// The rows of the native proposers so far, one relation per proposer
     /// and example, each built on its first use, as `facts` keeps a fact's:
     /// they read the grids of the session's task alone.
-    native_rows: Arc<Mutex<StableHashMap<(LibName, Option<Example>), Arc<Relation>>>>,
+    native_rows: Arc<Mutex<StableHashMap<(LibName, Option<Example>), (Arc<Relation>, NoteId)>>>,
     /// The domains that the liveness walks of the decodes of this session
     /// keep, made on the first walk.
     det_probes: Arc<OnceLock<crate::decode::det_memo::ProbeMemo>>,
@@ -1052,15 +1052,22 @@ impl TaskSession {
     /// and shared by each later one, so their rows hash and indexes are built
     /// once. `task` is the session's task.
     pub fn fact_relation(&self, task: &Task, fact: FactRelation, example: Option<Example>) -> Arc<Relation> {
+        let held = self.facts.lock().expect(UNPOISONED).get(&(fact, example)).cloned();
+        if let Some((rows, notes)) = held {
+            // A read notes in the gauges what the build of the rows noted, as a hit in a cache does.
+            replay_notes(notes);
+            return rows;
+        }
+        let (rows, notes) = noting(|| Arc::new(task.fact_rows(fact, example)));
         let mut facts = self.facts.lock().expect(UNPOISONED);
-        facts.entry((fact, example)).or_insert_with(|| Arc::new(task.fact_rows(fact, example))).clone()
+        Arc::clone(&facts.entry((fact, example)).or_insert((rows, notes)).0)
     }
 
     /// Gives `fact` the rows `rows` on `example`, or task-wide where `example`
     /// is `None`, for a fact relation that the task does not give: a program
     /// relation of the session's state, or a stored table.
     pub fn provide_fact(&self, fact: FactRelation, example: Option<Example>, rows: Relation) {
-        self.facts.lock().expect(UNPOISONED).insert((fact, example), Arc::new(rows));
+        self.facts.lock().expect(UNPOISONED).insert((fact, example), (Arc::new(rows), NoteId::default()));
     }
 
     /// The rows of the native proposer `proposer` on `example` of the
@@ -1069,11 +1076,14 @@ impl TaskSession {
     /// no port.
     pub(crate) fn native_proposer_rows(&self, proposer: &LibName, example: Option<Example>, make: impl FnOnce() -> Option<Relation>) -> Option<Arc<Relation>> {
         let key = (proposer.clone(), example);
-        if let Some(held) = self.native_rows.lock().expect(UNPOISONED).get(&key) {
-            return Some(Arc::clone(held));
+        let held = self.native_rows.lock().expect(UNPOISONED).get(&key).cloned();
+        if let Some((rows, notes)) = held {
+            replay_notes(notes);
+            return Some(rows);
         }
-        let made = Arc::new(make()?);
-        Some(Arc::clone(self.native_rows.lock().expect(UNPOISONED).entry(key).or_insert(made)))
+        let (made, notes) = noting(make);
+        let made = Arc::new(made?);
+        Some(Arc::clone(&self.native_rows.lock().expect(UNPOISONED).entry(key).or_insert((made, notes)).0))
     }
 
     /// Has the session evict its caches where its bytes are past `bound`, or

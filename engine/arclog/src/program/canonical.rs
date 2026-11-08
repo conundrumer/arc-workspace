@@ -120,9 +120,9 @@ impl Default for SearchBudget {
 #[derive(Debug, Default)]
 pub(super) struct FormCache {
     holds_rigid_det: std::sync::OnceLock<bool>,
-    scope_labels: std::sync::OnceLock<Box<[LabelId]>>,
-    order: std::sync::OnceLock<(CanonicalOrder, CanonicalForm, bool)>,
-    written_lists: std::sync::OnceLock<CanonicalForm>,
+    scope_labels: std::sync::OnceLock<(Box<[LabelId]>, crate::eval::NoteId)>,
+    order: std::sync::OnceLock<((CanonicalOrder, CanonicalForm, bool), crate::eval::NoteId)>,
+    written_lists: std::sync::OnceLock<(CanonicalForm, crate::eval::NoteId)>,
     writes: replay::WriteCache,
 }
 

@@ -30,7 +30,7 @@ pub struct CanonicalOrder {
 /// The write of `form` under [`AsWritten`] that its node keeps, made on the
 /// first call for the node.
 fn written(form: &Form) -> &(CanonicalOrder, CanonicalForm, bool) {
-    super::form::cache(form).order.get_or_init(|| write_order(form, &AsWritten, false))
+    crate::eval::once_noted(&super::form::cache(form).order, || write_order(form, &AsWritten, false))
 }
 
 /// Both policies use the same walk, labeling search and path recording.
@@ -101,7 +101,7 @@ impl CanonicalOrder {
                 write(children[index as usize], &child, order, out);
             }
         }
-        let kept = super::form::cache(form).written_lists.get_or_init(|| {
+        let kept = crate::eval::once_noted(&super::form::cache(form).written_lists, || {
             let (order, canonical, _) = written(form);
             let mut out = CanonicalWriter::default();
             out.write(&canonical.bytes);

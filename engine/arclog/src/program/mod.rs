@@ -69,7 +69,7 @@ struct Shared<T> {
     value: T,
     /// The hash of the value's canonical form, and whether its search
     /// reached [`canonical::SEARCH_NODE_CAP`], set on first use.
-    canonical_hash: OnceLock<(StableHash, bool)>,
+    canonical_hash: OnceLock<((StableHash, bool), crate::eval::NoteId)>,
     /// What the canonical form of the value gives where the value is a
     /// form, [`canonical::FormCache`], made on its first use, so that a
     /// node of another kind holds none.
@@ -100,7 +100,7 @@ impl<T: canonical::Canonical> Node<T> {
     }
 
     fn computed(&self) -> (StableHash, bool) {
-        *self.shared.canonical_hash.get_or_init(|| {
+        *crate::eval::once_noted(&self.shared.canonical_hash, || {
             let (form, reached) = canonical::form_of(&self.shared.value);
             (form.hash, reached)
         })

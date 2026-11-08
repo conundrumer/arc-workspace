@@ -22,6 +22,8 @@ const CACHED_WRITES: usize = 8;
 struct CachedWrite {
     calls: Box<[(NameCall, Box<[u8]>)]>,
     form: CanonicalForm,
+    /// What the write noted in the gauges a cost carries, which a read of it notes again.
+    notes: crate::eval::NoteId,
 }
 
 /// A call of a [`NameWriter`], by its arguments.
@@ -108,17 +110,19 @@ pub(crate) fn cached_write(form: &Form, names: &dyn NameWriter, write: impl FnOn
     }
     let cache = &super::form::cache(form).writes.0;
     let matches = |found: &CachedWrite| found.calls.iter().all(|(call, bytes)| call.bytes(names)[..] == bytes[..]);
-    if let Some(found) = cache.lock().expect("no write panics while it holds the cached writes").iter().find(|found| matches(found)) {
-        return found.form.clone();
+    let found = cache.lock().expect("no write panics while it holds the cached writes").iter().find(|found| matches(found)).map(|found| (found.form.clone(), found.notes));
+    if let Some((form, notes)) = found {
+        crate::eval::replay_notes(notes);
+        return form;
     }
     let recording = Recording { names, calls: Default::default(), reached: Default::default() };
-    let form_written = write(&recording);
+    let (form_written, notes) = crate::eval::noting(|| write(&recording));
     if recording.reached.get() {
         return form_written;
     }
     let calls: Box<[(NameCall, Box<[u8]>)]> = recording.calls.into_inner().into_iter().collect();
     let mut cached = cache.lock().expect("no write panics while it holds the cached writes");
-    cached.insert(0, CachedWrite { calls, form: form_written.clone() });
+    cached.insert(0, CachedWrite { calls, form: form_written.clone(), notes });
     cached.truncate(CACHED_WRITES);
     form_written
 }
