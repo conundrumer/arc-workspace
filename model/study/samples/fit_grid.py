@@ -44,7 +44,9 @@ def main() -> int:
     ap.add_argument('--max-rounds', type=int, default=3000)
     ap.add_argument('--drop-names', default='')
     ap.add_argument('--drop-prefixes', default='')
+    ap.add_argument('--settings', help='a JSON list of changes from the base, each a setting to fit, in place of the grid, such as [{"learning_rate": 0.1, "lambda_l2": 100}]')
     a = ap.parse_args()
+    grid = json.loads(a.settings) if a.settings else GRID
     F.DROP = tuple(x for x in a.drop_prefixes.split(',') if x)
     F.DROP_NAMES = frozenset(x for x in a.drop_names.split(',') if x)
     a.out.mkdir(parents=True, exist_ok=True)
@@ -72,7 +74,7 @@ def main() -> int:
     def dev_loss(scores, _data):
         return 'dev_loss', float(F.group_terms(np.asarray(scores, np.float64), positive, starts, sizes).loss.mean()), False
 
-    for change in GRID:
+    for change in grid:
         setting = dict(BASE, **change)
         key = json.dumps(setting, sort_keys=True)
         if key in done:
