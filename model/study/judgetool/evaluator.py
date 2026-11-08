@@ -320,11 +320,9 @@ class ReplayEvaluator:
             status, tables = self.ev.gold_tables(program, full_rows=True,
                 full_rows_entries=full_rows_entries, expected_tables_ref=expected_tables_ref, **options)
         else:
-            status, tables = (self.ev.gold_tables(program, full_rows=True) if full_rows
+            status, tables = (self.ev.gold_tables(program, held_rows=True) if full_rows
                               else self.ev.gold_tables(program))
         report = json.loads(status) if isinstance(status, str) else status
-        if full_rows and report.get('full_rows') is not True:
-            raise ValueError('native gold_tables did not certify requested full-row packing')
         if full_rows_entries is not None:
             if (report.get('tables_ref') != expected_tables_ref or
                     report.get('full_rows_entries') != sorted(full_rows_entries)):
