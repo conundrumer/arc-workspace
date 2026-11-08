@@ -433,6 +433,36 @@ pub fn extend(step: &Step, first: &Val, second: Option<&Val>) -> Option<Val> {
             Val::Joined(joined) => joined.select(*at, *op, *other, *drop),
             _ => None,
         },
+        Step::Semijoin { left, right } | Step::Antijoin { left, right } => {
+            let (Val::Joined(joined), Some(second)) = (first, second) else { return None };
+            let present = matches!(step, Step::Semijoin { .. });
+            // A second relation that stands as the relations it comes from is read at the columns the step reads of it.
+            let replaced;
+            let second = match second {
+                Val::Joined(other) => {
+                    replaced = other.read_second(step)?;
+                    &replaced
+                }
+                Val::Boxes(other) => {
+                    replaced = other.read_second(step)?;
+                    &replaced
+                }
+                other => other,
+            };
+            match second {
+                Val::Empty => Some(if present { Val::Empty } else { first.clone() }),
+                Val::Rows(_) => {
+                    let (node, kept) = joined.kept_node(left, right, second, present)?;
+                    if Arc::ptr_eq(&kept, &joined.nodes[node]) {
+                        return Some(first.clone());
+                    }
+                    let mut nodes = joined.nodes.clone();
+                    nodes[node] = kept;
+                    build(nodes, joined.equalities(), joined.places.clone())
+                }
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
@@ -1340,9 +1370,9 @@ impl Joined {
         second_columns(step).is_some()
     }
 
-    /// Whether `step` is a `join` or a `select`, which [`extend`] gives as more nodes, equalities or a filter where the form allows it, and which otherwise reads the rows written out.
+    /// Whether `step` is a `join`, a `select`, a `semijoin` or an `antijoin`, which [`extend`] gives as more nodes, equalities or a filter where the form allows it, and which otherwise reads the rows written out.
     pub fn extends(step: &Step) -> bool {
-        matches!(step, Step::Join { .. } | Step::Select { .. })
+        matches!(step, Step::Join { .. } | Step::Select { .. } | Step::Semijoin { .. } | Step::Antijoin { .. })
     }
 
     /// The relation that `step` reads in place of the join as its second relation, where `reads_second` holds of it.
@@ -1497,6 +1527,32 @@ impl Joined {
             total = total.saturating_add(weight.saturating_mul(crate::boxes::area_of(*tuple, grid.h, grid.w)));
         }
         Some(Some(total))
+    }
+
+    /// The node of the join that holds every column of `left`, and its rows that a `semijoin` keeps where `present`, or that an `antijoin` keeps where not, of the rows of `second` at its columns `right`: those whose key at `left` is, or is not, among the keys of `second`. A row of the join holds the cells of one row of each node, so the rows of the join that the step keeps are those of the join with the node's other rows left out. No value where the columns of `left` stand in several nodes, or are not columns of the join, or `second` is not of a form that gives the keys: for an `antijoin`, a table whose columns hold every column of `right`.
+    fn kept_node(&self, left: &[u16], right: &[u16], second: &Val, present: bool) -> Option<(usize, Arc<Table>)> {
+        if left.is_empty() || left.len() != right.len() {
+            return None;
+        }
+        let places: Vec<Place> = left.iter().map(|column| self.places.get(usize::from(*column)).copied()).collect::<Option<_>>()?;
+        let node = places[0].node;
+        if places.iter().any(|place| place.node != node) {
+            return None;
+        }
+        let at: Vec<usize> = places.iter().map(|place| place.at).collect();
+        let kept = if present {
+            let keys = crate::gen_parts::keys_of(second, right)?;
+            filtered(&self.nodes[node], |row| keys.binary_search(&key_word(row, &at)).is_ok())
+        } else {
+            let Val::Rows(parts) = second else { return None };
+            let [part] = parts.as_slice() else { return None };
+            let own: Vec<usize> = right.iter().map(|column| part.columns.iter().position(|held| held == column)).collect::<Option<_>>()?;
+            let mut keys: Vec<u64> = part.table.rows().map(|row| key_word(row, &own)).collect();
+            keys.sort_unstable();
+            keys.dedup();
+            filtered(&self.nodes[node], |row| keys.binary_search(&key_word(row, &at)).is_err())
+        };
+        Some((node, kept))
     }
 
     /// A `select` over the rows of the join, as a join of the same nodes with the comparison applied. A comparison with 0, or of two columns of one node, filters that node's rows. An equality between columns of two nodes is one more pair of the key between them. Any other comparison between two nodes that are a node and its parent gives one node of the pairs of their rows that pass, in place of the two. No value where the form does not allow it.

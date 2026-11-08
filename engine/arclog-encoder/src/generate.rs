@@ -2970,7 +2970,7 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// The `join` or `select` of the rows of a `join` that `step` makes, kept as the tables it joins, where its form allows that.
+    /// The `join`, `select`, `semijoin` or `antijoin` of the rows of a `join` that `step` makes, kept as the tables it joins, where its form allows that.
     fn lazy_extension(&self, step: &Step, a: u32, b: u32) -> Option<Val> {
         if !crate::joined::Joined::extends(step) {
             return None;
