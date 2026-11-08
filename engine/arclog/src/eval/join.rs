@@ -442,18 +442,22 @@ impl<'a> Budget<'a> {
     /// the evaluation.
     fn counted<T>(&mut self, evaluate: impl FnOnce(&mut Self) -> Result<T, ReachedBound>) -> Result<(T, Counted), ReachedBound> {
         let outside = std::mem::take(&mut self.nested_rows);
+        let effort_before = super::RequestWork::thread_effort();
         let result = self.logged(evaluate);
+        // Every charge to the effort that this thread made while the evaluation ran: its searches, and the hits it read.
+        let effort = super::RequestWork::thread_effort().saturating_sub(effort_before);
         let inside = std::mem::replace(&mut self.nested_rows, outside);
         self.nested_rows = outside.max(inside);
         let (value, bindings) = result?;
-        Ok((value, Counted { bindings, rows: inside }))
+        Ok((value, Counted { bindings, rows: inside, effort }))
     }
 
     /// Does to the counts of this budget what `counted` says an evaluation
     /// did to them, as [`Budget::counted`] gives it.
     fn replay_nested(&mut self, counted: Counted) -> Result<(), ReachedBound> {
         self.nested_rows = self.nested_rows.max(counted.rows);
-        self.replay(counted.bindings)
+        self.replay(counted.bindings)?;
+        self.limits.request.charge_effort(counted.effort)
     }
 
     /// Charges the `charges` of an evaluation that [`Budget::logged`] gave.
@@ -468,13 +472,15 @@ impl<'a> Budget<'a> {
         self.charge_bytes_transient(charges.bytes)
     }
 
-    /// Whether [`Budget::replay`] of `charges` stays within the caps that its
-    /// charges are counted against. A memo that outlives the evaluation
-    /// computes the search again where they do not, so that the search stops
-    /// at the charge that it stops at with no memo.
-    fn can_replay(&self, charges: Charges) -> bool {
+    /// Whether [`Budget::replay_nested`] of `counted` stays within the caps
+    /// that its charges are counted against. A memo that outlives the
+    /// evaluation computes the search again where they do not, so that the
+    /// search stops at the charge that it stops at with no memo.
+    fn can_replay(&self, counted: Counted) -> bool {
+        let charges = counted.bindings;
         let request = &self.limits.request;
-        self.bindings.saturating_add(charges.bindings) <= self.session.caps.bindings
+        request.fits_effort(counted.effort)
+            && self.bindings.saturating_add(charges.bindings) <= self.session.caps.bindings
             && request.count().saturating_add(charges.bindings).saturating_add(charges.request) <= request.cap()
             && request.fits_bytes(charges.bytes)
             && self.limits.table_work.as_ref().is_none_or(|work| work.fits(charges.bindings) && work.fits_bytes(charges.bytes))
@@ -504,11 +510,13 @@ impl Drop for Budget<'_> {
 }
 
 /// What a nested evaluation did to the counts of the budget it ran in: the
-/// bindings it charged, and the most rows that a nested evaluation in it held.
+/// bindings it charged, the most rows that a nested evaluation in it held, and
+/// the effort it charged to the request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Counted {
     bindings: Charges,
     rows: u64,
+    effort: u64,
 }
 
 /// One operation's materialization policy. It borrows the current limits;

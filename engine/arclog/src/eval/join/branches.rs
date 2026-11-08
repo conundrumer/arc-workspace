@@ -112,14 +112,15 @@ impl BranchMemo {
 /// clause's whole body, over `inputs`, projected onto `columns`, as an
 /// evaluation nested in the union ([`Budget::nested`]).
 ///
-/// A search that gave rows is kept with the bindings it charged and the most
-/// rows a nested evaluation in it held. Where the memo holds a search of an
+/// A search that gave rows is kept with the bindings it charged, the most
+/// rows a nested evaluation in it held, and the effort it charged. Where the memo holds a search of an
 /// equal branch over relations of the same rows and the same columns, the
 /// rows are the rows that search gave: the search reads nothing else, and its
 /// order depends on the rows alone. Such a hit charges the budget what the
-/// search charged, as a [`super::SearchMemo`] hit does, so the counts of the
-/// evaluation around it and the place where it stops at a cap are those of an
-/// evaluation with no memo. A search that stopped is not kept.
+/// search charged, as a [`super::SearchMemo`] hit does, and the effort that
+/// search charged, so the counts of the evaluation around it, its effort
+/// included, and the place where it stops at a cap are those of an evaluation
+/// with no memo. A search that stopped is not kept.
 pub(super) fn rows(
     budget: &mut Budget<'_>,
     branch: &ClauseIr,
@@ -135,7 +136,7 @@ pub(super) fn rows(
     let held = memo.find(hash, branch, columns, &read);
     if let Some((rows, counted)) = &held {
         // A hit whose charges would pass a cap is no hit: the search runs again, and stops where it stops with no memo.
-        if budget.can_replay(counted.bindings) {
+        if budget.can_replay(*counted) {
             budget.replay_nested(*counted)?;
             return Ok(rows.clone());
         }
