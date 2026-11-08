@@ -106,6 +106,24 @@ impl StableHasher {
         }
     }
 
+    /// Writes each of `items` as `write_u128` does. The hash is the same as that of the calls one by one;
+    /// where the bytes written so far fill whole words, the two words of an item are absorbed in turn.
+    pub fn write_u128s(&mut self, items: &[u128]) {
+        if self.len % 8 == 0 {
+            let mut state = self.state;
+            for &item in items {
+                StableHasher::absorb(&mut state, item as u64);
+                StableHasher::absorb(&mut state, (item >> 64) as u64);
+            }
+            self.state = state;
+            self.len += 16 * items.len() as u64;
+        } else {
+            for &item in items {
+                self.write_u128(item);
+            }
+        }
+    }
+
     /// The 128-bit hash of the bytes written so far.
     pub fn finish128(&self) -> StableHash {
         let mut state = self.state;

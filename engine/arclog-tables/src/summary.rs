@@ -908,9 +908,7 @@ fn sort_hashes(items: &mut [u128]) {
 fn digest(items: &[u128]) -> u128 {
     let mut hasher = StableHasher::new();
     hasher.write_u64(items.len() as u64);
-    for &item in items {
-        hasher.write_u128(item);
-    }
+    hasher.write_u128s(items);
     hasher.finish128().0
 }
 
