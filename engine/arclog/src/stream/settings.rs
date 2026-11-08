@@ -55,6 +55,10 @@ pub struct DecodeSettings {
     /// The work of one request, summed over every query and walk of it, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub request_work_cap: u64,
+    /// The bindings that the searches of one request may try before the effort
+    /// guard stops it, as `docs/engine/synthesis.md#decode-settings` gives it.
+    /// No result depends on it.
+    pub effort_cap: u64,
     /// The bytes one request may hold at a time, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub request_byte_cap: u64,
@@ -89,7 +93,7 @@ impl DecodeSettings {
     /// thread until another request begins on it.
     pub fn operation_limits(&self)->crate::eval::Limits {
         let mut limits=crate::eval::Limits::new(Some(self.request_work_cap),crate::eval::Cancellation::default());
-        limits.request=crate::eval::RequestWork::begin_with(self.request_work_cap,self.byte_caps());
+        limits.request=crate::eval::RequestWork::begin_capped(self.request_work_cap,self.byte_caps(),self.effort_cap);
         limits
     }
     /// The byte budgets of a request and of each assignment in it.
@@ -118,6 +122,7 @@ impl Default for DecodeSettings {
             projection_cap: 10_000,
             table_work_cap: 1 << 21,
             request_work_cap: REQUEST_WORK_CAP,
+            effort_cap: crate::eval::EFFORT_CAP,
             request_byte_cap: REQUEST_BYTES_CAP,
             assignment_byte_cap: ASSIGNMENT_BYTES_CAP,
             candidate_byte_cap: CANDIDATE_BYTES_CAP,

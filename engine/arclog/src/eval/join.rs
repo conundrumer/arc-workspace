@@ -1279,8 +1279,9 @@ impl Plan {
             });
             let order=ColumnOrder(columns.iter().map(|(c, _)| *c).collect());
             let work = relation.index_work(&order);
-            budget.charge_work(work)?;
+            // The bytes of the build are checked first: a build that the byte budget stops walks no row, and tries no binding.
             budget.charge_index_build(relation, &order, work)?;
+            budget.charge_work(work)?;
             let (index, _) = relation.index_built(&order);
             // A build of one part walks that part's rows, which no count of bindings holds; a build of several parts was charged as `work` above.
             // Both are effort: which indexes a search builds depends on its variable order, and no result depends on it.

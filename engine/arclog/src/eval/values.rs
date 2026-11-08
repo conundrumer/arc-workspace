@@ -888,9 +888,10 @@ thread_local! {
 
 /// Runs `run` with the sums that cut results turned off on this thread: a
 /// charge to the request's work ([`RequestWork::charge`]) or to an
-/// observation's count ([`TableWork::charge`]) counts as effort of the request
-/// ([`RequestWork::charge_effort`]) and adds to neither, and no cost fits or
-/// misfits against them. The measurements open still record the charges, so
+/// observation's count ([`TableWork::charge`]) adds to neither, and adds
+/// nothing to the effort of the request either, which counts the bindings that
+/// searches try ([`RequestWork::charge_effort`]), and no cost fits or misfits
+/// against them. The measurements open still record the charges, so
 /// the cost of an entry that `run` computes is what it is anywhere, and a
 /// later hit on it, outside, charges that cost.
 ///
@@ -1240,7 +1241,12 @@ impl RequestWork {
 
     /// [`RequestWork::begin`], under the byte budgets `byte_caps`.
     pub fn begin_with(cap: u64, byte_caps: ByteCaps) -> Self {
-        let work = Self::with_byte_caps(cap, byte_caps);
+        Self::begin_capped(cap, byte_caps, EFFORT_CAP)
+    }
+
+    /// [`RequestWork::begin_with`], under the effort guard `effort_cap`.
+    pub fn begin_capped(cap: u64, byte_caps: ByteCaps, effort_cap: u64) -> Self {
+        let work = Self::with_byte_caps(cap, byte_caps).with_effort_cap(effort_cap);
         ambient::reset();
         tally(|tally| tally.unbilled = 0);
         LATEST.with(|latest| *latest.borrow_mut() = Some(work.clone()));
@@ -1294,8 +1300,9 @@ impl RequestWork {
             (units, unbilled)
         });
         self.charge_effort(unbilled)?;
+        // The units are content, or the content that a hit recorded: they try no binding, so they add to no count here, and the effort has only the bindings that searches try ([`RequestWork::charge_effort`]).
         if is_uncounted() {
-            return self.charge_effort(units);
+            return Ok(());
         }
         // A check that adds nothing reads the count alone.
         let count = if units == 0 {
