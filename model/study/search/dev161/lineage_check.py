@@ -31,7 +31,7 @@ import zstandard
 
 # Env variables whose difference is allowed, with the reason. Anything else fails. Extend with --allow NAME=reason.
 ALLOWED_EXACT = {
-    'ARC_MAIN_ROOT': 'path', 'ARC_ROOT': 'path', 'ARC_MODELS': 'path', 'ARC_POLICY': 'path', 'POLICY_MODEL': 'path', 'ARC_STORE': 'path',
+    'ARC_MODELS': 'path', 'ARC_POLICY': 'path', 'POLICY_MODEL': 'path', 'ARC_STORE': 'path',
     'KIT_MODELS': 'path', 'PYTHONPATH': 'path', 'WRITER_TREE': 'path of the model file (extraction reads no tree)', 'SEARCH_STATE_SCORE': 'path',
     'NODE_SCORE': 'path', 'ARC_RECORD': 'path of the record output (debug output)', 'WRITER_PARITY_DIR': 'debug output', 'WRITER_ATOM_LOG_DIR': 'debug output',
     'RUST_BACKTRACE': 'debug output', 'ARCLOG_THREADS': 'thread count',

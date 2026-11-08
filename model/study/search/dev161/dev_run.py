@@ -169,19 +169,26 @@ def arm_tree(a, arm):
     return a.base_tree if arm == 'base' and a.base_tree else a.tree
 
 
-def parity_gate(a, out, arm, tasks):
-    """Refuses a live run whose worker gives a model other input rows than training rows: a short worker on a few tasks writes a sample of its points (WRITER_PARITY_DIR), and sampler/serving_parity.py rebuilds them at a session as rows make it. A stamp in search/parity-stamps/<code hash>/ keeps a pass for this sampler code, site, tree and writer settings, outside the code version."""
+def parity_check(a, out, arm, tasks):
+    """Checks, beside the run's jobs, that the run's worker gives the model the input rows it was fit on: a short worker on a few tasks writes a sample of its points (WRITER_PARITY_DIR), and sampler/serving_parity.py rebuilds them at a session as rows make it. The run goes on either way: the verdict, with the check's report, is in <run>/parity-<arm>.json, and a run whose verdict is 'failed' read other rows than its model was fit on. A stamp in search/parity-stamps/<code hash>/ keeps a pass for this sampler code, site, tree and writer settings, outside the code version."""
+    mark = out / ('parity-%s.json' % arm)
     samp = Path(a.code) / 'model/study/sampler'
     if not (samp / 'serving_parity.py').exists():
-        raise SystemExit('this kit has no serving parity check: %s has no serving_parity.py. --no-parity runs it unchecked.' % samp)
+        mark.write_text(json.dumps(dict(verdict='unchecked', report='this kit has no serving parity check: %s has no serving_parity.py' % samp)))
+        return 'unchecked'
     settings = sorted((k, v) for k, v in os.environ.items() if k.startswith('WRITER_') and k != 'WRITER_PARITY_DIR')
     code = hashlib.sha256(b''.join(p.read_bytes() for p in sorted(samp.glob('*.py')))).hexdigest()  # a change to the sampler's code needs a new check
     tree = arm_tree(a, arm)
     key = hashlib.sha256(json.dumps([a.site, str(tree), a.plan, settings, code] + (sorted(a.tok_env) if arm != 'base' else [])).encode()).hexdigest()[:16]
     stamp = DATA_ROOT / 'search' / 'parity-stamps' / code[:16] / (key + '.json')  # outside the code version, which a run never writes into
     if stamp.exists():
-        return
+        mark.write_text(json.dumps(dict(verdict='pass', stamp=str(stamp))))
+        return 'pass'
     folder = out / ('parity' if arm != 'base' else 'parity-base')  # each tree's check has its own folder
+    n = 0
+    while folder.exists():  # a check that ran before in this run folder keeps its folder
+        n += 1
+        folder = out / ('%s.%d' % ('parity' if arm != 'base' else 'parity-base', n))
     short = argparse.Namespace(**{**vars(a), 'seconds': 25, 'draws': 15})
     for task in tasks[:3]:
         w = folder / task
@@ -197,10 +204,14 @@ def parity_gate(a, out, arm, tasks):
     env.pop('ARC_DRAW_RECORD', None)
     got = subprocess.run([str(PY), str(samp / 'serving_parity.py'), str(folder), '--tree', str(tree), '--models', str(a.models)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     print(got.stdout[-3000:], flush=True)
-    if got.returncode:
-        raise SystemExit('serving parity failed: this run would read other rows than its model was fit on. Details above; --no-parity runs it anyway.')
+    verdict = 'failed' if got.returncode else 'pass'
+    mark.write_text(json.dumps(dict(verdict=verdict, folder=str(folder), report=got.stdout[-6000:])))
+    if verdict == 'failed':
+        print('serving parity FAILED for arm %s: this run reads other rows than its model was fit on. Details above and in %s; the jobs go on.' % (arm, mark), flush=True)
+        return verdict
     stamp.parent.mkdir(parents=True, exist_ok=True)
     stamp.write_text(json.dumps(dict(site=a.site, tree=str(tree), plan=a.plan, settings=settings, report=got.stdout[-2000:])))
+    return verdict
 
 
 def job_env(a, w, arm, seed):
@@ -318,7 +329,7 @@ def main():
     ap.add_argument('--shuffle', type=int, help='takes the split\'s tasks in an order that this seed shuffles, so that --tasks gives a mixed sample')
     ap.add_argument('--split', default='dev')
     ap.add_argument('--record', action='store_true', help='each worker writes its draw records')
-    ap.add_argument('--no-parity', action='store_true', help='runs with no check that a worker gives the model the rows it was fit on (parity_gate)')
+    ap.add_argument('--no-parity', action='store_true', help='runs with no check, beside the jobs, that a worker gives the model the rows it was fit on (parity_check)')
     ap.add_argument('--budget', choices=('cpu', 'wall', 'draws'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor; '
                     'draws: --draws sampled queries, the same on any machine, with GUARD times --seconds of CPU as the outer guard (a code version whose worker takes --draws)')
     ap.add_argument('--draws', type=int, default=80, help='with --budget draws, the sampled queries of a job')
@@ -340,12 +351,10 @@ def main():
         random.Random(a.shuffle).shuffle(tasks)
     tasks = tasks[:a.tasks or None]
     todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
-    if not a.no_parity and a.budget in ('cpu', 'draws'):
-        for arm in a.arms.split(','):
-            parity_gate(a, out, arm, tasks)
     print('%d %s tasks, %d jobs to run, %d done' % (len(tasks), a.split, len(todo), len(done)), flush=True)
     t0, n, dead = time.time(), 0, 0
-    with cf.ThreadPoolExecutor(max(16, a.jobs)) as ex:  # gate() holds the jobs to the limit; a pool smaller than --jobs would hold them below it
+    with cf.ThreadPoolExecutor(max(16, a.jobs) + len(a.arms.split(','))) as ex:  # gate() holds the jobs to the limit; a pool smaller than --jobs would hold them below it
+        checks = [(arm, ex.submit(parity_check, a, out, arm, tasks)) for arm in a.arms.split(',')] if not a.no_parity and a.budget in ('cpu', 'draws') else []
         for fut in cf.as_completed([ex.submit(job, a, out, *j) for j in todo]):
             r = fut.result()
             n += 1
@@ -356,6 +365,8 @@ def main():
             rate = n / (time.time() - t0)
             print('%s %s s%d solved %s cands %d kills %d tb %d | %d/%d, ETA %.0f min' % (
                 r['task'], r['arm'], r['seed'], r['solved'], r['candidates'], r['kills'], r['tracebacks'], n, len(todo), (len(todo) - n) / rate / 60), flush=True)
+        for arm, c in checks:
+            print('serving parity of arm %s: %s' % (arm, c.result()), flush=True)
 
 
 if __name__ == '__main__':
