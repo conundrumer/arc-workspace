@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::bounds::Bound;
 use crate::boxes::second_columns;
+use crate::columns::Columns;
 use crate::expression::Op;
 use crate::gen_constants::number_bits;
 use crate::gen_parts::PartStep;
@@ -665,10 +666,9 @@ impl Joined {
     }
 
     /// A table in which the distinct tuples of the rows of the join stand at `columns`, as rows of the join's width with 0 at each other column: no value where they pass `CELL_CAP` cells. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
-    pub fn rows_at(&self, columns: &[u16]) -> Option<Arc<Table>> {
+    pub fn rows_at(&self, columns: &Columns) -> Option<Arc<Table>> {
         let mut key: Vec<u16> = columns.to_vec();
         key.sort_unstable();
-        key.dedup();
         let key = key.into_boxed_slice();
         let held = self.sketches.lock().expect("a sketch lock").1.get(&key).cloned();
         let built = match held {
@@ -904,7 +904,7 @@ impl Joined {
     pub fn reads(&self, step: &Step) -> bool {
         match step {
             Step::Project { .. } | Step::All { .. } => true,
-            Step::Part(part) => matches!(**part, PartStep::Count { .. }) || part.set_columns().is_some(),
+            Step::Part(part) => matches!(part.step(), PartStep::Count { .. }) || part.set_columns().is_some(),
             _ => false,
         }
     }
@@ -922,7 +922,7 @@ impl Joined {
     /// The relation that `step` reads in place of the join as its second relation, where `reads_second` holds of it: no value where the tuples pass `CELL_CAP` cells.
     pub fn read_second(&self, step: &Step) -> Option<Val> {
         let columns = second_columns(step)?;
-        Some(self.rows_at(&columns).map_or(Val::None, Val::of_table))
+        Some(self.rows_at(columns).map_or(Val::None, Val::of_table))
     }
 
     /// What `step` gives over the join's rows, where `reads` holds of it.
@@ -932,18 +932,18 @@ impl Joined {
                 Some(table) => project(&Val::of_table(table), columns),
                 None => Val::None,
             }),
-            Step::All { left, right, outer } => {
-                let columns: Vec<u16> = left.iter().chain(outer.iter()).copied().collect();
-                Some(match self.rows_at(&columns) {
+            Step::All { reads, left_len, right } => {
+                let (left, outer) = reads.split(*left_len);
+                Some(match self.rows_at(reads) {
                     Some(table) => all(&Val::of_table(table), children[1], left, right, outer).unwrap_or(Val::None),
                     None => Val::None,
                 })
             }
-            Step::Part(part) => match &**part {
+            Step::Part(part) => match part.step() {
                 PartStep::Count { keys } => Some(self.counts(keys)),
                 other => {
-                    let columns = other.set_columns()?;
-                    Some(match self.rows_at(&columns) {
+                    let columns = part.set_columns()?;
+                    Some(match self.rows_at(columns) {
                         Some(table) => other.run(&table, children).unwrap_or(Val::None),
                         None => Val::None,
                     })
@@ -958,7 +958,7 @@ impl Joined {
         match step {
             Step::Project { columns } => Some(self.distinct_count(columns)),
             // A count past a number's range has no value, which only a join of more rows than a number holds can reach.
-            Step::Part(part) => match &**part {
+            Step::Part(part) => match part.step() {
                 PartStep::Count { keys } if !keys.is_empty() && self.rows <= i32::MAX as u64 => Some(self.distinct_count(keys)),
                 _ => None,
             },
