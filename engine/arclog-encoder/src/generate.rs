@@ -2794,6 +2794,21 @@ impl<'a> Walker<'a> {
         }
     }
 
+    /// Brings the stored value at `id` back into memory, if it is on disk only, as `value`, a value that has its hash. Rows of one hash are the same set of rows at the same columns, so `value` stands for the copy on disk and the copy is not read.
+    fn restore(&mut self, id: u32, value: Val) {
+        let Some(copy) = self.spilled.get_mut(&id) else { return };
+        if copy.here {
+            return;
+        }
+        if !matches!(value, Val::Rows(_)) {
+            self.fetch(id);
+            return;
+        }
+        copy.here = true;
+        self.held_cells += held_of(&value);
+        self.values[id as usize] = value;
+    }
+
     /// Brings back every stored value that a list of ids holds and that is on disk only.
     fn fetch_all(&mut self, list: &[u32]) {
         if self.spilled.is_empty() {
@@ -2904,7 +2919,7 @@ impl<'a> Walker<'a> {
                 if let Some(found) = self.value_index.get(&hash).copied() {
                     // The value stored under the hash may be on disk only: it is the value that stands.
                     if !self.spilled.is_empty() {
-                        self.fetch(found);
+                        self.restore(found, value);
                     }
                     return found;
                 }
