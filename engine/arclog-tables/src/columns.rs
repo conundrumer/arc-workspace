@@ -1318,9 +1318,9 @@ fn orientation_cell(constant: OrientationConstant) -> i32 {
     cell_of(Term::Constant(Constant::Orientation(constant)))
 }
 
-/// The encoding of `term`, the cell of a term that has no number of its own.
+/// The encoding of `term`, the cell of a term of a fixed encoding that has no number of its own: an orientation constant.
 fn cell_of(term: Term) -> i32 {
-    term.encode().expect("a term that is no Box encodes").encoding() as i32
+    term.encode().expect("a term that is no Box encodes").fixed_encoding() as i32
 }
 
 fn form_path(form: &NodePath) -> String {
@@ -1404,7 +1404,7 @@ fn push_cells(out: &mut Vec<i32>, id: TermId, ty: &ValueType, idents: &mut Vec<(
         Term::Constant(Constant::Color(color)) => out.push(i32::from(color.digit())),
         Term::Constant(Constant::Example(example)) => out.push(i32::from(example.index())),
         Term::Constant(Constant::Unit) => out.push(0),
-        Term::Constant(Constant::LibName(_)) => out.push(id.encoding() as i32),
+        Term::Constant(Constant::LibName(name)) => out.push(name.export_cell()),
         term @ Term::Constant(Constant::Orientation(_)) => out.push(cell_of(term)),
     }
 }

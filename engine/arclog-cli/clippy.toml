@@ -8,3 +8,7 @@ disallowed-types = [
     { path = "std::collections::HashSet", reason = "uses a random seed per process; use arclog::hash::StableHashSet" },
     { path = "std::hash::RandomState", reason = "its seed differs from run to run; use arclog::hash::StableState" },
 ]
+
+disallowed-methods = [
+    { path = "arclog::terms::TermId::encoding", reason = "an Ident's bits and a lib name's bits are numbers of the order of interning; use TermId::export_encoding, TermId::key or TermId::fixed_encoding" },
+]

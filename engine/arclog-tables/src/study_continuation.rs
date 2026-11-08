@@ -3,7 +3,7 @@ use super::*;
 use arclog::eval::determinations::Domain;
 use arclog::eval::join::Budget;
 use arclog::relations::Relation;
-use std::collections::BTreeSet;
+use arclog::terms::TermKey;
 
 #[path = "study_out.rs"]
 mod output;
@@ -20,10 +20,10 @@ fn charge_rows(value:&Relation,budget:&mut Budget<'_>,at:&NodePath)->Result<(),E
         .map_err(|bound| End::Stop(arclog::eval::Stop {bound, form:at.clone()}))
 }
 
-fn rows(value: &Relation, budget: &mut Budget<'_>, at: &NodePath) -> Result<BTreeSet<Vec<u32>>, End> {
+fn rows(value: &Relation, budget: &mut Budget<'_>, at: &NodePath) -> Result<StableHashSet<Vec<TermKey>>, End> {
     charge_rows(value,budget,at)?;
-    let mut found=BTreeSet::new();
-    each_row(value,&mut |row| {found.insert(row.iter().map(|term|term.encoding()).collect());});
+    let mut found=StableHashSet::default();
+    each_row(value,&mut |row| {found.insert(row.iter().map(|term|term.key()).collect());});
     Ok(found)
 }
 

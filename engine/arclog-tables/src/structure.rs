@@ -395,7 +395,7 @@ impl Walk<'_, '_, '_> {
     fn argument(&self, argument: &Argument) -> Value {
         match argument {
             Argument::Variable(variable) => json!({"v": self.id(*variable)}),
-            Argument::Term(term) => json!({"t": term.encoding().to_string()}),
+            Argument::Term(term) => json!({"t": term.fixed_encoding().to_string()}),
         }
     }
 

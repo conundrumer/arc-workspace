@@ -534,10 +534,10 @@ fn rows_status(tables: &[(usize, Table)]) -> Value {
     complete()
 }
 
-fn row_set(rows: &arclog::relations::Relation) -> StableHashSet<Vec<u32>> {
+fn row_set(rows: &arclog::relations::Relation) -> StableHashSet<Vec<arclog::terms::TermKey>> {
     let mut set = StableHashSet::default();
     each_row(rows, &mut |row| {
-        set.insert(row.iter().map(|t| t.encoding()).collect());
+        set.insert(row.iter().map(|t| t.key()).collect());
     });
     set
 }
@@ -562,12 +562,25 @@ fn assigned_equal(
             })
         })
 }
-fn assignment_json(a: &[Assignment]) -> Value {
+/// The relation and the rows of each assignment, each cell as an output gives
+/// it ([`arclog::terms::TermId::export_encoding`]): `dets` give the columns' types in
+/// `checked`, and `table` the digests of Idents. The rows of an assignment
+/// whose types are unknown are null.
+fn assignment_json(a: &[Assignment], dets: &[arclog::judge::determination::Det], checked: &CheckedProgram, table: &arclog::terms::InternTable) -> Value {
     json!(
         a.iter()
             .map(|(name, rows)| {
-                let mut rows = row_set(rows).into_iter().collect::<Vec<_>>();
-                rows.sort();
+                let types = dets.iter().find(|det| det.relation == *name)
+                    .and_then(|det| checked.types.columns(&arclog::types::GraphRelation { node: det.node, output: None }));
+                let rows = types.map(|types| {
+                    let mut found: Vec<Vec<u32>> = Vec::new();
+                    each_row(rows, &mut |row| {
+                        found.push(row.iter().zip(types).map(|(term, ty)| term.export_encoding(ty, table)).collect());
+                    });
+                    found.sort();
+                    found.dedup();
+                    found
+                });
                 json!({"relation":relation_spelled(name), "rows":rows})
             })
             .collect::<Vec<_>>()
@@ -778,11 +791,11 @@ fn differences(a: &Grid, b: &Grid) -> usize {
 /// For a non-grid OUT, count expected cells that are missing, ambiguous,
 /// differently colored or in the wrong frame, plus occupied extra cells.
 fn invalid_differences(rows: &arclog::relations::Relation, expected: &Grid) -> usize {
-    let mut cells: StableHashMap<(i32, i32), StableHashSet<(u32, i32, i32)>> = StableHashMap::default();
+    let mut cells: StableHashMap<(i32, i32), StableHashSet<(arclog::terms::TermKey, i32, i32)>> = StableHashMap::default();
     each_row(rows, &mut |row| {
         let p = Term::decode_box(row[0]);
         cells.entry((p.top, p.left)).or_default().insert((
-            row[1].encoding(),
+            row[1].key(),
             p.top + p.bottom + 1,
             p.left + p.right + 1,
         ));
@@ -796,7 +809,7 @@ fn invalid_differences(rows: &arclog::relations::Relation, expected: &Grid) -> u
                 Term::Constant(Constant::Color(*color))
                     .encode()
                     .unwrap()
-                    .encoding(),
+                    .key(),
                 height,
                 width,
             );
@@ -861,7 +874,8 @@ fn gold_observation(gold:&StudyProgram,output:&GraphRelation,judge:&judgement::T
     let memo=if gold_hit {cache.gold_hits+=1;Arc::clone(&cache.gold[&gold_key])} else {
         let dets=arclog::decode::held_dets(gold.checked());
         let walked=decoder.assigned(gold.checked(),output.node,&dets,Some(&work),&mut |e|train(e,&output,&judge));
-        let records=walked.as_ref().map(|w|w.at.iter().map(|(a,_)|assignment_json(a)).collect()).unwrap_or_default();
+        let records={let table=decoder.evaluation_inputs().1.intern.read().expect("an intern table that no panic poisoned");
+            walked.as_ref().map(|w|w.at.iter().map(|(a,_)|assignment_json(a,&dets,gold.checked(),&table)).collect()).unwrap_or_default()};
         cache.sequence+=1;
         let memo=Arc::new(GoldMemo {_source:Arc::clone(gold.checked()),walked,records,sequence:cache.sequence});
         cache.gold.insert(gold_key,Arc::clone(&memo));memo

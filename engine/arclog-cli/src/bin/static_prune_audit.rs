@@ -62,8 +62,8 @@ impl Audit {
                 count.failures += 1;
                 if count.examples.len() < 8 {
                     count.examples.push(json!({"relation":relation,
-                        "bound":bound.iter().map(|v|v.map(TermId::encoding)).collect::<Vec<_>>(),
-                        "rows":out.iter().map(|r|r.iter().map(|v|v.encoding()).collect::<Vec<_>>()).collect::<Vec<_>>() }));
+                        "bound":bound.iter().map(|v|v.map(TermId::fixed_encoding)).collect::<Vec<_>>(),
+                        "rows":out.iter().map(|r|r.iter().map(|v|v.fixed_encoding()).collect::<Vec<_>>()).collect::<Vec<_>>() }));
                 }
             }
         }
@@ -164,7 +164,7 @@ fn run() -> Result<(), String> {
             let relation = task.fact_rows(fact, None);
             for part in relation.parts() {
                 for row in part.rows.rows() {
-                    positions.insert(row[1].encoding(), row[1]);
+                    positions.insert(row[1].fixed_encoding(), row[1]);
                 }
             }
         }

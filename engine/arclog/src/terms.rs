@@ -24,8 +24,13 @@ use crate::types::ValueType;
 pub struct TermId(u32);
 
 impl TermId {
-    /// The 32 bits of the term id, for a writer's fixed order of encodings
-    /// and for packing.
+    /// The 32 bits of the term id, for the engine's own fixed order of
+    /// encodings and for packing. An Ident's bits and a lib name's bits are
+    /// numbers of the order of interning, so they stay inside the engine: the
+    /// `clippy.toml` of the crates that write outputs refuses this method. An
+    /// output takes [`TermId::export_encoding`], an equality test takes
+    /// [`TermId::key`], and a term of a fixed type takes
+    /// [`TermId::fixed_encoding`].
     pub fn encoding(self) -> u32 {
         self.0
     }
@@ -34,7 +39,39 @@ impl TermId {
     pub fn from_encoding(bits: u32) -> Self {
         TermId(bits)
     }
+
+    /// The bits of a term of a column that holds a Color, a Box, an Example,
+    /// an orientation constant, a `number` or the Unit value, whose bits do
+    /// not depend on the order of interning. It is a fault to call this on an
+    /// Ident or a lib name.
+    pub fn fixed_encoding(self) -> u32 {
+        self.0
+    }
+
+    /// The identity of the term, for a test of equality or a set of terms
+    /// within one session. It has no order and no number.
+    pub fn key(self) -> TermKey {
+        TermKey(self.0)
+    }
+
+    /// The bits that an output gives for the term at a column of type `ty`: an
+    /// Ident by the first 32 bits of its content's digest
+    /// ([`InternTable::export_cell`]), a lib name by those of its text's digest
+    /// ([`LibNameId::export_cell`]), and any other term by its encoding. The
+    /// same term gives the same bits in every process.
+    pub fn export_encoding(self, ty: &ValueType, table: &InternTable) -> u32 {
+        match ty {
+            ValueType::Ident(_) => table.export_cell(Ident(self.0)) as u32,
+            ValueType::LibName => LibNameId(self.0).export_cell() as u32,
+            _ => self.0,
+        }
+    }
 }
+
+/// The identity of a term ([`TermId::key`]): equal terms have equal keys, and
+/// a key gives no number and no order.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct TermKey(u32);
 
 /// A `number`: a count, as `docs/handbook/encoding.md#numbers` gives, held
 /// as its two's-complement value. The one column type with an order.
@@ -204,6 +241,15 @@ impl LibNameId {
     /// The name's text.
     pub fn text(self) -> std::sync::Arc<str> {
         lib_names().read().expect("a table that no panic poisoned").texts[self.0 as usize].clone()
+    }
+
+    /// The cell that an output gives the name: the first 32 bits of the
+    /// digest of its text. It is the same for equal texts in every process,
+    /// where the name's number follows the order of interning.
+    pub fn export_cell(self) -> i32 {
+        let mut hasher = crate::hash::StableHasher::new();
+        std::hash::Hasher::write(&mut hasher, self.text().as_bytes());
+        (hasher.finish128().0 >> 96) as u32 as i32
     }
 }
 

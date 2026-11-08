@@ -225,7 +225,7 @@ fn model_of(model: &ShapeModel) -> Option<Model> {
     let mut columns: Vec<Vec<u32>> = vec![Vec::with_capacity(rows); arity];
     each_row(&model.relation, &mut |row| {
         for (column, cell) in columns.iter_mut().zip(row) {
-            column.push(cell.encoding());
+            column.push(cell.fixed_encoding());
         }
     });
     Some(Model { rows, columns })

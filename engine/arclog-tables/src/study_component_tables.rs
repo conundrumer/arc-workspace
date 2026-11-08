@@ -179,13 +179,22 @@ pub fn full_choice_extents(materializer:&Materializer<'_>,tables:&[(usize,Table)
                         Ok(owner)=>allocations.push(owner),
                         Err(bound)=>{examples.push(json!({"example_kind":kind,"example_index":index,"model":model,"status":"stopped","reason":format!("{bound:?}")}));continue;}
                     }
-                    let mut at=0;let mut out=Vec::new();
+                    let mut at=0;let mut out=Vec::new();let mut packed=Vec::new();
                     let walked=materializer.walk(rows,&mut |row| {
                         let cells=columns.iter().zip(&annotations[at]).map(|(column,(status,extent))|json!({
                             "column":column,"extent_status":match status {0=>"no_grid",1=>"resolved",_=>"unresolved"},
                             "extent":extent.map(|e|[e.rows,e.columns])})).collect::<Vec<_>>();
-                        out.push(json!({"packed_row":row.iter().map(|t|t.encoding()).collect::<Vec<_>>(),"cells":cells}));at+=1;
+                        packed.push(row.to_vec());
+                        out.push(json!({"cells":cells}));at+=1;
                     });
+                    if walked.is_ok() {
+                        // The read lock is taken after the walk, which may read the table itself.
+                        let types:Vec<arclog::types::ValueType>=contents.columns.iter().map(|c|c.ty.clone()).collect();
+                        let table=materializer.session().intern.read().expect("an intern table that no panic poisoned");
+                        for (entry,row) in out.iter_mut().zip(&packed) {
+                            entry["packed_row"]=json!(row.iter().zip(&types).map(|(t,ty)|t.export_encoding(ty,&table)).collect::<Vec<_>>());
+                        }
+                    }
                     match walked {
                         Ok(())=>examples.push(json!({"example_kind":kind,"example_index":index,"model":model,"rows":out})),
                         Err(bound)=>examples.push(json!({"example_kind":kind,"example_index":index,"model":model,"status":"stopped","reason":format!("{bound:?}")})),
