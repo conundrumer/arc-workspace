@@ -17,7 +17,7 @@
 //! names that one ([`Successor::same_as`]), so that a caller exports the
 //! tables once.
 
-use std::collections::HashMap;
+use arclog::hash::StableHashMap;
 
 use super::*;
 use arclog::decode::{LeftOut, Refusal};
@@ -115,7 +115,7 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
         None => body_table_at(&operation, point, earlier, &names),
     });
     // The contents of each successor body evaluated so far, by its key; the body in progress first.
-    let mut evaluated: HashMap<Vec<u8>, Outcome<Contents>> = HashMap::new();
+    let mut evaluated: StableHashMap<Vec<u8>, Outcome<Contents>> = StableHashMap::default();
     let own = decoder.sub_body_key().map(|key| key.source);
     if let (Some(table), Some(source)) = (&current, &own) {
         evaluated.insert(source.clone(), table.contents.clone());
@@ -124,7 +124,7 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
     // The places in `each` of the successors that name no earlier one, and that a later one can name.
     let mut firsts: Vec<usize> = Vec::new();
     // For each successor body and point, the place in `each` of the successor that a later one of that body and point names. Both hold the contents of one evaluation, which `same_tables` takes as different where they hold extents.
-    let mut held_at: HashMap<(Vec<u8>, Point), usize> = HashMap::new();
+    let mut held_at: StableHashMap<(Vec<u8>, Point), usize> = StableHashMap::default();
     for token in tokens {
         // The operation's decode, so that the successor's consistency test counts in the call's request.
         let next = match operation.successor(token) {

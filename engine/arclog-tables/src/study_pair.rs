@@ -11,7 +11,7 @@ use arclog::study::StudyProgram;
 use arclog::task::Grid;
 use arclog::task::JudgedTask;
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet};
+use arclog::hash::{StableHashMap, StableHashSet};
 use std::time::Instant;
 use arclog::check::{CheckedProgram};
 
@@ -132,9 +132,9 @@ pub struct PairEvaluation {
 /// current body and one rolling dependency prefix can be reused.
 pub struct PairCache {
     active: Option<Arc<CheckedProgram>>,
-    gold: HashMap<usize,Arc<GoldMemo>>,
-    gold_bodies: HashMap<(usize,NodePath),Outcome<ClauseTables>>,
-    gold_relations: HashMap<usize,GoldRelationMemo>,
+    gold: StableHashMap<usize,Arc<GoldMemo>>,
+    gold_bodies: StableHashMap<(usize,NodePath),Outcome<ClauseTables>>,
+    gold_relations: StableHashMap<usize,GoldRelationMemo>,
     held: Option<HeldProgram>,
     prefix: Option<PrefixMemo>,
     columns: Option<(Vec<u32>,crate::columns::CaseColumnPrefix)>,
@@ -225,7 +225,7 @@ impl Default for PairCache { fn default()->Self {Self::new(false)} }
 impl PairCache {
     pub fn new(compact:bool)->Self {Self::with_byte_bound(compact,STUDY_SESSION_BYTES)}
     pub fn with_byte_bound(compact:bool,bytes:usize)->Self {
-        Self {active:None,gold:HashMap::new(),gold_bodies:HashMap::new(),gold_relations:HashMap::new(),held:None,prefix:None,columns:None,forms:form_memo::FormMemo::new(bytes/4),source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
+        Self {active:None,gold:StableHashMap::default(),gold_bodies:StableHashMap::default(),gold_relations:StableHashMap::default(),held:None,prefix:None,columns:None,forms:form_memo::FormMemo::new(bytes/4),source:None,compact,cache_bytes:bytes/2,active_source:0,gold_body_hits:0,gold_hits:0,prefix_hits:0,sequence:0}
     }
     pub fn set_observation_start(&mut self,sequence:u64) {self.sequence=sequence;}
     /// The bytes that the native prefix and the packed prefix may hold: the admission budget less the walks of tables that the form cache holds.
@@ -249,9 +249,9 @@ impl PairCache {
     pub fn finish_case(&mut self) {
         self.active=None;
         self.active_source=0;
-        self.gold=HashMap::new();
-        self.gold_bodies=HashMap::new();
-        self.gold_relations=HashMap::new();
+        self.gold=StableHashMap::default();
+        self.gold_bodies=StableHashMap::default();
+        self.gold_relations=StableHashMap::default();
         self.held=None;
         self.prefix=None;
         self.columns=None;
@@ -270,7 +270,7 @@ impl PairCache {
         self.prefix=None;
         self.columns=None;
         let mut bytes=key.capacity().saturating_mul(4);
-        let mut receipts=HashSet::new();
+        let mut receipts=StableHashSet::default();
         for (_,table) in &tables {if let Ok(c)=&table.contents {bytes=bytes.saturating_add(c.assignment_layout.retained_bytes(&mut receipts));}}
         for (_,table) in &tables {if let Ok(c)=&table.contents {for ex in &c.examples {if let Ok(a)=&ex.rows {for (_,models) in &a.at {for model in models {if let RelationValue::Rows(r)=model {
             bytes=bytes.saturating_add(usize::try_from(r.len()).unwrap_or(usize::MAX).saturating_mul(usize::from(r.arity()).saturating_mul(8)+16));
@@ -280,7 +280,7 @@ impl PairCache {
         }
     }
     fn assignment_receipt_bytes(&self)->usize {
-        let mut seen=HashSet::new();
+        let mut seen=StableHashSet::default();
         let mut bytes=0usize;
         let bodies=self.gold_bodies.values().filter_map(|v|v.as_ref().ok()).map(|v|v.tables.as_slice());
         let relations=self.gold_relations.values().filter_map(|memo|memo.tables.as_ref().ok()).map(Vec::as_slice);
@@ -535,8 +535,8 @@ fn rows_status(tables: &[(usize, Table)]) -> Value {
     complete()
 }
 
-fn row_set(rows: &arclog::relations::Relation) -> HashSet<Vec<u32>> {
-    let mut set = HashSet::new();
+fn row_set(rows: &arclog::relations::Relation) -> StableHashSet<Vec<u32>> {
+    let mut set = StableHashSet::default();
     each_row(rows, &mut |row| {
         set.insert(row.iter().map(|t| t.encoding()).collect());
     });
@@ -700,7 +700,7 @@ fn comparisons(
                         let m = if let Some(order) = &order {
                             raw.into_iter()
                                 .map(|row| order.iter().map(|&i| row[i]).collect::<Vec<_>>())
-                                .collect::<HashSet<_>>()
+                                .collect::<StableHashSet<_>>()
                         } else {
                             raw
                         };
@@ -779,7 +779,7 @@ fn differences(a: &Grid, b: &Grid) -> usize {
 /// For a non-grid OUT, count expected cells that are missing, ambiguous,
 /// differently colored or in the wrong frame, plus occupied extra cells.
 fn invalid_differences(rows: &arclog::relations::Relation, expected: &Grid) -> usize {
-    let mut cells: HashMap<(i32, i32), HashSet<(u32, i32, i32)>> = HashMap::new();
+    let mut cells: StableHashMap<(i32, i32), StableHashSet<(u32, i32, i32)>> = StableHashMap::default();
     each_row(rows, &mut |row| {
         let p = Term::decode_box(row[0]);
         cells.entry((p.top, p.left)).or_default().insert((
@@ -1082,7 +1082,7 @@ fn evaluate_pair_inner(
     let body_key=(gold_key,point.body.clone());
     let gold_body=match cache.gold_bodies.get(&body_key) {
         Some(held)=>{cache.gold_body_hits+=1;held.clone()},
-        None=>{cache.gold_bodies=HashMap::new();let held=clause_tables(gold,gold.checked(),&point.body,&mut gd,&fixed,cache);cache.gold_bodies.insert(body_key,held.clone());held}
+        None=>{cache.gold_bodies=StableHashMap::default();let held=clause_tables(gold,gold.checked(),&point.body,&mut gd,&fixed,cache);cache.gold_bodies.insert(body_key,held.clone());held}
     };
     match gold_body {
         Ok(t) => {

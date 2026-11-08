@@ -64,10 +64,11 @@
 //!   `[column identity, column identity it is replaced by]` for each column
 //!   that it moves.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use arclog::algebra::satisfied_mode;
 use arclog::check::CheckedProgram;
+use arclog::hash::StableHashMap;
 use arclog::eval::ir::{Argument, Arguments, AtomSource, ClauseIr, IrNode, IrPaths, NodePaths, Operand, Variable};
 use arclog::eval::read_coordinates::{ReadCoordinates, SourceColumn};
 use arclog::program::path::NodePath;
@@ -258,7 +259,7 @@ impl Shared<'_> {
             .map(|index| (positions[index], json!({"id": ids[index], "type": type_names(std::slice::from_ref(&clause.variables[index].ty)).remove(0)})))
             .collect();
         variables.sort_by_key(|(position, _)| *position);
-        let by_label: HashMap<LabelId, &str> = paths.labels.iter().copied().zip(ids.iter().map(String::as_str)).collect();
+        let by_label: StableHashMap<LabelId, &str> = paths.labels.iter().copied().zip(ids.iter().map(String::as_str)).collect();
         let mut table_columns: Vec<Value> = Vec::new();
         for (index, column) in bindings.iter().enumerate() {
             for binding in column.bindings.iter().filter(|binding| binding.form == relation.form && binding.body == *body) {

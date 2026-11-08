@@ -1,9 +1,9 @@
 //! A task session and the settings of its decodes, as Python gives them.
 
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use arclog::hash::StableHashMap;
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession, SESSION_BYTES};
 use arclog::stream::{DecodeSettings, Vocabulary};
@@ -20,7 +20,7 @@ pub(crate) struct SessionData {
     pub(crate) session: TaskSession,
     pub(crate) settings: DecodeSettings,
     /// The values derived from the task, one of each type, made on the first ask ([`SessionData::derived`]).
-    derived: Mutex<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
+    derived: Mutex<StableHashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
 }
 
 impl SessionData {

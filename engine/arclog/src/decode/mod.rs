@@ -61,11 +61,11 @@ pub use projections::{projections, Projection, Projections};
 pub use state::State;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use crate::check::prefix::{Candidate, PrefixChecks};
 use crate::check::CheckId;
+use crate::hash::StableHashMap;
 use crate::eval::instance::Constructions;
 use crate::eval::copies::{CopyViolation, CopyViolations};
 use crate::eval::values::HeldStops;
@@ -162,7 +162,7 @@ impl Drop for RequestGuard {
 /// token's id, which [`Decoder::advance`] takes in place of a second check.
 struct Mask {
     mask: TokenMask,
-    steps: HashMap<u32, (state::State, Vec<Token>)>,
+    steps: StableHashMap<u32, (state::State, Vec<Token>)>,
     /// What the mask's computation charged to the request, which a call of
     /// [`Decoder::admissible`] that takes the mask from the decode or from the
     /// session charges again.
@@ -211,8 +211,8 @@ const PATH_MASKS: usize = 8192;
 /// generation is full, it becomes the older one, and the one before it goes.
 #[derive(Default, Debug)]
 pub(crate) struct PathMasks {
-    entries: std::collections::HashMap<u128, (TokenMask, crate::eval::Cost)>,
-    older: std::collections::HashMap<u128, (TokenMask, crate::eval::Cost)>,
+    entries: StableHashMap<u128, (TokenMask, crate::eval::Cost)>,
+    older: StableHashMap<u128, (TokenMask, crate::eval::Cost)>,
 }
 
 impl PathMasks {
@@ -469,7 +469,7 @@ impl<'a> Decoder<'a> {
         let vocabulary = &self.context.vocabulary;
         let work = self.request_work();
         let mut mask = TokenMask::new(vocabulary.len());
-        let mut steps = HashMap::new();
+        let mut steps = StableHashMap::default();
         if self.output.is_some() {
             return Mask { mask, steps, cost: Default::default() };
         }
@@ -562,7 +562,7 @@ impl<'a> Decoder<'a> {
     fn compute_mask_reference(&self) -> Mask {
         let vocabulary = &self.context.vocabulary;
         let mut mask = TokenMask::new(vocabulary.len());
-        let mut steps = HashMap::new();
+        let mut steps = StableHashMap::default();
         self.with_checks_at_state(|checks| {
             let memo = MaskMemo::default();
             for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
@@ -798,7 +798,7 @@ impl<'a> Decoder<'a> {
             && cost.fits(&work, None)
         {
             let _ = cost.charge(&work, None, self.session);
-            return Mask { mask, steps: HashMap::new(), cost };
+            return Mask { mask, steps: StableHashMap::default(), cost };
         }
         let mask = measured();
         // A mask that a stop at the request cap cut short is the mask of no state.

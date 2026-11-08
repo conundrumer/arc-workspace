@@ -8,7 +8,7 @@ use crate::program::{Atom, Conjunct, LabelId, LabelUse, Negated, RelationRef, Si
 use crate::registry::Registry;
 use crate::types::ValueType;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use crate::hash::StableHashMap;
 
 /// A prefix check's non-refusal includes Undecided. It is insufficient to
 /// certify a replacement. For a flat top-level clause, close the AST as it
@@ -227,7 +227,7 @@ fn fresh_at(
     site: &Site,
     at: &NodePath,
     columns: &std::collections::BTreeMap<NodePath, render_sites::SiteColumnType>,
-    bindings: &mut HashMap<LabelId, ValueType>,
+    bindings: &mut StableHashMap<LabelId, ValueType>,
 ) {
     for (i, arg) in site.value.args.iter().enumerate() {
         let path = at.child(i as u32);
@@ -250,7 +250,7 @@ fn fresh_atom(
     atom: &Atom,
     at: &NodePath,
     columns: &std::collections::BTreeMap<NodePath, render_sites::SiteColumnType>,
-    bindings: &mut HashMap<LabelId, ValueType>,
+    bindings: &mut StableHashMap<LabelId, ValueType>,
 ) {
     for (i, site) in atom.sites.iter().enumerate() {
         fresh_at(site, &at.child(i as u32), columns, bindings);
@@ -258,7 +258,7 @@ fn fresh_atom(
 }
 #[derive(Clone, Default)]
 struct Context {
-    types: HashMap<LabelId, ValueType>,
+    types: StableHashMap<LabelId, ValueType>,
     // Only earlier positive reads of this conjunction and its ancestors.
     // The bool is the native lifted train-example selection at that read.
     reads: Vec<(Atom, bool, NodePath)>,

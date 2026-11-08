@@ -12,7 +12,7 @@
 //! [`LabelScope::repeated`] gives the sites of a body that break that.
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use crate::hash::StableHashSet;
 
 use crate::layout::SourcePlace;
 use crate::program::LabelId;
@@ -112,7 +112,7 @@ impl LabelScope {
     /// inside `exprs` makes or `held` holds, each with its name, in source
     /// order.
     pub(super) fn repeated(&self, exprs: &[SExpr], held: &[Box<str>]) -> Vec<(&str, SourcePlace)> {
-        let mut seen: HashSet<&str> = held.iter().map(|name| &**name).collect();
+        let mut seen: StableHashSet<&str> = held.iter().map(|name| &**name).collect();
         let mut repeated = Vec::new();
         for site in self.sites_in(exprs) {
             if !seen.insert(&site.name) {

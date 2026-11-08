@@ -4,7 +4,7 @@
 //! follow the reader: the join rule of `engine/arclog/src/read/labels.rs`
 //! gives each join the label that [`ScopeLabels`] ranks it to.
 
-use std::collections::HashMap;
+use crate::hash::StableHashMap;
 
 use super::super::canonical::opens_scope;
 use super::super::path::{NodePath, NodeRef};
@@ -52,7 +52,7 @@ pub(super) fn check_label_names(root: NodeRef<'_>, at: &NodePath) -> Result<(), 
 /// that hold it.
 #[derive(Default)]
 struct ScopeLabels {
-    names: HashMap<LabelId, ColumnName>,
+    names: StableHashMap<LabelId, ColumnName>,
     /// Each use, in source order.
     uses: Vec<Use>,
     lists: u32,
@@ -122,7 +122,7 @@ impl ScopeLabels {
             }
             _ => {}
         }
-        let mut wrappers: HashMap<Wrapper, u32> = HashMap::new();
+        let mut wrappers: StableHashMap<Wrapper, u32> = StableHashMap::default();
         for (child, index) in node.children().into_iter().zip(0u32..) {
             let path = at.child(index);
             if opens_scope(node, index as usize, child) {

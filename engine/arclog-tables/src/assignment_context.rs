@@ -57,7 +57,7 @@ impl AssignmentLayout {
 
     /// Retained receipt bookkeeping, once per shared allocation. The source
     /// program and Relation allocations are already owned/accounted elsewhere.
-    pub(crate) fn retained_bytes(&self, seen: &mut std::collections::HashSet<usize>) -> usize {
+    pub(crate) fn retained_bytes(&self, seen: &mut arclog::hash::StableHashSet<usize>) -> usize {
         let Self::Held(receipt) = self else {return 0};
         if !seen.insert(Arc::as_ptr(receipt) as usize) {return 0;}
         std::mem::size_of::<HeldAssignments>().saturating_add(2 * std::mem::size_of::<usize>())

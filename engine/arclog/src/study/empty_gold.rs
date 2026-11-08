@@ -48,7 +48,7 @@
 //! the relation has exactly one row on each train example and test input, at
 //! each assignment and each model. It never changes the edit.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::Arc;
@@ -70,6 +70,7 @@ use crate::program::{column_spelled, Atom, Body, ClauseKeyword, ColumnName, Conj
 use crate::read::columns::{made_labels, slot_columns};
 use crate::registry::LibEntry;
 use crate::registry::Registry;
+use crate::hash::StableHashMap;
 use crate::relations::Relation;
 use crate::resolver::DependencyKind;
 use crate::safety::body_labels;
@@ -208,7 +209,7 @@ enum Coverage {
 /// The coverage of each relation of one program, by graph node and output.
 #[derive(Default)]
 struct Tables {
-    held: HashMap<(u32, Option<String>), Coverage>,
+    held: StableHashMap<(u32, Option<String>), Coverage>,
 }
 
 struct Evaluator<'a> {
@@ -1076,7 +1077,7 @@ fn compare_out(evaluator: &Evaluator<'_>, original: &StudyProgram, filtered: &St
 /// of the program the stream reads back as, with the text of the same
 /// relation in the case's source.
 struct Names {
-    relations: HashMap<String, String>,
+    relations: StableHashMap<String, String>,
 }
 
 impl Names {
@@ -1085,7 +1086,7 @@ impl Names {
         if native.relations.len() != stream.relations.len() {
             return Err("the case stream and its program declare other counts of relations".into());
         }
-        let mut relations = HashMap::new();
+        let mut relations = StableHashMap::default();
         for (native, source) in native.relations.iter().zip(&stream.relations) {
             relations.insert(spelled(native), spelled(source));
             if let (ProgramRelation::Output(native), ProgramRelation::Output(source)) = (native, source) {
@@ -1241,7 +1242,7 @@ fn names_after(filtered: &Filtered, names: &Names, registry: &Registry) -> Resul
     if edit.relations.len() != read.relations.len() {
         return Err("the filtered stream declares another count of relations".into());
     }
-    let mut relations = HashMap::new();
+    let mut relations = StableHashMap::default();
     for (old, new) in edit.relations.iter().zip(&read.relations) {
         relations.insert(spelled(new), names.source_text(&spelled(old)));
         if let (ProgramRelation::Output(old), ProgramRelation::Output(new)) = (old, new) {

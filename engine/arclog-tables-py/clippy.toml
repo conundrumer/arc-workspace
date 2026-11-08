@@ -1,0 +1,10 @@
+# Every hash map and hash set of the engine is a `StableHashMap` or a
+# `StableHashSet` of `arclog::hash`: their hasher has a fixed seed, so a run
+# gives the same layout as the one before. The standard types with the
+# standard hasher take a new random seed in each process, and the order in
+# which they iterate follows it.
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "uses a random seed per process; use arclog::hash::StableHashMap" },
+    { path = "std::collections::HashSet", reason = "uses a random seed per process; use arclog::hash::StableHashSet" },
+    { path = "std::hash::RandomState", reason = "its seed differs from run to run; use arclog::hash::StableState" },
+]

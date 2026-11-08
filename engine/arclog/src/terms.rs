@@ -175,7 +175,7 @@ pub struct LibNameId(u32);
 /// interning, so a lib name has no order and a writer writes its text.
 #[derive(Default)]
 struct LibNames {
-    ids: std::collections::HashMap<std::sync::Arc<str>, u32>,
+    ids: crate::hash::StableHashMap<std::sync::Arc<str>, u32>,
     texts: Vec<std::sync::Arc<str>>,
 }
 

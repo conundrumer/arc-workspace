@@ -110,7 +110,7 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
         None => (0..streams.len()).map(|index| index.to_string()).collect(),
     };
     let bases = check_bases(bases, streams.len())?;
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = arclog::hash::StableHashSet::default();
     for name in &names {
         if name.is_empty() || name == "." || name == ".." || name.contains('/') {
             return Err(PyValueError::new_err(format!("the name {name:?} is no file name")));

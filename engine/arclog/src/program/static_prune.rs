@@ -440,7 +440,7 @@ pub fn classify_prefix(
     column_type: &dyn Fn(&RelationRef, &ColumnName) -> Option<ValueType>,
 ) -> Option<Verdict> {
     let (last, earlier) = body.conjuncts.split_last()?;
-    let mut bound = std::collections::HashMap::<LabelId, ValueType>::new();
+    let mut bound = crate::hash::StableHashMap::<LabelId, ValueType>::default();
     for conjunct in earlier {
         let Conjunct::Atom(atom) = conjunct else {
             continue;

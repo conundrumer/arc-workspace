@@ -1,7 +1,7 @@
 //! The vocabulary of a decode, as Python gives it.
 
-use std::collections::HashMap;
 
+use arclog::hash::StableHashMap;
 use arclog::stream::Vocabulary;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
@@ -17,7 +17,7 @@ use pyo3::prelude::*;
 pub(crate) struct PyVocabulary {
     names: Box<[String]>,
     kinds: Box<[&'static str]>,
-    ids: HashMap<String, u32>,
+    ids: StableHashMap<String, u32>,
 }
 
 impl PyVocabulary {

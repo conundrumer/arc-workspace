@@ -9,7 +9,6 @@
 //! A table's hash comes from the groups: it needs no rows.
 
 use std::cell::OnceCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -303,15 +302,15 @@ type HoldsKey = (u32, Box<[(u16, u16)]>, usize, usize, usize, Box<[u16]>);
 #[derive(Default)]
 struct BatchMemo {
     /// The rows of a relation that atoms read, by the token that opens it, at each assignment of each example.
-    read: HashMap<(u32, usize, usize), Option<Arc<Relation>>>,
+    read: StableHashMap<(u32, usize, usize), Option<Arc<Relation>>>,
     /// The hashes of each part of the base, by example, assignment and part.
-    hashes: HashMap<(usize, usize, usize), Rc<PartHashes>>,
+    hashes: StableHashMap<(usize, usize, usize), Rc<PartHashes>>,
     /// The groups of each part, by the places they read.
-    groups: HashMap<(usize, usize, usize, Box<[u16]>), Rc<Groups>>,
+    groups: StableHashMap<(usize, usize, usize, Box<[u16]>), Rc<Groups>>,
     /// Whether an atom with no label of its own holds at each group, for an atom and the `NOT` of it.
-    holds: HashMap<HoldsKey, Rc<Bits>>,
+    holds: StableHashMap<HoldsKey, Rc<Bits>>,
     /// The rows of a lib relation at each group, by the sites that the groups fill, which the atoms that differ in the sites of their own labels share.
-    reads: HashMap<HoldsKey, Rc<LibRead>>,
+    reads: StableHashMap<HoldsKey, Rc<LibRead>>,
     /// The bytes that `reads` holds.
     read_bytes: usize,
 }
@@ -658,7 +657,7 @@ impl<'a> Decoder<'a> {
             return;
         }
         let limits = self.limits();
-        let mut opened: HashMap<u32, Option<OpenedRelation>> = HashMap::new();
+        let mut opened: StableHashMap<u32, Option<OpenedRelation>> = StableHashMap::default();
         let not = self.vocabulary().id(&Token::Control(Control::Not));
         let plans: Vec<Result<AtomPlan, AtomRows>> = self.with_checks_at_state(|checks| {
             let column_type = |relation: &RelationRef, column: &crate::program::ColumnName| self.fixed_column_type(checks, relation, column);

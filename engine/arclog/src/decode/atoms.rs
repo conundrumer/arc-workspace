@@ -1,12 +1,11 @@
 //! The atoms that may come next at a state of a decode.
 
-use std::collections::HashMap;
 use std::hash::Hasher;
 use std::sync::Arc;
 
 use super::state::{AtomPlace, State};
 use super::Decoder;
-use crate::hash::{StableHash, StableHasher};
+use crate::hash::{StableHash, StableHashMap, StableHasher};
 use crate::program::RelationRef;
 use crate::stream::{Control, Token};
 
@@ -392,7 +391,7 @@ impl Decoder<'_> {
         let relation = walk.path[walk.path.len() - walk.shape.len() - 1];
         let shared = !matches!(self.vocabulary().token(relation), Some(Token::Relation(_)));
         let tokens = walk.tokens;
-        let mut steps: HashMap<u32, State> = HashMap::new();
+        let mut steps: StableHashMap<u32, State> = StableHashMap::default();
         let verdict = match self.atom_verdict_held(shared, node) {
             Some(HeldVerdict::Place(verdict)) => verdict,
             _ => {

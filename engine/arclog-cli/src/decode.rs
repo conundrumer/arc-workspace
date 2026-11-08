@@ -21,7 +21,7 @@
 //! `--cases concept` (the default) or `--cases all`, `--no-rows` for no
 //! check of the prefix rows, then the task ids of the solvers to run; every solver of the corpus where it is given none.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::any::Any;
 use std::ops::ControlFlow;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -34,6 +34,7 @@ use arclog::decode::{Consistency, Decoder};
 use arclog::eval::examples::ExampleScope;
 use arclog::eval::join::each_row;
 use arclog::eval::{output_relation, BodyValue, Outcome, RelationValue, Stop};
+use arclog::hash::StableHashSet;
 use arclog::harness::{print_ended, require_optimized_build, run_over_corpus, SolverResult};
 use arclog::judge::candidates::{PairCandidates, Section, World};
 use arclog::judge::determination::{determine, DeterminedCase, Determination};
@@ -435,8 +436,8 @@ fn compare_value(ours: &RelationValue, theirs: &RelationValue) -> RowsCheck {
     }
 }
 
-fn row_set(relation: &Relation) -> HashSet<Vec<TermId>> {
-    let mut rows = HashSet::new();
+fn row_set(relation: &Relation) -> StableHashSet<Vec<TermId>> {
+    let mut rows = StableHashSet::default();
     each_row(relation, &mut |row| {
         rows.insert(row.to_vec());
     });

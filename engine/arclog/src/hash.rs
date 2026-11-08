@@ -4,7 +4,9 @@
 //!
 //! Every hash map and hash set of the engine is built with [`StableState`],
 //! and every content hash is a [`StableHash`]. The standard library's
-//! `RandomState` is never used, since its seed differs from run to run.
+//! `RandomState` is never used, since its seed differs from run to run. The `clippy.toml` of each engine crate
+//! refuses the standard map, the standard set and `RandomState`, so a run of
+//! clippy reports a map built without [`StableState`].
 
 use std::hash::{BuildHasher, Hasher};
 
@@ -211,10 +213,12 @@ fn map_seed() -> u64 {
 /// platforms: the same keys inserted in the same order iterate in another order
 /// on a CPU with other vector instructions. So no output may follow it. It is
 /// an order of encodings either way, and no order of the content.
+#[allow(clippy::disallowed_types)]
 pub type StableHashMap<K, V> = std::collections::HashMap<K, V, StableState>;
 
 /// A hash set under the engine's fixed hash function, with the iteration rule
 /// of [`StableHashMap`].
+#[allow(clippy::disallowed_types)]
 pub type StableHashSet<T> = std::collections::HashSet<T, StableState>;
 
 /// The hexadecimal digest of `text`, for a comparison that reads no order of

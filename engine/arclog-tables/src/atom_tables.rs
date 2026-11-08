@@ -1,7 +1,7 @@
 //! The summary of the table of each of many candidate atoms at a state of a
 //! decode: the body in progress with that atom added, at each assignment.
 
-use std::collections::HashMap;
+use arclog::hash::StableHashMap;
 
 use super::*;
 use crate::summary::{summarize_body, DetFulls, TableSummary};
@@ -34,7 +34,7 @@ const MEMO_BYTES: usize = 1 << 28;
 /// state and its list of atoms: a search reaches a state of a shared prefix many
 /// times. It holds at most [`MEMO_BYTES`], and is emptied when it would pass that.
 #[derive(Default)]
-pub struct AtomTablesMemo(std::sync::Mutex<(HashMap<u128, std::sync::Arc<AtomTables>>, usize)>);
+pub struct AtomTablesMemo(std::sync::Mutex<(StableHashMap<u128, std::sync::Arc<AtomTables>>, usize)>);
 
 impl AtomTablesMemo {
     /// The key of the list `atoms` at the state of `decoder`, where the state has one.
@@ -145,9 +145,9 @@ fn summary_by_program(decoder: &Decoder<'_>, tokens: &[u32], base: &[LabelId], m
 /// program made for the atom, which reads every kind of atom.
 pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &Materializer<'_>, train: &[arclog_features::Pair], fulls: &DetFulls<'_>, by_program: bool) -> AtomTables {
     let mut out = AtomTables { index: Vec::with_capacity(atoms.len()), summaries: Vec::new(), by_program: 0, over_cap: Vec::new() };
-    let mut distinct: HashMap<(bool, Vec<u32>, Vec<Option<u128>>), u32> = HashMap::new();
+    let mut distinct: StableHashMap<(bool, Vec<u32>, Vec<Option<u128>>), u32> = StableHashMap::default();
     // The summary of each table by its types and its rows, before a summary is made.
-    let mut by_rows: HashMap<u128, Option<u32>> = HashMap::new();
+    let mut by_rows: StableHashMap<u128, Option<u32>> = StableHashMap::default();
     let cap = decoder.settings().table_work_cap.saturating_mul(ATOM_WORK_SCALE);
     let closed = decoder.closed_sub_body();
     // Where no clause is in progress, no body has a table.

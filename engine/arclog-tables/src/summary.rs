@@ -52,7 +52,6 @@
 //! TableHash.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::hash::Hasher;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -60,7 +59,7 @@ use std::sync::{Arc, Mutex};
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::join::Materializer;
 use arclog::eval::{ReachedBound, RelationValue};
-use arclog::hash::{StableHash, StableHasher};
+use arclog::hash::{StableHash, StableHashMap, StableHasher};
 use arclog::judge::determination::Assignment;
 use arclog::read::spelling::{spelling, FACT_RELATIONS};
 use arclog::relations::Relation;
@@ -271,12 +270,12 @@ pub struct SummaryCache {
 
 #[derive(Default)]
 struct Generations {
-    young: HashMap<SummaryKey, Arc<TableSummary>>,
+    young: StableHashMap<SummaryKey, Arc<TableSummary>>,
     /// The assignments of the summaries in `young`.
     assignments: usize,
     /// The cells of the shape rows of the summaries in `young`.
     cells: usize,
-    old: HashMap<SummaryKey, Arc<TableSummary>>,
+    old: StableHashMap<SummaryKey, Arc<TableSummary>>,
 }
 
 impl SummaryCache {
@@ -844,7 +843,7 @@ fn hashed_type_name(ty: &ValueType, assemblies: &Assemblies) -> String {
 
 /// The QueryHash of the `RIGID_DET` of each assembly of a program, by the
 /// form's name.
-pub type Assemblies = HashMap<RigidDetName, StableHash>;
+pub type Assemblies = StableHashMap<RigidDetName, StableHash>;
 
 /// The name of the Pose type of `assembly` in the TableHash and the value hash:
 /// `Pose(`, the 32 hexadecimal digits of the QueryHash of its `RIGID_DET` in
@@ -989,7 +988,7 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
 /// table's TableRows repeat over those assignments), and none of those expansions is capped.
 pub struct DetFulls<'t> {
     tables: Vec<&'t Table>,
-    built: RefCell<HashMap<String, Option<Rc<FullDet<'t>>>>>,
+    built: RefCell<StableHashMap<String, Option<Rc<FullDet<'t>>>>>,
     /// The assemblies of the program, by which the hashes name each Pose type ([`pose_name`]).
     assemblies: Assemblies,
 }

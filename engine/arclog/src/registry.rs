@@ -761,8 +761,8 @@ impl Registry {
 
 /// The declared stored tables, each with its columns and whether it has rows
 /// on each example.
-fn stored_tables() -> &'static std::sync::RwLock<std::collections::HashMap<crate::terms::LibNameId, (&'static [Column], bool)>> {
-    static TABLES: std::sync::OnceLock<std::sync::RwLock<std::collections::HashMap<crate::terms::LibNameId, (&'static [Column], bool)>>> = std::sync::OnceLock::new();
+fn stored_tables() -> &'static std::sync::RwLock<crate::hash::StableHashMap<crate::terms::LibNameId, (&'static [Column], bool)>> {
+    static TABLES: std::sync::OnceLock<std::sync::RwLock<crate::hash::StableHashMap<crate::terms::LibNameId, (&'static [Column], bool)>>> = std::sync::OnceLock::new();
     TABLES.get_or_init(Default::default)
 }
 
