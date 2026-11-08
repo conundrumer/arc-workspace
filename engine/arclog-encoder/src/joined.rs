@@ -15,7 +15,7 @@ use crate::boxes::{project_tuples, second_columns};
 use crate::columns::Columns;
 use crate::expression::Op;
 use crate::gen_constants::number_bits;
-use crate::gen_parts::PartStep;
+use crate::gen_parts::{PartStep, PartTerm};
 use crate::native::{all, hash_words, holds, key_word, project, Cell, FastMap, KeyIndex, Part, Step, Table, Val, CELL_CAP};
 
 /// Marks the hash of a [`Joined`], which no other value's hash has.
@@ -431,6 +431,10 @@ pub fn extend(step: &Step, first: &Val, second: Option<&Val>) -> Option<Val> {
         }
         Step::Select { at, op, other, drop } => match first {
             Val::Joined(joined) => joined.select(*at, *op, *other, *drop),
+            _ => None,
+        },
+        Step::Part(part) => match first {
+            Val::Joined(joined) => joined.row_part(part, second),
             _ => None,
         },
         Step::Semijoin { left, right } | Step::Antijoin { left, right } => {
@@ -1370,9 +1374,13 @@ impl Joined {
         second_columns(step).is_some()
     }
 
-    /// Whether `step` is a `join`, a `select`, a `semijoin` or an `antijoin`, which [`extend`] gives as more nodes, equalities or a filter where the form allows it, and which otherwise reads the rows written out.
+    /// Whether `step` is a `join`, a `select`, a `semijoin`, an `antijoin` or a part that gives each row it takes with cells that the cells at some of its columns fix, which [`extend`] gives as more nodes, equalities or a filter where the form allows it, and which otherwise reads the rows written out.
     pub fn extends(step: &Step) -> bool {
-        matches!(step, Step::Join { .. } | Step::Select { .. } | Step::Semijoin { .. } | Step::Antijoin { .. })
+        match step {
+            Step::Join { .. } | Step::Select { .. } | Step::Semijoin { .. } | Step::Antijoin { .. } => true,
+            Step::Part(part) => part.row_columns().is_some(),
+            _ => false,
+        }
     }
 
     /// The relation that `step` reads in place of the join as its second relation, where `reads_second` holds of it.
@@ -1553,6 +1561,64 @@ impl Joined {
             filtered(&self.nodes[node], |row| keys.binary_search(&key_word(row, &at)).is_err())
         };
         Some((node, kept))
+    }
+
+    /// What a part gives over the join's rows, where it gives each row it takes followed by cells that the cells at some columns of the row fix, as the join with one more node: the part's cells at each tuple of those columns, joined at them. Where the part gives no cell beyond the row, it keeps the rows whose tuple at those columns it keeps, and the join has the rows of one node left out. No value where the part is not of that form, or the columns stand in several nodes, or a second relation that stands as relations is not read at columns, or the nodes and the new one do not form a tree.
+    fn row_part(&self, part: &PartTerm, second: Option<&Val>) -> Option<Val> {
+        let keys = part.row_columns()?;
+        let width = self.width();
+        let places: Vec<Place> = keys.iter().map(|column| self.places.get(usize::from(*column)).copied()).collect::<Option<_>>()?;
+        let node = places.first()?.node;
+        if places.iter().any(|place| place.node != node) {
+            return None;
+        }
+        // A second relation that stands as the relations it comes from is read at the columns the part reads of it.
+        let replaced;
+        let second = match second {
+            Some(Val::Joined(other)) => {
+                replaced = other.rows_at(part.second_columns()?).map_or(Val::None, Val::of_table);
+                Some(&replaced)
+            }
+            Some(Val::Boxes(other)) => {
+                replaced = other.rows_at(part.second_columns()?).map_or(Val::None, Val::of_table);
+                Some(&replaced)
+            }
+            other => other,
+        };
+        let tuples = self.rows_at(&Columns::new(keys.as_slice()).ok()?)?;
+        let first = Val::of_table(tuples.clone());
+        let children: Vec<&Val> = std::iter::once(&first).chain(second).collect();
+        let given = match part.step().run(&tuples, &children) {
+            None | Some(Val::None) => return Some(Val::None),
+            Some(Val::Empty) => return Some(Val::Empty),
+            Some(given) => crate::gen_parts::flat(&given)?,
+        };
+        if given.arity < width {
+            return None;
+        }
+        let extras = given.arity - width;
+        let key_at: Vec<usize> = keys.iter().map(|column| usize::from(*column)).collect();
+        let mut nodes = self.nodes.clone();
+        if extras == 0 {
+            let mut kept: Vec<u64> = given.rows().map(|row| key_word(row, &key_at)).collect();
+            kept.sort_unstable();
+            kept.dedup();
+            let at: Vec<usize> = places.iter().map(|place| place.at).collect();
+            nodes[node] = filtered(&self.nodes[node], |row| kept.binary_search(&key_word(row, &at)).is_ok());
+            return build(nodes, self.equalities(), self.places.clone());
+        }
+        let mut cells: Vec<Cell> = Vec::with_capacity(given.len * (keys.len() + extras));
+        for row in given.rows() {
+            cells.extend(key_at.iter().map(|at| row[*at]));
+            cells.extend_from_slice(&row[width..]);
+        }
+        let added = nodes.len();
+        nodes.push(Table::distinct(keys.len() + extras, cells));
+        let mut equalities = self.equalities();
+        equalities.extend(places.iter().enumerate().map(|(at, place)| (*place, Place { node: added, at })));
+        let mut columns = self.places.clone();
+        columns.extend((0..extras).map(|extra| Place { node: added, at: keys.len() + extra }));
+        build(nodes, equalities, columns)
     }
 
     /// A `select` over the rows of the join, as a join of the same nodes with the comparison applied. A comparison with 0, or of two columns of one node, filters that node's rows. An equality between columns of two nodes is one more pair of the key between them. Any other comparison between two nodes that are a node and its parent gives one node of the pairs of their rows that pass, in place of the two. No value where the form does not allow it.
