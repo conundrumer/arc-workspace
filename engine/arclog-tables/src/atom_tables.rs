@@ -10,6 +10,9 @@ use arclog::program::LabelId;
 use arclog::stream::{Control, Token};
 use arclog::terms::Example;
 use arclog::eval::join::Materializer;
+use arclog::eval::Limits;
+
+use super::successors::exhaustion;
 
 /// The most bindings that the rows of one atom may count, a multiple of the
 /// settings' table work cap.
@@ -140,10 +143,15 @@ fn summary_by_program(decoder: &Decoder<'_>, tokens: &[u32], base: &[LabelId], m
 
 /// The summary of the table of each atom of `atoms`, ids of the tokens of each,
 /// as [`Decoder::candidate_atoms`] gives them, at the state of `decoder`, whose
-/// limits count the work of one request, so the tables depend on no clock. `fulls` holds the tables of the stream, which the summaries read for
+/// limits count the work of one request, so the tables depend on no clock. The
+/// rows and the summary of each atom count in a request of the atom's own
+/// ([`Limits::for_candidate`]), under the work cap and the candidate byte
+/// budget: an atom that passes either has no table and is in `over_cap`, and
+/// the other atoms go on. The limits of `decoder` count the work that the atoms
+/// share. `fulls` holds the tables of the stream, which the summaries read for
 /// the `DET`s of an assignment. With `by_program` each atom's rows come from a
 /// program made for the atom, which reads every kind of atom.
-pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &Materializer<'_>, train: &[arclog_features::Pair], fulls: &DetFulls<'_>, by_program: bool) -> AtomTables {
+pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], train: &[arclog_features::Pair], fulls: &DetFulls<'_>, by_program: bool) -> AtomTables {
     let mut out = AtomTables { index: Vec::with_capacity(atoms.len()), summaries: Vec::new(), by_program: 0, over_cap: Vec::new() };
     let mut distinct: StableHashMap<(bool, Vec<u32>, Vec<Option<u128>>), u32> = StableHashMap::default();
     // The summary of each table by its types and its rows, before a summary is made.
@@ -158,8 +166,12 @@ pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &M
     let contents = base_contents(decoder, closed.as_ref());
     let base_labels: Vec<LabelId> = contents.as_ref().map_or_else(Vec::new, |(contents, _)| contents.columns.iter().filter_map(|column| column.label_id).collect());
     let base = if by_program { None } else { contents.and_then(|(contents, dets)| base_of(decoder, closed.as_ref(), contents, dets)) };
-    let mut visit = |at: usize, rows: AtomRows| {
+    let session = decoder.evaluation_inputs().1;
+    let mut visit = |at: usize, rows: AtomRows, own: &Limits| {
+        // The atom's summary counts in the request of the atom's own, as its rows do.
+        let materializer = Materializer::new(session, own);
         let mut key = None;
+        let mut over = false;
         let summary = match rows {
             AtomRows::Rows(atom) => {
                 let hash = atom.key();
@@ -170,30 +182,40 @@ pub fn atom_tables(decoder: &Decoder<'_>, atoms: &[Box<[u32]>], materializer: &M
                 key = Some(hash);
                 let (types, examples) = atom.table();
                 let (contents, _, _) = base.as_ref().expect("a base where the join gave rows");
-                summary_of_rows(contents, types, examples, materializer, train, fulls)
+                summary_of_rows(contents, types, examples, &materializer, train, fulls)
             }
             AtomRows::NoTable => None,
             AtomRows::OverCap => {
+                over = true;
                 out.over_cap.push(at as u32);
                 None
             }
             AtomRows::ByProgram => {
                 out.by_program += 1;
-                summary_by_program(decoder, &atoms[at], &base_labels, materializer, train, fulls)
+                let walker = decoder.clone().with_operation_limits(own.clone());
+                summary_by_program(&walker, &atoms[at], &base_labels, &materializer, train, fulls)
             }
         };
-        let place = summary.map(|summary| *distinct.entry(summary_key(&summary)).or_insert_with(|| {
+        // An atom whose request passed its work cap or its byte budget has no table, and the other atoms go on. Its summary is the atom's alone, so no other atom of equal rows takes it.
+        let exhausted = exhaustion(own).is_some();
+        if exhausted && !over {
+            out.over_cap.push(at as u32);
+        }
+        let place = summary.filter(|_| !exhausted).map(|summary| *distinct.entry(summary_key(&summary)).or_insert_with(|| {
             out.summaries.push(summary);
             out.summaries.len() as u32 - 1
         }));
-        if let Some(key) = key {
+        if let Some(key) = key.filter(|_| !exhausted) {
             by_rows.insert(key, place);
         }
         out.index.push(place);
     };
     match &base {
         Some((_, rows, sub)) => decoder.each_atom_rows(*sub, rows, decoder.state().label_count(), atoms, cap, &mut visit),
-        None => (0..atoms.len()).for_each(|at| visit(at, AtomRows::ByProgram)),
+        None => {
+            let limits = decoder.limits();
+            (0..atoms.len()).for_each(|at| visit(at, AtomRows::ByProgram, &limits.for_candidate()))
+        }
     }
     out
 }

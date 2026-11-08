@@ -37,7 +37,7 @@ create_exception!(
     arclog,
     CallGuardExhausted,
     EngineFault,
-    "A call that evaluates several candidates (`successor_tables`) passed a bound over the whole call: the work cap or the byte budget of the call's own request, which holds the work shared by the candidates and the work of no candidate. It is a fault of the call and never a result: no table of any candidate is given, and none is cut. A bound of one candidate's own request cuts that candidate alone and is no such fault. Attributes: `bound`, the `StopKind` of the bound (`RequestWork` or `RequestBytes`); `cap`, the bound's cap as an int."
+    "A call that evaluates several candidates (`successor_tables`, `atom_tables`) passed a bound over the whole call: the work cap or the byte budget of the call's own request, which holds the work shared by the candidates and the work of no candidate. It is a fault of the call and never a result: no table of any candidate is given, and none is cut. A bound of one candidate's own request cuts that candidate alone and is no such fault. Attributes: `bound`, the `StopKind` of the bound (`RequestWork` or `RequestBytes`); `cap`, the bound's cap as an int."
 );
 create_exception!(
     arclog,

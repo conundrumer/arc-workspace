@@ -225,6 +225,14 @@ impl From<LabelingBound> for Stopped {
     }
 }
 
+/// The Python error for `stopped`.
+fn stopped_error(py: Python<'_>, stopped: Stopped) -> PyErr {
+    match stopped {
+        Stopped::Labeling(bound) => labeling_bound_reached(py, bound),
+        Stopped::Guard(bound) => call_guard_exhausted(py, bound),
+    }
+}
+
 /// The bound at which the export of `columns` left out a table, where that bound is not a cancellation by the caller.
 fn left_out_bound(columns: &CaseColumns) -> Option<ReachedBound> {
     if columns.left_out().is_empty() {
@@ -482,10 +490,7 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
     });
     // A request past its effort guard is a fault, whatever else stopped the call, and the check clears the fault.
     check_effort(py)?;
-    let (current, each, unchanged) = stopped.map_err(|stopped| match stopped {
-        Stopped::Labeling(bound) => labeling_bound_reached(py, bound),
-        Stopped::Guard(bound) => call_guard_exhausted(py, bound),
-    })?;
+    let (current, each, unchanged) = stopped.map_err(|stopped| stopped_error(py, stopped))?;
     for columns in current.iter().chain(unchanged.as_ref().map(|(columns, _)| columns)).chain(each.iter().filter_map(|result| match result {
         Ok((_, _, Packed::Own(columns, _, _, _))) => Some(columns),
         _ => None,
@@ -564,8 +569,13 @@ fn check_before<'b>(before: Option<&'b PyCaseTables>, task: &str, case: &str, bo
 /// capped, the TableHash at each assignment, 16 bytes each and zero for none,
 /// and the features at each assignment; the count of atoms that took a program
 /// of their own, and the place in `atoms` of each atom whose work passed the
-/// cap, which has no table. With `by_program` each atom takes a program. The
-/// call is one request, under the request work cap.
+/// cap or its byte budget, which has no table. With `by_program` each atom takes
+/// a program. The rows and the summary of each atom count in a request of the
+/// atom's own, so an atom passes the request work cap or the candidate byte
+/// budget for its own size alone, and the other atoms go on. The call's own
+/// request counts the work that the atoms share, and a call that passes its
+/// work cap or byte budget raises `CallGuardExhausted`, a subclass of
+/// `EngineFault`, and gives no summary.
 #[pyfunction]
 #[pyo3(signature = (decoder, atoms, task, case, before=None, by_program=false))]
 #[allow(clippy::type_complexity)]
@@ -580,15 +590,21 @@ pub(crate) fn atom_tables<'py>(py: Python<'py>, decoder: PyRef<'py, PyDecoder>, 
     let found = match key.and_then(|key| memo.get(key)) {
         Some(found) => found,
         None => {
-            let found = std::sync::Arc::new(py.detach(|| -> Result<_, LabelingBound> {
+            let found = py.detach(|| -> Result<_, Stopped> {
                 let limits = engine.limits();
                 let operation = engine.clone().with_operation_limits(limits.clone());
-                let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
                 let tables = stream.map_or_else(Vec::new, StreamTables::tables);
                 let fulls = DetFulls::new(tables).with_assemblies(assemblies(engine)?);
-                Ok(arclog_tables::tables::atom_tables::atom_tables(&operation, &atoms, &materializer, &train, &fulls, by_program))
-            }).map_err(|bound| labeling_bound_reached(py, bound))?);
+                let found = arclog_tables::tables::atom_tables::atom_tables(&operation, &atoms, &train, &fulls, by_program);
+                // The call's own request counts the work that the atoms share and the work of no atom: its bounds are over the whole call.
+                match exhaustion(&limits) {
+                    Some(bound) => Err(Stopped::Guard(bound)),
+                    None => Ok(found),
+                }
+            });
+            // A request past its effort guard is a fault, whatever else stopped the call, and the check clears the fault.
             check_effort(py)?;
+            let found = std::sync::Arc::new(found.map_err(|stopped| stopped_error(py, stopped))?);
             if let Some(key) = key {
                 memo.keep(key, std::sync::Arc::clone(&found));
             }

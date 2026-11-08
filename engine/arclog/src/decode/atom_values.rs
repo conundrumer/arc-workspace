@@ -647,16 +647,19 @@ impl<'a> Decoder<'a> {
     }
 
     /// Calls `visit` with the place of each atom of `atoms`, each its token
-    /// ids, and what the join gives for it, in the order of the list. `labels`
-    /// is the count of labels at this state, and each atom's work counts under
-    /// `cap`.
-    pub fn each_atom_rows(&self, sub: Option<&SubBody>, base: &BaseRows, labels: u32, atoms: &[Box<[u32]>], cap: u64, visit: &mut dyn FnMut(usize, AtomRows)) {
+    /// ids, what the join gives for it, and the limits of a request of the
+    /// atom's own ([`Limits::for_candidate`]), in the order of the list. The
+    /// join counts in that request, and `visit` may count the atom's later work
+    /// in it, so that an atom passes a work cap or a byte budget for its own
+    /// size alone. `labels` is the count of labels at this state, and each
+    /// atom's work counts under `cap`.
+    pub fn each_atom_rows(&self, sub: Option<&SubBody>, base: &BaseRows, labels: u32, atoms: &[Box<[u32]>], cap: u64, visit: &mut dyn FnMut(usize, AtomRows, &Limits)) {
+        let limits = self.limits();
         // A `NOT` that stands before the atoms reads them in a way that the tokens of an atom do not show, and a body in a form of a body adds its atoms to that form.
         if self.state.negation_pending() || self.state.in_other_form() {
-            (0..atoms.len()).for_each(|at| visit(at, AtomRows::ByProgram));
+            (0..atoms.len()).for_each(|at| visit(at, AtomRows::ByProgram, &limits.for_candidate()));
             return;
         }
-        let limits = self.limits();
         let mut opened: StableHashMap<u32, Option<OpenedRelation>> = StableHashMap::default();
         let not = self.vocabulary().id(&Token::Control(Control::Not));
         let plans: Vec<Result<AtomPlan, AtomRows>> = self.with_checks_at_state(|checks| {
@@ -672,11 +675,12 @@ impl<'a> Decoder<'a> {
         });
         let mut memo = BatchMemo::default();
         for (at, plan) in plans.into_iter().enumerate() {
+            let own = limits.for_candidate();
             let rows = match plan {
-                Ok(plan) => self.atom_table(sub, base, plan, cap, &limits, &mut memo),
+                Ok(plan) => self.atom_table(sub, base, plan, cap, &own, &mut memo),
                 Err(other) => other,
             };
-            visit(at, rows);
+            visit(at, rows, &own);
         }
     }
 
