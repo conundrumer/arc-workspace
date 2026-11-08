@@ -79,14 +79,14 @@ pub fn study_error(py: Python<'_>, error: StudyError) -> PyErr {
 }
 
 /// The `Refusal` for the message of an engine call that refuses its input.
-pub fn refused(message: String) -> PyErr {
-    Refusal::new_err(message)
+pub fn refused(message: impl ToString) -> PyErr {
+    Refusal::new_err(message.to_string())
 }
 
 /// The `Fault` for the message of an engine call that fails inside the
 /// engine.
-pub fn faulted(message: String) -> PyErr {
-    Fault::new_err(message)
+pub fn faulted(message: impl ToString) -> PyErr {
+    Fault::new_err(message.to_string())
 }
 
 /// The value of `outcome`, or the `Fault` that its fault raises.
