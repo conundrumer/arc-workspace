@@ -2425,7 +2425,7 @@ pub struct Walker<'a> {
     pub examples: u32,
     /// The cells and the memo entries it holds at most between walks.
     budget: (usize, usize),
-    /// Whether the last walk stopped a term that passed `WALK_CELLS` cells of its own, so that the term, and every term that reads it, have no value.
+    /// Whether the last walk stopped a term that passed [`walk_cells`] cells of its own, so that the term, and every term that reads it, have no value.
     pub over_budget: bool,
 }
 
@@ -2454,8 +2454,14 @@ type Forced = Option<Arc<[(u32, usize)]>>;
 /// What a walker holds at most between walks.
 const HELD_CELLS: usize = 3_000_000;
 const HELD_MEMO: usize = 250_000;
-/// The cells that one term's evaluation can give in a walk, counted at each instance, with the cells of the rows of each lazy value it forces once.
+/// The cells that one term's evaluation can give in a walk, counted at each instance, with the cells of the rows of each lazy value it forces once, by default ([`walk_cells`]).
 const WALK_CELLS: usize = 100_000_000;
+
+/// The cells that one term's evaluation can give in a walk: `GENERATE_WALK_CELLS` where it is set, else [`WALK_CELLS`].
+fn walk_cells() -> usize {
+    static LIMIT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *LIMIT.get_or_init(|| std::env::var("GENERATE_WALK_CELLS").ok().and_then(|text| text.parse().ok()).unwrap_or(WALK_CELLS))
+}
 /// The cells of stored values that a walk keeps in memory between terms, once it moves the others to disk. `GENERATE_RESIDENT_CELLS` sets it.
 const RESIDENT_CELLS: usize = 50_000_000;
 /// A count past this stands for "no value": a bound stopped the term.
@@ -3080,7 +3086,7 @@ impl<'a> Walker<'a> {
                 own.reserve(instances);
                 for pair in 0..scope {
                     // Past the bound, what a term gives has no value, so a walk's memory stays bounded.
-                    if term_cells + self.written_cells > WALK_CELLS {
+                    if term_cells + self.written_cells > walk_cells() {
                         past_bound = true;
                         self.over_budget = true;
                         crate::bounds::skipped(crate::bounds::Bound::Walk, (scope - pair) as u64);
@@ -3141,7 +3147,7 @@ impl<'a> Walker<'a> {
                 }
                 for pair in 0..scope {
                     // A term that no result is kept for is bounded by the rows of the lazy values it writes out, as an extended one is by its results and those.
-                    if !extended && !idle && self.written_cells > WALK_CELLS {
+                    if !extended && !idle && self.written_cells > walk_cells() {
                         cut_off = true;
                         self.over_budget = true;
                         crate::bounds::skipped(crate::bounds::Bound::Walk, (scope - pair) as u64);
