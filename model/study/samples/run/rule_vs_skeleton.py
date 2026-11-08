@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # model/study
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # model/study/samples
 import study_zst as Z  # noqa: E402
 from points_write import GraphMismatch, Reject, UNHASHED, load_engine, new_run, scope_maps, scope_of, target_rule, task_graph  # noqa: E402
+from stand_in import read_index  # noqa: E402
 from union_forms import LineIndex  # noqa: E402
 
 
@@ -104,6 +105,7 @@ def main() -> int:
             print(json.dumps(dict(task=task, skipped=str(e))), flush=True)
             total['tasks skipped: the graph files are not the skeleton\'s'] += 1
             continue
+        templates = read_index(union, graph.reads)
         run = new_run(env_base, smp, task) if env_base is not None else None
         c: collections.Counter = collections.Counter()
         for s in (r for r in records if r['record'] == 'sample'):
@@ -124,11 +126,11 @@ def main() -> int:
                         c['member tables: ' + ('no table in the scope' if have is None else 'graph table has no map' if want is None else 'map equal' if have == want else 'map differs')] += 1
             else:
                 maps = graph_member_maps(state, union, graph)
-            verdict = target_rule(state, maps, graph, union, args.anywhere)
-            if args.anywhere and set(verdict.targets) != set(target_rule(state, maps, graph, union).targets):
+            verdict = target_rule(state, maps, graph, union, templates, args.anywhere)
+            if args.anywhere and set(verdict.targets) != set(target_rule(state, maps, graph, union, templates).targets):
                 c['rule differs when anywhere'] += 1
             got, want = set(verdict.targets), set(s['target_queries'])
-            c['unwritten'] += verdict.unwritten
+            c['target queries through a stand-in'] += len(verdict.stand_ins)
             if got == want:
                 c['equal'] += 1
                 continue

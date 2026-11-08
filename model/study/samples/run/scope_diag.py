@@ -9,8 +9,8 @@ extractor folder and the engine wheel's site folder). It writes one JSON line fo
   store give one set of TableHashes for the table.
 - `member without table`: a state (a skeleton sample, or with --draws a state that the extractor would add, points_write.plan_added) has a member that no table of the scope has the QueryHash of: its QueryHash and text, the QueryHashes of the
   scope's tables, and whether it is a union query. Once for each state.
-- `no target`: a state (a skeleton sample, or with --draws an added state) for which the rule gives no target: its members, the count of union queries by the part of the rule that decided each, the graph queries that
-  apply and make progress and that no union query is written over the members for, and the members' tables that stand for a graph table (the graph table, the member).
+- `no target`: a state (a skeleton sample, or with --draws an added state) for which the rule gives no target: its members, the count of union queries by the part of the rule that decided each, the count of target
+  queries through a stand-in and of the choices that no query record can write, and the members' tables that stand for a graph table (the graph table, the member).
 --limit N takes the first N lines of each kind for each task. It prints the progress with a rate and an ETA on stderr; a restart skips the tasks that FILE holds a `done` line for."""
 import argparse
 import collections
@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # model/study/samp
 import study_zst as Z  # noqa: E402
 from points_write import (Reject, draw_files, load_engine, new_run, plan_added, read_draws, scope_maps, scope_of, table_maps,  # noqa: E402
                           target_rule, task_graph, GraphMismatch)
+from stand_in import read_index  # noqa: E402
 from union_forms import LineIndex  # noqa: E402
 
 
@@ -103,6 +104,7 @@ def main() -> int:
             emit(dict(task=task, skipped=str(e)))
             continue
         run = new_run(env_base, smp, task)
+        templates = read_index(union, graph.reads)
         rows = row_store_entries(args.rows / f'{task}.jsonl.gz')
         n: collections.Counter = collections.Counter()
         seen: set = set()
@@ -134,12 +136,12 @@ def main() -> int:
                 n['member without table'] += 1
                 emit(dict(task=task, kind='member without table', sample=sample['id'][:8], members=len(state), without=[dict(query=short(h), union=h in union, text=(queries[h]['program'][-1] if h in queries else None)) for h in lacking][:6],
                           scope_table_queries=sorted(short(k[0]) for k in maps)[:40]))
-            v = target_rule(state, maps, graph, union)
-            if not v.targets and n['no target'] < args.limit:
+            v = target_rule(state, maps, graph, union, templates)
+            if not v.targets and not v.stand_ins and n['no target'] < args.limit:
                 n['no target'] += 1
                 reasons = collections.Counter(v.why.values())
                 stand = [[t, short(k[0]) + '.' + k[1]] for t, m in sorted(graph.maps.items()) if m is not None for k, mm in maps.items() if mm == m]
-                emit(dict(task=task, kind='no target', sample=sample['id'][:8], members=len(state), off_path=sum(h not in union for h in state), reasons=dict(reasons), unwritten=v.unwritten,
+                emit(dict(task=task, kind='no target', sample=sample['id'][:8], members=len(state), off_path=sum(h not in union for h in state), reasons=dict(reasons), stand_ins=len(v.stand_ins), lost=dict(v.lost),
                           stand_for=stand[:20], skeleton_targets=len(sample.get('target_queries', []))))
 
         for s in samples[:args.limit * 40]:

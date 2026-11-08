@@ -369,6 +369,8 @@ The target queries of a state are decided by one rule, from the `TableHash`es of
 
 Where two members' parameterized tables stand for one graph table, g gives one target query for each choice of member. These are distinct `QueryHash`es whose parameterized tables have equal maps.
 
+A target query is written over the members: its `body` is the body of a query of g with each read of a parameterized table that is not the chosen member's replaced by a read of the member's parameterized table, which stands for the same graph table. The sites of a replaced read are moved to the member's columns. A column of one table is paired with a column of the other that has its type and its cells at every `TableHash` the two tables share; the column labels do not decide the pairing. A target query that cannot be written this way is counted by reason and is not replaced by another.
+
 ## `StateSequence`
 
 The order of states in one state sequence of type `union`. Each step adds one target query, which comes from a graph query, to the state.

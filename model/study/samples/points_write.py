@@ -14,6 +14,9 @@ For each sample:
   The scope's tables come from the engine's step_tables results of the scope's queries (Run.keep_closed), and the graph tables' maps and each graph query's reads and heads from the union's graph files
   (--graphs DIR, default $ARC_SAMPLE_GRAPHS, else split.GRAPHS: `graph-prods-SET.jsonl` and `graph-tables-SET.jsonl`; their lines of the task must have the shas that the skeleton's header records, else the task is skipped
   and counted under failures). The skeleton's `target_queries` are not read.
+  A target is a union query (its text is its query record's, over the scope's labels), or a graph query written through stand-ins (stand_in.py): the text of a query record of the graph query, with each read of a
+  table that is not a member's replaced by a read of the member's table that stands for its graph table, and the sites of the read moved to that table's columns (paired by content). The engine computes the replaced
+  query's table from its own program (a scope of its own) to pair the columns. A target that cannot be written is counted in the summary's `failures` under `target`, by reason (`stand-in: <reason>` for those).
 - For each target query: its text over the scope's labels, its kind and its token stream as train_rows.py takes them; train_rows.points_of_targets gives the writing points of all targets of a kind with every feature name, a shared prefix once.
 - Labels come from the extractor: `positive_ids` (a subset of `ids`), `live`, `order` and `order_why` of each record of `train_rows.points_of_targets(..., plan=PLAN)`. Under `ordered`
   each target is walked in its canonical order (or its given order where no rule gives its QueryHash), and the positives are the next tokens of the live targets. Under `unordered` the points are
@@ -88,6 +91,7 @@ _path = list(sys.path)
 from split import GRAPHS, is_held_out, split_of  # noqa: E402
 from union_forms import LineIndex  # noqa: E402
 import study_zst as Z  # noqa: E402  (split.py puts model/study on sys.path for it)
+import stand_in  # noqa: E402  (column_map.py puts model/study on sys.path too)
 sys.path[:] = _path  # split.py puts model/study first on sys.path, where its writer.py would shadow the writer kit's
 del _path
 
@@ -97,9 +101,9 @@ SCHEMA = 'points-1'
 # the reasons that count a state as not added in the header's draw_counts (`not added: <reason>`); run/draw_targets.py reads them from here
 NO_HASH = 'a step has no QueryHash'
 NO_TARGET = 'the rule gives no target query'
-# the counts of the summary's `target_rule`: the state's queries that have no table in the scope; the graph queries that apply and make progress at a state and that no union query reads the state's members for (so the rule
-# gives a target that has no query record); the states with no target query
-RULE_COUNTS = ('members with no table', 'graph queries that apply and make progress, with no query over the state\'s members', 'samples with no target')
+NO_WRITTEN = 'no target query could be written'
+# the counts of the summary's `target_rule`: the state's queries that have no table in the scope; the target queries that the rule gives through a stand-in (stand_in.py); the states with no target query
+RULE_COUNTS = ('members with no table', 'target queries through a stand-in', 'samples with no target')
 VECTOR_COUNTS = ('point-scope columns that differ across ids', 'vector shape or names differ from the header')
 LABEL = re.compile(r'&r(\d+)')
 DRAW_NAME = re.compile(r'(&f\d+)((?:\.\w+)*)')  # a pool name of a draw's text, with the steps of a RIGID_DET part or an INIT output
@@ -139,8 +143,8 @@ class Totals:
     search: Counter[str] = field(default_factory=Counter)  # the extractor's counts of the plan, and the order of each target
     largest: int = 0  # the most states of one search
 
-    def fail(self, what: str, reason: str, example: str) -> None:
-        self.failures.setdefault(what, Counter())[reason] += 1
+    def fail(self, what: str, reason: str, example: str, n: int = 1) -> None:
+        self.failures.setdefault(what, Counter())[reason] += n
         self.examples.setdefault(f'{what}: {reason}', example)
 
     def add(self, other: 'Totals') -> None:
@@ -488,40 +492,50 @@ def graph_of(prods: list[bytes], tables: list[bytes]) -> Graph:
     return Graph(maps, {r['ident']: tuple(r['reads']) for r in p}, {r['ident']: tuple(r['heads']) for r in p})
 
 
+def unhashed(m: TableMap) -> bool:
+    """Whether a table's map has a pair with no TableHash, in the table's own place or in a DET's value in an assignment: such a table stands for no graph table and gives no progress."""
+    return any(h == UNHASHED or any(v == UNHASHED for _, v in a) for a, h in m)
+
+
 @dataclass
 class Verdict:
-    targets: list[str]  # the QueryHashes of the target queries, sorted
+    targets: list[str]  # the QueryHashes of the union queries that are target queries, sorted
     why: dict[str, str]  # a union query that is no target -> the part of the rule that decided it (BY_*)
-    unwritten: int  # the graph queries that apply and make progress and that no union query reads members of the state for: they are targets that have no query record, so they are not written
+    stand_ins: list[stand_in.StandIn]  # the target queries that are graph queries written through stand-ins: no union query is written over those members
+    lost: Counter[str]  # the choices of members that give a target query but have no query record to be written from, by reason
 
 
-def target_rule(state: frozenset[str], member_maps: Mapping[tuple[str, str], TableMap], graph: Graph, union: Mapping[str, dict], anywhere: bool = False) -> Verdict:
+def target_rule(state: frozenset[str], member_maps: Mapping[tuple[str, str], TableMap], graph: Graph, union: Mapping[str, dict], templates: stand_in.Templates, anywhere: bool = False) -> Verdict:
     """The target queries of a state, by the rule of docs/sample-build/contract.md ("Sample"). `member_maps` are the maps of the tables of the state's queries (scope_maps), `union` the skeleton's query records
-    by QueryHash. A union query h is a graph query g written over members: it is a target when g applies at the state, g makes progress at it, and h is no member.
-    - g applies when each graph table that g reads is stood for by a member's table: its map equals that table's map. h is g written over members: the queries that h reads (its `inputs`) and its use closure must be members.
+    by QueryHash, `templates` their reads (stand_in.read_index). A graph query g is a target query when g applies at the state, g makes progress at it, and it is written over members that are not a member already.
+    - g applies when each graph table that g reads is stood for by a member's table: its map equals that table's map. A table with no TableHash at some assignment (UNHASHED) stands for nothing.
     - g makes progress when a graph table that it computes has, at some assignment, a TableHash that no member's table has there (the contract's wording): the pair (assignment, TableHash) is in no member's
-      map. A table with no TableHash (UNHASHED) gives no progress. With `anywhere` the TableHash is compared with the TableHashes of all assignments of all member tables instead."""
+      map. A pair with no TableHash gives no progress. With `anywhere` the TableHash is compared with the TableHashes of all assignments of all member tables instead.
+    - g is written over members in one way for each choice of one member's table at each graph table it reads. A union query h of g whose reads and use closure are members is such a target, and is `targets`.
+      A choice that no such union query gives is `stand_ins`: a query record of g with its reads replaced by the choice."""
+    by_map: dict[TableMap, list[tuple[str, str]]] = {}
+    for k, m in sorted(member_maps.items()):
+        if not unhashed(m):
+            by_map.setdefault(m, []).append(k)
     maps = set(member_maps.values())
     hashes = {h for m in maps for _, h in m} - {UNHASHED}
     here = {e for m in maps for e in m}
 
     def stood(t: str) -> bool:
         m = graph.maps.get(t)
-        return m is not None and m in maps
+        return m is not None and m in by_map
 
     def applies(g: str) -> bool:
         return all(stood(t) for t in graph.reads[g])
 
     def progresses(g: str) -> bool:
-        return any(e[1] != UNHASHED and ((e[1] not in hashes) if anywhere else (e not in here)) for t in graph.heads[g] for e in graph.maps.get(t) or ())
+        return any(e[1] != UNHASHED and all(v != UNHASHED for _, v in e[0]) and ((e[1] not in hashes) if anywhere else (e not in here)) for t in graph.heads[g] for e in graph.maps.get(t) or ())
 
     why: dict[str, str] = {}
-    written: set[str] = set()
+    covered: set[tuple[str, frozenset[tuple[str, str]]]] = set()  # (graph query, the tables its union query over members reads)
     for h, r in union.items():
         reads = [(i['query'], i['name']) for i in r['inputs'] if 'query' in i]
         over_members = all(q in state for q, _ in reads) and set(r['closure']) <= state
-        if over_members:
-            written.update(r['graph_queries'])
         if h in state:
             why[h] = BY_MEMBER
             continue
@@ -537,14 +551,16 @@ def target_rule(state: frozenset[str], member_maps: Mapping[tuple[str, str], Tab
             if not applies(g):
                 continue
             if not progresses(g):
-                reason = BY_PROGRESS
+                reason = BY_PROGRESS if reason == BY_APPLIES else reason
                 continue
             reason = ''
-            break
+            covered.add((g, templates.reads[h]))
         if reason:
             why[h] = reason
-    unwritten = sum(1 for g in graph.reads if g not in written and applies(g) and progresses(g))
-    return Verdict(sorted(h for h in union if h not in why), why, unwritten)
+    candidates = [g for g in sorted(graph.reads) if applies(g) and progresses(g)]
+    standing = {t: by_map[graph.maps[t]] for g in candidates for t in graph.reads[g]}  # type: ignore[index]
+    stand_ins, lost = stand_in.choices(candidates, graph.reads, standing, templates, covered)
+    return Verdict(sorted(h for h in union if h not in why), why, stand_ins, lost)
 
 
 def plan_added(task: str, draws: list[Draw], union: Mapping[str, dict], have: set[frozenset[str | None]]) -> tuple[list[dict], dict[str, dict[str, dict]], dict[frozenset[str | None], str]]:
@@ -667,6 +683,9 @@ class Env:
     draw_counts: Counter[str] = field(default_factory=Counter)
     graph: Graph | None = None  # the task's union graph (the target rule's)
     union: Mapping[str, dict] = field(default_factory=dict)  # the skeleton's query records by QueryHash
+    templates: stand_in.Templates | None = None  # the reads of the union's query records (the target rule's)
+    union_tables: dict[tuple[str, str], Any] = field(default_factory=dict)  # (QueryHash, Name) of a union query -> its table as the engine computes it from the query's own program
+    site_maps: dict[tuple[tuple[str, str], tuple[str, str]], stand_in.SiteMap | stand_in.NoStandIn] = field(default_factory=dict)  # (a union query's table, a table that stands for it) -> how a read moves between them
 
 
 def point_of_vector(env: Env, kind: str, rec: dict) -> Point | None:
@@ -798,8 +817,49 @@ def add_drawn(env: Env, kind: str, scope: tuple[str, ...], points: dict[tuple[in
             env.draw_counts['drawn'] += count
 
 
-def process_sample(env: Env, sample: dict, queries: Mapping[str, dict]) -> int:
-    """Writes the sample's points; returns the count of its target queries (target_rule's)."""
+def union_table(env: Env, queries: Mapping[str, dict], q: str, name: str) -> Any:
+    """The table (QueryHash q, Name) as the engine computes it from the query's own program (a scope of its own), as a table_export.ExportTable."""
+    key = (q, name)
+    if key not in env.union_tables:
+        try:
+            _, pg = env.run.scope(tuple(queries[q]['program']))
+        except (env.live.Drop, env.live.arclog.Refusal) as e:
+            raise stand_in.NoStandIn('the engine refused the program of a replaced query') from e
+        tabs = [t for t in env.wr.export_tables(pg.closed[-1]) if t.name == name]
+        if len(tabs) != 1:
+            raise stand_in.NoStandIn('the engine gives a replaced query not one table of that Name')
+        env.union_tables[key] = tabs[0]
+    return env.union_tables[key]
+
+
+def site_map(env: Env, queries: Mapping[str, dict], old: tuple[str, str], new: tuple[str, str], scope_tabs: Mapping[tuple[str, str], Any]) -> stand_in.SiteMap:
+    """How a read of the table `old` (a union query's) is written on the columns of the member's table `new`. Made once for each pair in a task: the tables' content does not depend on the scope."""
+    got = env.site_maps.get((old, new))
+    if got is None:
+        try:
+            if new not in scope_tabs:
+                raise stand_in.NoStandIn('the engine gives a member no table')
+            got = stand_in.column_map_of(union_table(env, queries, *old), queries[old[0]]['kind'], queries[old[0]]['program'][-1], old[1],
+                                         scope_tabs[new], queries[new[0]]['kind'], queries[new[0]]['program'][-1], new[1])
+        except stand_in.NoStandIn as e:
+            got = e
+        env.site_maps[(old, new)] = got
+    if isinstance(got, stand_in.NoStandIn):
+        raise stand_in.NoStandIn(str(got))
+    return got
+
+
+def stand_in_text(env: Env, queries: Mapping[str, dict], s: stand_in.StandIn, label: Mapping[str, str], own: str, scope_tabs: Mapping[tuple[str, str], Any]) -> str:
+    """The text of the target query `s` over the scope's labels."""
+    swaps = {}
+    for old, new in s.swaps:
+        head = label[new[0]] + ('.' + new[1] if queries[new[0]]['kind'] == 'INIT' and new[1] else '')
+        swaps[old] = stand_in.Swap(head, site_map(env, queries, old, new, scope_tabs))
+    return stand_in.written_over(queries[s.template], label, own, swaps)
+
+
+def process_sample(env: Env, sample: dict, queries: Mapping[str, dict]) -> tuple[int, int]:
+    """Writes the sample's points; returns (the count of its target queries by the rule, the count of those that are written)."""
     tot, wr, live = env.totals, env.wr, env.live
     texts, label = scope_of(sample['state']['queries'], queries)
     scope = tuple(texts)
@@ -807,29 +867,52 @@ def process_sample(env: Env, sample: dict, queries: Mapping[str, dict]) -> int:
         _, pg = env.run.scope(scope)
     except (live.Drop, live.arclog.Refusal) as e:  # a refusal of the engine; any other exception is a failure and ends the sample as an error
         raise Reject('the engine refused the scope: ' + why(e)) from e
-    assert env.graph is not None
+    assert env.graph is not None and env.templates is not None
     state = frozenset(sample['state']['queries'])
     maps = scope_maps(wr, pg)
     tot.counts[RULE_COUNTS[0]] += sum(all(k[0] != h for k in maps) for h in state)
-    verdict = target_rule(state, maps, env.graph, env.union)
-    tot.counts[RULE_COUNTS[1]] += verdict.unwritten
+    verdict = target_rule(state, maps, env.graph, env.union, env.templates)
+    tot.counts[RULE_COUNTS[1]] += len(verdict.stand_ins)
+    for reason, n in verdict.lost.items():
+        tot.fail('target', 'stand-in: ' + reason, sample['id'], n)
+    # the state's tables as the engine exports them with their rows, for the columns of the members that stand in (made when the first stand-in needs them)
+    scope_tabs: dict[tuple[str, str], Any] = {}
+    if verdict.stand_ins:
+        got = wr.state_tables(env.run, pg)
+        if got is None:
+            raise RuntimeError('the scope did not keep its queries\' tables (writer.keep_state_tables)')
+        scope_tabs = {(next(a.query for a in t.at if a.query), t.name): t for t in got[0] if any(a.query for a in t.at)}
     # the targets: text over the scope's labels and the token stream
     targets: dict[str, list[tuple[str, list[int]]]] = {}
-    for h in verdict.targets:
+    written: set[str] = set()
+    own = f'&r{len(scope)}'
+
+    def take(example: str, make: Any) -> None:
         tot.counts['targets'] += 1
         try:
-            q = queries[h]
-            text = rewrite(q, label, f'&r{len(scope)}')
+            text, want = make()
             kind, stream = query_stream(env, scope, text)
-            if kind != q['kind']:
+            if kind != want:
                 raise Reject('the stream\'s kind differs from the query\'s kind')
         except Reject as e:
-            tot.fail('target', str(e), f'{h} {sample["id"]}')
-            continue
+            tot.fail('target', str(e), example)
+            return
+        except stand_in.NoStandIn as e:
+            tot.fail('target', 'stand-in: ' + str(e), example)
+            return
         except Exception as e:
-            tot.fail('target', 'decode: ' + why(e), f'{h} {sample["id"]}')
-            continue
+            tot.fail('target', 'decode: ' + why(e), example)
+            return
+        if text in written:
+            tot.counts['targets equal to another target'] += 1
+            return
+        written.add(text)
         targets.setdefault(kind, []).append((text, stream))
+
+    for h in verdict.targets:
+        take(f'{h} {sample["id"]}', lambda h=h: (rewrite(queries[h], label, own), queries[h]['kind']))
+    for s in verdict.stand_ins:
+        take(f'{s.graph_query} {sample["id"]}', lambda s=s: (stand_in_text(env, queries, s, label, own, scope_tabs), queries[s.template]['kind']))
     drawn = drawn_streams(env, sample, scope, label, set(targets)) if env.draws is not None else {}
     for kind, group in targets.items():
         points: dict[tuple[int, ...], Point] = {}
@@ -915,7 +998,7 @@ def process_sample(env: Env, sample: dict, queries: Mapping[str, dict]) -> int:
             env.sink.f.write(f'{{"record":"point","sample":"{sample["id"]}","kind":"{kind}","length":{len(p.tokens)},"prefix":"{prefix_hash(p.tokens)}","tokens":{json.dumps([int(t) for t in p.tokens], separators=(",", ":"))},"ids":{p.ids_text},"option":{p.option_text},'
                              f'"table":{json.dumps(p.table, separators=(",", ":"))},"point":{p.point_text},"positive":{json.dumps(pos, separators=(",", ":"))},"live":{p.live}{drawn_field}}}\n')
         tot.seconds['labels and writing'] += time.perf_counter() - t1
-    return len(verdict.targets)
+    return len(verdict.targets) + len(verdict.stand_ins), len(written)
 
 
 # ---------------------------------------------------------------- one task
@@ -981,7 +1064,7 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
     tot = Totals()
     uses = () if args.vectors else env_base['uses']  # the vector holds the features; the extractor need not make the prefix features too
     env = Env(live, wr, tr, run, uses, env_base['option_names'], env_base['point_names'], env_base['plain'], env_base['table'], sink, tot, args.plan, args.seconds, args.max_states,
-              vector_names, point_cols, id_cols, graph=graph, union=queries)
+              vector_names, point_cols, id_cols, graph=graph, union=queries, templates=stand_in.read_index(queries, graph.reads))
     steps_of: Counter[frozenset[str | None]] = Counter()  # an added state -> the last steps that reach it, repeats counted
     solving_of: Counter[frozenset[str | None]] = Counter()  # the same, of those that solve every train ARC example
     if draw_paths is not None:
@@ -1007,7 +1090,7 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
             before = tot.counts['points']
             state = frozenset(sample['state']['queries'])
             try:
-                found = process_sample(env, sample, ChainMap(off_queries[sample['id']], queries) if sample['id'] in added_ids else queries)
+                found, kept = process_sample(env, sample, ChainMap(off_queries[sample['id']], queries) if sample['id'] in added_ids else queries)
             except Exception as e:
                 tot.fail('sample', str(e) if isinstance(e, Reject) else 'error: ' + why(e), f'{sample["id"]} {task}')
                 if sample['id'] in added_ids:
@@ -1019,6 +1102,11 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
                 tot.counts['samples with no target'] += 1
                 if sample['id'] in added_ids:
                     env.draw_counts['not added: ' + NO_TARGET] += steps_of[state]
+                    continue
+            elif not kept:
+                tot.counts['samples whose target queries could not be written'] += 1
+                if sample['id'] in added_ids:
+                    env.draw_counts['not added: ' + NO_WRITTEN] += steps_of[state]
                     continue
             tot.counts['samples written'] += 1
             tot.counts['samples with a point'] += tot.counts['points'] > before
