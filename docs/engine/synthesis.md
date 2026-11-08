@@ -49,7 +49,7 @@ The step ends when each of these holds, or the difference is reported as a fault
         - A request: the request work cap, over every query and walk of it.
         - An observation, the extents and the mask's walk at a `DET` close: the table work cap.
         - The joint assignments of a prefix, the models of a case and the nodes of the constraint search: the assignment cap, the model cap and the node cap.
-        - A projection: the projection cap and the binding cap. The completion search of an input's head: the step bound of `ARCLOG_PROJECTION_STEPS`.
+        - A projection: the projection cap and the binding cap. The completion search of an input's head: the step bound of the search, 4096.
 - The candidates of a train pair are not a setting. A run has the candidates of its task data, as [Candidates](cases.md#candidates) gives, so a decode on Kaggle task data is open-world and a decode on the task data of this repo is closed-world.
 
 ## Switches
@@ -66,7 +66,6 @@ The step ends when each of these holds, or the difference is reported as a fault
 - Environment variables that remain:
     - `ARCLOG_THREADS`: the thread count of a corpus run.
     - `ARCLOG_STATS`: the switch of the per-phase timing, which costs time.
-    - `ARCLOG_PROJECTION_STEPS`: the bound on the steps of one completion search of a projection. A valid program does not reach it.
     - `ARCLOG_PROJECTION_MEASURE`: a diagnosis that runs the search of `Decoder::legacy_completes_projection` beside the exact one and prints the verdicts that differ.
     - `ARCLOG_JOIN_MEASURE`: a diagnosis that prints to the standard error, for each clause that did work, its form path, node count, work and time. It costs time and changes no result.
     - `GOLD_PRUNE_SCOPE`, `GOLD_PRUNE_PYTHON`, `GOLD_PRUNE_MANIFEST`, `GOLD_PRUNE_OUTPUT`, `GOLD_PRUNE_ACQUISITION_KEY`: the scope and the files of the gold normalization audit.

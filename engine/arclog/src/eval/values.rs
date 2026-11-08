@@ -361,7 +361,7 @@ pub enum Gauge {
     /// The rows of one projection read, under the projection cap.
     ProjectionRows,
     /// The steps of one completion search of an input's head, under the step
-    /// bound of `ARCLOG_PROJECTION_STEPS`.
+    /// bound of the search.
     ProjectionSteps,
     /// The bytes of the session at a check, under the session's byte bound;
     /// the room of an index build or a reservation counts as a hit alone. A
