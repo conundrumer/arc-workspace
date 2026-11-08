@@ -438,7 +438,7 @@ pub(super) fn resolve_reusing(earlier: &ResolvedProgram, scope: &SolverScope, re
     builder.contents_reusing(earlier)?;
     builder.sites();
     builder.proposers();
-    Some(builder.finish(None))
+    Some(builder.finish(None).value)
 }
 
 impl<'a> Builder<'a> {
