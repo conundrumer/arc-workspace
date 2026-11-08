@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, OnceLock};
 
-use arclog::decode::{step_batch, Decoder, Projections, TokenMask};
+use arclog::decode::{step_batch, BatchFault, Decoder, Projections, TokenMask};
 use arclog::eval::pool::Pool;
 use arclog::judge::attempts::Attempts;
 use arclog::judge::candidates::{PairCandidates, Section};
@@ -19,7 +19,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use crate::constructions;
-use crate::errors::{settled, Fault, Refusal};
+use crate::errors::{check_effort, effort_exhausted, labeling_bound_reached, settled, Fault, Refusal};
 use crate::results::{assigned, grid_rows, rows_view, PyAssigned, PyConsistency, PyProjection, PyProjections};
 use crate::session::SessionData;
 use crate::study::{written_query_hash, finished_query};
@@ -171,10 +171,12 @@ impl PyDecoder {
 
     /// The tokens that may come next: bit `id % 8` of byte `id // 8` is set
     /// where the token with that id is admissible.
-    fn admissible<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+    fn admissible<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         let _timed = stats::span(Phase::PyAdmissible);
         let decoder = self.decoder();
-        PyBytes::new(py, &mask_bytes(&decoder.admissible(), decoder.vocabulary().len()))
+        let mask = decoder.admissible();
+        check_effort(py)?;
+        Ok(PyBytes::new(py, &mask_bytes(&mask, decoder.vocabulary().len())))
     }
 
     /// The atoms that may come next at this state, each as the ids of its
@@ -182,10 +184,11 @@ impl PyDecoder {
     /// read and whether it stopped at `limit` states
     /// (`arclog::decode::Decoder::candidate_atoms`).
     #[pyo3(signature = (limit=1<<20, reference=false))]
-    fn atoms(&self, py: Python<'_>, limit: usize, reference: bool) -> (Vec<Vec<u32>>, usize, bool) {
+    fn atoms(&self, py: Python<'_>, limit: usize, reference: bool) -> PyResult<(Vec<Vec<u32>>, usize, bool)> {
         let decoder = self.decoder();
         let found = py.detach(|| if reference { decoder.candidate_atoms_reference(limit) } else { decoder.candidate_atoms(limit) });
-        (found.atoms.iter().map(|atom| atom.to_vec()).collect(), found.states, found.truncated)
+        check_effort(py)?;
+        Ok((found.atoms.iter().map(|atom| atom.to_vec()).collect(), found.states, found.truncated))
     }
 
     /// Advances the decode by the token with id `id`, and gives the ids of
@@ -193,10 +196,11 @@ impl PyDecoder {
     /// `OUT` form that the token ends, or `None`, and the consistency of the
     /// `RULE` clause that it ends under the rule tests, or `None`. Raises
     /// `Refusal` for a token outside the mask, and leaves the decode as it was.
-    fn step(&mut self, id: u32) -> PyResult<StepResult> {
+    fn step(&mut self, py: Python<'_>, id: u32) -> PyResult<StepResult> {
         let _timed = stats::span(Phase::PyStep);
         let token = self.token(id)?;
         let result = self.decoder_mut().step(token);
+        check_effort(py)?;
         self.step_result(result)
     }
 
@@ -206,10 +210,11 @@ impl PyDecoder {
     /// mask admits the token, the fork's state comes from the mask, and no
     /// check of the token runs again. Raises `Refusal` for a token outside the
     /// mask, and leaves the decode as it was.
-    fn fork_step(&self, id: u32) -> PyResult<(PyDecoder, StepResult)> {
+    fn fork_step(&self, py: Python<'_>, id: u32) -> PyResult<(PyDecoder, StepResult)> {
         let _timed = stats::span(Phase::PyStep);
         let token = self.token(id)?;
         let (decoder, result) = self.decoder().fork_step(token);
+        check_effort(py)?;
         let child = PyDecoder { decoder: Some(decoder), data: Arc::clone(&self.data) };
         let result = child.step_result(result)?;
         Ok((child, result))
@@ -220,10 +225,12 @@ impl PyDecoder {
     /// as it was. Where `admissible` has computed the mask at this state,
     /// it reads them from the mask. Raises `Refusal` for a token outside the
     /// mask, as `step` does.
-    fn forced(&self, id: u32) -> PyResult<Vec<u32>> {
+    fn forced(&self, py: Python<'_>, id: u32) -> PyResult<Vec<u32>> {
         let _timed = stats::span(Phase::PyForced);
         let token = self.token(id)?;
-        self.decoder().forced(&token).map(|forced| self.forced_ids(&forced)).map_err(|refusal| refusal_error(&refusal))
+        let forced = self.decoder().forced(&token);
+        check_effort(py)?;
+        forced.map(|forced| self.forced_ids(&forced)).map_err(|refusal| refusal_error(&refusal))
     }
 
     /// Whether each token with an id of `ids` may come next: the verdicts of
@@ -231,13 +238,15 @@ impl PyDecoder {
     /// forced ids and `False` where it raises `Refusal`. The checks run over
     /// those tokens together, as the checks of `admissible` run over the
     /// vocabulary, and leave the decode as it was.
-    fn admits(&self, ids: Vec<u32>) -> PyResult<Vec<bool>> {
+    fn admits(&self, py: Python<'_>, ids: Vec<u32>) -> PyResult<Vec<bool>> {
         let _timed = stats::span(Phase::PyAdmits);
         let vocabulary = self.decoder().vocabulary();
         if let Some(&id) = ids.iter().find(|&&id| vocabulary.token(id).is_none()) {
             return Err(PyIndexError::new_err(format!("no token with id {id}")));
         }
-        Ok(self.decoder().admits(&ids))
+        let admitted = self.decoder().admits(&ids);
+        check_effort(py)?;
+        Ok(admitted)
     }
 
     /// A second decode from the same state, which shares this one's caches.
@@ -252,6 +261,7 @@ impl PyDecoder {
     #[pyo3(signature = (example=None))]
     fn rows(&mut self, py: Python<'_>, example: Option<u16>) -> PyResult<Option<PyAssigned>> {
         let observed = self.decoder_mut().observe_rows(example.map(Example::at));
+        check_effort(py)?;
         observed
             .map(|outcome| assigned(py, settled(outcome)?, |value| Ok(Py::new(py, rows_view(&value))?.into_any())))
             .transpose()
@@ -261,6 +271,7 @@ impl PyDecoder {
     /// task-wide clause; `None` where no clause is in progress.
     fn counts(&mut self, py: Python<'_>) -> PyResult<Option<Vec<PyAssigned>>> {
         let observed = self.decoder_mut().observe_counts();
+        check_effort(py)?;
         observed
             .map(|outcomes| {
                 outcomes
@@ -278,7 +289,9 @@ impl PyDecoder {
     /// where a bound ended the body or the search. The projections give no rows.
     /// Raises `Fault` where the sub-body does not check or compile.
     fn projections(&self, py: Python<'_>) -> PyResult<Option<PyProjections>> {
-        let Some(outcome) = self.decoder().projections() else { return Ok(None) };
+        let projected = self.decoder().projections();
+        check_effort(py)?;
+        let Some(outcome) = projected else { return Ok(None) };
         let found = match settled(outcome)? {
             Projections::Found(found) => found,
             Projections::Stopped(stop) => return Ok(Some(PyProjections { projections: Vec::new(), stop: Some(Stop::from(stop.bound).into()) })),
@@ -298,8 +311,10 @@ impl PyDecoder {
 
     /// The attempts on each test input, as lists of at most two grids, or
     /// `None` until the decode ends at a consistent relation.
-    fn attempts(&self) -> PyResult<Option<Vec<Vec<Vec<Vec<u32>>>>>> {
-        let Some(outcome) = self.decoder().attempts() else { return Ok(None) };
+    fn attempts(&self, py: Python<'_>) -> PyResult<Option<Vec<Vec<Vec<Vec<u32>>>>>> {
+        let attempted = self.decoder().attempts();
+        check_effort(py)?;
+        let Some(outcome) = attempted else { return Ok(None) };
         let attempts = settled(outcome)?;
         Ok(Some(attempts_lists(&attempts)))
     }
@@ -314,8 +329,10 @@ impl PyDecoder {
     /// The attempts, as `attempts` gives them, and the count of the output
     /// sets on the test inputs that ended at the model cap with the grids
     /// found so far; `None` until the decode ends at a consistent relation.
-    fn attempts_counted(&self) -> PyResult<Option<(Vec<Vec<Vec<Vec<u32>>>>, u64)>> {
-        let Some(outcome) = self.decoder().attempts_counted() else { return Ok(None) };
+    fn attempts_counted(&self, py: Python<'_>) -> PyResult<Option<(Vec<Vec<Vec<Vec<u32>>>>, u64)>> {
+        let attempted = self.decoder().attempts_counted();
+        check_effort(py)?;
+        let Some(outcome) = attempted else { return Ok(None) };
         let (attempts, capped) = settled(outcome)?;
         Ok(Some((attempts_lists(&attempts), capped)))
     }
@@ -339,10 +356,11 @@ impl PyDecoder {
     /// `index`: free of the names that the scope gives its tables. Index -1
     /// is the last finished query.
     #[pyo3(signature = (index=-1))]
-    fn query_hash(&self, index: isize) -> PyResult<u128> {
+    fn query_hash(&self, py: Python<'_>, index: isize) -> PyResult<u128> {
         let decoder = self.decoder();
         let (position, _) = finished_query(decoder.program(), index)?;
-        decoder.query_hash(position).map(|hash| hash.0).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))
+        let hash = decoder.query_hash_or_bound(position).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
+        hash.map(|hash| hash.0).map_err(|bound| labeling_bound_reached(py, bound))
     }
 
     /// The bytes that `query_hash` hashes, for the finished query at `index`.
@@ -350,16 +368,17 @@ impl PyDecoder {
     fn query_bytes<'py>(&self, py: Python<'py>, index: isize) -> PyResult<Bound<'py, PyBytes>> {
         let decoder = self.decoder();
         let (position, _) = finished_query(decoder.program(), index)?;
-        let content = decoder.query_content(position).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
+        let content = decoder.query_content_or_bound(position).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
+        let content = content.map_err(|bound| labeling_bound_reached(py, bound))?;
         Ok(PyBytes::new(py, content.canonical_bytes()))
     }
 
     /// The canonical hash of the finished query at `index`, with the
     /// names as written. Index -1 is the last finished query.
     #[pyo3(signature = (index=-1))]
-    fn written_query_hash(&self, index: isize) -> PyResult<u128> {
+    fn written_query_hash(&self, py: Python<'_>, index: isize) -> PyResult<u128> {
         let (_, query) = finished_query(self.decoder().program(), index)?;
-        Ok(written_query_hash(query).0)
+        written_query_hash(query).map(|hash| hash.0).map_err(|bound| labeling_bound_reached(py, bound))
     }
 
     /// For each part of the finished `RIGID_DET` form at `index`, in the
@@ -415,7 +434,8 @@ pub(crate) fn step_batch_py(py: Python<'_>, decoders: Vec<Bound<'_, PyDecoder>>,
     held.iter()
         .zip(results.into_vec())
         .map(|(decoder, result)| match result {
-            Err(panic) => Ok(Fault::new_err(panic).into_value(py).into_any()),
+            Err(BatchFault::Panic(panic)) => Ok(Fault::new_err(panic).into_value(py).into_any()),
+            Err(BatchFault::Effort(fault)) => Ok(effort_exhausted(py, fault).into_value(py).into_any()),
             Ok(result) => match decoder.step_result(result) {
                 Ok(step) => Ok(step.into_pyobject(py)?.into_any().unbind()),
                 Err(refusal) => Ok(refusal.into_value(py).into_any()),

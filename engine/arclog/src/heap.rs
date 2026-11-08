@@ -2,8 +2,8 @@
 //! [`Counted`] one, as the Python extension's is.
 //!
 //! A task session's bound counts these bytes, as
-//! [`crate::session::TaskSession::within_bound`] gives, so that it bounds the
-//! rows, indexes and buffers that its ledger does not count, such as a
+//! [`crate::session::TaskSession::relieve`] gives, so that it evicts its caches
+//! for the rows, indexes and buffers that its ledger does not count, such as a
 //! relation that the result cache evicted while a table or a driver still
 //! holds it.
 //!

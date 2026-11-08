@@ -1,17 +1,19 @@
 //! Thin Python handles for the engine's study ASTs.
 
 use arclog::hash::StableHash;
-use arclog::program::canonical::{CanonicalOrder, SearchBudget};
+use arclog::program::canonical::{CanonicalOrder, LabelingBound, SearchBudget};
 use arclog::program::{Form, Node, Program};
 use arclog::registry::Registry;
 use arclog::resolver::{resolve, ResolvedContent, SolverScope};
 use arclog::stream::DecodeSettings;
-use arclog::study::StudyProgram;
+use arclog::check::CheckCache;
+use arclog::study::{StudyError, StudyProgram};
 use pyo3::exceptions::PyValueError;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyTuple};
 
+use crate::errors::{faulted, labeling_bound_reached, refused, study_error};
 use crate::mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 use crate::session::PySession;
 use crate::settings::PyDecodeSettings;
@@ -28,9 +30,16 @@ pub(crate) fn finished_query(program: &Node<Program>, index: isize) -> PyResult<
     }
 }
 
-/// The hash of the canonical form of `query`, with the names as written.
-pub(crate) fn written_query_hash(query: &Form) -> StableHash {
-    CanonicalOrder::with_form(query, &mut SearchBudget::new()).1.hash
+/// The hash of the canonical form of `query`, with the names as written;
+/// the bound where the search for a canonical labeling of the query passed
+/// its cap.
+pub(crate) fn written_query_hash(query: &Form) -> Result<StableHash, LabelingBound> {
+    let mut search = SearchBudget::new();
+    let hash = CanonicalOrder::with_form(query, &mut search).1.hash;
+    if search.reached {
+        return Err(LabelingBound::at_cap());
+    }
+    Ok(hash)
 }
 
 /// A grammar/binder reader for this session's immutable settings. Each
@@ -56,12 +65,12 @@ impl PyStudyProgram {
     /// The resolver's content of the query at `index`, in the program of
     /// its use closure, as a decode that has finished it holds, with the
     /// query's position.
-    fn query_content(&self, index: isize) -> PyResult<(ResolvedContent, usize)> {
+    fn query_content(&self, py: Python<'_>, index: isize) -> PyResult<(ResolvedContent, usize)> {
         let (position, _) = finished_query(self.program.program(), index)?;
         let prefix = Node::new(Program { forms: self.program.program().value().forms[..=position].into() });
         let resolved = resolve(&prefix, None, &SolverScope::default(), Registry::get()).value;
-        let content = resolved.query_content(position, Registry::get());
-        content.map(|content| (content, position)).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))
+        let content = resolved.query_content_or_bound(position, Registry::get()).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
+        content.map(|content| (content, position)).map_err(|bound| labeling_bound_reached(py, bound))
     }
 }
 
@@ -79,6 +88,9 @@ impl PyStudyProgram {
     }
 
     /// Read standalone case sexp, preserving source column/variable names.
+    /// Raises `CheckRefused` for a program that the reader, the resolver or a
+    /// check refuses, and `Refusal` for any other program that the engine
+    /// refuses.
     #[staticmethod]
     #[pyo3(signature = (text, settings=None, *, session=None))]
     fn from_sexp(py: Python<'_>, text: &str, settings: Option<PyDecodeSettings>, session:Option<&PySession>) -> PyResult<Self> {
@@ -93,20 +105,22 @@ impl PyStudyProgram {
             .detach(||match session {
                 Some(session)=> {
                     let mut cached=session.program_replay.lock().expect("a program reader outside a panic");
-                    StudyProgram::from_sexp_cached(text,Registry::get(),&mut cached.checks)
+                    StudyProgram::read_sexp_cached(text,Registry::get(),&mut cached.checks)
                 },
-                None=>StudyProgram::from_sexp(text, Registry::get()),
+                None=>StudyProgram::read_sexp_cached(text, Registry::get(), &mut CheckCache::default()),
             })
-            .map_err(PyValueError::new_err)?;
+            .map_err(|error| study_error(py, error))?;
         program
-            .decode_stream(Registry::get(), &settings)
-            .map_err(PyValueError::new_err)?;
+            .try_decode_stream(Registry::get(), &settings)
+            .map_err(|error| study_error(py, error))?;
         Ok(Self { program, settings })
     }
 
     /// Parse a complete stream with the engine grammar/binder and exact
     /// echoes, then check the entire AST. No prefix completion search or OUT
-    /// evaluation is needed when the complete program is supplied.
+    /// evaluation is needed when the complete program is supplied. Raises
+    /// `CheckRefused` for a program that a check refuses, and `Refusal` for any
+    /// other stream that the engine refuses.
     #[staticmethod]
     fn from_stream(
         py: Python<'_>,
@@ -116,7 +130,7 @@ impl PyStudyProgram {
     ) -> PyResult<Self> {
         let settings = session.program_settings();
         let program = py
-            .detach(|| {
+            .detach(|| -> Result<StudyProgram, StudyError> {
                 let mut cached = session
                     .program_replay
                     .lock()
@@ -125,16 +139,16 @@ impl PyStudyProgram {
                     arclog::decode::program_read::ProgramReader::new(Registry::get(), settings)
                 });
                 let ast = reader.read(&ids, &model)?;
-                let program = StudyProgram::from_decoded_cached(ast, Registry::get(), &mut cached.checks)?;
-                let written = program.decode_stream(Registry::get(), &settings)?;
+                let program = StudyProgram::read_decoded_cached(ast, Registry::get(), &mut cached.checks)?;
+                let written = program.try_decode_stream(Registry::get(), &settings)?;
                 if written.ids != ids || written.model != model {
                     return Err(
-                        "parsed program does not reproduce its exact input stream".to_owned()
+                        "parsed program does not reproduce its exact input stream".into()
                     );
                 }
                 Ok(program)
             })
-            .map_err(PyValueError::new_err)?;
+            .map_err(|error| study_error(py, error))?;
         Ok(Self { program, settings })
     }
 
@@ -142,14 +156,14 @@ impl PyStudyProgram {
     #[pyo3(signature = (*, normalize=false))]
     fn static_prune_json(&self, py: Python<'_>, normalize: bool) -> PyResult<String> {
         py.detach(|| self.program.static_prune_report_with_settings(Registry::get(), normalize, &self.settings))
-            .map(|value| value.to_string()).map_err(PyValueError::new_err)
+            .map(|value| value.to_string()).map_err(refused)
     }
 
     /// The actual checked normalized gold and its source-correspondence report.
     /// This grants no evaluation equivalence or historical table reuse.
     fn normalized_gold(&self, py: Python<'_>) -> PyResult<(Self, String)> {
         let (program, report) = py.detach(|| self.program.normalized_gold(Registry::get(), &self.settings))
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok((Self { program, settings: self.settings }, report.to_string()))
     }
 
@@ -192,20 +206,20 @@ impl PyStudyProgram {
     /// Full held DET choices and exact body-read subsets, decoded by Term::decode.
     fn choice_evidence_json(&self, py: Python<'_>, kept_json: &str) -> PyResult<String> {
         py.detach(|| arclog::study::render_choices::export_json(&self.program, kept_json, Registry::get()))
-            .map(|v| v.to_string()).map_err(PyValueError::new_err)
+            .map(|v| v.to_string()).map_err(refused)
     }
 
     /// Exact OUT key projection onto native body columns and original label paths.
     fn out_bindings_json(&self, py: Python<'_>) -> PyResult<String> {
         py.detach(|| arclog::study::render_out::export(&self.program))
-            .map(|v| v.to_string()).map_err(PyValueError::new_err)
+            .map(|v| v.to_string()).map_err(faulted)
     }
 
     /// Relation names from the original case writer, guarded by exact stream identity.
     fn relation_source_names_json(&self, py: Python<'_>, corpus: &str, task: &str, case: &str) -> PyResult<String> {
         py.detach(|| arclog::study::render_names::from_case(self.program.checked(), &self.settings,
             std::path::Path::new(corpus), task, case).map(|v|v.to_string()))
-            .map_err(PyValueError::new_err)
+            .map_err(refused)
     }
 
     fn render_json(&self, py: Python<'_>) -> PyResult<String> {
@@ -214,7 +228,7 @@ impl PyStudyProgram {
                 .render_json(Registry::get())
                 .map(|v| v.to_string())
         })
-        .map_err(PyValueError::new_err)
+        .map_err(faulted)
     }
 
     /// The hash of the resolver's content of the query at `index`: free
@@ -222,22 +236,22 @@ impl PyStudyProgram {
     /// the query in the program of the queries up to it, as a decode
     /// that has just finished it holds, since a later read of a `DET`'s
     /// columns changes the columns that the resolution keeps.
-    fn query_hash(&self, index: isize) -> PyResult<u128> {
-        let (content, _) = self.query_content(index)?;
+    fn query_hash(&self, py: Python<'_>, index: isize) -> PyResult<u128> {
+        let (content, _) = self.query_content(py, index)?;
         Ok(content.content_hash().0)
     }
 
     /// The bytes that `query_hash` hashes, for the query at `index`.
     fn query_bytes<'py>(&self, py: Python<'py>, index: isize) -> PyResult<Bound<'py, PyBytes>> {
-        let (content, _) = self.query_content(index)?;
+        let (content, _) = self.query_content(py, index)?;
         Ok(PyBytes::new(py, content.canonical_bytes()))
     }
 
     /// The canonical hash of the query at `index`, with the names as
     /// written.
-    fn written_query_hash(&self, index: isize) -> PyResult<u128> {
+    fn written_query_hash(&self, py: Python<'_>, index: isize) -> PyResult<u128> {
         let (_, query) = finished_query(self.program.program(), index)?;
-        Ok(written_query_hash(query).0)
+        written_query_hash(query).map(|hash| hash.0).map_err(|bound| labeling_bound_reached(py, bound))
     }
 
     /// For each list of the query at `index`, by its source path, the
@@ -317,7 +331,7 @@ impl PyStudyProgram {
                     Registry::get(),
                 )
             })
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok((
             specs
                 .into_iter()
@@ -330,7 +344,7 @@ impl PyStudyProgram {
     /// Direct source-conjunct inventory; unsupported connectives remain visible.
     fn substitution_occurrences_json(&self, point: &PyMutationPoint) -> PyResult<String> {
         self.program.substitution_occurrences(&point.inner)
-            .map(|value| value.to_string()).map_err(PyValueError::new_err)
+            .map(|value| value.to_string()).map_err(refused)
     }
 
     /// New occurrence-proportional population; does not change draw_specs.
@@ -345,7 +359,7 @@ impl PyStudyProgram {
         let origin = arclog::mutation::Source { revision:source_revision, task, case };
         let (specs, stats) = py.detach(|| self.program.draw_substitutes_at(&point.inner,
             &at, count, seed, origin, &self.settings, Registry::get()))
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok((specs.into_iter().map(|inner| PyMutationSpec { inner }).collect(), stats.json().to_string()))
     }
 
@@ -361,7 +375,7 @@ impl PyStudyProgram {
         let origin = arclog::mutation::Source { revision:source_revision, task, case };
         let (specs, stats) = py.detach(|| self.program.draw_added_substitutes_at(&point.inner,
             &at, count, seed, origin, &self.settings, Registry::get()))
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok((specs.into_iter().map(|inner| PyMutationSpec { inner }).collect(), stats.json().to_string()))
     }
 
@@ -377,7 +391,7 @@ impl PyStudyProgram {
         let origin = arclog::mutation::Source { revision:source_revision, task, case };
         let (specs, stats) = py.detach(|| self.program.draw_block_substitutes_at(&point.inner,
             &at, count, seed, origin, &self.settings, Registry::get()))
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok((specs.into_iter().map(|inner| PyMutationSpec { inner }).collect(), stats.json().to_string()))
     }
 
@@ -415,7 +429,7 @@ impl PyStudyProgram {
                 )
                 .map(|v| v.to_string())
         })
-        .map_err(PyValueError::new_err)
+        .map_err(refused)
     }
 
     /// Read-only stored-form classification; recorded edits locate sites only.
@@ -423,12 +437,12 @@ impl PyStudyProgram {
         if self.settings != gold.settings {return Err(PyValueError::new_err("stored_settings: gold and stored settings differ"));}
         let identity=arclog::study::render::parse_json(identity_json).map_err(PyValueError::new_err)?;
         py.detach(||self.program.stored_static_prune_json(&gold.program,&identity,Registry::get(),&self.settings))
-            .map(|v|v.to_string()).map_err(PyValueError::new_err)
+            .map(|v|v.to_string()).map_err(refused)
     }
 
     /// Rehydrate and verify a stored identity without drawing its domain.
     fn decode_source(&self, py:Python<'_>)->PyResult<Self> {
-        let program=py.detach(|| self.program.decode_source(Registry::get(),&self.settings)).map_err(PyValueError::new_err)?;
+        let program=py.detach(|| self.program.decode_source(Registry::get(),&self.settings)).map_err(faulted)?;
         Ok(Self {program,settings:self.settings})
     }
 
@@ -455,7 +469,7 @@ impl PyStudyProgram {
         let stream=body_stream.map(arclog::study::render::parse_json).transpose().map_err(PyValueError::new_err)?;
         let origin=arclog::mutation::Source{revision:source_revision,task,case};
         let inner=py.detach(||self.program.construct_body_replacement(&at,program_text,stream.as_ref(),origin,Registry::get(),&self.settings))
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok(PyValidMutant{inner,settings:self.settings})
     }
 
@@ -467,7 +481,7 @@ impl PyStudyProgram {
                 self.program
                     .construct_identity(&identity, Registry::get(), &self.settings)
             })
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok(PyValidMutant {
             inner,
             settings: self.settings,
@@ -485,14 +499,14 @@ impl PyStudyProgram {
                 else {self.program.decode_source(Registry::get(),&self.settings)?};
             arclog::study::render::render_pair(&source, &mutant, Registry::get()).map(|v| v.to_string())
         })
-        .map_err(|error: String| PyValueError::new_err(error))
+        .map_err(refused)
     }
 
     fn construct(&self, spec: &PyMutationSpec) -> PyResult<PyValidMutant> {
         let inner = self
             .program
             .construct(&spec.inner)
-            .map_err(PyValueError::new_err)?;
+            .map_err(refused)?;
         Ok(PyValidMutant {
             inner,
             settings: self.settings,
@@ -500,11 +514,11 @@ impl PyStudyProgram {
     }
 
     /// (ids, model flags, AST path per token), under this handle's settings.
-    fn decode_stream(&self) -> PyResult<Stream> {
+    fn decode_stream(&self, py: Python<'_>) -> PyResult<Stream> {
         let stream = self
             .program
-            .decode_stream(Registry::get(), &self.settings)
-            .map_err(PyValueError::new_err)?;
+            .try_decode_stream(Registry::get(), &self.settings)
+            .map_err(|error| study_error(py, error))?;
         Ok((
             stream.ids,
             stream.model,
@@ -528,17 +542,18 @@ impl PyStudyProgram {
 /// The gold of the task `task` without its empty clauses, and the singleton
 /// double-read lint, as JSON (`arclog::study::empty_gold`): `corpus` is the
 /// converted corpus, `tasks` the directory of the task files, and
-/// `deadline_seconds` is accepted and guards nothing: an evaluation request
-/// stops at a work cap alone. `ValueError` where the task file does not read. The
-/// call runs with the GIL released.
+/// `request_work_cap` the request work cap of each evaluation request of the
+/// filter (the settings' default where it is `None`): a request stops at that
+/// work cap alone, with no clock. `ValueError` where the task file does not
+/// read. `arclog.EffortExhausted` where a request passed its effort guard. The call runs with the GIL released.
 #[pyfunction]
-#[pyo3(signature = (corpus, tasks, task, deadline_seconds=None))]
-pub(crate) fn empty_gold_json(py: Python<'_>, corpus: &str, tasks: &str, task: &str, deadline_seconds: Option<f64>) -> PyResult<String> {
-    let deadline = deadline_seconds.map(std::time::Duration::try_from_secs_f64).transpose().map_err(|error| PyValueError::new_err(format!("deadline_seconds: {error}")))?;
+#[pyo3(signature = (corpus, tasks, task, request_work_cap=None))]
+pub(crate) fn empty_gold_json(py: Python<'_>, corpus: &str, tasks: &str, task: &str, request_work_cap: Option<u64>) -> PyResult<String> {
     let constructions = crate::constructions()?;
-    py.detach(|| arclog::study::empty_gold::empty_gold(std::path::Path::new(corpus), std::path::Path::new(tasks), task, deadline, constructions))
-        .map(|value| value.to_string())
-        .map_err(PyValueError::new_err)
+    let gold = py.detach(|| arclog::study::empty_gold::empty_gold(std::path::Path::new(corpus), std::path::Path::new(tasks), task, request_work_cap, constructions));
+    // A request that passed its effort guard gives no result, whatever the call found.
+    crate::check_effort(py)?;
+    gold.map(|value| value.to_string()).map_err(PyValueError::new_err)
 }
 
 /// The Name that the tables export (`step_tables`'s `tables["name"]`) gives
@@ -550,16 +565,16 @@ pub(crate) fn empty_gold_json(py: Python<'_>, corpus: &str, tasks: &str, task: &
 /// A part that the canonical form cannot tell from an earlier part, so that
 /// two texts of one QueryHash may list the two in either order, takes the
 /// Name of the earliest such part, whose table holds the same rows.
-/// `ValueError` where `text` does not read, or where `read` reads no output
-/// of a `RIGID_DET` form of `text`. The call runs with the GIL released.
+/// `CheckRefused` where `text` does not read, `Refusal` where `read` reads no
+/// output of a `RIGID_DET` form of `text`. The call runs with the GIL released.
 #[pyfunction]
 pub(crate) fn rigid_slot_name(py: Python<'_>, text: &str, read: &str) -> PyResult<String> {
-    py.detach(|| {
-        let read_text = arclog::read::read_arclog(text, arclog::layout::SourceFile::Arclog).map_err(|d| arclog::study::diagnostics_text(&d))?;
+    py.detach(|| -> Result<String, StudyError> {
+        let read_text = arclog::read::read_arclog(text, arclog::layout::SourceFile::Arclog).map_err(|d| StudyError::of_diagnostics(&d))?;
         if read_text.diagnostics.iter().any(|d| d.severity == arclog::diagnostic::Severity::Error) {
-            return Err(arclog::study::diagnostics_text(&read_text.diagnostics));
+            return Err(StudyError::of_diagnostics(&read_text.diagnostics));
         }
-        arclog::resolver::rigid_read_name(&read_text.value.0, read, Registry::get())
+        Ok(arclog::resolver::rigid_read_name(&read_text.value.0, read, Registry::get())?)
     })
-    .map_err(PyValueError::new_err)
+    .map_err(|error: StudyError| study_error(py, error))
 }

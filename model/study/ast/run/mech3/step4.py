@@ -154,7 +154,7 @@ class Worker:
                 value['reader_difference']=dict(read_difference=existing['read_difference'])
             else:
                 value['reader_difference']=self.reader_check(base,record,ntrain,ntest)
-        except (OSError,ValueError,KeyError,IndexError,TypeError) as error:
+        except (self.legacy.arclog.Refusal,OSError,ValueError,KeyError,IndexError,TypeError) as error:
             value['reader_difference'].update(reason=str(error),error_type=type(error).__name__)
             return value
         if value['reader_difference']['read_difference'] is None:return value
@@ -242,7 +242,7 @@ class Worker:
                     try:
                         if failed:raise failed
                         value=self.process(base,record,existing)
-                    except (OSError,ValueError,KeyError,IndexError,TypeError) as error:
+                    except (self.legacy.arclog.Refusal,OSError,ValueError,KeyError,IndexError,TypeError) as error:
                         value=dict(schema='mech3-step4-record-v1',pair_id=base['pair_id'],source_sha256=base['source_sha256'],
                             base_result_sha256=row[4],
                             status='unavailable',task_receipt=task_receipt,evaluations=0,kind=base['kind'],

@@ -305,6 +305,8 @@ impl<'g> Walks<'g> {
                 }
                 walk.take(self.graph, state, 0);
             }
+            // The content of a walk: the states it takes a branch at. The steps that find it, dead ends included, are effort, since which dead ends a search meets follows the order of the branches.
+            budget.charge_content(walk.chosen.iter().flatten().count() as u64)?;
             return Ok(Some(walk.chosen));
         }
         Ok(None)
@@ -550,7 +552,7 @@ struct Recursive {
 
 impl<'r, 'a> Run<'r, 'a> {
     fn graphs(&self, budget: &mut Budget<'a>) -> Outcome<Result<Vec<(Row, StateGraph)>, RelationValue>> {
-        let groups = match self.groups()? {
+        let groups = match self.groups(budget)? {
             Ok(groups) => groups,
             Err(value) => return Ok(Err(value)),
         };
@@ -645,7 +647,10 @@ impl<'r, 'a> Run<'r, 'a> {
     }
 
     /// The key groups, each with its rows of the inputs that read no output.
-    fn groups(&self) -> Outcome<Result<Vec<Group>, RelationValue>> {
+    ///
+    /// The rows read are content: the key rows and the rows of each input
+    /// that reads no output, which `budget` counts.
+    fn groups(&self, budget: &mut Budget<'a>) -> Outcome<Result<Vec<Group>, RelationValue>> {
         let keys = match key_groups(self.evaluation, self.bodies, self.form, self.shape, self.example)? {
             Ok(keys) => keys,
             Err(value) => return Ok(Err(value)),
@@ -656,6 +661,10 @@ impl<'r, 'a> Run<'r, 'a> {
                 Ok(rows) => read.push(rows),
                 Err(value) => return Ok(Err(value)),
             }
+        }
+        let rows_read = read.iter().flatten().map(|rows| rows.len() as u64).fold(keys.len() as u64, u64::saturating_add);
+        if let Err(bound) = budget.charge_content(rows_read) {
+            return Ok(Err(RelationValue::Stopped(Stop { bound, form: self.form.clone() })));
         }
         let score_written = self.shape.writes(&UnfoldInput::Score.port());
         let groups = keys
@@ -783,6 +792,8 @@ fn graph<R: ReadsOutputs>(group: &Group, reads: &R, budget: &mut Budget<'_>) -> 
         graph.starts.push(at);
     }
     while let Some(at) = queue.pop() {
+        // Each state of the graph is expanded once: the states are the content, the expansion is the search's effort.
+        budget.charge_content(1)?;
         budget.charge_work(1)?;
         let state = graph.states[at.0 as usize].clone();
         let rounds = round(group, reads, &state)?;

@@ -3,6 +3,11 @@ name = "block-boost"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+build = "build.rs"
+
+[features]
+# `softmax-gpu`: the gradient, histograms, partitions and scores of `softmax` on a CUDA card (gpu/bbgpu.cu, built with nvcc).
+gpu = []
 
 [dependencies]
 # Blocks and histograms are worked on by several threads.
@@ -10,7 +15,7 @@ rayon = "1"
 # A fit's arrays are mapped from their files.
 libc = "0.2"
 # A plan and a model are JSON.
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 # The entries a build writes are streamable zstd.
 zstd = "0.13"
 

@@ -72,6 +72,13 @@ fn key_hash(clause: &ClauseIr, columns: &[ColumnIndex], reads: &[Arc<Relation>])
 }
 
 impl BranchMemo {
+    /// Drops every entry, as a session does where it evicts its caches.
+    pub(crate) fn clear(&self) {
+        let mut state = self.lock();
+        state.entries.clear();
+        state.bytes = 0;
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.state.lock().expect("a branch memo that no panic poisoned")
     }

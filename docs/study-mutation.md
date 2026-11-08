@@ -175,7 +175,7 @@ declaration, read-binding, kept-column and side passes, without content,
 signatures or site placement. RULE and OUT forms need no lifted column. This
 is the same binding/side decision; the complete AST still undergoes the full
 resolver, derived-interface validation, all checks and exact stream rewriting.
-The complete grammar reader no longer applies the synthesis search deadline
+The complete grammar reader no longer applies the synthesis search node cap
 to its finite supplied token array.
 
 Domain requests previously started a new empty `CheckCache` for every
@@ -187,7 +187,7 @@ candidate-specific results accumulate across requests. The gold base is
 released with the case's program handle.
 
 `DecodeSettings.corpus()` exposes the engine's existing deadline-free corpus
-settings. The audit uses them by default; positive `--domain-seconds`,
+settings. The audit uses them by default; positive `--domain-nodes`,
 `--case-seconds`, `--startup-seconds`, `--stall-seconds` and `--task-seconds`
 remain explicit bounded debugging modes. Finishing more real work is measured
 by completed cases, not by a quicker timeout rate.

@@ -1,7 +1,7 @@
 # Empty-gold publication
 
 `empty_gold_publication.py publish` calls the native
-`arclog.empty_gold_json(corpus, tasks, task, deadline_seconds=None)` once per
+`arclog.empty_gold_json(corpus, tasks, task, request_work_cap=None)` once per
 missing or changed task. The native operation discovers emptiness, applies the
 closure, checks output equality and returns `selection: filtered` or a whole-task
 `selection: original` with its reason. Under `selection: filtered`, a case whose
@@ -17,7 +17,7 @@ new version before generating their streams, points, prefixes, labels or feature
 
 The output is framed zstd JSONL through `judge3.framed_jsonl.JsonlWriter`. Each
 record contains the exact native result, original source-file inventory/hashes,
-authenticated installed wheel/build, native deadline, policy and publisher source
+authenticated installed wheel/build, native request work cap, policy and publisher source
 identity. Native reports need no request/runtime binding; the outer record owns
 those bindings. Every task is flushed before advancing. Valid committed results
 resume without another native call. A changed input, build, policy or publisher
@@ -31,9 +31,11 @@ reconstruction without duplicate findings or reacquisition. Native complete zero
 findings and unavailable lint coverage are distinct in the task record. Lint
 findings do not change gold selection.
 
-`--deadline-seconds` defaults to None (no deadline), as the native corpus replay
-does. A positive deadline applies to each native evaluation request. Native stops
-remain original-selection results, never emptiness proofs.
+`--request-work-cap` defaults to None (the settings' default request work cap),
+as the native corpus replay does. A given cap applies to each native evaluation
+request, and no request reads a clock. The record keeps `deadline_seconds: null`
+and, with a given cap, `request_work_cap`. Native stops remain original-selection
+results, never emptiness proofs.
 
 `--check-set` can repeat. It is an independent audit, never a discovery seed.
 The audit records each input's raw SHA/line count and reports listed removals,

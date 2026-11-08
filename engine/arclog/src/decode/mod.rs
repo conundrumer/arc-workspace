@@ -54,7 +54,7 @@ pub(crate) mod prefix_key;
 mod projection_search;
 mod projections;
 
-pub use batch::step_batch;
+pub use batch::{step_batch, BatchFault, BatchStep};
 pub use det_admission::DetRefusal;
 pub use interface::{BodyWidening, derived_at, open_clause, held_dets, relation_dets, walked_dets, Assigned, Consistency, LeftOut, OpenClause, Step, SubBody, SubBodyKey};
 pub use projections::{projections, Projection, Projections};
@@ -71,6 +71,7 @@ use crate::eval::copies::{CopyViolation, CopyViolations};
 use crate::eval::values::HeldStops;
 use crate::eval::{Cancellation, Hit, RequestWork, TableWork};
 use crate::judge::candidates::PairCandidates;
+use crate::program::canonical::LabelingBound;
 use crate::program::path::NodePath;
 use crate::program::{ProgramRelation, RelationRef};
 use crate::program::{ConstraintOp, Node, Program};
@@ -230,6 +231,12 @@ pub(crate) struct PathMasks {
 }
 
 impl PathMasks {
+    /// Drops every mask, as a session does where it evicts its caches.
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+        self.older.clear();
+    }
+
     fn get(&mut self, key: u128) -> Option<Hit<TokenMask>> {
         if let Some((mask, cost)) = self.entries.get(&key) {
             return Some(Hit::new(mask.clone(), *cost));
@@ -258,6 +265,9 @@ pub enum Refusal {
     /// A check refuses the prefix that the token gives, at each of its
     /// refusals.
     Check { check: CheckId, refusals: Box<[crate::check::Refusal]> },
+    /// The token completes a form whose canonical labeling passes the search's
+    /// node cap ([`LabelingBound`]). Such a form has no hash.
+    LabelingBound(LabelingBound),
 }
 
 /// The tokens that may come next, by their ids in the decode's
@@ -361,7 +371,7 @@ impl<'a> Decoder<'a> {
         }
         let mut active = self.requests.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if active.depth == 0 {
-            active.work = Some(RequestWork::begin(self.context.settings.request_work_cap));
+            active.work = Some(RequestWork::begin_capped(self.context.settings.request_work_cap, self.context.settings.byte_caps(), self.context.settings.effort_cap));
         }
         active.depth += 1;
         RequestGuard(Some(Arc::clone(&self.requests.0)))
@@ -377,7 +387,7 @@ impl<'a> Decoder<'a> {
         let active = self.requests.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match &active.work {
             Some(work) => work.clone(),
-            None => RequestWork::begin(self.context.settings.request_work_cap),
+            None => RequestWork::begin_with(self.context.settings.request_work_cap, self.context.settings.byte_caps()),
         }
     }
 
@@ -479,6 +489,12 @@ impl<'a> Decoder<'a> {
     /// [`Decoder::mask_over`], which stops at the first token it admits where
     /// `first` holds.
     fn mask_until(&self, ids: impl Iterator<Item = u32>, first: bool) -> Mask {
+        // The mask's prefix checks depend on the forms the decode has finished, so no count that cuts a result holds their work.
+        crate::eval::uncounted(|| self.mask_checks(ids, first))
+    }
+
+    /// The checks of [`Decoder::mask_until`].
+    fn mask_checks(&self, ids: impl Iterator<Item = u32>, first: bool) -> Mask {
         let vocabulary = &self.context.vocabulary;
         let work = self.request_work();
         let mut mask = TokenMask::new(vocabulary.len());
@@ -522,8 +538,8 @@ impl<'a> Decoder<'a> {
                     continue;
                 }
                 if self.state.mask_may_take(token) {
-                    // One unit for each candidate token that the mask checks.
-                    let _ = work.charge(1);
+                    // One unit of effort for each candidate token that the mask checks: the mask's checks are no content count.
+                    let _ = work.charge_effort(1);
                     if let Some(result) = class_of[id as usize].and_then(|class| admitted[class]) {
                         if result {
                             // A member shares the class's verdict, and takes its own
@@ -804,7 +820,8 @@ impl<'a> Decoder<'a> {
         let work = self.request_work();
         let measured = || {
             let (mut mask, cost) = work.measure(|| self.compute_mask());
-            mask.cost = cost;
+            // The mask's units were effort: a hit on the mask charges its bytes alone.
+            mask.cost = cost.without_counts();
             mask
         };
         let Some(key) = self.path_key() else { return measured() };
@@ -888,12 +905,29 @@ impl<'a> Decoder<'a> {
 
     /// The hash of the resolver's content of the finished query at
     /// `index`, free of the names that its scope gives its tables; none where
-    /// `index` names no finished query.
+    /// `index` names no finished query, and where a labeling that the content
+    /// rests on passed its cap, as [`Decoder::query_hash_or_bound`] gives.
     pub fn query_hash(&self, index: usize) -> Option<crate::hash::StableHash> {
         self.query_content(index).map(|content| content.content_hash())
     }
 
-    /// The resolver's content of the finished query at `index`.
+    /// [`Decoder::query_hash`], with the [`LabelingBound`] in place of the
+    /// hash where the search for a canonical labeling of a form that the
+    /// query reads passed its cap. A query past the bound has no hash.
+    pub fn query_hash_or_bound(&self, index: usize) -> Option<Result<crate::hash::StableHash, LabelingBound>> {
+        Some(self.query_content_or_bound(index)?.map(|content| content.content_hash()))
+    }
+
+    /// [`Decoder::query_content`], with the [`LabelingBound`] in place of the
+    /// content where the search for a canonical labeling of a form that the
+    /// query reads passed its cap.
+    pub fn query_content_or_bound(&self, index: usize) -> Option<Result<crate::resolver::ResolvedContent, LabelingBound>> {
+        self.state.resolved(self.registry()).query_content_or_bound(index, self.registry())
+    }
+
+    /// The resolver's content of the finished query at `index`; none where
+    /// `index` names no finished query, and where a labeling that the content
+    /// rests on passed its cap.
     pub fn query_content(&self, index: usize) -> Option<crate::resolver::ResolvedContent> {
         self.state.resolved(self.registry()).query_content(index, self.registry())
     }
@@ -941,6 +975,9 @@ impl<'a> Decoder<'a> {
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
+                if open.is_none() {
+                    Self::check_labeling_bound(&program)?;
+                }
                 let pruned = self.check_static_prune(&program, open.as_ref(), checks, memo);
                 if let (Some(open), true, Token::Lib(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
                     let _ = memo.head.set((open.clone(), pruned.clone()));
@@ -966,6 +1003,19 @@ impl<'a> Decoder<'a> {
         }
         self.admit_written_dets(token, &state)?;
         Ok((state, forced))
+    }
+
+    /// The refusal of the last form of `program`, a complete form, where the
+    /// search for the canonical labeling of one of its label scopes passes
+    /// the cap.
+    fn check_labeling_bound(program: &Node<Program>) -> Result<(), Refusal> {
+        let Some(form) = program.value().forms.last() else { return Ok(()) };
+        let mut search = crate::program::canonical::SearchBudget::new();
+        crate::program::canonical::CanonicalOrder::with_form(form, &mut search);
+        if search.reached {
+            return Err(Refusal::LabelingBound(LabelingBound::at_cap()));
+        }
+        Ok(())
     }
 
     /// Check only conjuncts that this grammar step completed. An atom can

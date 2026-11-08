@@ -222,7 +222,7 @@ def observe_gold_body(ev,record,*,native_base,ntrain,ntest):
     bounded=_ReplayBudget(ev,1)
     try:
         groups,receipt=_standalone_gold_body(bounded,record,native_base=native_base,ntrain=ntrain,ntest=ntest)
-    except (ValueError,KeyError,IndexError,TypeError) as error:
+    except (ev.arclog.Refusal,ValueError,KeyError,IndexError,TypeError) as error:
         layout,proof=binding(ev,record,native_base=native_base)
         groups,receipt=_point_gold_body(ev,record,layout,proof,ntrain,ntest)
         receipt['standalone_failure']=str(error)

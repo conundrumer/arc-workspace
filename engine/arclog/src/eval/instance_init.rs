@@ -95,6 +95,11 @@ pub fn evaluate_instance<'a>(
     let construct = |budget: &mut Budget<'a>, groups: &[Row], group_inputs: &[Vec<RowSet>]| -> Outcome<Vec<(GraphRelation, RelationValue)>> {
         let types: Vec<Box<[ValueType]>> = inputs.iter().map(|read| read.types.clone()).collect();
         let mut rows: Vec<RowSet> = widths.iter().map(|widths| RowSet::empty(shape.arity(widths) as u16)).collect();
+        // The content of the construction: the rows of the inputs it reads, and below, the rows of the outputs it writes.
+        let read: u64 = group_inputs.iter().flatten().map(|rows| rows.len() as u64).sum();
+        if let Err(bound) = budget.charge_content(read) {
+            return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() })));
+        }
         let mut context = ConstructionContext { session: evaluation.session, registry: evaluation.registry, budget };
         // The count of output rows that break each declared row, by output and declared row.
         let mut broken: std::collections::BTreeMap<(usize, usize), usize> = Default::default();
@@ -124,6 +129,10 @@ pub fn evaluate_instance<'a>(
                 }
             }
         }
+        let written: u64 = rows.iter().zip(&wanted).filter(|(_, wanted)| **wanted).map(|(rows, _)| rows.len() as u64).sum();
+        if let Err(bound) = context.budget.charge_content(written) {
+            return Ok(each(RelationValue::Stopped(Stop { bound, form: form.clone() })));
+        }
         if let Some(violations) = &evaluation.limits.copies {
             for ((output, row), rows) in broken {
                 violations.report(CopyViolation { form: form.clone(), component: instance.component.clone(), output: component.outputs[output].name.clone(), row, rows });
@@ -139,7 +148,14 @@ pub fn evaluate_instance<'a>(
         let outputs = construct(budget, &groups, &group_inputs)?;
         record_whole(budget, outputs.iter().map(|(_, value)| value));
         // Each output's entry costs what the construction charged: a request that reads one output makes the others.
-        let cost = if store { evaluation.limits.request.spent() } else { Default::default() };
+        // The cost holds no bytes at its end: the other outputs' rows are held by the value of the output that was asked.
+        let cost = if store {
+            let mut spent = evaluation.limits.request.spent();
+            spent.bytes.net = 0;
+            spent
+        } else {
+            Default::default()
+        };
         let mut found = None;
         for (output, value) in outputs {
             if output == *asked {
@@ -193,11 +209,21 @@ pub fn evaluate_input(
     let compute = || {
         let reads = std::slice::from_ref(&read);
         let (groups, per_group) = grouped_inputs(evaluation, &shape, key.as_deref(), reads).map_err(&fault)?;
+        // The content of the input: the rows it reads, and below, the rows it writes.
+        let mut budget = Budget::new(evaluation.limits, evaluation.session);
+        let stopped = |bound| Ok(RelationValue::Stopped(Stop { bound, form: form.clone() }));
+        let read: u64 = per_group.iter().map(|group| group[0].len() as u64).fold(0, u64::saturating_add);
+        if let Err(bound) = budget.charge_content(read) {
+            return stopped(bound);
+        }
         let mut rows = RowSet::empty(shape.arity(&widths) as u16);
         for (key, group) in groups.iter().zip(&per_group) {
             for values in group[0].rows() {
                 rows.insert(laid_out(&widths, key, values));
             }
+        }
+        if let Err(bound) = budget.charge_content(rows.len() as u64) {
+            return stopped(bound);
         }
         Ok(RelationValue::Rows(Arc::new(join::one_part(rows))))
     };

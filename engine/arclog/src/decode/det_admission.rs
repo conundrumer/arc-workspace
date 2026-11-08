@@ -34,6 +34,7 @@ impl Decoder<'_> {
             registry: std::ptr::from_ref(self.context.registry) as usize,
             constructions: std::ptr::from_ref(self.constructions) as usize,
             table_work_cap: self.context.settings.table_work_cap,
+            prefix_content_cap: self.context.settings.prefix_content_cap,
         }
     }
 
@@ -43,7 +44,8 @@ impl Decoder<'_> {
         }
         let Some(closed) = after.det_admission_state(&self.state, &self.context) else { return Ok(()) };
         let work = self.request_work();
-        let compute = || self.det_liveness(&closed).map_err(Refusal::DetAdmission);
+        // The admission of a written `DET` is a prefix check: it runs in the scope where no count that cuts a result holds its work.
+        let compute = || crate::eval::uncounted(|| self.det_liveness(&closed)).map_err(Refusal::DetAdmission);
         let form = closed.program().value().forms.last().expect("a closed DET");
         match super::prefix_key::key(form, None) {
             Some(key) => {
@@ -75,9 +77,12 @@ impl Decoder<'_> {
         let dets = held_dets(program);
         let picks: Vec<_> = written.into_iter().filter(|det| det.pick).collect();
         match self.walked(program, &dets, &picks, root).1 {
-            // These budgets bound the walk's time. Reaching one establishes
-            // no property of the program.
-            Err(DetRefusal::Bound(ReachedBound::TableWork { .. } | ReachedBound::RequestWork { .. })) => Ok(()),
+            // These bounds limit the walk's time, its rows and its bytes.
+            // Reaching one establishes no property of the program, so the
+            // token is admitted and the decision falls to the form's end.
+            // The assignment cap is the consistency test's cap too, and an
+            // effort stop is a fault of the call, so both stand.
+            Err(DetRefusal::Bound(bound)) if bound.is_resource() => Ok(()),
             verdict => verdict,
         }
     }
@@ -143,12 +148,14 @@ impl Decoder<'_> {
                 Charged::Misfit => {}
             }
         }
-        let (walk, cost) = work.measure(|| match self.walked(program, dets, picks, root) {
+        // The admission of a written `DET` is a prefix check: its work counts as effort, and a hit on its walk charges bytes alone.
+        let (walk, cost) = work.measure(|| crate::eval::uncounted(|| match self.walked(program, dets, picks, root) {
             (leaves, Ok(())) => PartWalk::Ended { leaves, live: true },
             (leaves, Err(DetRefusal::NoLiveAssignment)) => PartWalk::Ended { leaves, live: false },
             (_, Err(DetRefusal::Bound(ReachedBound::Assignments { .. }))) => PartWalk::PastCap,
             (_, Err(_)) => PartWalk::Stopped,
-        });
+        }));
+        let cost = cost.without_counts();
         // A walk that a stop at the request cap cut short is no walk of the part.
         if let Some(key) = key.filter(|_| !work.is_past_cap()) {
             memo.keep_part(scope, key, walk, cost);
@@ -162,14 +169,14 @@ impl Decoder<'_> {
         // Keep this probe independent of prior cache contents, byte reservations,
         // cancellation, held stops and elapsed time. Its values never escape.
         // The probes of the task session share an intern table and the domains
-        // they computed (`det_memo`). A probe whose session evicted or reached
-        // the byte bound runs again in a session of its own.
+        // they computed (`det_memo`). A probe whose session evicted runs again
+        // in a session of its own.
         let scope = self.det_scope();
         let memo = self.session.det_probes().get_or_init(|| ProbeMemo::new(scope, self.session));
         if let Some(probe) = memo.probe(scope, self.session) {
             let domains = probe.domains(program, dets);
             let walked = self.live(program, dets, picks, root, &probe.session, Some(&domains), Some(probe.carry()));
-            if !probe.session.results.evicted() && !matches!(walked.1, Err(DetRefusal::Bound(ReachedBound::SessionBytes(_)))) {
+            if !probe.session.results.evicted() {
                 return walked;
             }
         }
@@ -183,9 +190,10 @@ impl Decoder<'_> {
     /// and the computations of entries from `carry` where it is given.
     #[allow(clippy::too_many_arguments)]
     fn live(&self, program: &CheckedProgram, dets: &[Det], picks: &[Det], root: GraphNodeIndex, session: &TaskSession, domains: Option<&dyn Domains>, carry: Option<Carry>) -> (u64, Result<(), DetRefusal>) {
-        let limits = Limits::new(None, Cancellation::default())
-            .in_request(self.request_work())
-            .counted_in(TableWork::new(self.context.settings.table_work_cap));
+        let request = self.request_work();
+        // The check counts its content under a cap of its own, inside the uncounted scope, where no other count adds.
+        let prefix = TableWork::prefix(self.context.settings.prefix_content_cap, &request);
+        let limits = Limits::new(None, Cancellation::default()).in_request(request).counted_in(prefix);
         let limits = match carry {
             Some(carry) => limits.carrying(carry),
             None => limits,
@@ -195,14 +203,12 @@ impl Decoder<'_> {
             registry: self.context.registry, constructions: self.constructions, limits: &limits,
         };
         let mut live = false;
-        let mut leaves = 0;
         let mut leaf = |evaluation: &crate::eval::Evaluation<'_>, assigned: &[_], unassigned: usize| {
             // Undefined domains remain visible in the canonical walker as missing
             // bindings. A partial leaf cannot certify that the written DETs live.
             // A DET whose values no pick reads is left out of `assigned`, and
             // the walk counts it in `unassigned`.
             stats::units(Phase::DetLiveness, 1);
-            leaves += 1;
             if assigned.len() + unassigned != dets.len() { return Ok(()); }
             for pick in picks {
                 let mut found = false;
@@ -223,13 +229,13 @@ impl Decoder<'_> {
             live = true;
             Ok(())
         };
-        let (_, end, stop) = descend_unread(inputs, dets, picks, root, self.context.settings.caps.assignments, &mut leaf, domains);
+        let (_, end, stop, leaves) = descend_unread(inputs, dets, picks, root, self.context.settings.caps.assignments, &mut leaf, domains);
         let verdict = match end {
             Err(End::Fault(fault)) => Err(DetRefusal::Fault(format!("{fault:?}"))),
             Err(End::Stop(found)) if matches!(found.bound, ReachedBound::Assignments { .. }) => Err(DetRefusal::Bound(found.bound)),
             _ if live => Ok(()),
             Ok(()) if stop.is_some() => Err(DetRefusal::Bound(stop.expect("a recorded stop").bound)),
-            Err(End::Stop(found)) => Err(DetRefusal::Bound(if matches!(found.bound, ReachedBound::TableWork {..} | ReachedBound::RequestWork {..}) {found.bound} else {stop.as_ref().map_or(found.bound, |stop|stop.bound)})),
+            Err(End::Stop(found)) => Err(DetRefusal::Bound(if matches!(found.bound, ReachedBound::TableWork {..} | ReachedBound::RequestWork {..} | ReachedBound::RequestBytes {..}) {found.bound} else {stop.as_ref().map_or(found.bound, |stop|stop.bound)})),
             Ok(()) => Err(DetRefusal::NoLiveAssignment),
         };
         (leaves, verdict)

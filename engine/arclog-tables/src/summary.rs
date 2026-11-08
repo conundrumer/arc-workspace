@@ -183,10 +183,12 @@ pub fn bound_name(bound: ReachedBound) -> &'static str {
         ReachedBound::Assignments { .. } => "Assignments",
         ReachedBound::TableWork { .. } => "TableWork",
         ReachedBound::Margin(_) => "Margin",
-        ReachedBound::SessionBytes(_) => "SessionBytes",
         ReachedBound::RequestWork { .. } => "RequestWork",
+        ReachedBound::RequestBytes { .. } => "RequestBytes",
+        ReachedBound::AssignmentBytes { .. } => "AssignmentBytes",
         ReachedBound::Cancelled => "Cancelled",
         ReachedBound::NoValues => "NoValues",
+        ReachedBound::Effort { .. } => "Effort",
     }
 }
 
@@ -350,13 +352,13 @@ pub fn summarize_cached(materializer: &Materializer<'_>, table: &Table, train: &
 pub fn summarize_body(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
     let bodies = DetFulls::none().with_assemblies(fulls.assemblies.clone());
-    let assignments = (0..assignment_count(contents)).map(|at| at_assignment_with(materializer, contents, &types, at, train, &bodies, false, false)).collect::<Result<_, _>>()?;
+    let assignments = (0..assignment_count(contents)).map(|at| alone(materializer, |own| at_assignment_with(own, contents, &types, at, train, &bodies, false, false))).collect::<Result<_, _>>()?;
     Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: false })
 }
 
 fn summarize_rows(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
-    let assignments = (0..assignment_count(contents)).map(|at| at_assignment(materializer, contents, &types, at, train, fulls)).collect::<Result<_, _>>()?;
+    let assignments = (0..assignment_count(contents)).map(|at| alone(materializer, |own| at_assignment(own, contents, &types, at, train, fulls))).collect::<Result<_, _>>()?;
     Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: false })
 }
 
@@ -365,7 +367,7 @@ fn summarize_rows(materializer: &Materializer<'_>, contents: &Contents, train: &
 /// but the value hashes of the `DET`s, the keys of the examples, the value hash of each model's TableRows and the TableVector are left out.
 fn summarize_hash_rows(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
-    let assignments = (0..assignment_count(contents)).map(|at| at_assignment_with(materializer, contents, &types, at, train, fulls, true, true)).collect::<Result<_, _>>()?;
+    let assignments = (0..assignment_count(contents)).map(|at| alone(materializer, |own| at_assignment_with(own, contents, &types, at, train, fulls, true, true))).collect::<Result<_, _>>()?;
     Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: true })
 }
 
@@ -400,6 +402,18 @@ pub fn summarize_hashes_cached(materializer: &Materializer<'_>, table: &Table, t
     let summary = summarize_hash_rows(materializer, contents, train, fulls)?;
     cache.put(key, Arc::new(summary.clone()));
     Ok(summary)
+}
+
+/// The summary of one assignment, which `summary` makes under the byte budget of an assignment of its own
+/// ([`arclog::eval::Limits::for_assignment`]): an assignment that holds more than that budget has no TableHash, for the reason
+/// that names the bound, and the table's other assignments go on. A stop at a budget of the request ends the summary of the table.
+fn alone(materializer: &Materializer<'_>, summary: impl FnOnce(&Materializer<'_>) -> Result<AssignmentSummary, ReachedBound>) -> Result<AssignmentSummary, ReachedBound> {
+    let scope = materializer.limits().for_assignment();
+    let own = Materializer::new(materializer.session(), &scope);
+    match summary(&own) {
+        Err(bound) if bound.is_assignment() => Ok(AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: bound_name(bound).to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default() }),
+        found => found,
+    }
 }
 
 /// The values of the `DET`s at assignment `at` of `contents`: those of the first example that has the assignment.
@@ -445,9 +459,7 @@ fn encode(materializer: &Materializer<'_>, rows: &Relation, types: &[ValueType],
     let (count, cells) = sorted_cells(materializer, rows, types, held)?;
     let mut hasher = StableHasher::new();
     hasher.write_u64(count);
-    for &cell in &cells {
-        hasher.write_i32(cell);
-    }
+    hasher.write_i32s(&cells);
     Ok(Encoded { count, cells, key: hasher.finish128() })
 }
 
@@ -524,12 +536,31 @@ impl ProductCells<'_, '_> {
 }
 
 /// The count of `rows`, of columns of `types`, and their cells in the order of
-/// their cells. `held` takes the admission of the cells. Each part's rows are put
-/// in the order of their cells, and the order of the product's rows follows from
-/// them, so no row of the product takes part in a sort.
+/// their cells. `held` takes the admission of the cells: the sort admits its
+/// largest scratch before it runs, and keeps the bytes of the cells alone once
+/// it ends. The buffers are contiguous: the cells as written, the cells in
+/// the order of their cells and the cells of a product of parts, each of
+/// `width` 4-byte cells for each row, and the places of the rows, one `usize`
+/// for each. Each Ident cell adds an entry of the Ident's export cell, at
+/// most two of 24 bytes with the growth of the vector.
 fn sorted_cells(materializer: &Materializer<'_>, rows: &Relation, types: &[ValueType], held: &mut Vec<Arc<SessionAllocation>>) -> Result<(u64, Vec<i32>), ReachedBound> {
     let width = row_width(types) as usize;
-    held.push(materializer.admit(rows, Materializer::row_bytes(width.saturating_mul(32).saturating_add(32), 4))?);
+    let idents = types.iter().filter(|ty| matches!(ty, ValueType::Ident(_))).count();
+    let per_row = width.saturating_mul(3 * std::mem::size_of::<i32>()).saturating_add(std::mem::size_of::<usize>()).saturating_add(idents.saturating_mul(48));
+    let mut allocation = materializer.admit(rows, per_row)?;
+    let (count, cells) = sorted_cells_in(materializer, rows, types)?;
+    if let Some(allocation) = Arc::get_mut(&mut allocation) {
+        allocation.shrink_to(cells.capacity().saturating_mul(std::mem::size_of::<i32>()));
+    }
+    held.push(allocation);
+    Ok((count, cells))
+}
+
+/// [`sorted_cells`], whose caller has admitted the scratch. Each part's rows are put
+/// in the order of their cells, and the order of the product's rows follows from
+/// them, so no row of the product takes part in a sort.
+fn sorted_cells_in(materializer: &Materializer<'_>, rows: &Relation, types: &[ValueType]) -> Result<(u64, Vec<i32>), ReachedBound> {
+    let width = row_width(types) as usize;
     if rows.parts().len() < 2 || rows.parts().iter().any(|part| part.columns.is_empty()) {
         let (written, order) = sorted_rows(materializer, rows, types)?;
         let mut cells = Vec::with_capacity(written.len());
@@ -606,13 +637,11 @@ fn value_hash_of(types: &[ValueType], rows: &Encoded, assemblies: &Assemblies) -
     let mut row_hashes: Vec<u128> = (0..rows.count as usize)
         .map(|row| {
             let mut hasher = StableHasher::new();
-            for &cell in &rows.cells[row * width..(row + 1) * width] {
-                hasher.write_i32(cell);
-            }
+            hasher.write_i32s(&rows.cells[row * width..(row + 1) * width]);
             hasher.finish128().0
         })
         .collect();
-    row_hashes.sort_unstable();
+    sort_hashes(&mut row_hashes);
     let mut hasher = StableHasher::new();
     hasher.write(b"arclog.value_hash");
     hasher.write_u64(types.len() as u64);
@@ -798,6 +827,37 @@ fn rows_hash_of_table(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], a
     hasher.finish128()
 }
 
+/// Sorts `items` as `sort_unstable` does. Items that are hashes stand evenly over their high bits, so
+/// one pass copies each item to the place of its bucket of the high 11 bits in another vector, and each bucket, which is
+/// small, is sorted on its own. The copies are independent of each other.
+fn sort_hashes(items: &mut [u128]) {
+    const BITS: u32 = 11;
+    const BUCKETS: usize = 1 << BITS;
+    if items.len() < 1 << 16 {
+        items.sort_unstable();
+        return;
+    }
+    let bucket = |item: u128| (item >> (128 - BITS)) as usize;
+    let mut starts = vec![0usize; BUCKETS + 1];
+    for &item in items.iter() {
+        starts[bucket(item) + 1] += 1;
+    }
+    for at in 0..BUCKETS {
+        starts[at + 1] += starts[at];
+    }
+    let mut next = starts[..BUCKETS].to_vec();
+    let mut sorted = vec![0u128; items.len()];
+    for &item in items.iter() {
+        let at = bucket(item);
+        sorted[next[at]] = item;
+        next[at] += 1;
+    }
+    for at in 0..BUCKETS {
+        sorted[starts[at]..starts[at + 1]].sort_unstable();
+    }
+    items.copy_from_slice(&sorted);
+}
+
 /// The hash of `items` and their count.
 fn digest(items: &[u128]) -> u128 {
     let mut hasher = StableHasher::new();
@@ -893,13 +953,11 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
                         let mut runs: Vec<u128> = (0..rows.count as usize)
                             .map(|row| {
                                 let mut run = StableHasher::new();
-                                for &cell in run_of(rows, width, starts[column], widths[column], row) {
-                                    run.write_i32(cell);
-                                }
+                                run.write_i32s(run_of(rows, width, starts[column], widths[column], row));
                                 run.finish128().0
                             })
                             .collect();
-                        runs.sort_unstable();
+                        sort_hashes(&mut runs);
                         runs.dedup();
                         digest(&runs)
                     })
@@ -945,14 +1003,12 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
                         .map(|row| {
                             let mut hasher = StableHasher::new();
                             for &column in columns {
-                                for &cell in run_of(rows, width, starts[column], widths[column], row) {
-                                    hasher.write_i32(cell);
-                                }
+                                hasher.write_i32s(run_of(rows, width, starts[column], widths[column], row));
                             }
                             hasher.finish128().0
                         })
                         .collect();
-                    row_hashes.sort_unstable();
+                    sort_hashes(&mut row_hashes);
                     digest(&row_hashes)
                 })
                 .collect();

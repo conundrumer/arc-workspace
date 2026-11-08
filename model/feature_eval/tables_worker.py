@@ -21,6 +21,8 @@ from pathlib import Path
 REPO = Path('/Users/davidlu/code/arc-workspace')
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from query_structure import Reader, parse_forms, query_features, relation_of  # noqa: E402
+sys.path.insert(0, str(REPO / 'src'))
+from arclog_convert.readback import read_checked  # noqa: E402  the corpus is a gen/ directory
 
 CORPUS = REPO / 'work/arclog/gen'
 TASKS = REPO / 'data/tasks'
@@ -67,6 +69,8 @@ def entries_as_arrays(tb, t):
             v = tb.E[field][e] if field in tb.E else None
             if v is not None and not (isinstance(v, (int,)) and v < 0):
                 stop = '%s %s' % (field, v)
+                if field == 'value_stop_bound' and 'value_stop_assignment' in tb.E and tb.E['value_stop_assignment'][e]:
+                    stop = 'assignment stop %s' % v  # rejects this assignment alone; the other entries are not stopped
         if not stop and ('kind' not in tb.E or int(tb.E['kind'][e]) == 0):
             rows, offset = int(tb.E['rows'][e]), int(tb.E['offset'][e])
             raw = tb.values[offset:offset + rows * stride].reshape(rows, stride)
@@ -127,7 +131,7 @@ def worker(root, task):
     script = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(script)
     data = CORPUS / (task + '.arcdata')
-    cases = arclog.case_files(task, (CORPUS / (task + '.arclog')).read_text(), data.read_text() if data.exists() else '', str(CORPUS))
+    cases = arclog.case_files(task, read_checked(CORPUS / (task + '.arclog')), read_checked(data) if data.exists() else '', str(CORPUS))
     c = [x for x in cases if x.concept][0]
     settings = arclog.DecodeSettings()
     gold = arclog.StudyProgram.from_sexp(c.arclog, settings)
@@ -168,7 +172,7 @@ def worker(root, task):
         form = p.clause_path[0]
         try:
             specs, _ = gold.draw_specs(p, 1, 5000, 0, operation='mixed', source_revision=SEED, task=task, case=c.case)
-        except ValueError:
+        except arclog.Refusal:
             continue
         by_form.setdefault(form, []).extend(specs)
         points.setdefault(form, set()).add(p.kind)

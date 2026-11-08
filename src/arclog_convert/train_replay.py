@@ -72,6 +72,7 @@ from pathlib import Path
 
 from arc.task import TASKS_DIR
 from arclog_convert.lint_alts import selects_case
+from arclog_convert.readback import read_checked
 from engine import checkout
 
 BASELINE = Path(__file__).with_name("unreproduced.tsv")
@@ -114,7 +115,7 @@ def write_baseline(baseline: dict[tuple[str, str], tuple[int, str]], path: Path 
 def solver_files(gen: Path, stem: str) -> list[Path]:
     """The `.arclog` and `.arcdata` files of the solver `stem`, then those of
     each representative its `.arcdata` names, followed to its end, then the
-    files under `cases/<stem>/` of `gen`, by name."""
+    files under `cases/<stem>/` of `gen`, by name. It reads the `.arcdata` files through `readback.read_checked`."""
     files, queue, seen = [], [stem], set()
     while queue:
         name = queue.pop(0)
@@ -124,7 +125,7 @@ def solver_files(gen: Path, stem: str) -> list[Path]:
         files += [gen / f"{name}.arclog", gen / f"{name}.arcdata"]
         data = gen / f"{name}.arcdata"
         if data.exists():
-            queue += REPRESENTATIVE.findall(data.read_text())
+            queue += REPRESENTATIVE.findall(read_checked(data))
     return files + sorted((gen / "cases" / stem).glob("*"))
 
 
@@ -179,11 +180,17 @@ def private_binaries() -> Iterator[Callable[[str], tuple[Path, str]]]:
 
 
 def files_digest(stem: str, gen: Path, tasks: Path) -> str:
-    """The digest of the files of `stem` and its representatives, and its task file."""
+    """The digest of the files of `stem` and its representatives, and its task file. It reads each file of `gen`
+    through `readback.read_checked`, so that a file that is not current raises `Stale`."""
     digest = hashlib.sha256()
-    for path in [*solver_files(gen, stem), tasks / f"{stem}.json"]:
+    task = tasks / f"{stem}.json"
+    for path in [*solver_files(gen, stem), task]:
         digest.update(path.name.encode() + b"\0")
-        digest.update((path.read_bytes() if path.exists() else b"") + b"\0")
+        if not path.exists():
+            body = b""
+        else:
+            body = path.read_bytes() if path == task else read_checked(path).encode()
+        digest.update(body + b"\0")
     return digest.hexdigest()
 
 

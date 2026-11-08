@@ -10,8 +10,11 @@
 //! open values. A
 //! `CHOOSE` gives the `from` rows of each `for` row, grouped by row, and
 //! its `never` pairs. The options stand in the canonical order by content
-//! of `crate::terms::content_order`, so a stop at a cap does not depend
-//! on an encoding order.
+//! of `crate::terms::content_order_by`: the columns compare in the order of
+//! the canonical labeling of the form, and the file Idents by the rows that
+//! hold them, so a stop at a cap, and the first model, depend on neither an
+//! encoding order, nor the written order of the columns, nor the numbers a
+//! file writes its Idents with.
 
 use super::ir::{ClauseIr, IrPaths};
 use super::{ir, Evaluation, FormBodies, Outcome, ParameterSource, RelationValue, RunFault, Stop};
@@ -71,8 +74,14 @@ pub fn pick_options(bodies: &FormBodies<'_>, node: GraphNodeIndex, example: Opti
     let mut rows: Vec<Row> = Vec::new();
     let mut keys: Vec<Vec<usize>> = Vec::new();
     let mut chooses: Vec<(&NodePath, &Choose, ChooseShape)> = Vec::new();
+    let mut significance: Option<Vec<usize>> = None;
     for at in program.forms_of(node) {
         let shape = node_at(root, at).expect("the path of a form of the program");
+        let order = column_significance(program, at, shape);
+        significance = Some(match significance {
+            Some(held) if held <= order => held,
+            _ => order,
+        });
         match shape {
             NodeRef::Clause(clause) => {
                 let stored = evaluation.parameters.get(&ProgramRelation::Declared(name.clone())).is_some();
@@ -108,9 +117,19 @@ pub fn pick_options(bodies: &FormBodies<'_>, node: GraphNodeIndex, example: Opti
     }
     {
         let table = evaluation.session.intern.read().expect("an intern table that no panic poisoned");
-        rows.sort_by(|a, b| crate::terms::content_order(types, a, b, &table));
+        // The columns compare in the order of the canonical labeling, whatever order the relation lists them in, and
+        // file Idents by the rows that hold them, whatever numbers the file writes them with.
+        let mut order = significance.unwrap_or_default();
+        let missing: Vec<usize> = (0..types.len()).filter(|column| !order.contains(column)).collect();
+        order.extend(missing);
+        let plain = crate::terms::IdentRanks::default();
+        rows.sort_by(|a, b| crate::terms::content_order_by(types, Some(&order), a, b, &table, &plain));
+        rows.dedup();
+        let ranks = crate::terms::file_ident_ranks(types, &order, &rows, &table);
+        if ranks.is_ranked() {
+            rows.sort_by(|a, b| crate::terms::content_order_by(types, Some(&order), a, b, &table, &ranks));
+        }
     }
-    rows.dedup();
 
     let mut groups: Vec<Vec<usize>> = keys.iter().flat_map(|key| by_columns(&rows, key).into_values()).collect();
     groups.sort();
@@ -368,6 +387,23 @@ fn by_columns(options: &[Row], positions: &[usize]) -> StableHashMap<Vec<TermId>
         index.entry(positions.iter().map(|position| option[*position]).collect()).or_default().push(at);
     }
     index
+}
+
+/// The columns of the relation of the form `shape` at `form`, a clause or a
+/// `CHOOSE` form, as positions in the rows of the relation, in the order of
+/// their labels in the canonical labeling of the form's scope, which the
+/// hash of the form is made from. A column whose label the labeling of the
+/// top form does not number follows those that it numbers.
+fn column_significance(program: &crate::resolver::ResolvedProgram, form: &NodePath, shape: NodeRef<'_>) -> Vec<usize> {
+    let labels = form.0.first().and_then(|top| program.program.value().forms.get(top.0 as usize)).map(crate::program::canonical::form_scope_labels).unwrap_or_default();
+    let mut columns: Vec<(usize, usize)> = crate::resolver::form_columns::form_columns(shape)
+        .filter_map(|column| {
+            let position = program.label_position(form, column.label)?.0 as usize;
+            Some((labels.iter().position(|label| *label == column.label).unwrap_or(usize::MAX), position))
+        })
+        .collect();
+    columns.sort_unstable();
+    columns.into_iter().map(|(_, position)| position).collect()
 }
 
 /// The position in the rows of the chosen relation of the column of

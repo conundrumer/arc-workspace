@@ -18,13 +18,16 @@ SOLVERS_ENV = "ARCLOG_SOLVERS"
 """Set, the directory the converter reads solver files from, in place of `programs/solvers`."""
 SOLVERS = Path(os.environ[SOLVERS_ENV]) if os.environ.get(SOLVERS_ENV) else ROOT / "programs" / "solvers"
 WITNESSES = ROOT / "programs" / "witnesses"
+CORPUS = "gen_check"
+"""The directory beside `gen/` that `arclog_convert.convert` writes the copies of the converted programs for the row-parity check to
+(`arclog_convert.row_parity`)."""
 
 
 def out_dirs() -> tuple[Path, Path, Path, Path, Path]:
     """`gen/`, `plan/`, `names/`, `columns/` and `case_records/` of `arclog_out`.
     `convert_one` writes each solver's name map (`name_map`) to `names/` and
-    its column map (`column_map`) to `columns/`, and `convert_into` writes the
-    record of the inputs of each solver's case files (`convert_cases`) to
+    its column map (`column_map`) to `columns/`, and `convert_into` and `convert_cases` write the
+    record of each solver's files (`arclog_convert.readback`) to
     `case_records/`, beside `gen/`, whose globs read only arclog and arcdata
     files and whose `cases/` directories hold only case files."""
     root = arclog_out()

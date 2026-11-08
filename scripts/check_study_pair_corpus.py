@@ -112,7 +112,6 @@ def main():
     parser.add_argument("--per-point", type=int, default=1)
     parser.add_argument("--k", type=int, default=1)
     parser.add_argument("--operation", choices=("mixed", "substitute", "delete"), default="mixed")
-    parser.add_argument("--deadline", type=float, default=1)
     parser.add_argument("--work-cap", type=int, default=1 << 20)
     parser.add_argument("--seed", type=int, default=4231)
     parser.add_argument("--output", type=Path, default=ROOT / "stage3-fast.jsonl")
@@ -233,7 +232,7 @@ def main():
 
     def run(task):
         names, offsets, ids, flags = inventory(args.export, task, True)
-        settings = arclog.DecodeSettings(deadline_seconds=args.deadline, table_work_cap=args.work_cap, rule_tests=False)
+        settings = arclog.DecodeSettings(table_work_cap=args.work_cap, rule_tests=False)
         evaluator=arclog.StudyTaskEvaluator(task,str(args.tasks),settings,compact=True,observation_start=observation_starts[task])
         def run_case(i,case):
             context = dict(task=task, case=case)

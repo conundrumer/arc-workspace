@@ -83,6 +83,29 @@ impl StableHasher {
         }
     }
 
+    /// Writes each of `cells` as `write_i32` does. The hash is the same as that of the calls one by one;
+    /// where the bytes written so far fill whole words, two cells fill a word and are absorbed together.
+    pub fn write_i32s(&mut self, cells: &[i32]) {
+        let mut rest = cells;
+        if self.len % 8 == 4 {
+            if let Some((&first, after)) = rest.split_first() {
+                self.write_i32(first);
+                rest = after;
+            }
+        }
+        if self.len % 8 == 0 {
+            let mut pairs = rest.chunks_exact(2);
+            for pair in &mut pairs {
+                StableHasher::absorb(&mut self.state, u64::from(pair[0] as u32) | u64::from(pair[1] as u32) << 32);
+                self.len += 8;
+            }
+            rest = pairs.remainder();
+        }
+        for &cell in rest {
+            self.write_i32(cell);
+        }
+    }
+
     /// The 128-bit hash of the bytes written so far.
     pub fn finish128(&self) -> StableHash {
         let mut state = self.state;

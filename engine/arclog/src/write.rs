@@ -125,7 +125,8 @@ pub(crate) fn in_text_order(program: &Node<Program>, registry: &Registry) -> Nod
 
 /// The name of each label of each form of `program`, in form order, as
 /// [`write_synthesized`] names them: the form's reserved names, then its
-/// other labels in the order of their ids. It refuses the programs that
+/// other labels in the order of their ids, and then each label of a column or
+/// a record field that no site of the form makes. It refuses the programs that
 /// `write_synthesized` refuses.
 pub fn label_names(program: &Node<Program>, registry: &Registry) -> Vec<Vec<(crate::program::LabelId, Box<str>)>> {
     label_names_named(program, registry, None)
@@ -654,7 +655,9 @@ mod synthesized {
             self.form_uses(form, &mut uses);
             if matches!(form, Form::Out(_)) {
                 let made = uses.made.iter().filter(|(label, _)| !uses.reserved.iter().any(|(id, _)| id == label));
-                return uses.reserved.iter().cloned().chain(made.map(|(label, column)| (*label, column.as_str().into()))).collect();
+                let mut names: Vec<(LabelId, Box<str>)> = uses.reserved.iter().cloned().chain(made.map(|(label, column)| (*label, column.as_str().into()))).collect();
+                name_unmade(&mut names, &uses.unmade, &[], &[]);
+                return names;
             }
             // A column of a relation that a `RIGID_DET` part can read, or an
             // instance column of a `RIGID_DET`, is a column of an output that
@@ -779,6 +782,7 @@ mod synthesized {
         }
 
         fn form_uses(&self, form: &Form, uses: &mut Uses) {
+            column_labels(form, &mut uses.unmade);
             match form {
                 // The key and the inputs; each rule is a scope of its own.
                 Form::Demonstrated(demonstrated) => {
@@ -821,6 +825,10 @@ mod synthesized {
         fn input_uses(&self, input: &InstanceInput, uses: &mut Uses) {
             self.body_uses(input.body.value(), uses);
             input.head.iter().for_each(|site| self.site_uses(None, site, uses));
+            // A `DEMONSTRATED` form names the columns of its clauses by the labels at its heads.
+            for site in input.head.iter() {
+                crate::types::each_site_label(site, &mut Vec::new(), &mut |use_, _| uses.unmade.extend(crate::types::use_label(use_).map(|label| (label, COLUMN_BASE.to_owned()))));
+            }
         }
 
         fn body_uses(&self, body: &Body, uses: &mut Uses) {
@@ -850,19 +858,23 @@ mod synthesized {
                 match arg {
                     SiteArg::Label(LabelUse::Fresh(id) | LabelUse::Key(id)) => uses.made.push((*id, column.clone())),
                     SiteArg::Label(LabelUse::Join(_) | LabelUse::Zero) => {}
-                    SiteArg::NamedLabel { name, label: label @ (LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) } => match written(name) {
-                        // A label at a second field, or at a field whose name
-                        // another label holds, takes a name of its own, and the
-                        // site names the field.
-                        Some(name) if uses.reserved.iter().any(|(own, held)| own == id || &**held == name) => {
-                            if !matches!(label, LabelUse::Join(_)) {
-                                uses.made.push((*id, name.to_owned()));
+                    SiteArg::NamedLabel { name, label: label @ (LabelUse::Fresh(id) | LabelUse::Join(id) | LabelUse::Key(id)) } => {
+                        // The writer asks the name of this label whichever scope makes it.
+                        uses.unmade.push((*id, column.clone()));
+                        match written(name) {
+                            // A label at a second field, or at a field whose name
+                            // another label holds, takes a name of its own, and the
+                            // site names the field.
+                            Some(name) if uses.reserved.iter().any(|(own, held)| own == id || &**held == name) => {
+                                if !matches!(label, LabelUse::Join(_)) {
+                                    uses.made.push((*id, name.to_owned()));
+                                }
                             }
+                            Some(name) => uses.reserved.push((*id, name.into())),
+                            None if matches!(label, LabelUse::Join(_)) => {}
+                            None => uses.made.push((*id, column.clone())),
                         }
-                        Some(name) => uses.reserved.push((*id, name.into())),
-                        None if matches!(label, LabelUse::Join(_)) => {}
-                        None => uses.made.push((*id, column.clone())),
-                    },
+                    }
                     SiteArg::NamedLabel { label: LabelUse::Zero, .. } => {}
                     SiteArg::Field(field) => {
                         let mut field = field.clone();
@@ -953,7 +965,7 @@ mod synthesized {
                 let forms_at = super::arclog::ChildPaths::of(&at, NodeRef::DemoRule(rule));
                 let own: Vec<&Form> = rule.forms.iter().enumerate().filter(|(index, _)| !rule.forms.from_alt(*index)).map(|(_, form)| form).collect();
                 let rule_ranks = self.nested_ranks.get(&at).cloned();
-                let fields = Uses { reserved: reserved(&own), made: rule.fields.iter().map(|field| (field.label, FIELD_BASE.to_owned())).collect() };
+                let fields = Uses { reserved: reserved(&own), made: rule.fields.iter().map(|field| (field.label, FIELD_BASE.to_owned())).collect(), unmade: Vec::new() };
                 // Each form is named after the forms before it are written,
                 // whose relations its reads name.
                 let mut rule_names = named_uses(Vec::new(), fields, rule_ranks.as_ref().unwrap_or(&Ranks::default()), &[]);
@@ -1274,8 +1286,62 @@ mod synthesized {
             let taken = |name: &str| names.iter().any(|(_, held)| &**held == name) || reserved.contains(&name) || (apart && name == POSE_COLUMN);
             names.push((*label, label_name(base, taken).into()));
         }
+        name_unmade(&mut names, &uses.unmade, &reserved, in_output);
         names
     }
+
+    /// Adds to `names` a name for each label of `unmade` that it lacks, after
+    /// the names of the labels that sites make, so that those keep their names.
+    fn name_unmade(names: &mut Vec<(LabelId, Box<str>)>, unmade: &[(LabelId, String)], reserved: &[&str], in_output: &[LabelId]) {
+        for (label, base) in unmade {
+            if names.iter().any(|(id, _)| id == label) {
+                continue;
+            }
+            let apart = in_output.contains(label);
+            let taken = |name: &str| names.iter().any(|(_, held)| &**held == name) || reserved.contains(&name) || (apart && name == POSE_COLUMN);
+            let name = label_name(base, taken);
+            names.push((*label, name.into()));
+        }
+    }
+
+    /// The labels at the columns of the relations that `form` declares, which
+    /// the writer names whether or not a site of the form makes them: a label
+    /// that a site of a part of a body leaves to another part, as the body of
+    /// a prefix does, still names its column.
+    fn column_labels(form: &Form, out: &mut Vec<(LabelId, String)>) {
+        let columns = |columns: &[RelationColumn], out: &mut Vec<(LabelId, String)>| out.extend(columns.iter().map(|column| (column.label, COLUMN_BASE.to_owned())));
+        match form {
+            Form::Clause(clause) => columns(&clause.value().columns, out),
+            Form::Instance(instance) => {
+                if let Some(key) = &instance.value().key {
+                    columns(&key.value().key.columns, out);
+                }
+            }
+            Form::Choose(choose) => {
+                let choose = choose.value();
+                if let Some(rows) = &choose.rows {
+                    columns(&rows.columns, out);
+                }
+                columns(&choose.candidate_columns, out);
+            }
+            Form::RigidDet(rigid) => {
+                let rigid = rigid.value();
+                for key in rigid.key.iter().chain(rigid.instance.iter()) {
+                    columns(&key.columns, out);
+                }
+            }
+            Form::Out(out_form) => columns(&out_form.value().key.columns, out),
+            Form::Demonstrated(demonstrated) => {
+                if let Some(key) = &demonstrated.value().key {
+                    columns(&key.value().key.columns, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The base of the name of a label that no site of its form makes.
+    const COLUMN_BASE: &str = "V";
 
     /// The labels of one form, collected in any order.
     #[derive(Default)]
@@ -1285,5 +1351,9 @@ mod synthesized {
         reserved: Vec<(LabelId, Box<str>)>,
         /// Each label with the column of the site that makes it.
         made: Vec<(LabelId, String)>,
+        /// The labels the writer asks a name of that a site of the form may
+        /// not make: the labels at columns and at fields, with a base for the
+        /// name of each. They are named after the labels that sites make.
+        unmade: Vec<(LabelId, String)>,
     }
 }

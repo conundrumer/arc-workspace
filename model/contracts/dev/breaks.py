@@ -232,7 +232,7 @@ def new_pairs(task, path, eng, n, select='valid'):
         want = {v['id']: v for v in ins[:8 * n]}
     else:
         post = A.postconditions(base)
-        qf = A.Q.query_features((A.GEN / (task + '.arclog')).read_text())
+        qf = A.Q.query_features(paths.read_gen(A.GEN / (task + '.arclog')))
         valid_in = A.valid_input(post, A.live_tables(base, qf))
         want = {v['id']: {k: v[k] for k in keep} for v in J.records(path) if valid_in(v)}
     per = -(-n // len(eng.bj['train']))

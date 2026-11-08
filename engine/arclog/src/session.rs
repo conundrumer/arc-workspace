@@ -989,17 +989,12 @@ pub struct Counts {
 pub const SESSION_BYTES: usize = 1 << 32;
 
 /// The bound on a task session's bytes, which the intern table's and the
-/// result cache's bytes count toward. Reaching it is an alert.
+/// result cache's bytes count toward. A session over its bound evicts its
+/// caches ([`TaskSession::relieve`]). It stops no request and changes no
+/// result.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SessionBound {
     pub bytes: usize,
-}
-
-/// A task session whose bytes reached its bound, which is an alert.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct ReachedSessionBound {
-    pub bytes: usize,
-    pub bound: SessionBound,
 }
 
 /// The most verdicts of atoms that a session holds.
@@ -1081,8 +1076,10 @@ impl TaskSession {
         Some(Arc::clone(self.native_rows.lock().expect(UNPOISONED).entry(key).or_insert(made)))
     }
 
-    /// Whether the session's bytes lie within `bound`, or its own bound where
-    /// that is none. The bytes are the larger of two counts:
+    /// Has the session evict its caches where its bytes are past `bound`, or
+    /// its own bound where that is none, and gives the bytes it held before.
+    /// `growth` more bytes are about to be built. The bytes are the larger of
+    /// two counts:
     ///
     /// - the ledger ([`TaskSession::ledger`]): the intern table's, the result
     ///   cache's and the live reservations';
@@ -1095,19 +1092,18 @@ impl TaskSession {
     /// after the result cache evicts them, and the scratch of a walk. It
     /// counts the growth of every thread of the process.
     ///
+    /// An eviction drops entries of caches and gives bytes back. It stops no
+    /// request and changes no value or count, since a cache hit charges the
+    /// cost that its entry recorded, as a computation with empty caches does.
+    ///
     /// The checks of an operation stand at these places:
     ///
     /// - [`crate::eval::join::Budget::charge_work`], once per batch of
-    ///   bindings that a join, a walk or a construction charges, and once per
-    ///   batch of rows that a walk of rows passes;
-    /// - [`TaskSession::reserve`], before a buffer is allocated, against the
-    ///   ledger and the buffer's bytes;
-    /// - [`TaskSession::would_reserve`], as the rows of an exported relation
-    ///   accrue, against the ledger and the least bytes that the export
-    ///   reserves for those rows ([`crate::eval::join::Budget::charge_rows`]);
-    /// - [`TaskSession::within_room`], before an index is built, where the
-    ///   rows that the build walks give its bytes
-    ///   ([`crate::eval::join::Budget::charge_build`]).
+    ///   bindings that a join, a walk or a construction charges;
+    /// - [`crate::eval::join::Budget::charge_rows`], once per batch of rows;
+    /// - [`TaskSession::reserve`], when a buffer is reserved;
+    /// - [`crate::eval::join::Budget::charge_index_build`], before an index
+    ///   is built, where the rows that the build walks give its bytes.
     ///
     /// A check reads the intern table's bytes, the result cache's bytes, the
     /// reservations and the heap's live bytes: a few loads and two short
@@ -1115,53 +1111,43 @@ impl TaskSession {
     /// checked only where it holds [`crate::eval::join::BUILD_CHECK_MIN`]
     /// bytes or more. So while the session's bytes are far from the bound,
     /// the checks take a small share of the work between them.
-    pub fn within_bound(&self, starts: &HeapStarts, bound: Option<SessionBound>) -> Result<usize, ReachedSessionBound> {
-        self.within_room(starts, bound, 0)
-    }
-
-    /// [`TaskSession::within_bound`], where `growth` more bytes are about to
-    /// be built: whether the session's bytes now, as that method counts them,
-    /// plus `growth`, lie within the bound. A stop gives the bytes that the
-    /// build would bring the session to. A caller gives the bytes that the
-    /// build holds at the least, so a stop comes only where the build passes
-    /// the bound.
-    pub fn within_room(&self, starts: &HeapStarts, bound: Option<SessionBound>, growth: usize) -> Result<usize, ReachedSessionBound> {
+    pub fn relieve(&self, starts: &HeapStarts, bound: Option<SessionBound>, growth: usize) -> usize {
         let bound = bound.unwrap_or(self.bound);
-        let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
-        let ledger = intern.saturating_add(self.results.bytes()).saturating_add(self.allocated.load(Ordering::Relaxed));
+        let (intern, results, allocated) = self.ledger();
+        let ledger = intern.saturating_add(results).saturating_add(allocated);
         let now = match crate::heap::live() {
             None => ledger,
             Some(heap) => ledger.max(starts.grown(Arc::as_ptr(&self.allocated) as usize, heap, ledger)),
         };
         let bytes = now.saturating_add(growth);
-        if bytes > bound.bytes { Err(ReachedSessionBound { bytes, bound }) } else { Ok(bytes) }
+        if bytes > bound.bytes {
+            self.evict(bytes - bound.bytes, ledger.saturating_add(growth) > bound.bytes);
+        }
+        bytes
     }
 
-    /// Reserves a buffer before allocation, together with all live buffer
-    /// reservations and the current intern/result stores, within `bound`, or
-    /// the session's own bound where that is none. Dropping the returned owner
-    /// releases its bytes; sharing an owner does not reserve again.
-    pub fn reserve(&self, bytes: usize, bound: Option<SessionBound>) -> Result<SessionAllocation, ReachedSessionBound> {
-        let bound = bound.unwrap_or(self.bound);
-        let mut held = self.allocated.load(Ordering::Relaxed);
-        loop {
-            let next = held.checked_add(bytes).ok_or(ReachedSessionBound {bytes:usize::MAX,bound})?;
-            self.check_bytes(self.intern.read().expect("an intern table that no panic poisoned").bytes(), next, bound)?;
-            match self.allocated.compare_exchange_weak(held, next, Ordering::Relaxed, Ordering::Relaxed) {
-                Ok(_) => return Ok(SessionAllocation { bytes, allocated: Arc::clone(&self.allocated) }),
-                Err(actual) => held = actual,
-            }
+    /// Drops the entries of the result cache that give `excess` bytes back,
+    /// and, where `ledger_past` holds, the ledger itself is past the bound and
+    /// the result cache cannot give them, the entries of the other caches.
+    fn evict(&self, excess: usize, ledger_past: bool) {
+        let results = self.results.bytes();
+        self.results.evict(results.saturating_sub(excess));
+        if ledger_past && excess > results {
+            self.branches.clear();
+            self.path_masks.lock().expect(UNPOISONED).clear();
         }
     }
 
-    /// Whether [`TaskSession::reserve`] of `bytes` would pass now: it makes
-    /// the same check against the ledger and reserves nothing. A stop gives
-    /// the bytes that the reservation would bring the ledger to.
-    pub fn would_reserve(&self, bytes: usize, bound: Option<SessionBound>) -> Result<(), ReachedSessionBound> {
-        let bound = bound.unwrap_or(self.bound);
-        let held = self.allocated.load(Ordering::Relaxed);
-        let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
-        self.check_bytes(intern, held.saturating_add(bytes), bound)
+    /// Reserves `bytes` for a buffer, with all live buffer reservations,
+    /// and has the session evict its caches where that takes it past `bound`,
+    /// or its own bound where that is none ([`TaskSession::relieve`]). The
+    /// reservation is made whether or not the session has room. Dropping the
+    /// returned owner releases its bytes; sharing an owner does not reserve
+    /// again.
+    pub fn reserve(&self, bytes: usize, starts: &HeapStarts, bound: Option<SessionBound>) -> SessionAllocation {
+        self.allocated.fetch_add(bytes, Ordering::Relaxed);
+        self.relieve(starts, bound, 0);
+        SessionAllocation { bytes, allocated: Arc::clone(&self.allocated), owner: None }
     }
 
     /// The bytes that the session's bound counts: its charged intern storage,
@@ -1170,11 +1156,6 @@ impl TaskSession {
     pub fn ledger(&self) -> (usize, usize, usize) {
         let intern = self.intern.read().expect("an intern table that no panic poisoned").bytes();
         (intern, self.results.bytes(), self.allocated.load(Ordering::Relaxed))
-    }
-
-    fn check_bytes(&self, intern: usize, allocated: usize, bound: SessionBound) -> Result<(), ReachedSessionBound> {
-        let bytes = intern.saturating_add(self.results.bytes()).saturating_add(allocated);
-        if bytes > bound.bytes { Err(ReachedSessionBound { bytes, bound }) } else { Ok(()) }
     }
 
     /// Records the `counts` of one evaluation that ended with no stop, each
@@ -1235,18 +1216,28 @@ impl HeapStarts {
     }
 }
 
-/// Ownership of bytes admitted under a task session's existing byte bound.
-/// A shared buffer keeps this in its shared owner, so clones do not multiply
-/// the charge and the last drop releases it, including an aborted build.
+/// Ownership of bytes reserved in a task session. A shared buffer keeps this
+/// in its shared owner, so clones do not multiply the charge and the last drop
+/// releases it, including an aborted build. Where the bytes are held in the
+/// byte budgets of a request and of an assignment ([`SessionAllocation::owned_by`]),
+/// the release frees them there too.
 #[derive(Debug)]
 pub struct SessionAllocation {
     bytes: usize,
     allocated: Arc<AtomicUsize>,
+    owner: Option<crate::eval::values::Owner>,
 }
 
 impl SessionAllocation {
     /// The bytes still owned by this reservation.
     pub fn bytes(&self)->usize {self.bytes}
+
+    /// This reservation, whose bytes `owner` holds in the byte budgets of a
+    /// request and of an assignment until it releases them.
+    pub(crate) fn owned_by(mut self, owner: crate::eval::values::Owner) -> Self {
+        self.owner = Some(owner);
+        self
+    }
 
     /// Release a completed phase's unused allowance after its scratch drops.
     /// Mutable access excludes shared Arc owners; a retained shared buffer
@@ -1254,10 +1245,14 @@ impl SessionAllocation {
     pub fn shrink_to(&mut self,bytes:usize) {
         let retained=bytes.min(self.bytes);
         self.allocated.fetch_sub(self.bytes-retained,Ordering::Relaxed);
+        if let Some(owner)=&self.owner {owner.free(u64::try_from(self.bytes-retained).unwrap_or(u64::MAX));}
         self.bytes=retained;
     }
 }
 
 impl Drop for SessionAllocation {
-    fn drop(&mut self) { self.allocated.fetch_sub(self.bytes, Ordering::Relaxed); }
+    fn drop(&mut self) {
+        self.allocated.fetch_sub(self.bytes, Ordering::Relaxed);
+        if let Some(owner)=&self.owner {owner.free(u64::try_from(self.bytes).unwrap_or(u64::MAX));}
+    }
 }

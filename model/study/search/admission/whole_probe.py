@@ -18,7 +18,7 @@ import search_node_score_parity as PA  # noqa: E402
 
 import arclog  # noqa: E402
 
-SETTINGS = dict(deadline_seconds=10.0, rule_tests=False, table_work_cap=1 << 21, static_pruning=True)
+SETTINGS = dict(rule_tests=False, table_work_cap=1 << 21, static_pruning=True)
 READER_OUT = '(OUT (input ^P ^Col))'
 T0 = time.perf_counter()
 LIMIT = float(sys.argv[3]) if len(sys.argv) > 3 else 15.0

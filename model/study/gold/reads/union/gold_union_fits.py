@@ -44,18 +44,16 @@ def engine():
     import arclog
     import numpy as np
     settings, evaluator = arclog.DecodeSettings, arclog.StudyTaskEvaluator
-    arclog.DecodeSettings = lambda *a, **k: settings(*a, **{'table_work_cap': WORK_CAP, 'deadline_seconds': DEADLINE, **k})
+    arclog.DecodeSettings = lambda *a, **k: settings(*a, **{'table_work_cap': WORK_CAP, **k})
     arclog.StudyTaskEvaluator = lambda *a, **k: evaluator(*a, **{'session_bytes': SESSION_BYTES, **k})
     return cli, arclog, np
 
 
 def programs_of(set_name):
-    """{task: {text: [case]}} of the lines of cases-SET.jsonl that are not excluded, in the order of the file."""
+    """{task: {text: [case]}} of the lines of cases-SET.jsonl in the order of the file."""
     got = {}
     for l in Z.open_text(OUT + 'cases-%s.jsonl' % set_name):
         r = json.loads(l)
-        if r['excluded'] in (True, 'True'):
-            continue
         got.setdefault(r['task'], {}).setdefault(r['gold_sexp'], []).append(r['case'])
     return got
 
@@ -154,10 +152,10 @@ class StopMemo:
 
 def run_program(cli, arclog, np, text, task, tasks, task_json, deadline=None):
     """(tables, why, stop): what cli.run_case gives for a program text, and `stop`, the index of the form that the engine stopped in where its replay stopped and says so, else None. run_case does not return the engine's status, which says it. `deadline` is the engine's deadline in seconds, in place of DEADLINE."""
-    settings = arclog.DecodeSettings(**({'deadline_seconds': deadline} if deadline else {}))
+    settings = arclog.DecodeSettings()
     try:
         program = arclog.StudyProgram.from_sexp(text, settings)
-    except ValueError as e:
+    except arclog.Refusal as e:
         return None, 'refused: %s' % e, None
     evaluator = arclog.StudyTaskEvaluator(task, str(tasks.resolve()), settings)
     rows = 'held_rows' if 'held_rows' in type(evaluator).gold_tables.__text_signature__ else 'full_rows'  # as run_case does
@@ -267,7 +265,7 @@ def sampler_outcome(env, task_json, text):
     sess = arclog.Session(arclog.Task.from_json(json.dumps(d), arclog.World.Open), arclog.DecodeSettings(**SAMPLER), session_bytes=2 << 30)
     try:
         ids, model, _ = arclog.StudyProgram.from_sexp(text, sess.settings).decode_stream()
-    except ValueError as e:
+    except arclog.Refusal as e:
         return 'does not parse: %s' % str(e)[:150]
     dec = sess.decoder()
     try:
@@ -318,7 +316,7 @@ def sampler_decode(env, task_json, text):
         return None
     try:
         ids, model, _ = arclog.StudyProgram.from_sexp(text, sess.settings).decode_stream()
-    except ValueError as e:
+    except arclog.Refusal as e:
         return 'does not parse: %s' % str(e)[:150]
     got = sess.check_stream(ids, model)
     return 'ok' if got is None else 'refused: %s at token %d' % (str(got[1])[:150], got[0])

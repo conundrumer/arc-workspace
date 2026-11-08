@@ -1,10 +1,10 @@
 # Union gold
 
-Every non-excluded case of each task's solver, each as a one-case program, and the union of their tables, each union table with its reads and depth in each case, one union table for each QueryHash.
+Every case of each task's solver, each as a one-case program, and the union of their tables, each union table with its reads and depth in each case, one union table for each QueryHash.
 
 ## Cases
 
-A task's cases are the `cases` of its record in the latest empty-gold publication that holds it (`gold_case_counts.py` in this folder gives which), less the cases that `gen-v3-11f6a212c/excluded-case-files.tsv` lists for the task (a case `$A $B` is the file `A+B.arclog`). A case's program is its `filtered_program`, or its `original_program` where that is empty. The pinned program (`gold-v3-combined-cut/view-final`) is one more program of the task, named `pinned`. It is the cut text of one case.
+A task's cases are the `cases` of its record in the latest empty-gold publication that holds it (`gold_case_counts.py` in this folder gives which; in a round, the line that the round's selection names). The solver's `exclude` forms in its `.arcdata` file already leave out the excluded cases, since the engine's case catalog takes them out. A case's program is its `filtered_program`, or its `original_program` where that is empty. The pinned program (`gold-v3-combined-cut/view-final`) is one more program of the task, named `pinned`. It is the cut text of one case.
 
 Two programs are the same when their texts are equal after labels are renamed in order of definition. Each distinct program is read once, and the record lists every case it stands for.
 

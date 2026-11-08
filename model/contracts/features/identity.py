@@ -4,12 +4,20 @@ A table's identity is the engine's `ident`: the hash of its query's resolved con
 ident and the port's lib name, and for a fact relation a hash of its name. A key holds its first DIGITS hex digits. A column's identity,
 within its table, is the engine's `column_idents` entry: the lib's name for a column that the lib declares, `<lib column>.#<n>` for a record
 field below a lib column, with n the canonical position of the field's label, and `#<n>`, the canonical position of its label, for any other
-column. A field's token keeps the lib column's name before it, as `key.⟨c:#<n>⟩`. A feature key
+column. Only with `ARCLOG_DEMONSTRATED=1`, a demonstrated table hashes its resolved catalog, with inputs in the fixed
+value-then-demonstration order, rule names and texts omitted, and rules sorted by content. Its columns use the fixed value roles `o`, `i`,
+`v` and its `key`, with record fields identified by canonical outer labels. The flag defaults off and is read once per process; off,
+demonstrated tables have no exported identity. A rigid part column that repeats a key label uses `part.#<n>` to distinguish that
+occurrence from the key's `#<n>`; the other columns keep their identities, including the synthetic pose column's engine schema name.
+A field's token keeps the lib column's name before it, as
+`key.⟨c:#<n>⟩`. A feature key
 names a table and a column by these identities (features.py), so a rename or a reorder of the program's text changes no key. Two tables of
 equal query content have one identity, and give one key one value, since equal content gives equal rows; a task parameter is the exception,
 since two parameters of equal content can take different values. So where tables of one identity include a task parameter, color refinement
 over the program's reads, in both directions, splits them by how the program uses them, and a table that shares an identity only through
-such parameters is split with them. A split table's identity is a hash of its refined color. Every other table keeps the engine's ident.
+such parameters is split with them. Parameters that the same forms read start the refinement apart where their reads stand at different
+places in those forms: color refinement within a form, over its lists and its labels, gives each read a color from what surrounds it. A
+split table's identity is a hash of its refined color. Every other table keeps the engine's ident.
 
 `CONTRACTS_PLACEHOLDER_IDS=1` stands in placeholders where the engine gives no identities: a hash of the table's name, and the column's
 place in the table. They are unique in a program and serve a test of the code alone, since a rename or a reorder changes them.
@@ -27,8 +35,8 @@ DIGITS = 12  # hex digits of a table's identity in a key
 class Identities:
     """table(name) and column(name, i) of the engine's Tables tb; `placeholder` where they are CONTRACTS_PLACEHOLDER_IDS's."""
 
-    def __init__(self, tb, reads=None, params=()):
-        """reads: {table: the tables its form reads} (form_reads); params: the tables that are task parameters."""
+    def __init__(self, tb, reads=None, params=(), text=None):
+        """reads: {table: the tables its form reads} (form_reads); params: the tables that are task parameters; text: the program."""
         T = tb.T
         self.placeholder = False
         self.tables, self.columns = {}, {}
@@ -40,7 +48,12 @@ class Identities:
             given = placeholder_identities(tb)
         table_ids, column_ids = given
         if reads is not None and not self.placeholder:
-            split = refined({name: table_ids[t] for t, name in enumerate(tb.names) if name and table_ids[t]}, reads, set(params))
+            named = {name: table_ids[t] for t, name in enumerate(tb.names) if name and table_ids[t]}
+            split = refined(named, reads, set(params))
+            left = unsplit(named, split, set(params))
+            if left and text is not None:
+                by_name = {name: dict(zip(T['column_names'][t], column_ids[t])) for t, name in enumerate(tb.names) if name}
+                split = refined(named, reads, set(params), read_sites(text, left, named, by_name))
             table_ids = [split.get(name, i) for name, i in zip(tb.names, table_ids)]
         full = {}
         for t, name in enumerate(tb.names):
@@ -117,8 +130,82 @@ def _h(*parts):
     return hashlib.blake2b(repr(parts).encode(), digest_size=16).hexdigest()
 
 
-def refined(ids, reads, params, rounds=12):
-    """{table: split identity} of the tables that share an engine identity with another table and are split, as the module's docstring gives."""
+def unsplit(ids, split, params):
+    """The parameters that split leaves sharing an identity with another table."""
+    groups = defaultdict(list)
+    for n, i in ids.items():
+        groups[split.get(n, i)].append(n)
+    return {n for ms in groups.values() if len(ms) > 1 for n in ms if n in params}
+
+
+TOKEN = re.compile(r'"[^"]*"|;[^\n]*|[()]|[^\s()]+')
+ROLES = {'IF', 'ALL'}
+KEYWORDS = {'RULE', 'DET', 'INIT', 'DET_OR_RULE', 'RULE_OR_DET', 'RIGID_DET', 'CHOOSE', 'DEMO_RULE', 'DEMONSTRATED', 'NOT', 'OR', 'IF', 'ALL', 'ONE', 'SET', 'OUT'}
+
+
+def forms_of(text):
+    """The program's top-level forms as nested lists of tokens; comments and quoted text are left out."""
+    stack = [[]]
+    for token in TOKEN.findall(text):
+        if token == '(':
+            stack.append([])
+        elif token == ')':
+            done = stack.pop()
+            stack[-1].append(done)
+        elif token[0] not in ';"':
+            stack[-1].append(token)
+    return stack[0]
+
+
+def read_sites(text, tables, ids, columns, rounds=12):
+    """{table of tables: the sorted colors of its reads}; ids: {table: identity}; columns: {table: {column name: column identity}}. A read is
+    a list that starts with the table's name. Color refinement runs within each form over its lists and its labels. A table's name counts as
+    its identity, a site's head on a table as its column's identity, a label only by the places it stands in, and a list by its place only
+    under IF and ALL, whose lists have fixed roles, so no name or order that the program's author chose enters a color."""
+    sites = defaultdict(list)
+
+    def is_label(token, at):
+        if token[0] in '*^':
+            return True
+        if token[0] in '&:' or token == '0':
+            return False
+        return at > 0 or (token[0].isupper() and token not in KEYWORDS)
+
+    for form in forms_of(text):
+        lists = []
+
+        def gather(x, up, role, on):
+            on = x[0] if x and isinstance(x[0], str) and x[0][0] == '&' else on
+            lists.append((x, up, role, on))
+            roles = bool(x) and isinstance(x[0], str) and x[0] in ROLES
+            for at, child in enumerate(c for c in x if isinstance(c, list)):
+                gather(child, x, at if roles else None, on)
+        gather(form, None, None, None)
+
+        def given(token, on):
+            if token[0] == '&':
+                return ids.get(token, ids.get(token.split('.')[0], '&') + token.partition('.')[2])
+            if token[0] == ':' and on is not None:
+                return ':' + columns.get(on, {}).get(token[1:], '')
+            return token
+        constants = lambda x, on: sorted(given(c, on) for at, c in enumerate(x) if isinstance(c, str) and not is_label(c, at))
+        names = lambda x: [c.lstrip('*^') for at, c in enumerate(x) if isinstance(c, str) and is_label(c, at)]
+        color = {id(x): _h(role, constants(x, on)) for x, _, role, on in lists}
+        labels = {name: '' for x, _, _, _ in lists for name in names(x)}
+        for _ in range(rounds):
+            new = {id(x): _h(color[id(x)], color[id(up)] if up is not None else '', sorted(color[id(c)] for c in x if isinstance(c, list)),
+                             sorted(labels[name] for name in names(x))) for x, up, _, _ in lists}
+            labels = {label: _h(c, sorted(new[id(x)] for x, _, _, _ in lists for name in names(x) if name == label)) for label, c in labels.items()}
+            color = new
+        for x, up, _, _ in lists:
+            if up is not None and x and isinstance(x[0], str) and x[0] in tables:
+                sites[x[0]].append(color[id(x)])
+    return {table: sorted(sites[table]) for table in tables}
+
+
+def refined(ids, reads, params, sites=None, rounds=12):
+    """{table: split identity} of the tables that share an engine identity with another table and are split, as the module's docstring gives.
+    sites: the colors of the reads of the tables that read_sites gives, which start those tables apart."""
     groups = defaultdict(list)
     for n, i in ids.items():
         groups[i].append(n)
@@ -130,7 +217,7 @@ def refined(ids, reads, params, rounds=12):
         for u in reads.get(n, ()):
             if u in ids:
                 readers[u].add(n)
-    color = dict(ids)
+    color = {n: _h(i, sites[n]) if sites and n in sites else i for n, i in ids.items()}
     for _ in range(rounds):
         new = {n: _h(color[n], sorted(color[u] for u in reads.get(n, ()) if u in color), sorted(color[r] for r in readers[n])) for n in ids}
         stable = len(set(new.values())) == len(set(color.values()))

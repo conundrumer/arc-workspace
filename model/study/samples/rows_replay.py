@@ -8,8 +8,8 @@ The records file is `records-<SET>.jsonl` of `build_merged.py`, one task a line;
 set aside is left out. A restart skips each task whose file is finished: its header has the record's src, the code sha of `row_store.py` and
 `hash_version` engine@<site folder name>. Each finished task prints a line with the rate and an ETA.
 
-The process of a task opens one session of the task, with no test output, at the release's decode settings with a deadline of DEADLINE_SECONDS a
-request, a table work cap of TABLE_WORK_CAP, and session bytes SESSION_SHARE of RSS_MIB. It takes the union programs in record order:
+The process of a task opens one session of the task, with no test output, at the release's decode settings with a
+table work cap of TABLE_WORK_CAP, and session bytes SESSION_SHARE of RSS_MIB. It takes the union programs in record order:
 - A program with a form whose QueryHash has no function yet is replayed with the release's `superdag.Run.scope`. Its forms' functions that no
   earlier program gave are written. Where the replay stops at a form (a bound stop of the table export included, whose message names the tables
   it left out), the forms before it are written, and an error line gives the union keys of that form and the forms after it.
@@ -44,7 +44,6 @@ OUT = WORK + '/lm/data-study/samples'
 RSS_MIB = 3072  # a task's process exits past this
 RSS_EXIT = 5
 RSS_SECONDS = 0.5  # how often the process reads its memory
-DEADLINE_SECONDS = 600  # the replay deadline per request: the run is offline, and the search's 10 s loses slow programs' tables
 TABLE_WORK_CAP = 1 << 28  # the fits' bound; the live sampler's 2^21 loses the tables of programs that the fits finish
 SESSION_SHARE = 0.65  # of RSS_MIB, the session's byte bound, as the release's kaggle_worker.py sets it
 ERROR_CHARS = 600  # of the message of a program that does not replay
@@ -91,7 +90,7 @@ def replay(a):
     task = json.load(open(a.task_file))
     for t in task['test']:
         t.pop('output', None)
-    settings = D.arclog.DecodeSettings(relations=D.RELATIONS, **dict(D.SETTINGS, deadline_seconds=float(a.deadline), table_work_cap=a.table_work_cap))
+    settings = D.arclog.DecodeSettings(relations=D.RELATIONS, **dict(D.SETTINGS, table_work_cap=a.table_work_cap))
     session = D.arclog.Session(D.arclog.Task.from_json(json.dumps(task), D.arclog.World.Open), settings, session_bytes=int(a.rss_mib * a.session_share) << 20)
     sampler = D.live.Sampler(models, steers=())
     run = D.Run(sampler.pri, session, SEED, time.monotonic() + 365 * 86400, task, D.live.Limits())
@@ -193,7 +192,7 @@ def one(r: dict[str, Any], a: argparse.Namespace, tmp: str, outdir: str) -> dict
     with open(log, 'w') as f:
         p = subprocess.run([sys.executable, '-u', os.path.abspath(__file__), '--replay', '--record', rec, '--task-file', '%s/%s.json' % (TASKS, t), '--out', out,
                             '--src', r['src'], '--split', r['split'], '--release', a.release, '--site', a.site, '--rss-mib', str(a.rss_mib),
-                            '--deadline', str(a.deadline), '--table-work-cap', str(a.table_work_cap), '--session-share', str(a.session_share)], stdout=f, stderr=subprocess.STDOUT, env=dict(os.environ, **CHILD_ENV))
+                            '--table-work-cap', str(a.table_work_cap), '--session-share', str(a.session_share)], stdout=f, stderr=subprocess.STDOUT, env=dict(os.environ, **CHILD_ENV))
     for x in glob.glob(glob.escape(out) + '.*'):  # the temp file of a process that did not end
         os.remove(x)
     text = open(log, errors='replace').read()
@@ -271,7 +270,6 @@ def main():
     ap.add_argument('--site', default='', help='default: the site folder that the release manifest names')
     ap.add_argument('--records', default='', help='default: records-SET.jsonl under UNION_REACH_OUT')
     ap.add_argument('--rss-mib', type=int, default=RSS_MIB)
-    ap.add_argument('--deadline', type=float, default=DEADLINE_SECONDS)
     ap.add_argument('--table-work-cap', type=int, default=TABLE_WORK_CAP)
     ap.add_argument('--session-share', type=float, default=SESSION_SHARE)
     ap.add_argument('--replay', action='store_true', help=argparse.SUPPRESS)  # the process of one task

@@ -22,7 +22,7 @@ for task in sys.argv[1:]:
     p = OUTDIR / (task + '.verdicts.post.json')
     if not p.exists():
         continue
-    qf = Q.query_features((GEN / (task + '.arclog')).read_text())
+    qf = Q.query_features(paths.read_gen(GEN / (task + '.arclog')))
     for t, r in json.load(open(p)).items():
         v = r['postconditions'].get(t + '|empty', {}).get('verdict')
         if v in (None, 'untested'):

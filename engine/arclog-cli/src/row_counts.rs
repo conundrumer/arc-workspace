@@ -286,12 +286,14 @@ fn stopped(bound: ReachedBound) -> String {
         ReachedBound::Models { cap } => format!("models:{cap}"),
         ReachedBound::Nodes { cap } => format!("nodes:{cap}"),
         ReachedBound::Assignments { cap } => format!("assignments:{cap}"),
-        ReachedBound::TableWork { cap } => format!("table-work:{cap}"),
+        ReachedBound::TableWork { cap, .. } => format!("table-work:{cap}"),
         ReachedBound::Margin(_) => "margin".to_owned(),
-        ReachedBound::SessionBytes(reached) => format!("session-bytes:{}", reached.bound.bytes),
         ReachedBound::RequestWork { cap } => format!("request-work:{cap}"),
+        ReachedBound::RequestBytes { cap } => format!("request-bytes:{cap}"),
+        ReachedBound::AssignmentBytes { cap } => format!("assignment-bytes:{cap}"),
         ReachedBound::Cancelled => "cancelled".to_owned(),
         ReachedBound::NoValues => "no-values".to_owned(),
+        ReachedBound::Effort { cap } => format!("effort:{cap}"),
     };
     format!("stopped:{bound}")
 }

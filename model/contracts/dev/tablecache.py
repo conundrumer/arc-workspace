@@ -68,7 +68,10 @@ def task_with(bj, rec):
 
 def at(T, ex):
     """The tables at example ex: what all_features and the row digests read at ex."""
-    return {n: {'columns': [list(c) for c in t['columns']], 'rows': {k: r for k, r in t['rows'].items() if k in (ex, 'task')}}
+    here = lambda held: {k: v for k, v in held.items() if k in (ex, 'task')}
+    return {n: {'columns': [list(c) for c in t['columns']], 'rows': here(t['rows']),
+                **({'counts': here(t['counts']), 'views': here(t['views'])} if 'counts' in t else {}),
+                **({'ident_values': t['ident_values']} if 'ident_values' in t else {})}
             for n, t in T.items() if n not in ('ex_input', 'ex_output')}
 
 
@@ -78,17 +81,22 @@ def unpack(z):
 
 
 class Engine:
-    """The task's solver, with the stored values that solve the task's own train pairs. Needs the engine runtime's python."""
+    """The task's solver, with the stored values that solve the task's own train pairs. Needs the engine runtime's python. others: whether to hold the
+    tables at the task's other retained assignments, in `others`, for the features across assignments."""
 
-    def __init__(self, task):
+    def __init__(self, task, others=False):
         import engine as E
+        import observations
         import proposers as P
         import query as Q
         self.E, self.P = E, P
-        self.s = E.Solver(task)
+        self.s = observations.Solver(task)
         self.bj = json.load(open(E.ROOT / 'data/tasks' / (task + '.json')))
-        self.T0 = self.s.tables(self.bj)
+        self.T0 = self.s.tables(self.bj, keep_run=others)
         self.base_stored, self.base_types = self.s.stored, self.s.stored_types
+        small = sum(len(r) for t in self.T0.values() for r in t['rows'].values()) <= 300000
+        self.others = self.s.other_assignments(16) if others and small else []  # the tables at the task's other assignments
+        self.s.last_run = None
         qf = Q.query_features(self.s.text)
         self.pins = {rel: rows for rel, rows in self.base_stored.items() if rel in E.proposer_relations(qf)}
         self.proposer_of = {n: q.get('proposer') for n, q in qf.items()}
@@ -102,24 +110,26 @@ class Engine:
 
 class Cache:
     """A task's cache under the engine's solver, as a context manager. ids, where given, are the variants it may serve; with hold False it
-    holds no tables in memory, and serves them through hits."""
+    holds no tables in memory, and serves them through hits. read_only serves hits without opening a cache writer."""
 
-    def __init__(self, task, engine, ids=None, hold=True):
+    def __init__(self, task, engine, ids=None, hold=True, read_only=False):
         self.path = CACHE / (task + '.tables.jsonl')
         self.engine = engine
         self.solver = digest(engine.s.text)
         self.ids = ids
         self.hold = hold
+        self.read_only = read_only
 
     def __enter__(self):
-        CACHE.mkdir(exist_ok=True)
-        self.out = J.Appender(self.path).__enter__()
+        if not self.read_only:
+            CACHE.mkdir(exist_ok=True)
+            self.out = J.Appender(self.path).__enter__()
         self.held = {(c['id'], c.get('variant')): c for c in J.records(self.path)
                      if self.hold and c.get('solver') == self.solver and (self.ids is None or c['id'] in self.ids)} if self.hold else {}
         return self
 
     def __exit__(self, *exc):
-        return self.out.__exit__(*exc)
+        return False if self.read_only else self.out.__exit__(*exc)
 
     def hits(self, want):
         """(variant, tables, task file, example) for each variant of want ({id: variant record}) that the cache holds, in the cache's order,
@@ -136,6 +146,8 @@ class Cache:
     def tables(self, rec):
         """(tables, task file, example) of the variant rec, its tables from the cache, or from the engine and then into the cache. Sets rec's
         stored status."""
+        if self.read_only:
+            raise ValueError('read-only caches serve hits only')
         tj, ex = task_with(self.engine.bj, rec)
         key = variant_key(rec)
         c = self.held.get((rec['id'], key)) or self.held.get((rec['id'], None))
@@ -160,6 +172,8 @@ def aligned(T, T0):
             continue
         perm = [names.index(c) for c in want]
         out[n] = dict(tab, columns=[list(c) for c in ref['columns']], rows={k: [[r[i] for i in perm] for r in rows] for k, rows in tab['rows'].items()})
+        if 'views' in tab:
+            out[n]['views'] = {k: [[[perm.index(c) for c in columns], rows] for columns, rows in views] for k, views in tab['views'].items()}
     return out
 
 

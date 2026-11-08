@@ -5,22 +5,25 @@
 
 use std::sync::Arc;
 
-use arclog_bindings::PyDecoder;
+use arclog_bindings::{budget_reached, check_effort, labeling_bound_reached, PyDecoder};
 use arclog_tables::columns::{step_case_columns_by_assignment_hashed, step_case_columns_by_assignment_in, step_case_columns_by_assignment_with, step_case_columns_in};
 use arclog_tables::split::{self, Part};
 use arclog_tables::summary::{train_pairs, Assemblies, DetFulls, SummaryCache};
 use arclog::eval::join::Materializer;
 use arclog_tables::columns::{CaseColumns, StreamTables};
-use arclog_tables::tables::successors::{successor_tables as successors_of, SuccessorKind};
+use arclog_tables::tables::successors::{exhaustion, successor_tables as successors_of, SuccessorKind};
 use arclog_tables::tables::{evidence_tables, input_table, mark_selected, selected_columns, step_tables as step_tables_of, Point, Points, Table};
 use arclog::decode::{Decoder, LeftOut};
+use arclog::program::canonical::LabelingBound;
 use arclog::program::Form;
 use arclog::eval::copies::CopyViolation;
+use arclog::eval::{Limits, ReachedBound};
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use crate::case_tables::{Base, PyCaseTables, Step};
+use crate::spill::{SpillFolder, Spilled};
 use crate::shapes::ShapeRuntime;
 
 /// The tables of the last step of `decoder`, a `Decoder` at any state, a fork
@@ -55,12 +58,18 @@ use crate::shapes::ShapeRuntime;
 /// `bodies`, or gives a step at a token not below the step's. A `before` of a
 /// decode before its first step has no step, and passes.
 ///
-/// `RuntimeError` is raised where the export stops at a bound of the request,
-/// such as the session's bytes or the deadline, before the result holds a
-/// row of each table of the step: the message gives the bound and names
-/// each table it left out, by its relation as the program spells it and the
-/// path of its form. A stop inside a table's entries leaves the table in the
-/// result, with those entries stopped, and raises nothing.
+/// `BudgetReached` is raised where the export stops at a bound, such as the
+/// request's work cap or its byte budget, before the result holds a row of each
+/// table of the step. It is no `RuntimeError`, which is raised for a fault of
+/// the engine alone. Its attributes are `bound`, the `StopKind` of the bound
+/// (`RequestWork` or `RequestBytes` for a budget of the request); `cap`, the
+/// bound's cap; and `tables`, each table it left out, by its relation as the
+/// program spells it and the path of its form. The request's byte budget counts
+/// the bytes the request holds at a time, the buffers of the exported rows
+/// included, and the stop depends on the call's inputs and the settings alone:
+/// the same call stops again. A stop inside a table's entries leaves the table
+/// in the result, with those entries stopped, and raises nothing. The session's
+/// byte bound stops no call: the session evicts its caches at it.
 ///
 /// The `CaseTables` has the `task` and the `case` that the call gives, as a
 /// `Decoder` holds neither. Its `relation_name` is the relation as the program
@@ -112,15 +121,8 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     // The indexes of the tokens the model wrote, which the engine's forced tokens follow in the trace. The last is the index `stream_tables` gives the step; a decode before its first step has none, and no table.
     let (written, index) = engine.model_steps();
     let earlier = check_before(before.as_deref(), &task, &case, bodies, written, index)?;
-    let (columns, stream, left) = py.detach(|| {
-        // With the rows packed, the export reserves for each row at least what the packing
-        // reserves: the cells of the row, at least one for each column, four times over, and
-        // the row's own two slots.
-        let limits=if by_assignment && summaries && rows {
-            engine.limits().reserving_rows(arclog::eval::RowReserve {per_column:16,fixed:16})
-        } else {
-            engine.limits()
-        };
+    let (columns, stream, left) = py.detach(|| -> Result<_, LabelingBound> {
+        let limits=engine.limits();
         let operation=engine.clone().with_operation_limits(limits.clone());
         let engine=&operation;
         let tables: Vec<(usize, Table)> = match index {
@@ -135,29 +137,26 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         let materializer=Materializer::new(engine.evaluation_inputs().1,&limits);
         let (columns, stream) = if by_assignment {
             // The QueryHash of each table: the `query_hash` of its finished query; a body table has none.
-            let query_of = |table: &Table| match table.point {
-                Point::Relation => table.form.0.first().and_then(|top| engine.query_hash(top.0 as usize)),
-                Point::Body { .. } | Point::Evidence => None,
-            };
+            let query_of = |table: &Table| query_of_table(engine, table);
             let queries = {
                 let _timed = split::span(Part::OwnQueryHash);
-                tables.iter().map(|(_, table)| query_of(table)).collect()
+                tables.iter().map(|(_, table)| query_of(table)).collect::<Result<Vec<_>, _>>()?
             };
             let before = earlier.map(|step| &*step.stream);
             if summaries {
-                step_case_columns_by_assignment_with(&materializer, before, &evidence_tables, tables, &train, queries, rows, &cache, assemblies(engine))
+                step_case_columns_by_assignment_with(&materializer, before, &evidence_tables, tables, &train, queries, rows, &cache, assemblies(engine)?)
             } else {
-                step_case_columns_by_assignment_hashed(&materializer, before, &evidence_tables, tables, &train, queries, &cache, assemblies(engine))
+                step_case_columns_by_assignment_hashed(&materializer, before, &evidence_tables, tables, &train, queries, &cache, assemblies(engine)?)
             }
         } else {
             step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, evidence.train.len())
         };
-        (columns.with_copies(&engine.take_copy_violations()), stream, arclog::clock::Stopwatch::start())
-    });
+        Ok((columns.with_copies(&engine.take_copy_violations()), stream, arclog::clock::Stopwatch::start()))
+    }).map_err(|bound| labeling_bound_reached(py, bound))?;
     if arclog::stats::enabled() {
         split::add(Part::GilWait, left.elapsed().nanos());
     }
-    complete(&columns)?;
+    complete(py, &columns)?;
     let base = earlier.map(|step| Base { case: case.clone(), tokens: index.unwrap_or(0), tables: step.stream.count() });
     let _packing = arclog::stats::span(arclog::stats::Phase::PyPack);
     arclog::stats::units(arclog::stats::Phase::PyPack, columns.tables.token.len());
@@ -174,7 +173,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
 /// `ex_output` are the evidence tables that the first result of `step_tables`
 /// gives. The result has no `step`, and serves as no `before`. The call runs
 /// with the GIL released, but for the build of the `CaseTables`.
-/// `RuntimeError` is raised where the export leaves out a table, as in
+/// `BudgetReached` is raised where the export leaves out a table, as in
 /// `step_tables`.
 #[pyfunction]
 #[pyo3(signature = (decoder, task, case, rows=false, summaries=true))]
@@ -194,7 +193,7 @@ pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
             step_case_columns_by_assignment_hashed(&materializer, None, &base, Vec::new(), &train, Vec::new(), &SummaryCache::default(), Assemblies::default()).0
         }
     });
-    complete(&columns)?;
+    complete(py, &columns)?;
     Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, None)?.with_shapes(shapes))
 }
 
@@ -203,11 +202,31 @@ pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
 /// or, for the ids whose successor is the body in progress, the one result
 /// they share.
 enum Packed {
-    /// The columns, the stream after the step, and the count of the step's own tables.
-    Own(CaseColumns, StreamTables, u32),
+    /// The columns, the stream after the step, the count of the step's own tables, and the cells of the columns where they wait on disk.
+    Own(CaseColumns, StreamTables, u32, Option<Spilled>),
     /// The place of that earlier id among the ids.
     Same(usize),
     Unchanged,
+    /// The evaluation or the export of the id passed the budget of its own request.
+    Exhausted,
+}
+
+/// The bytes that the cells of `columns` take in memory.
+fn cells_bytes(columns: &CaseColumns) -> u64 {
+    (columns.values.len() as u64).saturating_mul(std::mem::size_of::<i32>() as u64)
+}
+
+/// Writes the cells of `columns` to a file of the call's folder, which it makes under `under` at the first, and takes them out of the columns.
+fn spill_cells(columns: &mut CaseColumns, folder: &mut Option<Arc<SpillFolder>>, under: Option<&std::path::Path>) -> std::io::Result<Spilled> {
+    if folder.is_none() {
+        *folder = Some(SpillFolder::create(under)?);
+    }
+    let spilled = match folder {
+        Some(folder) => Spilled::write(folder, &columns.values)?,
+        None => return Err(std::io::Error::other("no spill folder")),
+    };
+    drop(columns.take_values());
+    Ok(spilled)
 }
 
 /// The tables after each token of `ids` at the state of `decoder`, a
@@ -256,7 +275,21 @@ enum Packed {
 /// - `"none"`: after the id no clause is in progress, or its body is empty,
 ///   and no form finished, and `tables` holds no table;
 /// - `"refused"`: the decode refuses the id, `note` gives the refusal, and
-///   `tables` is `None`.
+///   `tables` is `None`;
+/// - `"exhausted"`: the evaluation or the export of the id's tables passed the
+///   request work cap or the request byte budget of the id's own request, which
+///   each id has, `note` gives the bound, and `tables` is `None`. The request
+///   byte budget of an id is the setting `candidate_byte_cap`, the same for
+///   every id whatever their order and count. The other ids go on with budgets
+///   of their own.
+///
+/// The call keeps the cells of the ids' exports in memory up to the setting
+/// `spill_resident_bytes`; the cells of an id past it wait on disk, compressed,
+/// in a folder under `spill_dir`, or under the system's temporary folder where
+/// that is `None`. `CaseTables.values` of such an id reads them from the file
+/// at each access and gives them as they were, so no result changes. The
+/// folder is removed, with its files, when the last `CaseTables` of the call
+/// drops. A write that fails leaves the cells in memory.
 ///
 /// Ids whose `tables` would hold equal columns share one `CaseTables`: the ids
 /// of `"unchanged"`, and ids of `"body"`, `"left_out"` and `"none"`, and of
@@ -270,13 +303,15 @@ enum Packed {
 /// the rows of the body's other parts (`arclog_tables::tables::successors`).
 ///
 /// `IndexError` is raised for an id outside the vocabulary, `ValueError`
-/// where `before` cannot stand before the step, and `RuntimeError` where the
-/// export of a successor's tables leaves out a table, as `step_tables` raises
-/// them.
+/// where `before` cannot stand before the step, and `BudgetReached` where the
+/// export of a successor's tables leaves out a table at a bound that is no
+/// budget of the successor's own request, as `step_tables` raises it. A
+/// budget of the successor's own request gives the successor the kind
+/// `"exhausted"` and not the error.
 #[pyfunction]
-#[pyo3(signature = (decoder, ids, task, case, before=None, rows=false))]
+#[pyo3(signature = (decoder, ids, task, case, before=None, rows=false, spill_dir=None))]
 #[allow(clippy::type_complexity)]
-pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, ids: Vec<u32>, task: String, case: String, before: Option<PyRef<'_, PyCaseTables>>, rows: bool) -> PyResult<(Option<Py<PyCaseTables>>, Vec<(&'static str, String, Option<Py<PyCaseTables>>)>)> {
+pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, ids: Vec<u32>, task: String, case: String, before: Option<PyRef<'_, PyCaseTables>>, rows: bool, spill_dir: Option<std::path::PathBuf>) -> PyResult<(Option<Py<PyCaseTables>>, Vec<(&'static str, String, Option<Py<PyCaseTables>>)>)> {
     let (engine, evidence) = (decoder.decoder(), decoder.task());
     let vocabulary = engine.vocabulary();
     let tokens = ids.iter().map(|&id| vocabulary.token(id).cloned().ok_or_else(|| PyIndexError::new_err(format!("no token with id {id}")))).collect::<PyResult<Vec<_>>>()?;
@@ -288,9 +323,8 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
     let earlier = check_before(before.as_deref(), &task, &case, true, written + 1, Some(index))?;
     let train = decoder.derived(|| train_pairs(evidence));
     let shapes = decoder.derived(|| ShapeRuntime::new(evidence));
-    let (current, each, unchanged) = py.detach(|| {
+    let (current, each, unchanged) = py.detach(|| -> Result<_, LabelingBound> {
         let limits = engine.limits();
-        let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
         let stream = earlier.map(|step| &*step.stream);
         let before_tables = stream.map_or_else(Vec::new, StreamTables::tables);
         // The table of the body in progress, where the call at the decode's last model step gave it as its one table.
@@ -301,15 +335,21 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             let _timed = split::span(Part::SuccessorTables);
             successors_of(engine, &limits, tokens, &before_tables, held)
         };
-        let columns_of = |tables: Vec<(usize, Table)>, queries: Vec<Option<arclog::hash::StableHash>>, program: &Decoder<'_>| {
+        // The export of a successor's tables counts in the request of the successor's own, as its evaluation does.
+        let columns_of = |tables: Vec<(usize, Table)>, queries: Vec<Option<arclog::hash::StableHash>>, program: &Decoder<'_>, own: &Limits| -> Result<(CaseColumns, StreamTables), LabelingBound> {
             let _timed = split::span(Part::SuccessorColumns);
-            step_case_columns_by_assignment_with(&materializer, stream, &evidence_tables, tables, &train, queries, rows, &summaries, assemblies(program))
+            let materializer = Materializer::new(engine.evaluation_inputs().1, own);
+            Ok(step_case_columns_by_assignment_with(&materializer, stream, &evidence_tables, tables, &train, queries, rows, &summaries, assemblies(program)?))
         };
-        let current = found.current.as_ref().map(|table| columns_of(vec![(now.unwrap_or(0), table.clone())], vec![None], engine).0);
+        let current = found.current.as_ref().map(|table| columns_of(vec![(now.unwrap_or(0), table.clone())], vec![None], engine, &limits).map(|made| made.0)).transpose()?;
         let mut unchanged: Option<(CaseColumns, StreamTables)> = None;
         // The copy violations of each id's successor, empty for a refused id.
         let mut copies: Vec<Vec<CopyViolation>> = Vec::with_capacity(found.each.len());
         let mut each: Vec<Result<(&'static str, String, Packed), String>> = Vec::with_capacity(found.each.len());
+        // The cells of the exports that the call keeps in memory for its ids, and the folder of those it keeps on disk, made at the first.
+        let mut resident: u64 = current.as_ref().map_or(0, |columns| cells_bytes(columns));
+        let mut folder: Option<Arc<SpillFolder>> = None;
+        let resident_bound = engine.settings().spill_resident_bytes;
         for successor in found.each {
             let successor = match successor {
                 Ok(successor) => successor,
@@ -319,6 +359,12 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
                     continue;
                 }
             };
+            // An id whose evaluation passed the work cap or the byte budget of its own request has no tables, and the other ids went on.
+            if let Some(bound) = successor.exhausted {
+                copies.push(Vec::new());
+                each.push(Ok(("exhausted", format!("the evaluation passed {bound:?}"), Packed::Exhausted)));
+                continue;
+            }
             let mut notes: Vec<String> = Vec::new();
             let kind = match successor.kind {
                 SuccessorKind::Body => "body",
@@ -332,15 +378,18 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
                 SuccessorKind::Unchanged => "unchanged",
                 SuccessorKind::Finished => "finished",
                 SuccessorKind::NoBody => "none",
+                SuccessorKind::Exhausted => "exhausted",
             };
             notes.extend(successor.tables.iter().filter_map(|table| table.contents.as_ref().err()).map(|fault| format!("fault: {}", fault.message)));
             let note = notes.join("; ");
             let next = &successor.decoder;
+            let own_limits = next.limits();
             let violations = next.take_copy_violations();
             if successor.kind == SuccessorKind::Unchanged {
                 if unchanged.is_none() {
-                    let (columns, _) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), vec![None], next);
-                    let (_, stream) = columns_of(Vec::new(), Vec::new(), next);
+                    let (columns, _) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), vec![None], next, &own_limits)?;
+                    let (_, stream) = columns_of(Vec::new(), Vec::new(), next, &own_limits)?;
+                    resident = resident.saturating_add(cells_bytes(&columns));
                     unchanged = Some((columns, stream));
                 }
                 copies.push(violations);
@@ -352,23 +401,40 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
                 each.push(Ok((kind, note, Packed::Same(first))));
                 continue;
             }
-            let queries = successor.tables.iter().map(|table| match table.point {
-                Point::Relation => table.form.0.first().and_then(|top| next.query_hash(top.0 as usize)),
-                Point::Body { .. } | Point::Evidence => None,
-            }).collect();
+            let queries = successor.tables.iter().map(|table| query_of_table(next, table)).collect::<Result<Vec<_>, _>>()?;
             let own = u32::try_from(successor.tables.len()).expect("fewer than 2^32 tables");
-            let (columns, stream) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), queries, next);
-            let columns = columns.with_copies(&violations);
+            let (columns, stream) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), queries, next, &own_limits)?;
+            // The export that passed a budget of the id's request leaves the id with no tables.
+            if let Some(bound) = exhaustion(&own_limits) {
+                copies.push(violations);
+                each.push(Ok(("exhausted", format!("the export passed {bound:?}"), Packed::Exhausted)));
+                continue;
+            }
+            let mut columns = columns.with_copies(&violations);
+            // The cells of the exports past the resident bound wait on disk, and the result gives them back as they were. A write that fails leaves them in memory.
+            let cells = cells_bytes(&columns);
+            let spilled = if resident.saturating_add(cells) > resident_bound {
+                match spill_cells(&mut columns, &mut folder, spill_dir.as_deref()) {
+                    Ok(spilled) => Some(spilled),
+                    Err(_) => {
+                        resident = resident.saturating_add(cells);
+                        None
+                    }
+                }
+            } else {
+                resident = resident.saturating_add(cells);
+                None
+            };
             copies.push(violations);
-            each.push(Ok((kind, note, Packed::Own(columns, stream, own))));
+            each.push(Ok((kind, note, Packed::Own(columns, stream, own, spilled))));
         }
-        (current, each, unchanged)
-    });
+        Ok((current, each, unchanged))
+    }).map_err(|bound| labeling_bound_reached(py, bound))?;
     for columns in current.iter().chain(unchanged.as_ref().map(|(columns, _)| columns)).chain(each.iter().filter_map(|result| match result {
-        Ok((_, _, Packed::Own(columns, _, _))) => Some(columns),
+        Ok((_, _, Packed::Own(columns, _, _, _))) => Some(columns),
         _ => None,
     })) {
-        complete(columns)?;
+        complete(py, columns)?;
     }
     let _timed = split::span(Part::SuccessorObjects);
     let base = |tokens: usize| earlier.map(|step| Base { case: case.clone(), tokens, tables: step.stream.count() });
@@ -382,20 +448,29 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             Err(refusal) => ("refused", refusal, None),
             Ok((kind, note, Packed::Unchanged)) => (kind, note, unchanged.as_ref().map(|shared| shared.clone_ref(py))),
             Ok((kind, note, Packed::Same(first))) => (kind, note, results[first].2.as_ref().map(|shared| shared.clone_ref(py))),
-            Ok((kind, note, Packed::Own(columns, stream, own))) => (kind, note, Some(Py::new(py, pack(columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own }))?)),
+            Ok((kind, note, Packed::Exhausted)) => (kind, note, None),
+            Ok((kind, note, Packed::Own(columns, stream, own, spilled))) => {
+                let tables = pack(columns, index)?.with_step(Step { stream: Arc::new(stream), bodies: true, token: Some(index), own });
+                (kind, note, Some(Py::new(py, match spilled { Some(spilled) => tables.with_spilled(spilled), None => tables })?))
+            }
         };
         results.push(result);
     }
     Ok((current, results))
 }
 
-/// A `RuntimeError` where the packing of `columns` stopped and left out a
-/// table, which names the stop and each table left out. The columns hold no
-/// row of such a table, so a result made of them could not be told from the
-/// result of a step that gives no table.
-fn complete(columns: &CaseColumns) -> PyResult<()> {
+/// A `BudgetReached` where the packing of `columns` stopped at a bound and left
+/// out a table, which names the bound and each table left out; a
+/// `RuntimeError` where it left out a table and no bound stopped it, or the
+/// stop was a cancellation, which are faults. The columns hold no row of such
+/// a table, so a result made of them could not be told from the result of a
+/// step that gives no table.
+fn complete(py: Python<'_>, columns: &CaseColumns) -> PyResult<()> {
+    // A request past its effort guard is a fault, whatever tables the columns hold.
+    check_effort(py)?;
     match (columns.left_out(), columns.packing_stop()) {
         ([], _) => Ok(()),
+        (left_out, Some(stop)) if !matches!(stop.bound, ReachedBound::Cancelled) => Err(budget_reached(py, stop.bound, left_out)),
         (left_out, stop) => Err(PyRuntimeError::new_err(format!(
             "the export of the tables stopped{} and left out the table of {}",
             stop.map_or_else(String::new, |stop| format!(" at {:?}", stop.bound)),
@@ -449,14 +524,15 @@ pub(crate) fn atom_tables<'py>(py: Python<'py>, decoder: PyRef<'py, PyDecoder>, 
     let found = match key.and_then(|key| memo.get(key)) {
         Some(found) => found,
         None => {
-            let found = std::sync::Arc::new(py.detach(|| {
+            let found = std::sync::Arc::new(py.detach(|| -> Result<_, LabelingBound> {
                 let limits = engine.limits();
                 let operation = engine.clone().with_operation_limits(limits.clone());
                 let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
                 let tables = stream.map_or_else(Vec::new, StreamTables::tables);
-                let fulls = DetFulls::new(tables).with_assemblies(assemblies(engine));
-                arclog_tables::tables::atom_tables::atom_tables(&operation, &atoms, &materializer, &train, &fulls, by_program)
-            }));
+                let fulls = DetFulls::new(tables).with_assemblies(assemblies(engine)?);
+                Ok(arclog_tables::tables::atom_tables::atom_tables(&operation, &atoms, &materializer, &train, &fulls, by_program))
+            }).map_err(|bound| labeling_bound_reached(py, bound))?);
+            check_effort(py)?;
             if let Some(key) = key {
                 memo.keep(key, std::sync::Arc::clone(&found));
             }
@@ -506,18 +582,32 @@ pub(crate) fn step_tables_split(reset: bool) -> Vec<(&'static str, u64, f64)> {
     split::snapshot(reset).into_iter().map(|(name, calls, nanos)| (name, calls, nanos as f64 / 1e9)).collect()
 }
 
+/// The QueryHash of the finished query at `position` of `decoder`: none where
+/// the query has no content; the bound where the hash is refused
+/// ([`LabelingBound`]), which a caller raises and never reads as no hash.
+fn query_hash_at(decoder: &Decoder<'_>, position: usize) -> Result<Option<arclog::hash::StableHash>, LabelingBound> {
+    decoder.query_hash_or_bound(position).transpose()
+}
+
+/// The QueryHash of the query of `table`: none for a body table or an evidence table.
+fn query_of_table(decoder: &Decoder<'_>, table: &Table) -> Result<Option<arclog::hash::StableHash>, LabelingBound> {
+    match (table.point, table.form.0.first()) {
+        (Point::Relation, Some(top)) => query_hash_at(decoder, top.0 as usize),
+        _ => Ok(None),
+    }
+}
+
 /// The QueryHash of each finished `RIGID_DET` form of the program of `decoder`,
-/// by the form's name, by which the hashes of a step name each Pose type.
-fn assemblies(decoder: &Decoder<'_>) -> Assemblies {
-    decoder
-        .program()
-        .value()
-        .forms
-        .iter()
-        .enumerate()
-        .filter_map(|(position, form)| match form {
-            Form::RigidDet(rigid) => Some((rigid.value().name.clone(), decoder.query_hash(position)?)),
-            _ => None,
-        })
-        .collect()
+/// by the form's name, by which the hashes of a step name each Pose type; the
+/// bound where a hash is refused.
+fn assemblies(decoder: &Decoder<'_>) -> Result<Assemblies, LabelingBound> {
+    let mut found = Vec::new();
+    for (position, form) in decoder.program().value().forms.iter().enumerate() {
+        if let Form::RigidDet(rigid) = form {
+            if let Some(hash) = query_hash_at(decoder, position)? {
+                found.push((rigid.value().name.clone(), hash));
+            }
+        }
+    }
+    Ok(found.into_iter().collect())
 }

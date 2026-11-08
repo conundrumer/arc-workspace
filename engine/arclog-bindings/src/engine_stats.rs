@@ -33,18 +33,40 @@ pub(crate) fn engine_stats<'py>(py: Python<'py>, reset: bool) -> PyResult<Bound<
 /// request of the call that returned last.
 ///
 /// The dict holds `work` and `cap`, the units of work that the request counted
-/// and its cap (`docs/engine/synthesis.md#decode-settings`), and `gauges`, a
+/// (its content: the rows its steps read and write) and its cap
+/// (`docs/engine/synthesis.md#decode-settings`), `effort` and `effort_cap`, the
+/// bindings that its searches tried and the guard on them (a request past the
+/// guard raises `arclog.EffortExhausted`), `bytes` and
+/// `byte_cap`, the bytes that the request holds now and its byte budget (the
+/// gauge `request_bytes` gives the most it held), and `gauges`, a
 /// dict from the name of each capped quantity to a dict of `max`, the largest
 /// value the request reached, `cap`, the cap it ran under (0 where it never
 /// gave one), and `hits`, how often it passed the cap. The count is the work
 /// the request did, with each entry that the result cache held charged the
-/// cost its entry recorded. The read costs a few loads and changes nothing.
+/// cost its entry recorded, and the bytes held are those of a request with
+/// empty caches. The read costs a few loads and changes nothing.
+///
+/// A call whose request passes its work cap or its byte budget, and whose
+/// export leaves out tables for that reason, raises `arclog.BudgetReached`
+/// (`step_tables`, `base_tables`, `successor_tables`), which names the bound:
+/// `bound` is the `StopKind` (`RequestWork` or `RequestBytes`), `cap` its cap
+/// as an int, and `tables` the tables left out, each by its relation and the
+/// path of its form. It is no `RuntimeError`, which only a fault of the engine
+/// raises. The stop depends on the call's inputs and the settings
+/// (`request_work_cap`, `request_byte_cap`) alone, so the same call stops
+/// again, and a caller may drop what it asked for and go on. The session's byte
+/// bound is no budget of the request: the session evicts its caches at it and
+/// stops nothing.
 #[pyfunction]
 pub(crate) fn request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
     let Some(request) = arclog::eval::RequestWork::latest() else { return Ok(None) };
     let stats = PyDict::new(py);
     stats.set_item("work", request.count())?;
     stats.set_item("cap", request.cap())?;
+    stats.set_item("bytes", request.byte_count())?;
+    stats.set_item("byte_cap", request.byte_cap())?;
+    stats.set_item("effort", request.effort())?;
+    stats.set_item("effort_cap", request.effort_cap())?;
     let gauges = PyDict::new(py);
     for (gauge, max, cap, hits) in request.gauges().each() {
         let slot = PyDict::new(py);
@@ -55,6 +77,13 @@ pub(crate) fn request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, 
     }
     stats.set_item("gauges", gauges)?;
     Ok(Some(stats))
+}
+
+/// The registry text that the engine embeds as `REGISTRY_TEXT`
+/// (`engine/lib/registry.sexpr`), as it was when this build compiled.
+#[pyfunction]
+pub(crate) fn registry_text() -> &'static str {
+    arclog::registry::REGISTRY_TEXT
 }
 
 /// Where [`work_total`] counts from: the total at its last reset.

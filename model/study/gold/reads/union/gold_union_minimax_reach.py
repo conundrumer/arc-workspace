@@ -1,4 +1,4 @@
-"""The minimax path of each task of one set against the search jobs that reached its tables. Writes minimax-reach-SET.json in work/lm/data-study/gold/gold-union and prints one line per task.
+"""RETIRED for graph files written after the graph dropped its bits: this script reads `minimax_path` and `bits` of graph-tasks-SET.jsonl / graph-prods-SET.jsonl, which gold_union_graph.py no longer writes. It runs only on graph files of earlier rounds. The minimax path of each task of one set against the search jobs that reached its tables. Writes minimax-reach-SET.json in work/lm/data-study/gold/gold-union and prints one line per task.
 
   .venv/bin/python gold_union_minimax_reach.py SET [JOB_PREFIX]
 

@@ -8,7 +8,7 @@ import time
 
 import arclog
 
-SETTINGS = dict(deadline_seconds=10.0, rule_tests=False, table_work_cap=1 << 21, static_pruning=True)
+SETTINGS = dict(rule_tests=False, table_work_cap=1 << 21, static_pruning=True)
 DET_TOK, END_NAME = 1, 'END'
 
 for path in sys.argv[1:]:

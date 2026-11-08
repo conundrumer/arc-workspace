@@ -12,6 +12,7 @@ With --points-per-task N a task keeps at most N of its points, chosen by a hash 
 A row is one (point, id): the id's option values, the id's table vector and the point's values. The columns are in the order of the header's `uses` (the writer's feature names, which
 serving takes as the model's columns). A header without `uses` gives option names, then table names, then point names. A header with `vector_names` (points_write.py --vectors) gives
 rows that are the writer's writing-point vector of the id, rebuilt from the point's `vp` and the id's row of `vo`, with the columns in the order of `vector_names`; NaN is kept as a value.
+The writer's token class and token id (CATEGORICAL_COLUMNS) split as categories, with LightGBM's categorical splits and its default categorical parameters; every other column splits as a number.
 A point is a group. The score of an id is a sum of the trees'
 leaf values. In a group with scores s, p = softmax(s) over the group's ids, and q = softmax over the positive ids only. The loss of a group is -log(sum of p over the positive ids), its
 gradient in s is p - q and its Hessian is p(1 - p), floored at 1e-6. --check compares that gradient with a finite difference of the loss on a real group.
@@ -30,6 +31,8 @@ files are equal where both build a task, so that files of those wheels go in one
 With --shapes N (default 900; 0 leaves them out), the point files' `shapes` records (one per table: hashes and least, mean, most of its shapes) and `tok_tables` records (one per sample: the tables of each
 token) add columns after the others: for chosen shapes, the rank and the median-difference form of a point's table tokens' values (shape_rel.py, which holds the choice and the column fill and which
 serving calls too). The choice reads the train files alone; the model's `uses` hold the column names, and `<out>.shapes.json` holds the chosen shapes. Files with no such records add no column.
+With --shapes-from MODEL.txt.json the shape columns are that model's (its `features.uses`, in order), in place of the choice, so that two fits whose points differ only in their shape values take one
+set of columns. With --pick-only FILE the run makes the choice of --shapes N on the train files, writes it to FILE in the form that --shapes-from reads, and fits nothing.
 """
 import argparse
 import base64
@@ -59,6 +62,14 @@ from split import OUT_OF_SCOPE, is_held_out, out_of_scope
 HELD_FOLDERS = ('points_held-out', 'points_held')  # the folder name, and the one that earlier runs wrote
 FEATURE_FIELDS = ('schema', 'extractor_sha', 'writer_sha', 'wheel', 'point_names', 'option_names', 'table_names', 'uses', 'vector_names', 'vector_point_cols')
 HESSIAN_FLOOR = 1e-6
+CATEGORICAL_COLUMNS = ('token:class', 'token:id')  # the columns that split as categories, not as numbers: a split on them groups tokens by value, never by the order of their ids
+
+
+def categorical_of(names: list[str]) -> list[str]:
+    """The columns of `names` that split as categories, in the order of CATEGORICAL_COLUMNS."""
+    return [n for n in CATEGORICAL_COLUMNS if n in names]
+
+
 SPECIAL = re.compile(r'[\s",:\[\]{}]')  # the characters that LightGBM refuses in a feature name
 type Floats = np.ndarray
 type Ints = np.ndarray
@@ -254,6 +265,7 @@ class Layout:
 
 
 DROP_KINDS: frozenset[str] = frozenset()  # --drop-point-kinds: the point kinds (a point's `kind`, such as KIND) that the fit and the evaluation leave out
+SHAPES_DIR: Path | None = None  # --shapes-dir: the folder of each task's shape records (<task>.shapes.jsonl.zst), in place of `shapes` records in the points files
 TABLE_CHOICE = False  # --table-choice: only the points where two or more ids name a table (the vector's tokg:table is not 0) are kept
 TABLE_RANKER = False  # --table-ranker: only the points where two or more ids name a table and a positive names one; each keeps its table ids alone, and its positives among them
 WRITERS_ALIKE: frozenset[str] = frozenset()  # --writers-alike: writer_sha values whose point files are equal, as a change of the writer's serving code alone leaves them
@@ -370,6 +382,16 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int, shapes: bool = Fal
             raise FitError(f'{path}: --table-choice and --table-ranker read the vector column tokg:table, and the file holds no vectors')
         in_point = set(head.get('vector_point_cols') or [])
         table_at = [name for at, name in enumerate(head['vector_names']) if at not in in_point].index('tokg:table')
+    if shapes and SHAPES_DIR is not None:  # --shapes-dir: the task's shape records stand in a file of their own, and the points file must hold none
+        side = SHAPES_DIR / f'{points_stem(path)}.shapes.jsonl.zst'
+        if side.exists():
+            for rec in records_of(side):
+                if rec.get('record') != 'shapes':
+                    raise FitError(f'{side}: a record other than `shapes`')
+                try:
+                    shape_of[rec['table']] = SR.decode(rec['h'], rec['v'], rec.get('stopped', False))
+                except ValueError as e:
+                    raise FitError(f'{side}: the shapes record of table {rec["table"]}: {e}') from e
     for position, rec in enumerate(records_of(path)):
         kind = rec['record']
         if kind == 'table':
@@ -377,6 +399,8 @@ def kept_of(path: Path, head: dict, per_task: int, seed: int, shapes: bool = Fal
             if vector.shape != (n_table,):
                 raise FitError(f'{path}: table {rec["i"]} has {vector.shape} values; the header names {n_table}')
             tables[int(rec['i'])] = vector
+        elif kind == 'shapes' and shapes and SHAPES_DIR is not None:
+            raise FitError(f'{path}: holds `shapes` records, and --shapes-dir gives the shape records; a fit reads one source')
         elif kind == 'shapes' and shapes:
             try:
                 shape_of[rec['table']] = SR.decode(rec['h'], rec['v'], rec.get('stopped', False))
@@ -832,25 +856,41 @@ def fit(args: argparse.Namespace) -> int:
     fields = feature_fields([heads[points_stem(p)] for p in (*train_files, *dev_files)], frozenset(filter(None, args.wheels_alike.split(','))))
     plan = plan_of([heads[points_stem(p)] for p in (*train_files, *dev_files)])
     layout = layout_of(fields)
-    counts = SR.ShapeCounts() if args.shapes > 0 else None
+    counts = SR.ShapeCounts() if args.shapes > 0 or args.shapes_from else None
     train, train_rows, reader, train_count = plan_rows(train_files, heads, layout, args.points_per_task, args.seed, counts)
     shapes_report: dict[str, Any] | None = None
     sidecar: dict[str, Any] = {}
     if counts is not None:
-        spec, info = SR.kept_spec(counts, args.shapes)
         merged: dict[str, str] = {}
+        if args.shapes_from:  # the shape columns of another fit, in its order: its model's `features.uses`
+            given = json.loads(args.shapes_from.read_text())
+            if 'features' not in given:
+                raise FitError(f'{args.shapes_from}: --shapes-from takes a model\'s .txt.json, whose features.uses give the shape columns in order')
+            spec = SR.Spec.of_names(given['features']['uses'])
+            if spec is None:
+                raise FitError(f'{args.shapes_from}: its features.uses hold no shape column')
+            info = dict(given=str(args.shapes_from), columns=len(spec.names))
+        else:
+            spec, info = SR.kept_spec(counts, args.shapes)
         if spec is not None:
-            before = len(spec.names)
-            spec, merged = merge_shapes(spec, train_files, heads, layout, args.points_per_task, args.seed)
-            assert spec is not None
+            if not args.shapes_from:
+                before = len(spec.names)
+                spec, merged = merge_shapes(spec, train_files, heads, layout, args.points_per_task, args.seed)
+                assert spec is not None
+                info |= dict(columns_before_merge=before, columns=len(spec.names))
             layout = with_shapes(layout, spec)
             reader.layout = layout
             train.columns = len(layout.names)
-            info |= dict(columns_before_merge=before, columns=len(spec.names))
             commits = {heads[points_stem(p)].get('encoder_commit') for p in train_files}
             shapes_report = dict(info, sidecar=str(args.out) + '.shapes.json')
             sidecar = shape_sidecar(spec, merged, info, commits.pop() if len(commits) == 1 else None)
         print(f'shapes: {info}', flush=True)
+    if args.pick_only:  # the choice of the shape columns alone, as a file that --shapes-from reads, and no fit
+        if counts is None or not sidecar:
+            raise FitError('--pick-only needs --shapes N with shape columns chosen from the train files')
+        args.pick_only.write_text(json.dumps(dict(features=dict(uses=[n for n in layout.names if SR.NAME.fullmatch(n)]), shapes=sidecar), indent=1))
+        print(f'pick: {len(sidecar["shapes"])} shapes, {info.get("columns")} columns -> {args.pick_only}', flush=True)
+        return 0
     names = layout.names
     safe = booster_names(names)
     dev, dev_count = load(dev_files, heads, layout, args.points_per_task, args.seed) if dev_files else (None, Counter())
@@ -865,7 +905,9 @@ def fit(args: argparse.Namespace) -> int:
     if args.alpha and (train.drawn is None or not train.drawn.any()):
         print(f'--alpha {args.alpha}: the train points have no drawn count, so the loss has no weight', flush=True)
     train_objective = objective_of(train, args.alpha, args.task_weights)
-    train_set = SequenceDataset(train_rows, label=train.positive, feature_name=safe, params=dict(params, max_bin=255), free_raw_data=True)
+    categorical = booster_names(categorical_of(names))
+    print(f'categorical columns: {categorical}', flush=True)
+    train_set = SequenceDataset(train_rows, label=train.positive, feature_name=safe, categorical_feature=categorical, params=dict(params, max_bin=255), free_raw_data=True)
     train_set.construct()
     reader.release()
     t1 = time.time()
@@ -880,7 +922,7 @@ def fit(args: argparse.Namespace) -> int:
         def dev_loss(scores: Floats, _data: Any) -> tuple[str, float, bool]:
             return 'dev_loss', float(group_terms(np.asarray(scores, np.float64), dev_positive, dev_starts, dev_sizes).loss.mean()), False
 
-        dev_set = lgb.Dataset(dev.matrix, label=dev.positive, reference=train_set, feature_name=safe, free_raw_data=False)
+        dev_set = lgb.Dataset(dev.matrix, label=dev.positive, reference=train_set, feature_name=safe, categorical_feature=categorical, free_raw_data=False)
         reporter = Reporter(args.log_every)
         booster = lgb.train(dict(params, objective=train_objective), train_set, num_boost_round=rounds, valid_sets=[dev_set], valid_names=['dev'], feval=dev_loss,
                             callbacks=[reporter, lgb.early_stopping(args.early_stopping, first_metric_only=True, verbose=False)])
@@ -904,7 +946,7 @@ def fit(args: argparse.Namespace) -> int:
         early_stopping_rounds=None if dev is None else args.early_stopping, max_rounds=rounds, dev_loss_by_round=curve, dev=got, dev_uniform=base,
         points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=[str(f) for f in args.points], matrix=sizes,
         points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=[] if dev is None else sorted(set(dev.tasks)),
-        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), wheels_alike=alike, out_of_scope=dict(file=str(OUT_OF_SCOPE), tasks=out_of_scope()), shapes=shapes_report, peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
+        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, categorical=categorical, header=fields), wheels_alike=alike, out_of_scope=dict(file=str(OUT_OF_SCOPE), tasks=out_of_scope()), shapes=shapes_report, peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
     Path(str(out) + '.json').write_text(json.dumps(report, indent=1))
     print(f'wrote {out} and {out}.json; peak RSS {peak_rss_mib():.0f} MiB')
     return 0
@@ -951,6 +993,9 @@ def main() -> int:
     ap.add_argument('--wheels-alike', default='', help='W,W: engine wheels whose point files go in one fit (header wheel, such as site-exp61,site-exp62)')
     ap.add_argument('--wheels-alike-check', nargs='+', default=[], help='with --wheels-alike: the JSON files of run/points_alike.py that show the wheels give equal points')
     ap.add_argument('--shapes', type=int, default=900, help='the column budget of the shape columns (the points files\' `shapes` and `tok_tables` records; shape_rel.py): the shapes most often unequal across a training point\'s table tokens, 6 columns each, 2 for a stable shape (0: none)')
+    ap.add_argument('--shapes-dir', type=Path, help='a folder of per-task shape records, <task>.shapes.jsonl.zst (the `shapes` records of feature-encoder shapes-refresh), which the fit reads with each points file; a points file must then hold no `shapes` record')
+    ap.add_argument('--pick-only', type=Path, help='write the choice of the shape columns (--shapes N on the train files) to this file, in the form --shapes-from reads, and fit nothing')
+    ap.add_argument('--shapes-from', type=Path, help='the shape columns of another fit, from its model\'s .txt.json (features.uses), in place of the choice of --shapes: two fits that must differ only in their points\' shape values take one set of columns')
     ap.add_argument('--rounds', type=int, help='with dev files, the most rounds (default 2000); with none, the count of rounds, which must be given')
     ap.add_argument('--early-stopping', type=int, default=50, help='stop after this many rounds without a better dev loss')
     ap.add_argument('--log-every', type=int, default=50)
@@ -963,7 +1008,8 @@ def main() -> int:
     ap.add_argument('--feature-fraction', type=float, default=0.8)
     ap.add_argument('--threads', type=int, default=int(os.environ.get('ARC_HEAVY_CPUS', '1')))
     args = ap.parse_args()
-    global DROP, DROP_NAMES, DROP_KINDS, TABLE_CHOICE, TABLE_RANKER, WRITERS_ALIKE
+    global DROP, DROP_NAMES, DROP_KINDS, TABLE_CHOICE, TABLE_RANKER, WRITERS_ALIKE, SHAPES_DIR
+    SHAPES_DIR = args.shapes_dir
     WRITERS_ALIKE = frozenset(x for x in args.writers_alike.split(',') if x)
     DROP = tuple(x for x in args.drop_prefixes.split(',') if x)
     DROP_KINDS = frozenset(x for x in args.drop_point_kinds.split(',') if x)

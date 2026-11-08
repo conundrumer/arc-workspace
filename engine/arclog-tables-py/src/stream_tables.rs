@@ -9,7 +9,7 @@ use arclog::harness::{corpus_threads, run_on_workers};
 use arclog::registry::Registry;
 use arclog::stream::corpus::fault_line;
 use arclog::stream::{DecodeSettings, Emitter, Vocabulary};
-use arclog_bindings::{constructions, PyDecodeSettings};
+use arclog_bindings::{check_effort, constructions, PyDecodeSettings};
 use arclog_tables::columns::{case_columns_in,cut_case_columns_in};
 use arclog::eval::join::Materializer;
 use arclog_tables::tables::{evidence_tables, Points};
@@ -73,7 +73,9 @@ fn check_bases(bases: Option<Vec<Option<usize>>>, streams: usize) -> PyResult<Ve
 /// then the fault line of each stream that faults or lies past `step_cap`,
 /// which gives no tables, in the form of `corpus_streams`. A unit that panics
 /// gives the one line `<task> <case>: the replay panicked: <message>` and no tables. The call runs with the
-/// GIL released, but for the build of each `CaseTables`.
+/// GIL released, but for the build of each `CaseTables`. `arclog.EffortExhausted`
+/// is raised, and no tables are given, where a request of the replay or of the
+/// build of the tables passed its effort guard.
 ///
 /// `bases` is `None`, or gives one entry for each stream: `None`, or the index
 /// of another stream of the call, its base. `ValueError` is raised, before any
@@ -160,6 +162,8 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
             step_cap,
         )
     });
+    // A request that passed its effort guard gives no tables.
+    check_effort(py)?;
     let outs = replayed.pop().expect("a result for the one solver");
     // The streams share one session where every stream gives its replay: a unit that panicked is replayed stream by stream.
     let one_session = outs.iter().all(Result::is_ok);
@@ -189,6 +193,7 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
             })
         })
         .into_iter();
+    check_effort(py)?;
     let (mut tables, mut ended, mut faults) = (Vec::new(), Vec::new(), Vec::new());
     for (case, out) in names.iter().zip(&outs) {
         match out {

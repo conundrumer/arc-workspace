@@ -276,7 +276,7 @@ SETTINGS = None
 def settings():
     global SETTINGS
     if SETTINGS is None:
-        SETTINGS = arclog.DecodeSettings(deadline_seconds=10.0, table_work_cap=1048576 * 16, rule_tests=False)
+        SETTINGS = arclog.DecodeSettings(table_work_cap=1048576 * 16, rule_tests=False)
     return SETTINGS
 
 

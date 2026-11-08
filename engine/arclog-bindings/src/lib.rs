@@ -14,7 +14,7 @@
 //! here into the tables code would not compile. `arclog-tables-py` takes
 //! these items of this crate, which are `pub`: [`Names`], [`PyDecodeSettings`],
 //! [`PyReplayProgress`], [`Progress`], [`walk_corpus`], [`PyConsistencyKind`],
-//! [`PyDecoder`] and [`constructions`].
+//! [`PyDecoder`], [`study_error`] and [`constructions`].
 
 mod case_files;
 mod corpus;
@@ -37,7 +37,7 @@ pub use names::Names;
 pub use results::PyConsistencyKind;
 pub use settings::PyDecodeSettings;
 pub use study::PyStudyProgram;
-pub use errors::RecordedIdentityError;
+pub use errors::{budget_reached, check_effort, faulted, labeling_bound_reached, refused, study_error, BudgetReached, CheckRefused, EffortExhausted, EngineFault, LabelingBoundReached, RecordedIdentityError};
 pub use mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 
 use arclog::eval::instance::Constructions;
@@ -73,12 +73,18 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.class::<streams::PyCaseStream>()?;
     names.class::<case_files::PyCaseFiles>()?;
     names.value("Refusal", module.py().get_type::<errors::Refusal>().into_any())?;
+    names.value("CheckRefused", module.py().get_type::<errors::CheckRefused>().into_any())?;
+    names.value("LabelingBoundReached", module.py().get_type::<errors::LabelingBoundReached>().into_any())?;
     names.value("RecordedIdentityError", module.py().get_type::<errors::RecordedIdentityError>().into_any())?;
+    names.value("EngineFault", module.py().get_type::<errors::EngineFault>().into_any())?;
     names.value("Fault", module.py().get_type::<errors::Fault>().into_any())?;
+    names.value("EffortExhausted", module.py().get_type::<errors::EffortExhausted>().into_any())?;
+    names.value("BudgetReached", module.py().get_type::<errors::BudgetReached>().into_any())?;
     names.function(wrap_pyfunction!(decoder::step_batch_py, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::engine_stats, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::request_stats, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::work_total, module)?)?;
+    names.function(wrap_pyfunction!(engine_stats::registry_text, module)?)?;
     names.class::<PyReplayProgress>()?;
     names.function(wrap_pyfunction!(streams::corpus_streams, module)?)?;
     names.function(wrap_pyfunction!(study::empty_gold_json, module)?)?;

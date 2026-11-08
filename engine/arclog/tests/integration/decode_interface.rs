@@ -10,7 +10,7 @@ use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::decode::{step_batch, Consistency, Decoder, Refusal, Projections};
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
-use arclog::eval::{Caps, ReachedBound, RelationValue};
+use arclog::eval::{Caps, ReachedBound, RelationValue, RequestWork};
 use arclog::judge::candidates::{PairCandidates, Section, World};
 use arclog::program::ProgramRelation;
 use arclog::relations::Relation;
@@ -312,4 +312,62 @@ fn det_admission_keeps_a_keyed_model_pick_available() {
     // The unkeyed ONE would have two models. Its open key must stay writable.
     let mut decoder = decoder(&inputs);
     walk(&mut decoder, &model_tokens("(DET &pick (ex_input *E *P *Col) (ONE E P))\n"));
+}
+
+/// Steps `decoder` through `tokens`, and asks for the mask before each token,
+/// as a sampler does.
+fn walk_masked(decoder: &mut Decoder<'_>, tokens: &[Token]) {
+    for token in tokens {
+        let _ = decoder.admissible();
+        decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?}: {refusal:?}"));
+    }
+}
+
+/// The units of work that the request counts for the sub-body of the last
+/// clause of `arclog`, whose tokens but the last the decode has stepped, with
+/// the mask asked before each token where `masked`.
+fn sub_body_work(arclog: &str, masked: bool) -> u64 {
+    let inputs = inputs(INPUT, Caps::CORPUS);
+    let mut decoder = decoder(&inputs);
+    let tokens = model_tokens(arclog);
+    let (end, prefix) = tokens.split_last().expect("a stream");
+    assert_eq!(*end, Token::Control(Control::End));
+    if masked {
+        walk_masked(&mut decoder, prefix);
+    } else {
+        walk(&mut decoder, prefix);
+    }
+    decoder.counts().expect("a clause in progress");
+    RequestWork::latest().expect("the request of the call").count()
+}
+
+#[test]
+fn the_work_of_a_form_alone_is_its_work_in_the_stream() {
+    const FIRST: &str = "(RULE &first (input *P *Col))\n";
+    const UNRELATED: &str = "(RULE &unrelated (input *P *Col) (input (:P *Q) Col))\n";
+    const SECOND: &str = "(RULE &second (&first *P *Col))\n";
+    // Each form with the streams that hold it: the forms it reads, then it, alone, and a stream with a form it does not read, with the mask asked at each token.
+    let cases = [
+        (format!("{FIRST}(RULE &output (&first *P *Col))\n"), format!("{FIRST}{UNRELATED}(RULE &output (&first *P *Col))\n")),
+        (format!("{FIRST}{SECOND}(RULE &output (&second *P *Col))\n"), format!("{FIRST}{UNRELATED}{SECOND}(RULE &output (&second *P *Col))\n")),
+        (format!("{FIRST}(RULE &output (&first *P *Col) (&first (:P *Q) Col))\n"), format!("{UNRELATED}{FIRST}(RULE &output (&first *P *Col) (&first (:P *Q) Col))\n")),
+    ];
+    for (alone, stream) in &cases {
+        let alone_work = sub_body_work(alone, false);
+        assert!(alone_work > 0, "the form counts some work: {alone}");
+        assert_eq!(sub_body_work(stream, true), alone_work, "the work of the form in its stream: {stream}");
+    }
+}
+
+#[test]
+fn the_work_of_a_body_is_the_same_in_any_written_order_of_its_conjuncts() {
+    const READS: &str = "(RULE &first (input *P *Col))\n(RULE &second (&first *P *Col))\n";
+    let orders = [
+        "(RULE &output (&first *P *Col) (&second P Col) (input P Col))\n",
+        "(RULE &output (input *P *Col) (&second P Col) (&first P Col))\n",
+        "(RULE &output (&second *P *Col) (input P Col) (&first P Col))\n",
+    ];
+    let works: Vec<u64> = orders.iter().map(|order| sub_body_work(&format!("{READS}{order}"), false)).collect();
+    assert!(works[0] > 0, "the body counts some work");
+    assert!(works.iter().all(|work| *work == works[0]), "the work of each written order of one body: {works:?}");
 }

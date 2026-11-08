@@ -33,8 +33,11 @@ impl Pool {
     }
 
     /// `f` of each of `items`, in parallel, in the order of `items`.
+    ///
+    /// A call inside an [`super::uncounted`] scope runs its tasks in that scope.
     pub fn map<T: Sync, R: Send>(&self, items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
-        self.threads.install(|| items.par_iter().map(|item| f(item)).collect())
+        let uncounted = super::values::is_uncounted();
+        self.threads.install(|| items.par_iter().map(|item| if uncounted { super::uncounted(|| f(item)) } else { f(item) }).collect())
     }
 }
 

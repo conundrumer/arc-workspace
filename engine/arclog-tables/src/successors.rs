@@ -51,6 +51,10 @@ pub enum SuccessorKind {
     /// After the token no clause is in progress, or its body is empty, and no
     /// form finished: no table.
     NoBody,
+    /// The evaluation of the successor passed the work cap or the byte budget
+    /// that each successor has of its own: the successor has no tables, and the
+    /// other successors went on ([`Successor::exhausted`]).
+    Exhausted,
 }
 
 /// The decode after one token, and the tables after it.
@@ -66,6 +70,11 @@ pub struct Successor<'a> {
     /// kind [`SuccessorKind::Finished`] with no table, names one, and only
     /// such a successor is named.
     pub same_as: Option<usize>,
+    /// The budget that the evaluation of this successor passed, where it
+    /// passed one: the request work cap or the request byte budget of the
+    /// successor's own request. Then `kind` is [`SuccessorKind::Exhausted`] and
+    /// `tables` is empty.
+    pub exhausted: Option<arclog::eval::ReachedBound>,
 }
 
 /// What [`successor_tables`] gives.
@@ -83,8 +92,11 @@ const EMPTY: Point = Point::Body { conjuncts: 0, sites: 0 };
 
 /// The successor of each of `tokens` at the state of `decoder`, and the
 /// table of the body in progress. Each successor's decode is
-/// [`Decoder::successor`]'s, under `limits`, which every evaluation of the
-/// call shares. Its tables are those that [`step_tables`] gives at that decode
+/// [`Decoder::successor`]'s. The evaluation of its tables runs under a request
+/// of its own, with the work cap and the byte budget of `limits`
+/// ([`Limits::for_candidate`]), so that a successor that passes one gets no
+/// tables ([`SuccessorKind::Exhausted`]) and the other successors go on; the
+/// evaluations before the tokens share `limits`. Its tables are those that [`step_tables`] gives at that decode
 /// with [`Points::All`], but for a token that leaves the point of the body as
 /// it was, where they are the table of the successor body
 /// ([`SuccessorKind::Body`]), or of the body in progress where the body is as
@@ -127,8 +139,10 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
     let mut held_at: StableHashMap<(Vec<u8>, Point), usize> = StableHashMap::default();
     for token in tokens {
         // The operation's decode, so that the successor's consistency test counts in the call's request.
+        // The tables of the successor count in a request of the successor's own.
+        let candidate = limits.for_candidate();
         let next = match operation.successor(token) {
-            Ok(next) => next.with_operation_limits(limits.clone()),
+            Ok(next) => next.with_operation_limits(candidate.clone()),
             Err(refusal) => {
                 each.push(Err(refusal));
                 continue;
@@ -156,7 +170,10 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
                         Some(contents) => Some(Table { form: form.clone(), point: after, contents: contents.clone() }),
                         None => {
                             let table = body_table_at(&next, after, earlier, &names);
-                            if let (Some(key), Some(table)) = (key, &table) {
+                            // The contents of an evaluation that passed a budget are the successor's alone.
+                            if let (Some(key), Some(table)) = (key, &table)
+                                && !candidate.request.is_past_cap()
+                            {
                                 evaluated.insert(key.source, table.contents.clone());
                             }
                             table
@@ -166,8 +183,11 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
                 }
             }
         };
+        // A successor whose evaluation passed a budget has no tables.
+        let exhausted = exhaustion(&candidate);
+        let (kind, tables) = if exhausted.is_some() { (SuccessorKind::Exhausted, Vec::new()) } else { (kind, tables) };
         // A caller exports a relation table with the QueryHash that the successor's own decode gives, and the table of an unchanged body with no step of its own, so neither takes part.
-        let named = kind != SuccessorKind::Unchanged && tables.iter().all(|table| matches!(table.point, Point::Body { .. }));
+        let named = kind != SuccessorKind::Unchanged && kind != SuccessorKind::Exhausted && tables.iter().all(|table| matches!(table.point, Point::Body { .. }));
         let same_as = if named {
             let found = body_key.as_ref().and_then(|key| held_at.get(key).copied()).or_else(|| firsts.iter().copied().find(|&first| each[first].as_ref().is_ok_and(|first| same_tables(&first.tables, &tables, limits.request.gauges()))));
             if found.is_none() {
@@ -180,9 +200,22 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
         } else {
             None
         };
-        each.push(Ok(Successor { decoder: next, kind, tables, same_as }));
+        each.push(Ok(Successor { decoder: next, kind, tables, same_as, exhausted }));
     }
     Successors { current, each }
+}
+
+/// The budget that `limits` passed: the request work cap, or the request byte
+/// budget, or `None` where it passed neither.
+pub fn exhaustion(limits: &Limits) -> Option<arclog::eval::ReachedBound> {
+    let request = &limits.request;
+    if request.count() > request.cap() {
+        Some(arclog::eval::ReachedBound::RequestWork { cap: request.cap() })
+    } else if request.is_past_byte_budget() {
+        Some(arclog::eval::ReachedBound::RequestBytes { cap: request.byte_cap() })
+    } else {
+        None
+    }
 }
 
 /// The most rows of a relation that [`same_relation`] compares row by row;

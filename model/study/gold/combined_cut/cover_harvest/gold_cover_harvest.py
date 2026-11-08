@@ -9,7 +9,7 @@ HARVEST_MARGIN=0.5 makes a trial stand where its worst form is that many bits un
 """
 import glob, json, os, re, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(HERE + '/../dedup-final')
+sys.path.append('/Users/davidlu/code/arc-workspace/model/study/gold/reads/union')  # gold_final_dedup.py
 import gold_final_dedup as F
 from gold_final_dedup import matches, form_tables, relations, text_of, vsha, say
 import gold_cheapest_prune as P

@@ -95,6 +95,7 @@ dependencies = [
  "arclog-tables",
  "pyo3",
  "serde_json",
+ "zstd",
 ]
 
 [[package]]

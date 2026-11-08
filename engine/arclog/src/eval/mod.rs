@@ -61,7 +61,7 @@ pub use driver::FormBodies;
 pub use lookup::{input_relation, output_relation, relation_of};
 pub use models::ModelsEnd;
 pub(crate) use values::{tally_counts, tally_gauges, tally_table};
-pub use values::{ambient, BodyValue, Caps, Cancellation, Charged, Cost, Gauge, Gauges, GridValue, Hit, Limits, Outcome, ReachedBound, RelationValue, RequestWork, RowReserve, RunFault, Stop, TableWork, REQUEST_WORK_CAP};
+pub use values::{adopt_fault_sink, ambient, fault_sink, take_effort_fault, FaultSinkHandle, uncounted, AssignmentScope, BodyValue, ByteCaps, ByteSpan, Caps, Cancellation, Charged, Cost, EffortFault, Gauge, Gauges, GridValue, Hit, Limits, Outcome, ReachedBound, RelationValue, RequestWork, RunFault, Stop, TableWork, ASSIGNMENT_BYTES_CAP, CANDIDATE_BYTES_CAP, EFFORT_CAP, PREFIX_CONTENT_CAP, REQUEST_BYTES_CAP, REQUEST_WORK_CAP};
 
 use crate::check::CheckedProgram;
 use crate::hash::StableHashMap;
@@ -254,8 +254,9 @@ impl Evaluation<'_> {
     /// `docs/engine/synthesis.md#factorized-bodies` gives. The kept
     /// conjuncts' relation holds the clause's columns whose labels they
     /// hold, as [`ir::compile_conjuncts`] gives. Where the kept conjuncts do
-    /// not compile, this gives a [`RunFault`] at `form`.
+    /// not compile, this gives a [`RunFault`] at `form`. A factor of more
+    /// than one model that the body reads takes its first model.
     pub fn body(&self, form: &crate::program::path::NodePath, kept: &[u32], example: Option<Example>) -> Outcome<BodyValue> {
-        Driver::new(self).body(form, kept, example).map(BodyValue)
+        Driver::taking_first_models(self).body(form, kept, example).map(BodyValue)
     }
 }

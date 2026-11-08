@@ -52,7 +52,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde_json::{json, Value};
 
@@ -88,22 +87,24 @@ pub const SCHEMA: &str = "arclog-empty-gold-v1";
 /// original gold with the reason, or the original gold of the whole task
 /// with the reason, and the lint. `Err` only where the task file does not
 /// read. A panic keeps the original gold of the whole task, with the panic's
-/// message as the reason, and gives no case.
-pub fn empty_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Duration>, constructions: &Constructions) -> Result<Value, String> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| task_gold(corpus, tasks, id, deadline, constructions))).unwrap_or_else(|payload| {
+/// message as the reason, and gives no case. Each request of the filter runs
+/// under `request_work_cap`, or under the default of
+/// [`DecodeSettings`] where it is `None`.
+pub fn empty_gold(corpus: &Path, tasks: &Path, id: &str, request_work_cap: Option<u64>, constructions: &Constructions) -> Result<Value, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| task_gold(corpus, tasks, id, request_work_cap, constructions))).unwrap_or_else(|payload| {
         let reason = format!("the filter panicked: {}", crate::harness::panic_message(&*payload).unwrap_or("a payload that is not a message"));
         Ok(json!({"schema": SCHEMA, "task": id, "selection": "original", "reason": reason,
             "cases": [], "skipped_cases": [], "singleton_double_read_lint": {"status": "unavailable", "reason": reason, "findings": []}}))
     })
 }
 
-fn task_gold(corpus: &Path, tasks: &Path, id: &str, deadline: Option<Duration>, constructions: &Constructions) -> Result<Value, String> {
+fn task_gold(corpus: &Path, tasks: &Path, id: &str, request_work_cap: Option<u64>, constructions: &Constructions) -> Result<Value, String> {
     let (task, _) = read_task_files(tasks, id)?;
     let registry = Registry::get();
     let program_settings = DecodeSettings::default();
     let vocabulary = Vocabulary::new(registry, &program_settings);
     let session = corpus_session();
-    let evaluator = Evaluator { task: &task, session: &session, registry, constructions, settings: DecodeSettings { deadline, ..program_settings } };
+    let evaluator = Evaluator { task: &task, session: &session, registry, constructions, settings: DecodeSettings { request_work_cap: request_work_cap.unwrap_or(program_settings.request_work_cap), ..program_settings } };
     let streams = match solver_streams(corpus, id, WantedCases::Cases, &vocabulary, false) {
         Ok(streams) => streams,
         Err(fault) => {

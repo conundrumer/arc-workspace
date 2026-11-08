@@ -39,7 +39,6 @@ for t in sorted(set(ok) | set(nk)):
     c['new queries holding several idents'] += sum(len(p['idents']) > 1 for p in np_[t])
     c['new capped tables'] += sum(r.get('capped', False) for r in nt[t])
     c['old OR tables'] += sum(r['productions'] > 1 for r in ot[t]); c['new OR tables'] += sum(r['productions'] > 1 for r in nt[t])
-    c['old kit_unreachable'] += sum(r['kit_unreachable'] for r in ot[t]); c['new kit_unreachable'] += sum(r['kit_unreachable'] for r in nt[t])
     where = collections.defaultdict(set)
     for r in nt[t]:
         for m in r['members']: where[m].add(r['table'])

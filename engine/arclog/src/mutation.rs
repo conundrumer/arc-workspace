@@ -25,7 +25,7 @@ use crate::registry::Registry;
 use crate::resolver::registry_columns::typed_columns;
 use crate::safety::{bound_labels, conjunct_label_set};
 use crate::stream::DecodeSettings;
-use crate::study::{StudyProgram, StudyStream};
+use crate::study::{StudyError, StudyProgram, StudyStream};
 use crate::types::{FormTypes, ValueType, use_label};
 use edit::AtomEdit;
 use serde_json::{Value, json};
@@ -77,20 +77,30 @@ impl DrawStats {
         *self.counts.entry(reason.into()).or_default() += 1;
     }
 
+    /// Counts a refusal that is no check's, by the text of `message` before
+    /// its first colon.
     fn refusal(&mut self, stage: &str, message: &str) {
-        // Keep engine check names, rather than collapsing all invalid choices.
-        let reason = if let Some(rest) = message.split("Check(").nth(1) {
-            rest.split(')').next().unwrap_or("unknown").to_string()
-        } else {
-            message
-                .lines()
-                .next()
-                .unwrap_or("unknown")
-                .split(':')
-                .next()
-                .unwrap_or("unknown")
-                .to_string()
-        };
+        let reason = message
+            .lines()
+            .next()
+            .unwrap_or("unknown")
+            .split(':')
+            .next()
+            .unwrap_or("unknown")
+            .to_string();
+        self.refused(stage, &reason, message);
+    }
+
+    /// Counts a refusal by the engine check that gave it, rather than
+    /// collapsing all invalid choices.
+    fn check_refusal(&mut self, stage: &str, error: &StudyError) {
+        match error.first_check_error() {
+            Some((check, _)) => self.refused(stage, &format!("{check:?}"), &error.to_string()),
+            None => self.refusal(stage, &error.to_string()),
+        }
+    }
+
+    fn refused(&mut self, stage: &str, reason: &str, message: &str) {
         let key = format!("{stage}:{reason}");
         self.count(&key);
         let examples = self.examples.entry(key).or_default();
@@ -360,9 +370,6 @@ impl StudyProgram {
             "domain_primitive_values".into(),
             sites.iter().map(|v| v.len() as u64).sum(),
         );
-        // The wall-clock deadline of the search runs from here.
-        #[allow(clippy::disallowed_methods)]
-        let started = std::time::Instant::now();
         let mut domain = CompletionDomain {
             gold: self,
             point,
@@ -377,12 +384,12 @@ impl StudyProgram {
             requested: count,
             deletion_only: operation == "delete",
             expanded,
-            started,
+            nodes: 0,
             stopped: false,
         };
         domain.fair_visit(k, &mut rng)?;
         if domain.stopped {
-            domain.stats.count("domain_search_stopped:Deadline");
+            domain.stats.count("domain_search_stopped:NodeCap");
         } else if domain.output.len() < count {
             domain.stats.count("domain_exhausted");
         }
@@ -422,7 +429,8 @@ struct CompletionDomain<'a> {
     requested: usize,
     deletion_only: bool,
     expanded: bool,
-    started: std::time::Instant,
+    /// The search nodes visited, under `settings.mutation_node_cap`.
+    nodes: u64,
     stopped: bool,
 }
 
@@ -440,8 +448,6 @@ struct ChoiceFrame {
 }
 
 impl CompletionDomain<'_> {
-    // The search stops at the wall-clock deadline of its settings.
-    #[allow(clippy::disallowed_methods)]
     fn fair_visit(&mut self, k: usize, rng: &mut Rng) -> Result<(), String> {
         // V6 schedules one argument bucket: every distinct variable or zero
         // replacement gets one ticket within it. Giving all variables one
@@ -494,14 +500,11 @@ impl CompletionDomain<'_> {
             // bucket exhausted. Failures are search constraints, not draws.
             while let Some(mut cursor) = roots.pop_front() {
                 while self.output.len() == before && !cursor.frames.is_empty() {
-                    if self
-                        .settings
-                        .deadline
-                        .is_some_and(|d| self.started.elapsed() >= d)
-                    {
+                    if self.nodes >= self.settings.mutation_node_cap {
                         self.stopped = true;
                         return Ok(());
                     }
+                    self.nodes += 1;
                     self.stats.count("domain_search_nodes");
                     let frame = cursor.frames.last_mut().unwrap();
                     if frame.remaining == 0 {
@@ -586,7 +589,7 @@ impl CompletionDomain<'_> {
         ) {
             Ok(checked) => checked,
             Err(error) => {
-                self.stats.refusal("domain_check_excluded", &error);
+                self.stats.check_refusal("domain_check_excluded", &error);
                 return Ok(());
             }
         };
@@ -600,7 +603,7 @@ impl CompletionDomain<'_> {
             return Ok(());
         }
         if let Err(error) = checked.check_preserved_name_binding(self.registry, self.settings, &mut self.cache) {
-            self.stats.refusal("domain_written_binding_excluded", &error);
+            self.stats.check_refusal("domain_written_binding_excluded", &error);
             return Ok(());
         }
         // Domain failures do not fill a draw or quota: the existing suffix

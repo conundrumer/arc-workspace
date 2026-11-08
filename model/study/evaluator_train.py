@@ -729,8 +729,6 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest, test_rows=False
             # Request the bounded full-row packer; never inflate a decode cap
             # or reconstruct values from counts/projections in Python.
             kwargs['full_rows'] = True
-            kwargs['full_rows_selector'] = lambda native: select_train_full_rows(
-                ev, native, own, ntrain=ntrain, ntest=held_test, all_assignments=all_assignments)
             result = ev.replay_program(*args, **kwargs)
             if saved:
                 raise Incomplete('case TRAIN collection exceeded its single replay contract')
@@ -797,7 +795,7 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest, test_rows=False
                 output['reason'] = 'case native table lacks required kept TRAIN entries'
             if item['selector']['fact'] == 'ex_input':
                 output['input'] = _input_train(packet)
-        except (ValueError, KeyError, IndexError, TypeError) as error:
+        except (ev.arclog.Refusal, ValueError, KeyError, IndexError, TypeError) as error:
             output.update(status='unknown', reason=str(error), error_type=type(error).__name__)
         if output['status'] != 'complete':
             gaps.append(dict(kind='train_table', table_id=item['table_id'],
@@ -815,7 +813,6 @@ def _acquire_case_train(ev, record, case_context, ntrain, ntest, test_rows=False
                      packing=dict(full_rows=True,
                                   native_full_rows=saved.get('replay', {}).get('engine_report', {}).get('full_rows'),
                                   source='native gold_tables packing',
-                                  selection=saved.get('replay', {}).get('packing_selection'),
                                   projection_cap_changed=False)))
 
 

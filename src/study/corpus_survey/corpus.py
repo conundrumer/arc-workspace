@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
+from arclog_convert.readback import read_checked
 from study.corpus_survey import trees
 from study.corpus_survey.bodies import Body, bodies
 from study.corpus_survey.trees import Node
@@ -42,7 +43,7 @@ class Corpus:
 def corpus() -> Corpus:
     gen = trees.gen_dir()
     stems = tuple(trees.stems(gen))
-    text = {s: (gen / f"{s}.arclog").read_text() for s in stems}
+    text = {s: read_checked(gen / f"{s}.arclog") for s in stems}
     return Corpus(gen, stems, {s: trees.arclog(gen, s) for s in stems}, text)
 
 

@@ -19,4 +19,13 @@ MAIN = main_checkout(Path(__file__).resolve().parents[3])
 GEN = Path(os.environ.get('CONTRACTS_GEN', MAIN / 'work/arclog/gen'))  # the solvers, as .arclog and .arcdata files
 DATA = Path(os.environ.get('CONTRACTS_DATA', MAIN / 'model/contracts'))  # holds cache/ and corpus/
 REGISTRY = MAIN / 'engine/lib/registry.sexpr'
+
+
+def read_gen(path):
+    """The text of the file `path` of a gen/ directory, read through `arclog_convert.readback.read_checked` of the main checkout: it raises `Stale` where the file is not current."""
+    import sys
+    if str(MAIN / 'src') not in sys.path:
+        sys.path.insert(0, str(MAIN / 'src'))
+    from arclog_convert.readback import read_checked
+    return read_checked(Path(path))
 TASKS = MAIN / 'data/tasks'

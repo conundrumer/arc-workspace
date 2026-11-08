@@ -8,9 +8,11 @@ With no file, checks every arclog and arcdata file under gen/ of
 `arclog_convert.out` and every arcscene file directly under
 `arclog_convert.out`. An arcdata file reads the names
 of the arclog file of its stem, and an arcscene file reads the arclog and
-arcdata files of its stem under gen/. Prints each
+arcdata files of its stem under gen/. The command is `arclog_convert.lint_cli`: a file under
+gen/ is read through `arclog_convert.readback.read_checked`, and one that is not current gets the violation `stale`.
+Prints each
 violation as `file:line: code: message`, four per code over more than 20
-files unless --all, then a count per code. The reader of the text
+files unless --all, then a count per code; the exit status is 1 where there is a violation. The reader of the text
 (`arclog_convert.lint_read`) and the analysis of its alternatives
 (`arclog_convert.lint_alts`) are modules of their own.
 """
@@ -19,6 +21,7 @@ from __future__ import annotations
 import re
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -30,6 +33,17 @@ from arclog_convert.lint_source import bare_read_source
 from arclog_convert.lib import ALGEBRA_MODES, DET_COLS, PROPOSER_COLS, SIGNATURE, Lib, pascal, takes_set_mark
 
 GEN = out() / "gen"
+
+
+READER: Callable[[Path], str] = Path.read_text
+"""How `read_file` reads a file. `arclog_convert.lint_cli` sets it to the check of the files under `GEN`."""
+
+
+def read_file(path: Path) -> str:
+    """The text of the file `path`, as `READER` reads it."""
+    return READER(path)
+
+
 FACTS = {"input": ["P", "Col"], "ex_input": ["E", "P", "Col"], "ex_output": ["E", "P", "Col"]}
 OPS = {"=", "!=", "<", "<=", ">", ">="}
 FORMS = {"OR", "IF", "ALL", "NOT"}
@@ -125,7 +139,7 @@ class Scope:
 class Linter:
     def __init__(self, path: Path, text: str | None = None, pre: bool = True):
         self.path = path
-        self.text = path.read_text() if text is None else text
+        self.text = read_file(path) if text is None else text
         # a first pass over the file, for the columns each alt's blocks declare
         self.pre: Linter | None = None
         if pre and path.suffix == ".arclog":
@@ -178,7 +192,7 @@ class Linter:
                 data = arclog.with_suffix(".arcdata")
                 if data.exists():
                     try:
-                        self.imported.params = {x.items[1].text for x in read(data.read_text())
+                        self.imported.params = {x.items[1].text for x in read(read_file(data))
                                                 if isinstance(x, L) and x.head == "param" and len(x.items) > 1
                                                 and isinstance(x.items[1], Sym)}
                     except SyntaxError:
@@ -1640,7 +1654,7 @@ def structure(lt: Linter, forms) -> None:
         if data.exists():
             try:
                 excluded = [frozenset(x.text for x in f.items[1].items if isinstance(x, Sym))
-                            for f in read(data.read_text()) if isinstance(f, L) and f.head == "exclude"
+                            for f in read(read_file(data)) if isinstance(f, L) and f.head == "exclude"
                             and len(f.items) > 1 and isinstance(f.items[1], L)]
             except SyntaxError:
                 pass
@@ -2046,7 +2060,7 @@ def arcdata_errs(path: Path, imp: Linter | None = None) -> list[tuple[int, str, 
     """The faults of an arcdata file: its forms, their order and heads, the
     names it takes from its arclog file, its params and its witnesses."""
     errs: list[tuple[int, str, str]] = []
-    text = path.read_text()
+    text = read_file(path)
     try:
         forms = read(text)
     except SyntaxError as e:
@@ -2347,23 +2361,6 @@ def arcdata_errs(path: Path, imp: Linter | None = None) -> list[tuple[int, str, 
     return errs
 
 
-def lint_group(paths: list[Path]) -> list[tuple[Path, list]]:
-    """Each path's violations, an arcdata file's read with the Linter of
-    the group's arclog file."""
-    linted: dict[Path, Linter] = {}
-    out = []
-    for p in sorted(paths, key=lambda x: x.suffix == ".arcdata"):
-        if p.suffix == ".arcdata":
-            errs = arcdata_errs(p, linted.get(p.with_suffix(".arclog")))
-        else:
-            lt = Linter(p)
-            lt.run()
-            errs = lt.errs
-            linted[p] = lt
-        out.append((p, errs))
-    return out
-
-
 # ---------------------------------------------------------------- safety
 
 BODY_FORMS = {"RULE", "DET", "DET_OR_RULE", "RULE_OR_DET", "RIGID_DET"}
@@ -2587,46 +2584,8 @@ def safety(lt: Linter, forms) -> None:
             lt.err(found[0][0], "safety", f"{name}: {found[0][1]}{more}")
 
 
-def main(argv: list[str]) -> None:
-    if "-h" in argv or "--help" in argv:
-        print(__doc__)
-        return
-    show_all = "--all" in argv
-    argv = [a for a in argv if a != "--all"]
-    paths = [Path(a) for a in argv] or (sorted(GEN.glob("*.arclog")) + sorted(GEN.parent.glob("*.arcscene"))
-                                        + sorted(GEN.glob("*.arcdata")))
-    counts: Counter = Counter()
-    files: dict[str, set] = defaultdict(set)
-    quiet = len(paths) > 20 and not show_all
-    shown: Counter = Counter()
-    # an arcdata file is linted with its arclog file's Linter, so the two go to one worker
-    groups: dict[Path, list[Path]] = defaultdict(list)
-    for p in paths:
-        groups[p.with_suffix(".arclog") if p.suffix == ".arcdata" else p].append(p)
-    order = sorted(groups.values(), key=lambda g: -sum(x.stat().st_size for x in g if x.exists()))
-    if len(order) > 20:
-        from concurrent.futures import ProcessPoolExecutor
-
-        from engine.pool import pool_size
-        with ProcessPoolExecutor(min(len(order), pool_size())) as pool:
-            found = dict(x for got in pool.map(lint_group, order) for x in got)
-    else:
-        found = dict(x for g in order for x in lint_group(g))
-    for p in paths:
-        for line, code, msg in found[p]:
-            counts[code] += 1
-            files[code].add(p.name)
-            if not quiet or shown[code] < 4:
-                shown[code] += 1
-                print(f"{p}:{line}: {code}: {msg}")
-    print()
-    for code, n in counts.most_common():
-        print(f"  {code:18} {n:6} in {len(files[code])} files")
-    for suffix in sorted({p.suffix for p in paths}):
-        some = [p for p in paths if p.suffix == suffix]
-        clean = sum(1 for p in some if not any(p.name in f for f in files.values()))
-        print(f"{clean} of {len(some)} {suffix} files clean")
-
-
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    # imported by name: the code hash (`arclog_convert.provenance.code_digest`) follows the imports the converter
+    # makes, and the command is not among them
+    import importlib
+    sys.exit(importlib.import_module("arclog_convert.lint_cli").main(sys.argv[1:]))

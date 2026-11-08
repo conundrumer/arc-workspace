@@ -186,10 +186,11 @@ class Stages:
     def construct(self,value):
         """The canonical member and pair ID of a body_replacement sample. A body stream that native rejects is
         reported and dropped, because the whole candidate text is checked without it."""
+        import arclog
         from population_consume import construct_body
         note=None
         try:mutant=construct_body(value,self.a.tasks)
-        except ValueError as error:
+        except arclog.Refusal as error:
             if not (str(error).startswith('body_replacement:body_stream') and value['construction'].get('body_stream')):raise
             note=str(error);value=dict(value,construction=dict(value['construction'],body_stream=None))
             mutant=construct_body(value,self.a.tasks)
@@ -250,6 +251,7 @@ def pending(a,done):
 
 
 def label(a):
+    import arclog
     import population_consume as pc
     a.output=a.root/'population.sqlite3';a.retry_failures=a.retry_unavailable
     out=a.root/'labels.jsonl.zst'
@@ -281,7 +283,7 @@ def label(a):
                     try:
                         if pair is None:pair,value,note=stages.construct(value)
                         admit(db,pair,value)
-                    except ValueError as error:
+                    except (arclog.Refusal,ValueError) as error:
                         line=label_line(record,pair,None)|dict(status='unavailable',reason=str(error))
                 if line is None:
                     ran=stages.run(pair,value);log.flush()

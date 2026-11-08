@@ -123,7 +123,7 @@ def _identity_gold(task,case,gold_ref,tasks):
     """Pure native reconstruction, never task evaluation or mutation drawing."""
     import arclog
     ref=json.loads(gold_ref);source=object_value(ref)
-    settings=arclog.DecodeSettings(deadline_seconds=1,rule_tests=False)
+    settings=arclog.DecodeSettings(rule_tests=False)
     ev=arclog.StudyTaskEvaluator(task,tasks,settings,session_bytes=128<<20,compact=True)
     gold=ev.from_stream(source['stream']['ids'],source['stream']['model'])
     if gold.sexp()!=source['text']:raise ValueError('gold reconstruction differs')
@@ -143,12 +143,13 @@ def construct_body(member,tasks):
 def _same_native_program(member,rec,tasks):
     """Only text mismatches need this check (e.g. repaired writer names)."""
     if not member.get('identity') or not rec.get('mutant_stream'):return False
+    import arclog
     try:
         _,gold=_identity_gold(member['task'],member['case'],canonical(member['gold']),str(tasks))
         mutant=gold.construct_identity(canonical(member['identity']))
         ids,model,paths=mutant.decode_stream();old=rec['mutant_stream']
         return ids==old['ids'] and list(model)==old['model'] and paths==old['paths']
-    except (ValueError,KeyError,TypeError,RuntimeError):return False
+    except (arclog.Refusal,ValueError,KeyError,TypeError,RuntimeError):return False
 
 
 def accept(db,pair,member,rec,locator):
@@ -274,7 +275,7 @@ class MaterializeSession:
             settings=dict(seconds=a.seconds,work_cap=a.work_cap,session_mib=a.session_mib))
         producer_sha=digest(producer)
         with db:db.execute('INSERT OR IGNORE INTO metadata VALUES (?,?)',('producer:'+producer_sha,canonical(producer)))
-        settings=arclog.DecodeSettings(deadline_seconds=a.seconds,table_work_cap=a.work_cap,rule_tests=False)
+        settings=arclog.DecodeSettings(table_work_cap=a.work_cap,rule_tests=False)
         self.settings=settings;self.producer_sha=producer_sha;self.producer=producer
 
     def task_manifest(self,task,case):

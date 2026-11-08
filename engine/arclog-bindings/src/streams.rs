@@ -130,6 +130,8 @@ pub(crate) fn corpus_streams(py: Python<'_>, corpus: &str, all_cases: bool, task
         let unread = ReplayProgress::default();
         let steps = progress.as_ref().map_or(&unread, |progress| &progress.get().inner);
         py.detach(|| replay_masks(&mut found, &reads, constructions, steps, started.as_ref(), ended.as_ref(), step_cap));
+        // A request that passed its effort guard gives no masks.
+        crate::errors::check_effort(py)?;
     }
     let mut streams = Vec::new();
     let mut faults = Vec::new();

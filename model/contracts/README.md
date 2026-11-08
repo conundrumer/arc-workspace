@@ -11,6 +11,8 @@ A solver's queries carry hypotheses, for example "the result is not empty" or "e
 
 ## The structure of a feature
 
+A feature is a schema applied to a table. `features/grammar.py` gives the form of a schema: a name with variables for columns, and a term built from operators. A term says which items the feature ranges over (rows, values, cells, groups, boxes), what it reads of each item, what it compares that with (a grid of the example, another table, the other examples), under which equivalence relation, and how it aggregates the items. A schema gives one feature for each binding of its variables to a table's columns. `term_of` in `features/feature_terms.py` gives the term of a feature's name as a tree, which is what a model reads of a feature beside its value.
+
 `features/schema.py` gives each feature three coordinates:
 
 - what it reads: `static` (the query's text, its inferred column types, and the engine's identities, flows and body IR of its tables) or `dynamic` (the rows);
@@ -19,15 +21,21 @@ A solver's queries carry hypotheses, for example "the result is not empty" or "e
 
 `features/pool.py` lifts a feature from one level to the next. A pooling operator is a function of the set of values.
 
+`features/vocabulary.py` holds the operators that the schemas share, and `features/grids.py` what they read of a grid. The schemas are in `features/tables.py` (what a table's rows state alone), `features/upstream.py` (how they stand to the tables upstream), `features/relations.py` (pairs of cells and of objects in one row, and colored cells against the output), `features/dependencies.py` (functional dependencies), `features/outputs.py` (claims about the train output), `features/inputs.py` (claims about the input grid), `features/roles.py` (the role its colors, cells, numbers and directions play in a grid), `features/maps.py` (whether its rows map the input to the train output, and how its groups and lines are laid out), `features/values.py` (which objects and colors it takes from the tables upstream, and how its numbers and directions stand to its cells), and `features/across.py` (what holds of it across the task's examples). `features/assignments.py` gives how a table stands to the same table at the task's other retained assignments, and `features/progress.py` what it adds to the tables before it. A claim about the train output also applies at a near miss. The others apply at a task's own examples: `all_features` takes `own=False` for a variant, whose features the novelty judgment reads, and `others` for the tables at the other assignments.
+
+`features/typed.py` is a second version of the library, which the environment variable `CONTRACTS_LIBRARY=2` turns on. A feature reads a color only through equality, so a color is one equivalence type among others, and the same schemas hold of a labeling of a grid by another type: the shape of a cell's component, up to translation or up to D4, the component itself, or its size. It also takes the type of a table's label column as a parameter, groups a column of cells by any such column, and gives a group's shape the measures that a color column has.
+
 `features.base_features` gives the features of the base tables at an example: the input grid, and at a train example, the output grid and the changed cells (the output's cells whose color differs from the input's at that place). Their columns keep the lib's names.
 
 ## Conventions for a feature
 
 - A feature keeps its value under the symmetries of the square and under a permutation of the colors. An orientation value or a color enters a feature only through a relation, such as "on one axis" or "includes the commonest input color", never by its name.
+- A feature of an ordered pair of columns is given for both orders, so the order of a table's columns changes no key and no value.
 - A feature's key holds no name that the program's author chose, and depends on no order that the author wrote. A key names a column or another table by its identity (`features/identity.py`), and the feature `<token> describe` gives that column or table in given terms, as the docstring of `features/features.py` gives. A feature names a column or a table through its token, never through its name.
 - A feature that reads another table names it as `<column> <relation> <table>.<column>`. `coordinates` in `features/schema.py` reads the other table's place from its description.
-- A feature that reads the train output ends in a suffix of `OUTPUT_FEATURES` in `features/features.py` and of `WITH_OUTPUT` in `features/schema.py`. A feature that reads the input grid as a base table ends in a suffix of `WITH_INPUT`.
-- A new feature leaves the value of every existing feature unchanged.
+- An operator states the grids it reads, as an argument or in `reads`. The lists of what reads a grid, in `features/features.py` and `features/schema.py`, follow from the terms.
+- A feature's name uses conventional terms.
+- A new feature leaves the value of every existing feature unchanged, other than the counts of claims in `features/progress.py`.
 
 ## Testing a feature
 
@@ -64,3 +72,9 @@ The dev layer judges novelty and relevance with what a model does not have: the 
 5. `dev/judgment_probe.py OUT_DIR` runs the probe.
 
 The first two read the engine and run under the engine runtime's python with `-I -B`. The others need only numpy, scipy and scikit-learn.
+
+The library runs under the engine's caps and session byte bound, and reads each entry's rows as the engine holds them (`gold_tables(held_rows=True)`). A product of parts over the projection cap gives its row count and its parts, and no row of the product is built. `features.view_features` gives such a table its row count and the features of each part's rows, without those that read the whole table.
+
+Runs retain every assignment whose tables stay within the bounds, including assignments that fail the train pairs. A query past a cap at one assignment ends that assignment, and the others stay; a dropped assignment and its reason are recorded in `tb.selection`. The surviving rows remain available through `tb.entries` and `tb.assignments`, and the per-table `assignments` count includes their retained keys. The library reads the solving assignment for a base run and a matching pinned assignment for a variant, and fails if that required assignment is absent. `Solver.tables_each` exposes the retained assignments to the dev `breaks.py` experiment.
+
+For an OUT that reads different relations, the library joins their assignment keys before reconstructing its grid. It first looks for a key whose first model gives every primary train output. If none does, a tiebreak pair accepts its complete set of demonstrated grids without depending on native model order. A read never substitutes an incompatible assignment when the required one is unavailable.

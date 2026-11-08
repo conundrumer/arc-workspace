@@ -10,6 +10,7 @@ from functools import cache
 from pathlib import Path
 
 import arclog_convert
+from arclog_convert.readback import read_checked
 from engine import ParseFailure, checkout
 from parity.snapshot import parity_dir
 from solver.readers import proposer_names, proposers_program
@@ -86,10 +87,10 @@ def used(text: str) -> set[str]:
 def uses() -> dict[str, list[str]]:
     """Each lib name, each proposer and each form keyword a file of
     `work/arclog/gen/` names (`used`), with the stems of the files that
-    name it, both sorted."""
+    name it, both sorted. Each file is read through `arclog_convert.readback.read_checked`."""
     out: dict[str, set[str]] = {}
     for path in sorted(gen_dir().glob("*.arclog")):
-        for name in used(path.read_text()):
+        for name in used(read_checked(path)):
             out.setdefault(name, set()).add(path.stem)
     return {name: sorted(out[name]) for name in sorted(out)}
 

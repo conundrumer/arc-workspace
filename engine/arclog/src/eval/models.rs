@@ -80,24 +80,40 @@ impl Options {
     fn draw<'f>(&'f self, driver: &Driver<'f, '_>) -> Draw<'f> {
         let evaluation = driver.evaluation;
         match self {
-            Options::Pick { rows, pick, arity } => {
-                Draw::Pick { rows, arity: *arity, models: pick.models(evaluation.session.caps.nodes, false), gauges: evaluation.limits.request.gauges(), cap: evaluation.session.caps.nodes }
-            }
+            Options::Pick { rows, pick, arity } => Draw::Pick {
+                rows,
+                arity: *arity,
+                models: pick.models(evaluation.session.caps.nodes, false),
+                gauges: evaluation.limits.request.gauges(),
+                cap: evaluation.session.caps.nodes,
+                budget: Budget::new(evaluation.limits, evaluation.session),
+            },
             Options::Walks { graphs, arity, layout } => {
                 Draw::Walks { walks: JointWalks::of_layout(graphs, *arity,*layout), budget: Budget::new(evaluation.limits, evaluation.session) }
             }
-            Options::Demonstrated { keys, arity } => Draw::Demonstrated { keys, arity: *arity, at: Some(vec![0; keys.len()]) },
+            Options::Demonstrated { keys, arity } => Draw::Demonstrated { keys, arity: *arity, at: Some(vec![0; keys.len()]), budget: Budget::new(evaluation.limits, evaluation.session) },
+        }
+    }
+
+    /// The rows that building the options read, as content. The options of
+    /// a walk count their states where the state graph is built.
+    fn read_rows(&self) -> u64 {
+        match self {
+            Options::Pick { rows, .. } => rows.len() as u64,
+            Options::Walks { .. } => 0,
+            Options::Demonstrated { keys, .. } => keys.iter().flatten().map(|rows| rows.len() as u64).fold(0, u64::saturating_add),
         }
     }
 }
 
 /// The models of one factor, drawn one at a time.
 enum Draw<'f> {
-    Pick { rows: &'f [Row], arity: u16, models: constraints::Models<'f>, gauges: &'f Gauges, cap: u64 },
+    /// `budget` counts the rows of each model as content.
+    Pick { rows: &'f [Row], arity: u16, models: constraints::Models<'f>, gauges: &'f Gauges, cap: u64, budget: Budget<'f> },
     Walks { walks: JointWalks<'f>, budget: Budget<'f> },
     /// The product of the options of the keys, one choice per key, the last
     /// key's choice changing first; `at` holds the choice of the next model.
-    Demonstrated { keys: &'f [Vec<RowSet>], arity: u16, at: Option<Vec<usize>> },
+    Demonstrated { keys: &'f [Vec<RowSet>], arity: u16, at: Option<Vec<usize>>, budget: Budget<'f> },
 }
 
 impl Draw<'_> {
@@ -106,7 +122,7 @@ impl Draw<'_> {
     fn next(&mut self) -> Result<Option<Choice>, ReachedBound> {
         let rows = |parts: Vec<RowSet>| Choice(parts.into_iter().map(|part| RelationValue::Rows(Arc::new(join::one_part(part)))).collect(),None);
         match self {
-            Draw::Pick { rows: options, arity, models, gauges, cap: node_cap } => match models.next() {
+            Draw::Pick { rows: options, arity, models, gauges, cap: node_cap, budget } => match models.next() {
                 None => Ok(None),
                 Some(Err(constraints::NodeCapReached { cap })) => {
                     gauges.hit(Gauge::Nodes, models.most_nodes().max(cap.saturating_add(1)), cap);
@@ -118,11 +134,13 @@ impl Draw<'_> {
                     for &option in model.iter() {
                         kept.insert(options[option].clone());
                     }
+                    // The content of a model: the rows it keeps.
+                    budget.charge_content(kept.len() as u64)?;
                     Ok(Some(rows(vec![kept])))
                 }
             },
             Draw::Walks { walks, budget } => Ok(walks.next_with_contexts(budget)?.map(|(parts,contexts)|{let mut choice=rows(parts);choice.1=Some(contexts);choice})),
-            Draw::Demonstrated { keys, arity, at } => {
+            Draw::Demonstrated { keys, arity, at, budget } => {
                 let Some(mut chosen) = at.take() else { return Ok(None) };
                 let mut kept = RowSet::empty(*arity);
                 for (options, &choice) in keys.iter().zip(&chosen) {
@@ -135,6 +153,7 @@ impl Draw<'_> {
                     if *choice < options.len() { Some(()) } else { *choice = 0; None }
                 });
                 *at = carry.map(|()| chosen);
+                budget.charge_content(kept.len() as u64)?;
                 Ok(Some(rows(vec![kept])))
             }
         }
@@ -256,6 +275,10 @@ fn choice(
         Ok(options) => options,
         Err(value) => return Ok(Choice::all(value, relations)),
     };
+    // The rows that the options were built from are content.
+    if let Err(bound) = Budget::new(driver.evaluation.limits, driver.evaluation.session).charge_content(options.read_rows()) {
+        return Ok(stopped(bound));
+    }
     let mut draw = options.draw(driver);
     let first = match draw.next() {
         Ok(Some(first)) => first,
@@ -263,6 +286,9 @@ fn choice(
         Err(bound) => return Ok(stopped(bound)),
     };
     if driver.met.borrow().is_none() {
+        if driver.first_model {
+            return Ok(first);
+        }
         return match draw.next() {
             Ok(None) => Ok(first),
             Ok(Some(_)) => many.map_or(Ok(first), |message| Err(fault(message))),

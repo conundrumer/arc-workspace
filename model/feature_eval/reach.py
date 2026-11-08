@@ -27,6 +27,8 @@ import time
 from pathlib import Path
 
 REPO = Path('/Users/davidlu/code/arc-workspace')
+sys.path.insert(0, str(REPO / 'src'))
+from arclog_convert.readback import read_checked  # noqa: E402  the corpus is a gen/ directory
 CORPUS = REPO / 'work/arclog/gen'
 REGISTRY = REPO / 'engine/lib/registry.sexpr'
 TASKS = REPO / 'model/contracts/dev/out-expand/tasks.txt'
@@ -1404,7 +1406,7 @@ def queries_of(reg, text, keep_terms=False):
 def concept_text(task):
     import arclog
     data = CORPUS / (task + '.arcdata')
-    cases = arclog.case_files(task, (CORPUS / (task + '.arclog')).read_text(), data.read_text() if data.exists() else '', str(CORPUS))
+    cases = arclog.case_files(task, read_checked(CORPUS / (task + '.arclog')), read_checked(data) if data.exists() else '', str(CORPUS))
     con = [c for c in cases if c.concept]
     if len(con) != 1 or con[0].arclog is None:
         raise ValueError('concept cases %d' % len(con))

@@ -17,7 +17,7 @@ use crate::eval::{BodyValue, Cancellation, Limits, Outcome, ParameterValues, Rel
 use crate::registry::Registry;
 use crate::judge::candidates::PairCandidates;
 use crate::judge::run::{AtCap, Found, Tested};
-use crate::judge::determination::{dets_read, descend_with, distinct_values, walk, Assignment, Det, Domains, End, EvaluationInputs, Walked};
+use crate::judge::determination::{dets_read, descend_scoped, distinct_values, walk, Assignment, Det, Domains, End, EvaluationInputs, Walked};
 use super::det_memo::SessionMemo;
 use crate::program::path::{NodePath, PathStep};
 use crate::program::{InstanceInput, InstanceInputPart, InstancePart, KeyClausePart, Atom, Body, Choose, ChoosePart, Clause, ClauseKeyword, Conjunct, ConstraintLabel, Constraint, DeclaredName, Form, Instance, LabelId, LabelUse, Negated, Node, Operand, PortName, Program, ProgramRelation, RelationName, RelationRef, Site, SiteArg, SiteValue};
@@ -347,10 +347,13 @@ impl<'a> Decoder<'a> {
     /// What `at` gives at each joint assignment of `dets`, in the order of
     /// the walk, for the relation at `root` of `program`. `dets` is the
     /// list of [`walked_dets`] for a body, as [`Decoder::rows`] gives it, and
-    /// that of [`relation_dets`] for a relation table. Where `work` is given,
-    /// the bindings of each evaluation, the walk's domains included, are
-    /// counted in it, and a batch that takes the count past its cap stops the
-    /// evaluation it is in.
+    /// that of [`relation_dets`] for a relation table. Each evaluation of the
+    /// walk, a domain or a leaf, counts its bindings in a count of its own
+    /// under the cap of `work`, where that is given, and adds them to `work`: a
+    /// batch that takes that count past the cap stops the evaluation it is in,
+    /// and no other. An evaluation that stops at that cap, or at the byte
+    /// budget of its assignment, rejects its assignment alone
+    /// ([`crate::eval::ReachedBound::is_assignment`]).
     pub fn assigned<T>(&self, program: &CheckedProgram, root: GraphNodeIndex, dets: &[Det], work: Option<&TableWork>, at: &mut dyn FnMut(&crate::eval::Evaluation<'_>) -> Result<T, End>) -> Outcome<Assigned<T>> {
         let limits = match work {
             Some(work) => self.limits().counted_in(work.clone()),
@@ -366,7 +369,7 @@ impl<'a> Decoder<'a> {
         // kept (`det_memo::SessionMemo`), where they would compute the same.
         let memo = work.map(|_| self.session.det_domains().get_or_init(|| SessionMemo::new(self.det_scope(), self.session)));
         let domains = memo.and_then(|memo| memo.domains(self.det_scope(), program, dets));
-        let (_, end, first) = descend_with(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains.as_ref().map(|domains| domains as &dyn Domains));
+        let (_, end, first) = descend_scoped(inputs, dets, root, self.context.settings.caps.assignments, &mut leaf, domains.as_ref().map(|domains| domains as &dyn Domains));
         match end {
             Ok(()) => Ok(Assigned { at: found, stop: first }),
             Err(End::Stop(stop)) => Ok(Assigned { at: found, stop: Some(stop) }),

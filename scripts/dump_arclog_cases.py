@@ -13,6 +13,8 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'src'))
+from arclog_convert.readback import read_checked  # noqa: E402  the corpus is a gen/ directory
 
 
 def dump(task, corpus):
@@ -20,8 +22,8 @@ def dump(task, corpus):
 
     data = corpus / (task + '.arcdata')
     try:
-        cases = arclog.case_files(task, (corpus / (task + '.arclog')).read_text(),
-                                 data.read_text() if data.exists() else '', str(corpus))
+        cases = arclog.case_files(task, read_checked(corpus / (task + '.arclog')),
+                                 read_checked(data) if data.exists() else '', str(corpus))
         return {'task': task, 'cases': [
             {field: getattr(case, field) for field in
              ('case', 'file', 'concept', 'arclog', 'arcdata', 'fault')}

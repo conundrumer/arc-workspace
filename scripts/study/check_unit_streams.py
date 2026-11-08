@@ -61,7 +61,7 @@ def main():
 
         def run(task):
             names, offsets, ids, flags = inventory(args.export, task, True)
-            settings = arclog.DecodeSettings(rule_tests=False, deadline_seconds=1)
+            settings = arclog.DecodeSettings(rule_tests=False)
             evaluator = arclog.StudyTaskEvaluator(task, str(args.tasks), settings)
             for i, case in enumerate(names):
                 if selected is not None and case not in selected[task]:

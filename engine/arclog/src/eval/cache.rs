@@ -249,6 +249,21 @@ impl Recorded {
     }
 }
 
+/// The bytes that a request holds for `value` while it uses it: the bytes of
+/// the rows of its parts, as [`super::join::row_bytes`] gives them. They depend
+/// on the rows alone, so a hit and the computation hold the same bytes.
+pub(crate) fn held_by(value: &RelationValue) -> u64 {
+    match value {
+        RelationValue::Rows(relation) => held_by_relation(relation),
+        RelationValue::Undefined | RelationValue::Stopped(_) => 0,
+    }
+}
+
+/// The bytes that a request holds for `relation` while it uses it ([`held_by`]).
+pub(crate) fn held_by_relation(relation: &Relation) -> u64 {
+    relation.parts().iter().map(|part| (part.rows.len() as u64).saturating_mul(super::join::row_bytes(part.columns.len()))).fold(0, u64::saturating_add)
+}
+
 /// The bytes of `relation`'s rows, an estimate.
 pub(crate) fn relation_estimate(relation: &Relation) -> usize {
     relation.parts().iter().map(|part| part.rows.bytes()).sum::<usize>() + 256

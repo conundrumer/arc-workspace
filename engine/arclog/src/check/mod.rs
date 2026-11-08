@@ -43,7 +43,7 @@ use std::sync::{Arc, Mutex};
 use crate::eval::ir::{compile_body_in, ClauseIr, CompileFault, CompiledBody, IrPaths, NodeOrder};
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::StableHashMap;
-use crate::program::canonical::{canonical_form, CanonicalForm, CanonicalOrder, CanonicalWriter, SearchBudget};
+use crate::program::canonical::{canonical_form, CanonicalForm, CanonicalOrder, CanonicalWriter, LabelingBound, SearchBudget};
 use crate::layout::{NodeLayout, SourceFile};
 use crate::program::path::{node_at, NodePath, NodeRef, PathStep};
 use crate::program::{Form, LabelId, PortName};
@@ -510,9 +510,6 @@ impl CheckCache {
 pub struct CheckedProgram {
     pub program: Arc<ResolvedProgram>,
     pub types: ProgramTypes,
-    /// The alerts on the program, such as a body whose canonical form
-    /// reached the search cap, which refuse nothing.
-    pub alerts: Vec<Diagnostic>,
     /// What the evaluator derives from the program alone, shared by its
     /// clones.
     derived: Arc<Derived>,
@@ -704,7 +701,7 @@ fn check_program_with_open(
             refused.push(diagnostic(DiagnosticKind::Check(CheckId::RigidPartsAndProposers), Severity::Error, refusal.message, refusal.at));
         }
     }
-    let mut alerts = Vec::new();
+    let mut labeling_bounds = Vec::new();
     let held = clauses.held_of(&program).unwrap_or_else(|| Arc::new(HeldClauses::of(&program)));
     // A cycle leaves the order that forms are inferred in to the checks, which a form kept from another program was not under.
     let earlier = earlier.filter(|_| refused.is_empty() && files.is_none() && open.is_none());
@@ -714,9 +711,9 @@ fn check_program_with_open(
         .map(|((path, form), index)| {
             let mut search = SearchBudget::new();
             let (order, canonical) = CanonicalOrder::with_form(form, &mut search);
-            if search.reached {
-                let message = "the search for the form's canonical form reached its cap".into();
-                alerts.push(diagnostic(DiagnosticKind::Bound, Severity::Alert, message, path.clone()));
+            // The last form of a prefix is in progress, and its labeling may pass the cap only because it is not complete.
+            if search.reached && (open.is_none() || index != last) {
+                labeling_bounds.push(diagnostic(DiagnosticKind::Bound, Severity::Error, LabelingBound::at_cap().to_string().into(), path.clone()));
             }
             // The signatures that the program's resolution gives the reads of a form before the last are those of the finished forms'.
             let kept = earlier.filter(|_| index < last).map(|earlier| earlier.form(index));
@@ -821,6 +818,7 @@ fn check_program_with_open(
         form_types
     };
     refused.extend(refused_by_form.into_iter().flatten());
+    refused.extend(labeling_bounds);
     if let Some(open) = open {
         let path = NodePath::top(forms.len() as u32 - 1);
         for (check, result) in prefix::check_prefix(&program, clauses, registry, Some(open)) {
@@ -841,7 +839,7 @@ fn check_program_with_open(
     }
     let mut types = types::program_types(&program, registry, clauses, &form_types);
     types.set_example_nodes(reads::example_relations(&program));
-    Ok(CheckedProgram { program, types, alerts, derived: Arc::default() })
+    Ok(CheckedProgram { program, types, derived: Arc::default() })
 }
 
 /// A top-level form of a program, at its path, with its canonical order

@@ -257,7 +257,7 @@ class Pass:
                     bundle=expand_case(bundle,self.ev,record,context)
                     self.case_cache[key]=bundle
                 result.append(bundle);references.append(self.case_refs[key])
-            except (ValueError,KeyError,IndexError,OSError,TypeError) as error:
+            except (self.ev.arclog.Refusal,ValueError,KeyError,IndexError,OSError,TypeError) as error:
                 failure=dict(schema='mech-case-preparation-failure-v1',case=case['name'],
                     reason=str(error),error_type=type(error).__name__,stage='case acquisition')
                 # One failure fact per case inputs/attempt, shared by all affected
@@ -479,7 +479,7 @@ class Pass:
                 except InterruptedError:return False
                 except PairUnavailable as error:
                     result=error.result;self.counts['pairs_unavailable']+=1
-                except (ValueError,KeyError,IndexError,OSError,TypeError) as error:
+                except (self.ev.arclog.Refusal,ValueError,KeyError,IndexError,OSError,TypeError) as error:
                     result=dict(schema='mech-step3-pair-v1',pair_id=base['pair_id'],source_sha256=base['source_sha256'],
                         complete=False,gaps=[dict(stage='pair unavailable',reason=str(error),error_type=type(error).__name__)])
                     self.counts['pairs_unavailable']+=1

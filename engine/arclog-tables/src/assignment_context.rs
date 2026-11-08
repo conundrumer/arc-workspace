@@ -136,11 +136,13 @@ pub(crate) fn examples_reusing(
                 let (task, session, constructions) = decoder.evaluation_inputs();
                 let limits = limits.clone().counted_in(work.clone());
                 let form = checked.program.form_of(root);
-                let mut budget = Budget::new(&limits, session);
                 let mut found = Vec::new();
                 let mut end = Ok(());
                 let mut first_stop = None;
                 for full in &receipt.values {
+                    // Each assignment counts its work from none, and a stop of its own ends it alone.
+                    let own = limits.for_assignment();
+                    let mut budget = Budget::new(&own, session);
                     if let Err(bound) = budget.charge_work(0) {
                         end = Err(End::Stop(Stop { bound, form: form.clone() }));
                         break;
@@ -157,7 +159,7 @@ pub(crate) fn examples_reusing(
                     let value = reused.map_or_else(|| {
                         let parameters = ParameterValues::determined(full.clone());
                         let evaluation = Evaluation { program: checked, concept: None, task, session, constructions,
-                            registry: decoder.registry(), parameters: &parameters, limits: &limits };
+                            registry: decoder.registry(), parameters: &parameters, limits: &own };
                         at(&evaluation, example)
                     }, Ok);
                     match value {

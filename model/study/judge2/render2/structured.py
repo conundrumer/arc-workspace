@@ -39,7 +39,7 @@ class Programs:
             try:
                 names=program.relation_source_names_json(str(MAIN_ROOT / 'work/arclog/gen'),record['task'],record['case'])
                 result=names, dict(status='complete',origin='native exact source-case recovery')
-            except ValueError as error:
+            except self.engine.Refusal as error:
                 result=None, dict(status='unavailable',reason=str(error))
         self.names[key]=result
         while len(self.names)>16:self.names.popitem(last=False)
@@ -52,7 +52,7 @@ class Programs:
         if text in self.frames:return self.frames[text]
         try:
             data=json.loads(self.engine.study_frame_sources_json(program))
-        except ValueError as error:
+        except (self.engine.Refusal, ValueError) as error:
             # Preserve this native evidence failure independently of the
             # successfully exported AST/definitions. It is a fault, not a
             # missing-part placeholder, and cannot pass the READY barrier.
@@ -144,7 +144,7 @@ class Programs:
         if hasattr(self.engine,'study_component_tables') and self.settings is None:
             from pathlib import Path
             config=json.loads((source.parent.parent/'run.json').read_text())
-            self.settings=self.engine.DecodeSettings(deadline_seconds=config['deadline'],table_work_cap=config['work_cap'],rule_tests=False)
+            self.settings=self.engine.DecodeSettings(table_work_cap=config['work_cap'],rule_tests=False)
             self.evaluator=self.engine.StudyTaskEvaluator(record['task'],config['tasks'],self.settings,session_bytes=config.get('session_mib',64)*1024*1024,compact=True)
             self.task=record['task']
         if self.task is not None:require(self.task==record['task'],'task evaluator cannot cross task namespaces')

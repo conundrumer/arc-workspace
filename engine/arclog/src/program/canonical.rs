@@ -6,8 +6,9 @@
 //! individualization–refinement: color refinement with the column paths as
 //! edge labels, then the first largest cell that is not a singleton, with a
 //! cap of [`SEARCH_NODE_CAP`] search nodes on the search of each label
-//! scope. A body that reaches the cap takes the least labeling the search
-//! has found.
+//! scope. A form whose search passes the cap has no canonical labeling that
+//! is free of its written order, so the form is refused with a
+//! [`LabelingBound`] and no hash of it reaches a caller.
 //!
 //! A node's canonical hash writes each relation the node reads as the file
 //! writes it, [`AsWritten`]. The resolved content of a node in one case program, in
@@ -50,17 +51,47 @@ pub(in crate::program) use form::form_of;
 /// for the search of each label scope.
 ///
 /// The cap guards synthesized bodies, whose symmetry the corpus does not
-/// show. The corpus's search reaches at most 13 nodes.
+/// show. The corpus's search reaches at most 13 nodes, by one reading. The
+/// gauge `labeling_nodes` ([`crate::eval::Gauge::LabelingNodes`]) measures
+/// the most nodes that a search reaches over the gold requests, and the cap
+/// is to be set from that.
 pub const SEARCH_NODE_CAP: u32 = 1000;
 
+/// The bound that a form passes where the search for the canonical labeling
+/// of one of its label scopes takes more than [`SEARCH_NODE_CAP`] search
+/// nodes. The labeling that such a search ends with may depend on the
+/// written order of the form, so the form is refused and no hash of it
+/// reaches a caller.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct LabelingBound {
+    /// The cap that the search passed.
+    pub cap: u32,
+}
+
+impl LabelingBound {
+    /// The bound at [`SEARCH_NODE_CAP`].
+    pub fn at_cap() -> Self {
+        LabelingBound { cap: SEARCH_NODE_CAP }
+    }
+}
+
+impl std::fmt::Display for LabelingBound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "the search for the form's canonical labeling passed its cap of {} search nodes", self.cap)
+    }
+}
+
+impl std::error::Error for LabelingBound {}
+
 /// The search nodes that the search of the label scope in progress has
-/// left, and whether the search of any scope of the value reached the cap.
+/// left, and whether the search of any scope of the value passed the cap.
 /// Each scope's search starts with [`SEARCH_NODE_CAP`] nodes, and a search
 /// that runs inside a leaf of another spends none of that other's nodes.
 #[derive(Clone, Debug)]
 pub struct SearchBudget {
     pub remaining: u32,
-    /// Set when the search of a scope reached the cap, which is an alert.
+    /// Set when the search of a scope passed the cap: the value is refused
+    /// with a [`LabelingBound`].
     pub reached: bool,
 }
 
@@ -100,8 +131,9 @@ pub(super) struct FormCache {
 #[derive(Clone, Debug)]
 pub struct CanonicalLabeling {
     pub positions: Box<[(super::LabelId, u32)]>,
-    /// Whether the search reached [`SEARCH_NODE_CAP`], so that the labeling
-    /// is the least one the search found.
+    /// Whether the search passed [`SEARCH_NODE_CAP`], so that the labeling
+    /// is no canonical labeling: a form with such a scope is refused with a
+    /// [`LabelingBound`].
     pub reached_cap: bool,
     /// The other labelings the search found whose form is the canonical
     /// form, each as `positions` gives a labeling: those that a symmetry of
@@ -183,11 +215,14 @@ struct Context<'a> {
     /// The other labelings of the scope whose canonical labeling was found
     /// last, for [`Context::with_labels`] to record with the labels.
     others: Option<Box<[Box<[(LabelId, u32)]>]>>,
+    /// The search nodes that the search of the label scope in progress has
+    /// visited, those past the cap included.
+    visited: u32,
 }
 
 impl<'a> Context<'a> {
     fn new(search: &'a mut SearchBudget, names: &'a dyn NameWriter) -> Self {
-        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None, feature_sites: names.feature_sites(), column_order: 0, head_fields: HeadFields::default(), others: None }
+        Context { labels: Labels::default(), out: CanonicalWriter::default(), search, names, path: Vec::new(), order: None, feature_sites: names.feature_sites(), column_order: 0, head_fields: HeadFields::default(), others: None, visited: 0 }
     }
 
     fn position(&self, label: LabelId) -> u32 {
@@ -295,6 +330,7 @@ impl<'a> Context<'a> {
         walk::scope(&mut graph, root, scope);
         let graph = graph.colored();
         let outer = std::mem::replace(&mut self.search.remaining, SEARCH_NODE_CAP);
+        let outer_visited = std::mem::take(&mut self.visited);
         let mut best = None;
         let mut cut_short = false;
         let colors = graph.initial.clone();
@@ -303,11 +339,17 @@ impl<'a> Context<'a> {
         graph.refine(&mut refined);
         if graph.target_cell(&refined).is_none() {
             self.search.remaining = outer;
+            self.visited = outer_visited;
             return (vec![graph.leaf_labels(&refined)], false);
         }
         self.visit(&graph, colors, scope, &mut best, &mut cut_short);
         self.search.remaining = outer;
+        crate::eval::ambient::note_labeling(self.visited);
+        self.visited = outer_visited;
         self.search.reached |= cut_short;
+        if cut_short {
+            self.names.labeling_bound_reached();
+        }
         (best.expect("the search reaches a leaf").1, cut_short)
     }
 
@@ -315,8 +357,11 @@ impl<'a> Context<'a> {
     /// label of the first largest cell of labels that is not a singleton, or,
     /// at a leaf, keeps the least form with each labeling that gives it, the
     /// first found first. Where the budget is spent, the search sets
-    /// `cut_short` and goes on to its first leaf alone.
+    /// `cut_short` and goes on to its first leaf alone. The labeling it ends
+    /// with then is no canonical labeling, and the caller refuses the form
+    /// ([`LabelingBound`]).
     fn visit(&mut self, graph: &ColoredGraph, mut colors: Vec<u32>, scope: LabelScope, best: &mut Option<(Vec<u8>, Vec<Labels>)>, cut_short: &mut bool) {
+        self.visited = self.visited.saturating_add(1);
         if self.search.remaining == 0 {
             *cut_short = true;
             if best.is_some() {

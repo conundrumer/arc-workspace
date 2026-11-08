@@ -52,12 +52,21 @@ def file_ref(path):
     return dict(path=str(path), sha256=h.hexdigest())
 
 
+def read_current(path):
+    """The text of the file `path` of the corpus (a gen/ directory), through `arclog_convert.readback.read_checked`: it raises `Stale` where the file is not current."""
+    source_path = str(REPO_ROOT / 'src')
+    if source_path not in sys.path: sys.path.insert(0, source_path)
+    from arclog_convert.readback import read_checked
+    return read_checked(Path(path))
+
+
 def source_ref(corpus, tasks, task):
     paths = [corpus / (task + suffix) for suffix in ('.arclog', '.arcdata')]
-    paths += [tasks / (task + '.json')]
     directory = corpus / 'cases' / task
     if directory.exists():
         paths += sorted(p for p in directory.rglob('*') if p.is_file())
+    for p in paths: read_current(p)
+    paths += [tasks / (task + '.json')]
     # Includes explicit case-file inventory, so additions/deletions invalidate it.
     return dict(task=task, corpus=str(corpus), tasks=str(tasks),
                 files=[file_ref(p) for p in paths])
@@ -232,7 +241,7 @@ def materialize_sources(corpus, task):
     source_path = str(REPO_ROOT / 'src')
     if source_path not in sys.path: sys.path.insert(0, source_path)
     from arclog_convert.train_replay import solver_files
-    return {str(p.relative_to(corpus)): file_ref(p)['sha256']
+    return {str(p.relative_to(corpus)): (read_current(p), file_ref(p)['sha256'])[1]
             for p in solver_files(corpus, task) if p.is_file()}
 
 
@@ -291,8 +300,8 @@ def materialize_task(arclog, corpus, gen, control, row, build):
             copy_exact(corpus / relative, stage_gen / relative)
         case_records = []
         if report['selection'] == 'filtered':
-            catalog = arclog.case_files(task, (corpus / (task + '.arclog')).read_text(),
-                                       (corpus / (task + '.arcdata')).read_text(), str(corpus))
+            catalog = arclog.case_files(task, read_current(corpus / (task + '.arclog')),
+                                       read_current(corpus / (task + '.arcdata')), str(corpus))
             by_case = {c.case: c for c in catalog}
             if len(by_case) != len(catalog): raise ValueError('native case filename catalog duplicated')
             for case in report['cases']:
@@ -300,7 +309,7 @@ def materialize_task(arclog, corpus, gen, control, row, build):
                 if Path(source.file).name != source.file or source.file in ('', '.', '..'):
                     raise ValueError('unsafe native case filename')
                 original_data = corpus / 'cases' / task / (source.file + '.arcdata')
-                data = original_data.read_text() if original_data.exists() else source.arcdata
+                data = read_current(original_data) if original_data.exists() else source.arcdata
                 if data is None: raise ValueError('native case has no stored arcdata: ' + name)
                 # Native case writer selects exactly the retained DET params;
                 # Python does not trim param records or invent case filenames.
@@ -422,7 +431,7 @@ def publish(args):
     native = getattr(arclog, 'empty_gold_json', None)
     if native is None:
         raise SystemExit('native exhaustive empty-gold operation not installed; '
-                         'requires empty_gold_json(corpus, tasks, task, deadline_seconds=None). No kept-table fallback.')
+                         'requires empty_gold_json(corpus, tasks, task, request_work_cap=None). No kept-table fallback.')
     from types import SimpleNamespace
     sys.path.insert(0, str(CODE_ROOT / 'ast/run'))
     from provenance import load_build
@@ -434,6 +443,7 @@ def publish(args):
     chosen = args.task or sorted(p.stem for p in corpus.glob('*.arcdata'))
     implementation = file_ref(__file__)
     started = time.monotonic(); done = reused = failures = 0
+    failed: list[str] = []
     with JsonlWriter(args.output) as out, JsonlWriter(args.lint_output) as lint_out:
         prior = {}; seen_lint = set()
         with JsonlReader(args.lint_output) as source:
@@ -447,7 +457,8 @@ def publish(args):
                 prior[row['task']] = row
         for task in chosen:
             request = dict(schema='arclog-empty-gold-request-v1', policy=POLICY, task=task,
-                           deadline_seconds=args.deadline_seconds,
+                           deadline_seconds=None,
+                           **({} if args.request_work_cap is None else dict(request_work_cap=args.request_work_cap)),
                            source=source_ref(corpus, tasks, task), runtime=runtime)
             # Checkout location is provenance, not a result dependency. Identical
             # code in a newly pinned worktree must reuse committed tasks.
@@ -460,17 +471,17 @@ def publish(args):
                 continue
             try:
                 result = validate_report(json.loads(native(
-                    str(corpus), str(tasks), task, deadline_seconds=args.deadline_seconds)), request)
+                    str(corpus), str(tasks), task, request_work_cap=args.request_work_cap)), request)
             except Exception as error:
-                # A transport/native failure keeps the entire original task;
-                # no incomplete candidate can enter a downstream consumer.
-                result = dict(schema=NATIVE_SCHEMA, task=task, selection='original',
-                              reason=f'{type(error).__name__}: {error}',
-                              cases=[], skipped_cases=[],
-                              singleton_double_read_lint=dict(status='unavailable',
-                                  reason='native call or result transport failed'),
-                              transport_error=dict(traceback=traceback.format_exc()),
-                              original_source=request['source'])
+                # A native call or a report that fails commits no line: the task is set apart in
+                # <output>.failed.jsonl with its error, and the run exits nonzero at its end.
+                failed.append(task)
+                with open(str(args.output) + '.failed.jsonl', 'a') as f:
+                    f.write(json.dumps(dict(task=task, error=f'{type(error).__name__}: {error}',
+                                            traceback=traceback.format_exc())) + '\n')
+                print(json.dumps(dict(error='native call failed; no line committed', task=task,
+                                      reason=f'{type(error).__name__}: {error}')), flush=True)
+                continue
             if source_ref(corpus, tasks, task) != request['source']:
                 raise ValueError('task source changed during native operation; no result committed')
             # A case whose selected program has no text gives no gold: it is
@@ -498,6 +509,11 @@ def publish(args):
                                   seconds=round(time.monotonic()-started, 3))), flush=True)
     if args.check_set:
         audit_check_set(args.output, args.check_set, args.audit_output)
+    if failed:
+        print(json.dumps(dict(error='tasks set apart: their native call failed', tasks=failed,
+                              file=str(args.output) + '.failed.jsonl')), flush=True)
+        return 1
+    return 0
 
 
 def main():
@@ -510,8 +526,8 @@ def main():
     run.add_argument('--output', type=Path, required=True)
     run.add_argument('--lint-output', type=Path, help='Framed finding journal; defaults beside gold output')
     run.add_argument('--task', action='append')
-    run.add_argument('--deadline-seconds', type=float, default=None,
-                     help='Per-native-evaluation deadline; default is no deadline')
+    run.add_argument('--request-work-cap', type=int, default=None,
+                     help='Request work cap of each native evaluation request; default is the settings default')
     run.add_argument('--check-set', type=Path, action='append')
     run.add_argument('--audit-output', type=Path)
     check = commands.add_parser('audit')
@@ -531,8 +547,8 @@ def main():
     if args.command == 'audit':
         audit_check_set(args.publication, args.check_set, args.output)
     else:
-        if args.deadline_seconds is not None and args.deadline_seconds <= 0:
-            parser.error('--deadline-seconds must be positive')
+        if args.request_work_cap is not None and args.request_work_cap <= 0:
+            parser.error('--request-work-cap must be positive')
         if args.output.suffix != '.zst': parser.error('output must be .jsonl.zst')
         if args.check_set and args.audit_output is None: parser.error('--check-set requires --audit-output')
         if args.lint_output is None:
@@ -541,7 +557,7 @@ def main():
         if args.lint_output.resolve() == args.output.resolve(): parser.error('lint and gold outputs must differ')
         args.lint_output.parent.mkdir(parents=True, exist_ok=True)
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        publish(args)
+        return publish(args)
 
 
 if __name__ == '__main__':

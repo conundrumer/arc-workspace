@@ -91,6 +91,12 @@ pub fn evaluate_assembly(
             }
         }
     };
+    // The content of the assembly: the rows of the table it writes.
+    if let Ok(found) = &rows
+        && let Err(bound) = budget.charge_content(found.len() as u64)
+    {
+        return Ok(RelationValue::Stopped(super::Stop { bound, form: form.clone() }));
+    }
     Ok(rows.map_or_else(|value| value, |rows| RelationValue::Rows(Arc::new(join::one_part(rows)))))
 }
 
@@ -604,7 +610,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
         let mut rows = RowSet::empty((self.key_width() + 1 + part_types.len()) as u16);
         for (key, frame) in &solution.frames {
             let reading = &frame[part];
-            if let Err(bound) = budget.charge_rows((elements.len() * reading.len()) as u64) {
+            if let Err(bound) = budget.charge_rows_of((elements.len() * reading.len()) as u64, usize::from(rows.arity())) {
                 return Ok(Err(self.stopped(bound)));
             }
             for &element in elements {

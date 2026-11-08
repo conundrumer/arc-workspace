@@ -1,4 +1,4 @@
-"""Reach of the union tables of one set by each search job, on the AND-OR graph of gold_union_graph.py. Writes reach-SET.jsonl in work/lm/data-study/gold/gold-union, one line per (task, job, seconds).
+"""RETIRED for graph files written after the graph dropped its bits: this script reads `bits`, `cost_known` and the cheapest hyperpath (and it imports `max_production` and `cheapest` from gold_union_graph.py, which has neither now) of graph-tasks-SET.jsonl / graph-prods-SET.jsonl, which gold_union_graph.py no longer writes. It runs only on graph files of earlier rounds. Reach of the union tables of one set by each search job, on the AND-OR graph of gold_union_graph.py. Writes reach-SET.jsonl in work/lm/data-study/gold/gold-union, one line per (task, job, seconds).
 
   <runtime python> gold_union_reach.py SET
 

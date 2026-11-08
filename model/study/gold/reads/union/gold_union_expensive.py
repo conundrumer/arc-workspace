@@ -1,4 +1,4 @@
-"""The shape of the expensive productions of one set's union graph. Writes expensive-productions-SET.json in work/lm/data-study/gold/gold-union and prints the summary.
+"""RETIRED for graph files written after the graph dropped its bits: this script reads `path`, `minimax_path` and `bits` of graph-tasks-SET.jsonl / graph-prods-SET.jsonl, which gold_union_graph.py no longer writes. It runs only on graph files of earlier rounds. The shape of the expensive productions of one set's union graph. Writes expensive-productions-SET.json in work/lm/data-study/gold/gold-union and prints the summary.
 
   .venv/bin/python gold_union_expensive.py SET
 

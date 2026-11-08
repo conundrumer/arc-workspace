@@ -1,4 +1,4 @@
-"""Where each production on a task's cheapest path and minimax path sits in the case texts. Writes path-forms-SET.jsonl in work/lm/data-study/gold/gold-union, one line per (task, path, production).
+"""RETIRED for graph files written after the graph dropped its bits: this script reads `path`, `minimax_path` and `bits` of graph-tasks-SET.jsonl / graph-prods-SET.jsonl, which gold_union_graph.py no longer writes. It runs only on graph files of earlier rounds. Where each production on a task's cheapest path and minimax path sits in the case texts. Writes path-forms-SET.jsonl in work/lm/data-study/gold/gold-union, one line per (task, path, production).
 
   <runtime python> gold_union_path_forms.py SET
 

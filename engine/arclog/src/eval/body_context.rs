@@ -85,7 +85,9 @@ pub(super) fn input_value(driver:&Driver<'_, '_>,relation:&GraphRelation,port:&P
             if let Err(stop)=super::join::charge_walk(evaluation,&rows,form) {return Ok(RelationValue::Stopped(stop));}
             if let Some(key)=key {
                 let count=key.len().saturating_mul(rows.len());
-                if let Err(bound)=super::join::Budget::new(evaluation.limits,evaluation.session).charge_rows(count) {return Ok(RelationValue::Stopped(super::Stop {bound,form:form.clone()}));}
+                let mut budget=super::join::Budget::new(evaluation.limits,evaluation.session);
+                let width=usize::from(rows.arity()).saturating_add(shape.key_width());
+                if let Err(bound)=budget.charge_rows_of(count,width).and_then(|()|budget.charge_work(0)) {return Ok(RelationValue::Stopped(super::Stop {bound,form:form.clone()}));}
                 return Ok(RelationValue::Rows(Arc::new(super::join::one_part(input.broadcast_rows(shape.key_width(),&key_group_rows(Some(&key)),&rows)))));
             }
             Ok(RelationValue::Rows(Arc::new(super::join::one_part(input.expanded_rows(&rows)))))

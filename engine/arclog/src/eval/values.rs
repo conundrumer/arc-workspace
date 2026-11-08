@@ -5,14 +5,14 @@
 //! share them.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::StableHashMap;
 use crate::program::path::NodePath;
 use crate::relations::Relation;
-use crate::session::{Counts, ReachedSessionBound, ResultKey, TaskSession};
+use crate::session::{Counts, ResultKey, TaskSession};
 use crate::solver::CaseName;
 use crate::task::Grid;
 use crate::terms::ReachedMarginBound;
@@ -23,8 +23,11 @@ use crate::terms::ReachedMarginBound;
 /// work cap does ([`RequestWork`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Caps {
-    /// The bindings the join of one part of a body, a native construction,
-    /// or a read's walk of a product of parts may try.
+    /// The content one evaluation may count: the rows that the join of one
+    /// part of a body or a native construction reads and writes, or that a
+    /// read's walk of a product of parts visits ([`super::join::Budget::charge_content`]).
+    /// The bindings a search tries are no part of it: the effort guard of the
+    /// request counts them ([`RequestWork::charge_effort`]).
     pub bindings: u64,
     /// The rows one part of a body, or a native construction, may hold.
     pub rows: u64,
@@ -38,6 +41,11 @@ pub struct Caps {
 }
 
 impl Caps {
+    /// The binding cap counts content now (the rows an evaluation reads and
+    /// writes), and the values below were set from counts of bindings tried,
+    /// so they stand until the cap audit sets them again from the content
+    /// counts of the gold programs.
+    ///
     /// The caps of every task session: the binding cap, the row cap, the
     /// node cap and the assignment cap are each set from the engine's counts
     /// on the corpus, and the model cap from the corpus survey's bound from
@@ -91,24 +99,89 @@ pub enum ReachedBound {
     Models { cap: u64 },
     Nodes { cap: u64 },
     Assignments { cap: u64 },
-    /// The work budget of an observation.
-    TableWork { cap: u64 },
+    /// The work budget of an observation. `assignment` holds where the count
+    /// was one assignment's own ([`TableWork::scoped`]), so that the stop rejects
+    /// that assignment alone.
+    TableWork { cap: u64, assignment: bool },
     /// A Box with a margin outside a signed byte.
     Margin(ReachedMarginBound),
-    SessionBytes(ReachedSessionBound),
     /// The work cap of one request, summed over every query and walk of it
     /// ([`RequestWork`]).
     RequestWork { cap: u64 },
+    /// The byte budget of one request: the bytes that the request holds at
+    /// a time ([`RequestWork::charge_bytes`]).
+    RequestBytes { cap: u64 },
+    /// The byte budget of one assignment: the bytes that the assignment holds
+    /// at a time ([`TableWork::charge_bytes`]).
+    AssignmentBytes { cap: u64 },
     Cancelled,
     /// A variable of a search's order that no node of the clause gives values
     /// at any place of the order. The search has no relation to give.
     NoValues,
+    /// The effort guard of one request: the bindings that its searches tried
+    /// ([`RequestWork::charge_effort`]). It stops a runaway search and is a
+    /// fault of the call, never a result: the call raises
+    /// `arclog.EffortExhausted` ([`take_effort_fault`]).
+    Effort { cap: u64 },
 }
 
 impl ReachedBound {
-    /// Whether this bound rejects only the assignment being evaluated.
+    /// The cap of this bound, where it has one.
+    pub fn cap(self) -> Option<u64> {
+        match self {
+            Self::Bindings { cap }
+            | Self::Rows { cap }
+            | Self::Models { cap }
+            | Self::Nodes { cap }
+            | Self::Assignments { cap }
+            | Self::TableWork { cap, .. }
+            | Self::RequestWork { cap }
+            | Self::RequestBytes { cap }
+            | Self::AssignmentBytes { cap }
+            | Self::Effort { cap } => Some(cap),
+            Self::Margin(_) | Self::Cancelled | Self::NoValues => None,
+        }
+    }
+
+    /// Whether this bound rejects only the assignment being evaluated: the
+    /// binding, row, model and node caps, a Box margin, a variable with no
+    /// values, a stop at the table work cap of one assignment's own count
+    /// ([`TableWork::scoped`]), and a stop at the byte budget of one
+    /// assignment ([`TableWork::charge_bytes`]). The request work cap, the
+    /// request byte budget, the assignment cap, a cancellation and every
+    /// other stop at the table work cap end the walk.
     pub fn is_assignment(self) -> bool {
-        matches!(self, Self::Bindings { .. } | Self::Rows { .. } | Self::Margin(_) | Self::NoValues | Self::Models { .. } | Self::Nodes { .. })
+        match self {
+            Self::Bindings { .. } | Self::Rows { .. } | Self::Margin(_) | Self::NoValues | Self::Models { .. } | Self::Nodes { .. } | Self::AssignmentBytes { .. } => true,
+            Self::TableWork { assignment, .. } => assignment,
+            Self::Assignments { .. } | Self::RequestWork { .. } | Self::RequestBytes { .. } | Self::Cancelled | Self::Effort { .. } => false,
+        }
+    }
+
+    /// Whether this bound is a budget of the request: its work cap, its
+    /// byte budget or its effort guard. Each charge after the request passes
+    /// one stops too.
+    pub fn is_request(self) -> bool {
+        matches!(self, Self::RequestWork { .. } | Self::RequestBytes { .. } | Self::Effort { .. })
+    }
+
+    /// Whether this bound limits the time, the rows or the bytes of an
+    /// evaluation, and so establishes no property of the program that the
+    /// evaluation is of: a prefix check that it stops leaves its decision to
+    /// the form's end. The assignment cap, a margin, a variable with no values,
+    /// a cancellation and the effort guard are no such bound.
+    pub fn is_resource(self) -> bool {
+        matches!(
+            self,
+            Self::Bindings { .. }
+                | Self::Rows { .. }
+                | Self::Models { .. }
+                | Self::Nodes { .. }
+                | Self::TableWork { .. }
+                | Self::RequestWork { .. }
+                | Self::RequestBytes { .. }
+                | Self::AssignmentBytes { .. }
+        )
     }
 
     /// Whether this bound stops a query that grew past a cap on its size.
@@ -124,13 +197,14 @@ impl ReachedBound {
     /// Whether the result cache stores a stop at this bound: a stop at the
     /// binding cap, the row cap, a margin or a variable with no values, which
     /// is the same at every later
-    /// request of its entry. A stop at the session's byte bound or by a
-    /// cancellation depends on the machine or the caller, and is stored
-    /// nowhere. A stop at the model cap, the node cap or the assignment cap is
+    /// request of its entry. A stop by a cancellation depends on the caller,
+    /// and is stored nowhere. A stop at the model cap, the node cap or the assignment cap is
     /// stored nowhere either, and neither is a stop at the request work cap,
-    /// which depends on the work the request did before the entry. A stop at
+    /// which depends on the work the request did before the entry, and so is
+    /// a stop at the request byte budget or at the byte budget of an
+    /// assignment, which depend on the bytes charged before the entry. A stop at
     /// the table work cap is held for the requests of one decode alone, in
-    /// [`HeldStops`].
+    /// [`HeldStops`], where the count is no assignment's own.
     pub fn is_stored(self) -> bool {
         match self {
             ReachedBound::Bindings { .. } | ReachedBound::Rows { .. } | ReachedBound::Margin(_) | ReachedBound::NoValues => true,
@@ -138,8 +212,10 @@ impl ReachedBound {
             | ReachedBound::Nodes { .. }
             | ReachedBound::Assignments { .. }
             | ReachedBound::TableWork { .. }
-            | ReachedBound::SessionBytes(_)
             | ReachedBound::RequestWork { .. }
+            | ReachedBound::RequestBytes { .. }
+            | ReachedBound::AssignmentBytes { .. }
+            | ReachedBound::Effort { .. }
             | ReachedBound::Cancelled => false,
         }
     }
@@ -152,14 +228,14 @@ impl ReachedBound {
             ReachedBound::Models { cap } => format!("the model cap of {cap} models"),
             ReachedBound::Nodes { cap } => format!("the node cap of {cap} search nodes"),
             ReachedBound::Assignments { cap } => format!("the assignment cap of {cap} joint assignments"),
-            ReachedBound::TableWork { cap } => format!("the table work cap of {cap} bindings"),
+            ReachedBound::TableWork { cap, .. } => format!("the table work cap of {cap} bindings"),
             ReachedBound::Margin(reached) => format!("a Box margin outside a signed byte, {:?}", reached.margins),
-            ReachedBound::SessionBytes(reached) => {
-                format!("the session's byte bound of {} bytes, at {} bytes", reached.bound.bytes, reached.bytes)
-            }
             ReachedBound::RequestWork { cap } => format!("the request work cap of {cap} units of work"),
+            ReachedBound::RequestBytes { cap } => format!("the request byte budget of {cap} bytes held"),
+            ReachedBound::AssignmentBytes { cap } => format!("the assignment byte budget of {cap} bytes held"),
             ReachedBound::Cancelled => "a cancellation".to_owned(),
             ReachedBound::NoValues => "a variable that no node gives values".to_owned(),
+            ReachedBound::Effort { cap } => format!("the effort guard of {cap} bindings tried"),
         }
     }
 }
@@ -337,8 +413,85 @@ const UNPOISONED: &str = "a store that no panic poisoned";
 /// gives how it is to be set from the work of the gold programs' requests.
 pub const REQUEST_WORK_CAP: u64 = 1 << 30;
 
+/// The default effort guard of a request, in bindings tried
+/// ([`RequestWork::charge_effort`]). It stops a runaway search and no result
+/// depends on it, so it stands far above the bindings that any gold program's
+/// request tries: 16 times the request work cap that the bindings once
+/// counted against. Provisional: the effort of the gold programs' requests,
+/// which `request_stats()` gives as the gauge `effort`, sets it.
+pub const EFFORT_CAP: u64 = 1 << 34;
+
+/// The default cap on the content that one prefix check counts: the rows it
+/// reads and writes, and the rows its joins hold as they produce them. A
+/// check that passes it stops, and its token is admitted, since the cap
+/// establishes no property of the program: the form's end decides.
+/// Provisional until the cap audit; far below the request work cap.
+pub const PREFIX_CONTENT_CAP: u64 = 1 << 18;
+
+/// The fault of a request that passed its effort guard.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct EffortFault {
+    /// The gauge that passed its cap: [`Gauge::Effort`].
+    pub gauge: Gauge,
+    pub cap: u64,
+}
+
+/// Where the requests begun on one thread leave their effort fault, for the
+/// call on that thread to raise ([`take_effort_fault`]).
+type FaultSink = Mutex<Option<EffortFault>>;
+
+thread_local! {
+    /// The sink of the requests begun on this thread ([`RequestWork::begin_with`]).
+    /// A worker thread takes the sink of the thread that started it
+    /// ([`adopt_fault_sink`]).
+    static SINK: RefCell<Arc<FaultSink>> = RefCell::new(Arc::default());
+}
+
+/// The sink that the requests begun on this thread leave their effort fault
+/// in.
+fn current_sink() -> Arc<FaultSink> {
+    SINK.with(|sink| Arc::clone(&sink.borrow()))
+}
+
+/// The sink of the thread that calls it, for the workers that run its work
+/// to adopt ([`adopt_fault_sink`]).
+#[derive(Clone, Debug)]
+pub struct FaultSinkHandle(Arc<FaultSink>);
+
+/// The sink of the requests begun on this thread, to hand to the workers of a
+/// call on this thread.
+pub fn fault_sink() -> FaultSinkHandle {
+    FaultSinkHandle(current_sink())
+}
+
+/// Makes the requests begun on this thread leave their effort fault in the
+/// sink of `handle`. A worker of a call calls it first, so the fault of a request it
+/// begins reaches the thread that made the call ([`take_effort_fault`]).
+pub fn adopt_fault_sink(handle: &FaultSinkHandle) {
+    SINK.with(|sink| *sink.borrow_mut() = Arc::clone(&handle.0));
+}
+
+/// The effort fault that a request begun on this thread left since the last
+/// call of this function, and clears it. A call from Python into the engine
+/// asks after it ends, and raises `arclog.EffortExhausted` where this gives a
+/// fault, in place of giving the result of the call: the stop of the effort
+/// guard is a fault, never a result.
+pub fn take_effort_fault() -> Option<EffortFault> {
+    let sink = current_sink();
+    let fault = sink.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+    fault
+}
+
+/// The bindings tried by the searches of a request, and whether they passed
+/// the guard. The candidates of a call share them with the request.
+#[derive(Debug, Default)]
+struct Effort {
+    count: AtomicU64,
+    exhausted: AtomicBool,
+}
+
 /// The count of [`Gauge`]s.
-const GAUGES: usize = 15;
+const GAUGES: usize = 20;
 
 /// A capped quantity of a request, which [`Gauges`] keeps the largest value of
 /// and the hits at.
@@ -363,10 +516,10 @@ pub enum Gauge {
     /// The steps of one completion search of an input's head, under the step
     /// bound of the search.
     ProjectionSteps,
-    /// The bytes of the session at a check, under the session's byte bound;
-    /// the room of an index build or a reservation counts as a hit alone. A
-    /// study request runs under its own bound (`TABLE_BYTES`), which the
-    /// gauge reports as its cap.
+    /// The bytes of the session at a check, under the session's byte bound,
+    /// at which the session evicts its caches. A study request runs under its
+    /// own bound (`TABLE_BYTES`), which the gauge reports as its cap. The
+    /// gauge has no hits: the bound stops nothing.
     SessionBytes,
     /// The bindings of the rows of one table of a study request that skips
     /// the tables a larger one made too large, under `TABLE_ROW_WORK`.
@@ -385,6 +538,26 @@ pub enum Gauge {
     /// The states that the walk of `Decoder::candidate_atoms` checked, under
     /// its `limit`.
     AtomStates,
+    /// The most bytes that a request held at a time
+    /// ([`RequestWork::charge_bytes`]), under the request byte budget.
+    RequestBytes,
+    /// The most bytes that one assignment held at a time
+    /// ([`TableWork::charge_bytes`]), under the assignment byte budget.
+    AssignmentBytes,
+    /// The search nodes of the canonical labeling of one label scope, under
+    /// [`crate::program::canonical::SEARCH_NODE_CAP`]. A search past the cap
+    /// is a hit, and refuses its form
+    /// ([`crate::program::canonical::LabelingBound`]). The count is of the
+    /// process, from the begin of the latest request ([`ambient`]).
+    LabelingNodes,
+    /// The bindings that the searches of the request tried
+    /// ([`RequestWork::charge_effort`]), under the effort guard. A hit raises
+    /// `arclog.EffortExhausted`.
+    Effort,
+    /// The content that the prefix check of an admitted `DET` counted, under
+    /// the prefix content cap ([`PREFIX_CONTENT_CAP`]). A hit is a check left
+    /// open: the token is admitted and the form's end decides.
+    PrefixContent,
 }
 
 impl Gauge {
@@ -405,6 +578,11 @@ impl Gauge {
         Gauge::ComparedRows,
         Gauge::BoxMargin,
         Gauge::AtomStates,
+        Gauge::RequestBytes,
+        Gauge::AssignmentBytes,
+        Gauge::LabelingNodes,
+        Gauge::Effort,
+        Gauge::PrefixContent,
     ];
 
     /// The gauge's name, which is stable.
@@ -425,6 +603,11 @@ impl Gauge {
             Gauge::ComparedRows => "compared_rows",
             Gauge::BoxMargin => "box_margin",
             Gauge::AtomStates => "atom_states",
+            Gauge::RequestBytes => "request_bytes",
+            Gauge::AssignmentBytes => "assignment_bytes",
+            Gauge::LabelingNodes => "labeling_nodes",
+            Gauge::Effort => "effort",
+            Gauge::PrefixContent => "prefix_content",
         }
     }
 }
@@ -477,6 +660,10 @@ impl Gauges {
                 let (largest, hits) = ambient::margin();
                 return (gauge, largest, ambient::MARGIN_CAP, hits);
             }
+            if gauge == Gauge::LabelingNodes {
+                let (largest, hits) = ambient::labeling();
+                return (gauge, largest, ambient::LABELING_CAP, hits);
+            }
             let slot = self.slot(gauge);
             (gauge, slot.max.load(Ordering::Relaxed), slot.cap.load(Ordering::Relaxed), slot.hits.load(Ordering::Relaxed))
         })
@@ -494,8 +681,14 @@ pub mod ambient {
     /// margin bound is ([`super::Gauge::BoxMargin`]).
     pub const MARGIN_CAP: u64 = 127;
 
+    /// The cap on the search nodes of one canonical labeling
+    /// ([`super::Gauge::LabelingNodes`]).
+    pub const LABELING_CAP: u64 = crate::program::canonical::SEARCH_NODE_CAP as u64;
+
     static LARGEST_MARGIN: AtomicU32 = AtomicU32::new(0);
     static MARGIN_HITS: AtomicU64 = AtomicU64::new(0);
+    static LARGEST_LABELING: AtomicU32 = AtomicU32::new(0);
+    static LABELING_HITS: AtomicU64 = AtomicU64::new(0);
 
     /// Records the margin `extent` of a Box that a term packs: two compares
     /// while it is no new largest and holds.
@@ -514,10 +707,30 @@ pub mod ambient {
         (u64::from(LARGEST_MARGIN.load(Ordering::Relaxed)), MARGIN_HITS.load(Ordering::Relaxed))
     }
 
+    /// Records that a search for a canonical labeling visited `nodes` search
+    /// nodes: two compares while it is no new largest and holds.
+    #[inline]
+    pub fn note_labeling(nodes: u32) {
+        if nodes > LARGEST_LABELING.load(Ordering::Relaxed) {
+            LARGEST_LABELING.fetch_max(nodes, Ordering::Relaxed);
+        }
+        if u64::from(nodes) > LABELING_CAP {
+            LABELING_HITS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// The most search nodes of one labeling search and the count of searches
+    /// past the cap.
+    pub fn labeling() -> (u64, u64) {
+        (u64::from(LARGEST_LABELING.load(Ordering::Relaxed)), LABELING_HITS.load(Ordering::Relaxed))
+    }
+
     /// Starts the counters again from zero.
     pub fn reset() {
         LARGEST_MARGIN.store(0, Ordering::Relaxed);
         MARGIN_HITS.store(0, Ordering::Relaxed);
+        LARGEST_LABELING.store(0, Ordering::Relaxed);
+        LABELING_HITS.store(0, Ordering::Relaxed);
     }
 }
 
@@ -543,17 +756,199 @@ pub mod ambient {
 pub struct RequestWork {
     count: Arc<AtomicU64>,
     cap: u64,
+    /// The bytes that the request holds now ([`RequestWork::charge_bytes`]),
+    /// and the budgets they run under.
+    bytes: Arc<ByteAccount>,
+    byte_caps: ByteCaps,
     gauges: Arc<Gauges>,
+    /// The bindings that the request's searches tried, and the guard on them.
+    effort: Arc<Effort>,
+    effort_cap: u64,
+    /// Where the request leaves its effort fault.
+    sink: Arc<FaultSink>,
+}
+
+/// The default budget of the bytes one request holds at a time
+/// ([`RequestWork::charge_bytes`]). Provisional: `docs/engine/synthesis.md#decode-settings`
+/// gives how it is to be set from the bytes that the gold programs' requests
+/// hold.
+pub const REQUEST_BYTES_CAP: u64 = 1 << 32;
+
+/// The default budget of the bytes one assignment holds at a time
+/// ([`TableWork::charge_bytes`]). Provisional, as [`REQUEST_BYTES_CAP`] is.
+pub const ASSIGNMENT_BYTES_CAP: u64 = 1 << 31;
+
+/// The default budget of the bytes the request of one candidate of a call holds
+/// at a time ([`RequestWork::candidate`]). Provisional, as [`REQUEST_BYTES_CAP`]
+/// is: the most bytes that one candidate's evaluation and export hold on the
+/// gold programs, with a margin, is to set it.
+pub const CANDIDATE_BYTES_CAP: u64 = 1 << 31;
+
+/// The byte budgets a request runs under: the request's own, that of each
+/// assignment of a table walk in it, and that of the request of each candidate
+/// of a call that evaluates several.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ByteCaps {
+    pub request: u64,
+    pub assignment: u64,
+    pub candidate: u64,
+}
+
+impl Default for ByteCaps {
+    fn default() -> Self {
+        ByteCaps { request: REQUEST_BYTES_CAP, assignment: ASSIGNMENT_BYTES_CAP, candidate: CANDIDATE_BYTES_CAP }
+    }
+}
+
+/// The bytes held in one account, the request's or one assignment's.
+#[derive(Debug, Default)]
+pub(crate) struct ByteAccount {
+    held: AtomicU64,
+    /// The part of `held` that an allocation of the session owns and frees when
+    /// it drops ([`Owner`]).
+    owned: AtomicU64,
+    /// Whether the account has been past its budget. Each later acquire gives
+    /// the stop too, and no hit fits.
+    stopped: AtomicBool,
+}
+
+/// What an acquire of bytes in a [`ByteAccount`] gave.
+enum Acquired {
+    /// The account holds `held` bytes, within its budget.
+    Within(u64),
+    /// The account holds `held` bytes, past its budget, or was past it before;
+    /// `first` holds for the acquire that took it past.
+    Past { held: u64, first: bool },
+}
+
+impl ByteAccount {
+    fn acquire(&self, bytes: u64, cap: u64) -> Acquired {
+        let before = if bytes == 0 { self.held.load(Ordering::Relaxed) } else { self.held.fetch_add(bytes, Ordering::Relaxed) };
+        let held = before.saturating_add(bytes);
+        if held > cap {
+            Acquired::Past { held, first: !self.stopped.swap(true, Ordering::Relaxed) }
+        } else if self.stopped.load(Ordering::Relaxed) {
+            Acquired::Past { held, first: false }
+        } else {
+            Acquired::Within(held)
+        }
+    }
+
+    fn release(&self, bytes: u64) {
+        if bytes > 0 {
+            let _ = self.held.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |held| Some(held.saturating_sub(bytes)));
+        }
+    }
+
+    fn fits(&self, peak: u64, cap: u64) -> bool {
+        !self.stopped.load(Ordering::Relaxed) && self.held.load(Ordering::Relaxed).saturating_add(peak) <= cap
+    }
+
+    fn held(&self) -> u64 {
+        self.held.load(Ordering::Relaxed)
+    }
+
+    fn is_stopped(&self) -> bool {
+        self.stopped.load(Ordering::Relaxed)
+    }
+}
+
+/// The bytes that one assignment holds, and the most it may hold.
+#[derive(Debug)]
+pub(crate) struct AssignmentBytes {
+    account: ByteAccount,
+    cap: u64,
+    /// The gauges that the assignment's bytes are noted in.
+    gauges: Arc<Gauges>,
+}
+
+impl AssignmentBytes {
+    /// Notes the bytes held in the gauge, and gives the stop where an acquire
+    /// passed the budget.
+    fn reached(&self, acquired: Acquired) -> Result<(), ReachedBound> {
+        match acquired {
+            Acquired::Within(held) => {
+                self.gauges.note(Gauge::AssignmentBytes, held, self.cap);
+                Ok(())
+            }
+            Acquired::Past { held, first } => {
+                if first {
+                    self.gauges.hit(Gauge::AssignmentBytes, held, self.cap);
+                } else {
+                    self.gauges.note(Gauge::AssignmentBytes, held, self.cap);
+                }
+                Err(ReachedBound::AssignmentBytes { cap: self.cap })
+            }
+        }
+    }
+}
+
+/// The handle with which an allocation of the session frees the bytes it owns
+/// in the accounts of the request and of the assignment that held them, when
+/// it drops or gives some back.
+#[derive(Debug)]
+pub(crate) struct Owner {
+    request: Arc<ByteAccount>,
+    assignment: Option<Arc<AssignmentBytes>>,
+}
+
+impl Owner {
+    pub(crate) fn free(&self, bytes: u64) {
+        let bytes = bytes.min(1 << 50);
+        let own = |account: &ByteAccount| {
+            account.release(bytes);
+            let _ = account.owned.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |owned| Some(owned.saturating_sub(bytes)));
+        };
+        own(self.request.as_ref());
+        if let Some(assignment) = &self.assignment {
+            own(&assignment.account);
+        }
+    }
 }
 
 /// The units that every request of the process has charged ([`RequestWork::total`]).
 static TOTAL: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
+    /// The depth of the [`uncounted`] scopes open on this thread.
+    static UNCOUNTED: Cell<u32> = const { Cell::new(0) };
     /// The request most recently begun on this thread ([`RequestWork::begin`]).
     static LATEST: RefCell<Option<RequestWork>> = const { RefCell::new(None) };
     /// What this thread charges, for the costs of entries ([`Tally`]).
     static TALLY: RefCell<Tally> = const { RefCell::new(Tally { frames: Vec::new(), unbilled: 0 }) };
+}
+
+/// Runs `run` with the sums that cut results turned off on this thread: a
+/// charge to the request's work ([`RequestWork::charge`]) or to an
+/// observation's count ([`TableWork::charge`]) adds to neither, and adds
+/// nothing to the effort of the request either, which counts the bindings that
+/// searches try ([`RequestWork::charge_effort`]), and no cost fits or misfits
+/// against them. The measurements open still record the charges, so
+/// the cost of an entry that `run` computes is what it is anywhere, and a
+/// later hit on it, outside, charges that cost.
+///
+/// The mask of a decode runs its prefix checks in this scope: their work
+/// depends on the forms that the decode has finished, which are no part of the
+/// form that a count is the count of, so no count that cuts a result holds it.
+/// The one count that adds in the scope is the prefix check's own
+/// ([`TableWork::prefix`]), which caps the content of that check and whose
+/// stop admits the token.
+/// The scope passes to the tasks that [`super::pool::Pool::map`] runs.
+pub fn uncounted<T>(run: impl FnOnce() -> T) -> T {
+    struct Close;
+    impl Drop for Close {
+        fn drop(&mut self) {
+            UNCOUNTED.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        }
+    }
+    UNCOUNTED.with(|depth| depth.set(depth.get() + 1));
+    let _close = Close;
+    run()
+}
+
+/// Whether this thread runs in an [`uncounted`] scope.
+pub fn is_uncounted() -> bool {
+    UNCOUNTED.with(|depth| depth.get() > 0)
 }
 
 /// What a thread has charged, for the cost of an entry ([`Cost`]).
@@ -579,6 +974,9 @@ struct Frame {
     /// The rows that were unbilled when the measurement began, which belong
     /// to the work around it.
     held: u64,
+    /// The account of the assignment whose bytes the measurement counts, once
+    /// it counts any ([`TableWork::charge_bytes`]).
+    assignment: Option<Arc<AssignmentBytes>>,
     cost: Cost,
 }
 
@@ -592,6 +990,17 @@ pub(crate) fn tally_table(bindings: u64) {
     tally(|tally| {
         if let Some(top) = tally.frames.last_mut() {
             top.cost.table = top.cost.table.saturating_add(bindings);
+        }
+    });
+}
+
+/// Notes in the innermost open measurement the account of the assignment that
+/// holds its bytes, so that the measurement frees them there when it ends. A
+/// measurement frees the bytes in the first assignment that holds any.
+fn note_assignment(account: &Arc<AssignmentBytes>) {
+    tally(|tally| {
+        if let Some(top) = tally.frames.last_mut() {
+            top.assignment.get_or_insert_with(|| Arc::clone(account));
         }
     });
 }
@@ -618,17 +1027,58 @@ pub(crate) fn tally_counts(counts: Counts) {
     });
 }
 
+/// The bytes that a computation holds, counted from its start: the most it
+/// held at a time, and what it still holds at its end.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct ByteSpan {
+    pub peak: u64,
+    pub net: u64,
+}
+
+impl ByteSpan {
+    /// The computation allocates `bytes`, which it holds.
+    fn acquire(&mut self, bytes: u64) {
+        self.net = self.net.saturating_add(bytes);
+        self.peak = self.peak.max(self.net);
+    }
+
+    /// The computation frees `bytes` that it held.
+    fn release(&mut self, bytes: u64) {
+        self.net = self.net.saturating_sub(bytes);
+    }
+
+    /// The computation holds `bytes` more for a moment and frees them.
+    fn transient(&mut self, bytes: u64) {
+        self.peak = self.peak.max(self.net.saturating_add(bytes));
+    }
+
+    /// The computation runs `inner` as a part of it, from where it stands.
+    fn absorb(&mut self, inner: ByteSpan) {
+        self.peak = self.peak.max(self.net.saturating_add(inner.peak));
+        self.net = self.net.saturating_add(inner.net);
+    }
+}
+
 /// What the computation of an entry charged, which a hit on the entry charges
 /// again: the units in the request, the bindings in the observation's count,
-/// and the largest counts that its evaluations noted. A cost includes the
-/// costs of the entries that the computation read, so it is the cost of the
-/// computation with every cache empty. It is a function of the entry alone.
+/// the bytes it held, and the largest counts that its evaluations noted. A
+/// cost includes the costs of the entries that the computation read, so it is
+/// the cost of the computation with every cache empty. It is a function of the
+/// entry alone. A hit holds the bytes that the entry's value holds ([`ByteSpan::net`]),
+/// after it checks the budgets against the most the computation held
+/// ([`ByteSpan::peak`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Cost {
     /// The units of work charged to the request.
     pub request: u64,
     /// The bindings charged to the observation's count.
     pub table: u64,
+    /// The bytes held, under the request's byte budget
+    /// ([`RequestWork::charge_bytes`]) and under the byte budget of the
+    /// assignment where the computation ran in one ([`TableWork::charge_bytes`]).
+    /// A cost holds them whether or not the computation ran in an assignment,
+    /// so a hit holds them in any.
+    pub bytes: ByteSpan,
     /// The largest bindings and rows that an evaluation noted in the request's
     /// gauges.
     bindings: u64,
@@ -638,10 +1088,18 @@ pub struct Cost {
 }
 
 impl Cost {
+    /// This cost with no units for the request and none for the observation's
+    /// count: the cost of a computation that no count which cuts a result
+    /// holds ([`uncounted`]), whose hit charges its bytes alone.
+    pub fn without_counts(self) -> Cost {
+        Cost { request: 0, table: 0, ..self }
+    }
+
     /// Adds what a computation inside the one this cost counts charged.
     fn absorb(&mut self, inner: &Cost, same_request: bool) {
         if same_request {
             self.request = self.request.saturating_add(inner.request);
+            self.bytes.absorb(inner.bytes);
         }
         self.table = self.table.saturating_add(inner.table);
         self.bindings = self.bindings.max(inner.bindings);
@@ -651,22 +1109,31 @@ impl Cost {
     }
 
     /// Whether `request` and `table`, the observation's count where there is
-    /// one, stay within their caps after this cost. A hit whose cost does not
-    /// fit is no hit: the caller computes the entry again, and the
-    /// computation stops at the charge that a computation with empty caches
-    /// stops at.
-    fn fits(&self, request: &RequestWork, table: Option<&TableWork>) -> bool {
-        request.count().saturating_add(self.request) <= request.cap() && table.is_none_or(|table| table.fits(self.table))
+    /// one, stay within their caps and byte budgets after this cost. A hit
+    /// whose cost does not fit is no hit: the caller computes the entry again,
+    /// and the computation stops at the charge that a computation with empty
+    /// caches stops at. The bytes count against `assignment`, the observation
+    /// whose assignment budget they belong to.
+    fn fits(&self, request: &RequestWork, table: Option<&TableWork>, assignment: Option<&TableWork>) -> bool {
+        (is_uncounted() || request.count().saturating_add(self.request) <= request.cap())
+            && request.fits_bytes(self.bytes.peak)
+            && table.is_none_or(|table| (is_uncounted() && !table.counts_uncounted()) || table.fits(self.table))
+            && assignment.is_none_or(|work| work.fits_bytes(self.bytes.peak))
     }
 
-    /// Charges this cost for a hit: the units to `request`, the bindings to
-    /// `table`, and the counts to the gauges of `request` and to `session`.
-    /// The rows of index builds that wait for a charge stay waiting for the
-    /// next one, as they do around a computation.
-    fn charge(&self, request: &RequestWork, table: Option<&TableWork>, session: &TaskSession) -> Result<(), ReachedBound> {
+    /// Charges this cost for a hit: the units and the bytes to `request`, the
+    /// bindings to `table`, the bytes to `assignment`, and the counts to the
+    /// gauges of `request` and to `session`. The rows and the bytes of index
+    /// builds that wait for a charge stay waiting for the next one, as they do
+    /// around a computation.
+    fn charge(&self, request: &RequestWork, table: Option<&TableWork>, assignment: Option<&TableWork>, session: &TaskSession) -> Result<(), ReachedBound> {
         let held = tally(|tally| std::mem::take(&mut tally.unbilled));
         tally_table(self.table);
-        let charged = request.charge(self.request).and_then(|()| table.map_or(Ok(()), |table| table.charge(self.table)));
+        let charged = request
+            .charge(self.request)
+            .and_then(|()| request.charge_hit_bytes(self.bytes))
+            .and_then(|()| table.map_or(Ok(()), |table| table.charge(self.table)))
+            .and_then(|()| assignment.map_or(Ok(()), |work| work.charge_hit_bytes(self.bytes)));
         let caps = session.caps;
         request.gauges().note(Gauge::Bindings, self.bindings, caps.bindings);
         request.gauges().note(Gauge::Rows, self.rows, caps.rows);
@@ -741,10 +1208,18 @@ impl<T> Hit<T> {
     /// [`Hit::charge`] where the cost fits and `admit`, which runs after the
     /// fit is known and before the charge, gives true.
     pub fn charge_if(self, request: &RequestWork, table: Option<&TableWork>, session: &TaskSession, admit: impl FnOnce() -> bool) -> Charged<T> {
-        if !self.cost.fits(request, table) || !admit() {
+        self.charge_if_in(request, table, table, session, admit)
+    }
+
+    /// [`Hit::charge_if`], where the bindings count in `table` and the bytes
+    /// in `assignment`, which are one count except where a kept computation
+    /// that stopped at the table work cap charges its bindings as the crossing
+    /// gives them.
+    pub fn charge_if_in(self, request: &RequestWork, table: Option<&TableWork>, assignment: Option<&TableWork>, session: &TaskSession, admit: impl FnOnce() -> bool) -> Charged<T> {
+        if !self.cost.fits(request, table, assignment) || !admit() {
             return Charged::Misfit;
         }
-        match self.cost.charge(request, table, session) {
+        match self.cost.charge(request, table, assignment, session) {
             Ok(()) => Charged::Value(self.value),
             Err(bound) => Charged::Stopped(self.value, bound),
         }
@@ -775,20 +1250,52 @@ impl Drop for Unwind {
 }
 
 impl RequestWork {
-    /// A count of no work, under `cap`.
+    /// A count of no work, under `cap` and the default byte budgets.
     pub fn new(cap: u64) -> Self {
-        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, gauges: Arc::default() }
+        Self::with_byte_caps(cap, ByteCaps::default())
+    }
+
+    /// A count of no work and no bytes, under `cap` and the byte budgets
+    /// `byte_caps`.
+    pub fn with_byte_caps(cap: u64, byte_caps: ByteCaps) -> Self {
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default(), effort: Arc::default(), effort_cap: EFFORT_CAP, sink: current_sink() }
+    }
+
+    /// This count with the effort guard `effort_cap` in place of
+    /// [`EFFORT_CAP`].
+    pub fn with_effort_cap(self, effort_cap: u64) -> Self {
+        RequestWork { effort_cap, ..self }
     }
 
     /// A count of no work for a request that begins now, under `cap`, which
     /// [`RequestWork::latest`] gives on this thread until another request
     /// begins on it.
     pub fn begin(cap: u64) -> Self {
-        let work = Self::new(cap);
+        Self::begin_with(cap, ByteCaps::default())
+    }
+
+    /// [`RequestWork::begin`], under the byte budgets `byte_caps`.
+    pub fn begin_with(cap: u64, byte_caps: ByteCaps) -> Self {
+        Self::begin_capped(cap, byte_caps, EFFORT_CAP)
+    }
+
+    /// [`RequestWork::begin_with`], under the effort guard `effort_cap`.
+    pub fn begin_capped(cap: u64, byte_caps: ByteCaps, effort_cap: u64) -> Self {
+        let work = Self::with_byte_caps(cap, byte_caps).with_effort_cap(effort_cap);
         ambient::reset();
         tally(|tally| tally.unbilled = 0);
         LATEST.with(|latest| *latest.borrow_mut() = Some(work.clone()));
         work
+    }
+
+    /// A count of no work and no bytes for one candidate of a call that
+    /// evaluates several, such as the successors of a decode, under the same
+    /// work cap and with the same gauges, and with the byte budget of a
+    /// candidate ([`ByteCaps::candidate`]) in place of the request's. The
+    /// candidate's charges are not added to this count, and its stop at a cap
+    /// ends its own evaluations alone.
+    pub fn candidate(&self) -> Self {
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap: self.cap, bytes: Arc::default(), byte_caps: ByteCaps { request: self.byte_caps.candidate, ..self.byte_caps }, gauges: Arc::clone(&self.gauges), effort: Arc::clone(&self.effort), effort_cap: self.effort_cap, sink: Arc::clone(&self.sink) }
     }
 
     /// The request most recently begun on this thread, or `None` where none
@@ -814,8 +1321,9 @@ impl RequestWork {
     #[inline]
     pub fn charge(&self, units: u64) -> Result<(), ReachedBound> {
         let key = self.key();
-        let units = tally(|tally| {
-            let units = units.saturating_add(std::mem::take(&mut tally.unbilled));
+        let (units, unbilled) = tally(|tally| {
+            // The rows of index builds that waited for a charge are effort: which indexes a search builds depends on its order.
+            let unbilled = std::mem::take(&mut tally.unbilled);
             // Past 2^40 a charge is past every cap, and the clamp keeps the sum of a request's charges from wrapping.
             let units = units.min(1 << 40);
             if units > 0
@@ -824,8 +1332,13 @@ impl RequestWork {
             {
                 top.cost.request = top.cost.request.saturating_add(units);
             }
-            units
+            (units, unbilled)
         });
+        self.charge_effort(unbilled)?;
+        // The units are content, or the content that a hit recorded: they try no binding, so they add to no count here, and the effort has only the bindings that searches try ([`RequestWork::charge_effort`]).
+        if is_uncounted() {
+            return Ok(());
+        }
         // A check that adds nothing reads the count alone.
         let count = if units == 0 {
             self.count.load(Ordering::Relaxed)
@@ -844,12 +1357,147 @@ impl RequestWork {
         }
     }
 
+    /// Adds `bindings` to the effort of the request, and gives the stop once
+    /// the effort is past the guard. Each later call gives it too, whatever it
+    /// adds. The effort counts the bindings that searches try, and no result
+    /// depends on it: the guard stops a runaway, and its stop is a fault of
+    /// the call ([`take_effort_fault`]). A hit in a cache charges no effort,
+    /// since it tries no binding.
+    #[inline]
+    pub fn charge_effort(&self, bindings: u64) -> Result<(), ReachedBound> {
+        let cap = self.effort_cap;
+        if self.effort.exhausted.load(Ordering::Relaxed) {
+            return Err(ReachedBound::Effort { cap });
+        }
+        // Past 2^40 a charge is past the guard, and the clamp keeps the sum from wrapping.
+        let bindings = bindings.min(1 << 40);
+        let effort = if bindings == 0 { self.effort.count.load(Ordering::Relaxed) } else { self.effort.count.fetch_add(bindings, Ordering::Relaxed).saturating_add(bindings) };
+        if effort > cap {
+            if !self.effort.exhausted.swap(true, Ordering::Relaxed) {
+                self.gauges.hit(Gauge::Effort, effort, cap);
+                *self.sink.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(EffortFault { gauge: Gauge::Effort, cap });
+            }
+            return Err(ReachedBound::Effort { cap });
+        }
+        self.gauges.note(Gauge::Effort, effort, cap);
+        Ok(())
+    }
+
+    /// The bindings that the request's searches have tried.
+    pub fn effort(&self) -> u64 {
+        self.effort.count.load(Ordering::Relaxed)
+    }
+
+    /// The effort guard.
+    pub fn effort_cap(&self) -> u64 {
+        self.effort_cap
+    }
+
+    /// Whether the request has passed its effort guard.
+    pub fn is_effort_exhausted(&self) -> bool {
+        self.effort.exhausted.load(Ordering::Relaxed)
+    }
+
     /// Holds `rows`, which an index build on this thread walked where no
     /// request was at hand to charge, for the next charge of a request on this
     /// thread. A request runs on one thread, so the rows go to the request
     /// that built the index.
     pub fn note_unbilled(rows: u64) {
         tally(|tally| tally.unbilled = tally.unbilled.saturating_add(rows));
+    }
+
+    /// Holds `bytes` more, which an evaluation allocates, in the request's
+    /// bytes, and gives the stop once the request holds more than its byte
+    /// budget. The request holds the bytes until [`RequestWork::credit_bytes`]
+    /// frees them, or the measurement around the charge ends and frees all but
+    /// what its value holds ([`RequestWork::measure_holding`]). Each later call
+    /// gives the stop too. The bytes held depend on the charges and the credits
+    /// alone, and not on what the session held.
+    pub fn charge_bytes(&self, bytes: u64) -> Result<(), ReachedBound> {
+        // Past 2^50 a charge is past every budget, and the clamp keeps the sum from wrapping.
+        let bytes = bytes.min(1 << 50);
+        self.tally_bytes(|span| span.acquire(bytes));
+        self.bytes_reached(self.bytes.acquire(bytes, self.byte_caps.request))
+    }
+
+    /// Holds `bytes` for a moment: the check of [`RequestWork::charge_bytes`],
+    /// and the bytes are freed again.
+    pub fn charge_bytes_transient(&self, bytes: u64) -> Result<(), ReachedBound> {
+        let bytes = bytes.min(1 << 50);
+        self.tally_bytes(|span| span.transient(bytes));
+        let acquired = self.bytes.acquire(bytes, self.byte_caps.request);
+        if matches!(acquired, Acquired::Within(_)) {
+            self.bytes.release(bytes);
+        }
+        self.bytes_reached(acquired)
+    }
+
+    /// Frees `bytes` that [`RequestWork::charge_bytes`] held.
+    pub fn credit_bytes(&self, bytes: u64) {
+        let bytes = bytes.min(1 << 50);
+        self.tally_bytes(|span| span.release(bytes));
+        self.bytes.release(bytes);
+    }
+
+    /// Holds the bytes that a hit on an entry holds: it checks the budget
+    /// against the most the entry's computation held, and keeps what its value
+    /// holds.
+    fn charge_hit_bytes(&self, span: ByteSpan) -> Result<(), ReachedBound> {
+        let peak = span.peak.min(1 << 50);
+        self.tally_bytes(|counted| counted.absorb(span));
+        let acquired = self.bytes.acquire(peak, self.byte_caps.request);
+        if matches!(acquired, Acquired::Within(_)) {
+            self.bytes.release(peak.saturating_sub(span.net));
+        }
+        self.bytes_reached(acquired)
+    }
+
+    /// Holds `bytes` that an allocation of the session owns until it drops
+    /// ([`Owner`]): no measurement counts them, and the owner frees them.
+    pub(crate) fn charge_bytes_owned(&self, bytes: u64) -> Result<(), ReachedBound> {
+        let bytes = bytes.min(1 << 50);
+        let acquired = self.bytes.acquire(bytes, self.byte_caps.request);
+        self.bytes.owned.fetch_add(bytes, Ordering::Relaxed);
+        self.bytes_reached(acquired)
+    }
+
+    /// Whether the request stays within its byte budget after it holds `peak`
+    /// bytes more.
+    pub fn fits_bytes(&self, peak: u64) -> bool {
+        self.bytes.fits(peak, self.byte_caps.request)
+    }
+
+    /// Notes the bytes held in the gauge, and gives the stop where an acquire
+    /// passed the budget.
+    fn bytes_reached(&self, acquired: Acquired) -> Result<(), ReachedBound> {
+        let cap = self.byte_caps.request;
+        match acquired {
+            Acquired::Within(held) => {
+                self.gauges.note(Gauge::RequestBytes, held, cap);
+                Ok(())
+            }
+            Acquired::Past { held, first } => {
+                if first {
+                    self.gauges.hit(Gauge::RequestBytes, held, cap);
+                } else {
+                    self.gauges.note(Gauge::RequestBytes, held, cap);
+                }
+                Err(ReachedBound::RequestBytes { cap })
+            }
+        }
+    }
+
+    /// Applies `with` to the bytes that the innermost open measurement counts
+    /// for this request, where it measures this request.
+    fn tally_bytes(&self, with: impl FnOnce(&mut ByteSpan)) {
+        let key = self.key();
+        tally(|tally| {
+            if let Some(top) = tally.frames.last_mut()
+                && top.request == key
+            {
+                with(&mut top.cost.bytes);
+            }
+        });
     }
 
     /// The identity of the count, which the open measurements name it by.
@@ -862,25 +1510,46 @@ impl RequestWork {
     /// count, with the costs of the entries it hits. The cost counts in
     /// the measurement around it too, and the rows of index builds that
     /// waited for a charge when `run` began wait for one after it, so they
-    /// belong to the work around and not to `run`.
+    /// belong to the work around and not to `run`. The value holds no bytes:
+    /// the bytes that `run` still holds at its end are freed.
     pub fn measure<T>(&self, run: impl FnOnce() -> T) -> (T, Cost) {
+        self.measure_holding(run, |_| 0)
+    }
+
+    /// [`RequestWork::measure`], where the value of `run` holds the bytes that
+    /// `held_by` gives. The request and the assignment keep that many of the
+    /// bytes that `run` holds at its end, if it holds so many, and the rest are
+    /// freed: they were the scratch of `run` and the values of the entries it
+    /// read. A hit on the entry holds the bytes that the value holds.
+    pub fn measure_holding<T>(&self, run: impl FnOnce() -> T, held_by: impl FnOnce(&T) -> u64) -> (T, Cost) {
         tally(|tally| {
             let held = std::mem::take(&mut tally.unbilled);
-            tally.frames.push(Frame { request: self.key(), held, cost: Cost::default() });
+            tally.frames.push(Frame { request: self.key(), held, assignment: None, cost: Cost::default() });
         });
         let mut open = Unwind(true);
         let value = run();
         // The rows of builds that no charge in `run` took are the work of `run`.
         let _ = self.charge(0);
         open.0 = false;
-        let cost = tally(|tally| {
-            let frame = tally.frames.pop().expect("the measurement this call opened");
+        let kept = held_by(&value);
+        let (cost, freed, assignment) = tally(|tally| {
+            let mut frame = tally.frames.pop().expect("the measurement this call opened");
             tally.unbilled = tally.unbilled.saturating_add(frame.held);
+            let freed = frame.cost.bytes.net.saturating_sub(kept);
+            frame.cost.bytes.net -= freed;
             if let Some(outer) = tally.frames.last_mut() {
-                outer.cost.absorb(&frame.cost, frame.request == outer.request);
+                let same_request = frame.request == outer.request;
+                outer.cost.absorb(&frame.cost, same_request);
+                if let Some(account) = &frame.assignment {
+                    outer.assignment.get_or_insert_with(|| Arc::clone(account));
+                }
             }
-            frame.cost
+            (frame.cost, freed, frame.assignment)
         });
+        self.bytes.release(freed);
+        if let Some(account) = assignment {
+            account.account.release(freed);
+        }
         (value, cost)
     }
 
@@ -902,9 +1571,31 @@ impl RequestWork {
         self.cap
     }
 
-    /// Whether the count is past the cap.
+    /// Whether the count is past the cap, or the bytes have been past the
+    /// byte budget, or the effort is past its guard: a result that a stop of
+    /// the request cut short is kept nowhere.
     pub fn is_past_cap(&self) -> bool {
-        self.count() > self.cap
+        self.count() > self.cap || self.bytes.is_stopped() || self.is_effort_exhausted()
+    }
+
+    /// Whether the request has been past its byte budget.
+    pub fn is_past_byte_budget(&self) -> bool {
+        self.bytes.is_stopped()
+    }
+
+    /// The bytes that the request holds now.
+    pub fn byte_count(&self) -> u64 {
+        self.bytes.held()
+    }
+
+    /// The request's byte budget.
+    pub fn byte_cap(&self) -> u64 {
+        self.byte_caps.request
+    }
+
+    /// The byte budget of each assignment of a table walk in the request.
+    pub fn assignment_byte_cap(&self) -> u64 {
+        self.byte_caps.assignment
     }
 
     /// The gauges of the request's other caps.
@@ -919,6 +1610,14 @@ impl RequestWork {
 #[derive(Clone, Debug)]
 pub struct TableWork {
     count: Arc<AtomicU64>,
+    /// The count that this one adds its charges to as well, where this is one
+    /// assignment's own ([`TableWork::scoped`]). The parent's cap is not
+    /// checked against them.
+    parent: Option<Arc<AtomicU64>>,
+    /// The bytes that the assignment owning this count holds, and the most it
+    /// may hold, where this count is one assignment's own
+    /// ([`TableWork::scoped`]).
+    bytes: Option<Arc<AssignmentBytes>>,
     cap: u64,
     crossing: Arc<Crossing>,
     /// The gauges of the request that the count's observation runs in, once
@@ -926,6 +1625,10 @@ pub struct TableWork {
     gauges: Arc<std::sync::OnceLock<Arc<Gauges>>>,
     /// The gauge that the count's notes and hits go to.
     gauge: Gauge,
+    /// Whether this is the count of a prefix check ([`TableWork::prefix`]),
+    /// which counts the content of its evaluation inside an [`uncounted`]
+    /// scope too.
+    prefix: bool,
 }
 
 /// The counts on the two sides of the charge that first took a count past
@@ -940,7 +1643,22 @@ struct Crossing {
 impl TableWork {
     /// An observation with no work counted, under `cap`.
     pub fn new(cap: u64) -> Self {
-        TableWork { count: Arc::new(AtomicU64::new(0)), cap, crossing: Arc::new(Crossing { set: AtomicBool::new(false), before: AtomicU64::new(0), after: AtomicU64::new(0) }), gauges: Arc::default(), gauge: Gauge::TableWork }
+        TableWork { count: Arc::new(AtomicU64::new(0)), parent: None, bytes: None, cap, crossing: Arc::new(Crossing { set: AtomicBool::new(false), before: AtomicU64::new(0), after: AtomicU64::new(0) }), gauges: Arc::default(), gauge: Gauge::TableWork, prefix: false }
+    }
+
+    /// The count of one prefix check: no content counted, under `cap`, with
+    /// the gauge [`Gauge::PrefixContent`] of `request`. Its charges count
+    /// inside an [`uncounted`] scope, where no other count does, and its stop
+    /// is a [`ReachedBound::TableWork`] that no cache stores.
+    pub fn prefix(cap: u64, request: &RequestWork) -> Self {
+        let work = Self::counted_as(cap, Gauge::PrefixContent, request);
+        TableWork { prefix: true, ..work }
+    }
+
+    /// Whether a charge to this count adds to it where the thread runs in an
+    /// [`uncounted`] scope.
+    fn counts_uncounted(&self) -> bool {
+        self.prefix
     }
 
     /// An observation with no work counted, under `cap`, whose count the
@@ -957,9 +1675,110 @@ impl TableWork {
         Self::new(u64::MAX)
     }
 
+    /// A count of no work for one assignment of the observation that this
+    /// counts, under the same cap, with the same gauge, and a byte budget of
+    /// `byte_cap` bytes held at a time for the assignment. Its stop at the cap
+    /// or at the byte budget rejects that assignment alone
+    /// ([`ReachedBound::is_assignment`]); the work it counts is added to this
+    /// count too, which this count's cap does not check.
+    pub fn scoped(&self, byte_cap: u64, byte_gauges: Arc<Gauges>) -> Self {
+        TableWork { count: Arc::new(AtomicU64::new(0)), parent: Some(Arc::clone(&self.count)), bytes: Some(Arc::new(AssignmentBytes { account: ByteAccount::default(), cap: byte_cap, gauges: byte_gauges })), cap: self.cap, crossing: Arc::new(Crossing { set: AtomicBool::new(false), before: AtomicU64::new(0), after: AtomicU64::new(0) }), gauges: Arc::clone(&self.gauges), gauge: self.gauge, prefix: self.prefix }
+    }
+
+    /// Holds `bytes` more in the assignment that owns this count, and gives
+    /// the stop once the assignment holds more than its byte budget. The
+    /// assignment holds them until [`TableWork::credit_bytes`] frees them, the
+    /// measurement around the charge ends and frees all but what its value
+    /// holds ([`RequestWork::measure_holding`]), or the assignment ends
+    /// ([`TableWork::settle_bytes`]). Each later call gives the stop too. The
+    /// bytes held depend on that assignment's charges and credits alone, and
+    /// not on what the session held. A count that is no assignment's own has no
+    /// budget.
+    pub fn charge_bytes(&self, bytes: u64) -> Result<(), ReachedBound> {
+        let Some(assignment) = &self.bytes else { return Ok(()) };
+        let bytes = bytes.min(1 << 50);
+        note_assignment(assignment);
+        assignment.reached(assignment.account.acquire(bytes, assignment.cap))
+    }
+
+    /// Holds `bytes` for a moment: the check of [`TableWork::charge_bytes`],
+    /// and the bytes are freed again.
+    pub fn charge_bytes_transient(&self, bytes: u64) -> Result<(), ReachedBound> {
+        let Some(assignment) = &self.bytes else { return Ok(()) };
+        let bytes = bytes.min(1 << 50);
+        let acquired = assignment.account.acquire(bytes, assignment.cap);
+        if matches!(acquired, Acquired::Within(_)) {
+            assignment.account.release(bytes);
+        }
+        assignment.reached(acquired)
+    }
+
+    /// Frees `bytes` that [`TableWork::charge_bytes`] held.
+    pub fn credit_bytes(&self, bytes: u64) {
+        let Some(assignment) = &self.bytes else { return };
+        let bytes = bytes.min(1 << 50);
+        assignment.account.release(bytes);
+    }
+
+    /// Holds the bytes that a hit on an entry holds, as
+    /// [`RequestWork::charge_hit_bytes`] does for the request.
+    fn charge_hit_bytes(&self, span: ByteSpan) -> Result<(), ReachedBound> {
+        let Some(assignment) = &self.bytes else { return Ok(()) };
+        let peak = span.peak.min(1 << 50);
+        note_assignment(assignment);
+        let acquired = assignment.account.acquire(peak, assignment.cap);
+        if matches!(acquired, Acquired::Within(_)) {
+            assignment.account.release(peak.saturating_sub(span.net));
+        }
+        assignment.reached(acquired)
+    }
+
+    /// Holds `bytes` that an allocation of the session owns until it drops, as
+    /// [`RequestWork::charge_bytes_owned`] does for the request.
+    pub(crate) fn charge_bytes_owned(&self, bytes: u64) -> Result<(), ReachedBound> {
+        let Some(assignment) = &self.bytes else { return Ok(()) };
+        let bytes = bytes.min(1 << 50);
+        let acquired = assignment.account.acquire(bytes, assignment.cap);
+        assignment.account.owned.fetch_add(bytes, Ordering::Relaxed);
+        assignment.reached(acquired)
+    }
+
+    /// Whether the assignment owning this count stays within its byte budget
+    /// after it holds `peak` bytes more. A count that is no assignment's own
+    /// has none.
+    pub fn fits_bytes(&self, peak: u64) -> bool {
+        self.bytes.as_ref().is_none_or(|assignment| assignment.account.fits(peak, assignment.cap))
+    }
+
+    /// Ends the assignment that owns this count: the bytes it still holds,
+    /// but those that an allocation of the session owns, are freed in
+    /// `request`, which they were held in too.
+    pub fn settle_bytes(&self, request: &RequestWork) {
+        let Some(assignment) = &self.bytes else { return };
+        let owned = assignment.account.owned.load(Ordering::Relaxed);
+        let held = assignment.account.held.swap(owned, Ordering::Relaxed);
+        request.bytes.release(held.saturating_sub(owned));
+    }
+
+    /// Whether this count is one assignment's own ([`TableWork::scoped`]).
+    pub fn is_scoped(&self) -> bool {
+        self.parent.is_some()
+    }
+
+    /// Adds `bindings` to the parent's count, where there is one.
+    fn charge_parent(&self, bindings: u64) {
+        if let Some(parent) = &self.parent {
+            let _ = parent.try_update(Ordering::Relaxed, Ordering::Relaxed, |count| Some(count.saturating_add(bindings)));
+        }
+    }
+
     /// Adds `bindings` to the count, and gives the stop once the count is past
     /// the cap. Each later call gives it too.
     pub fn charge(&self, bindings: u64) -> Result<(), ReachedBound> {
+        if is_uncounted() && !self.counts_uncounted() {
+            return Ok(());
+        }
+        self.charge_parent(bindings);
         let Ok(before) = self.count.try_update(Ordering::Relaxed, Ordering::Relaxed, |count| Some(count.saturating_add(bindings))) else {
             unreachable!("an update that always gives a count")
         };
@@ -971,7 +1790,7 @@ impl TableWork {
             if let Some(gauges) = self.gauges.get() {
                 gauges.hit(self.gauge, count, self.cap);
             }
-            Err(ReachedBound::TableWork { cap: self.cap })
+            Err(ReachedBound::TableWork { cap: self.cap, assignment: self.parent.is_some() })
         } else {
             if let Some(gauges) = self.gauges.get() {
                 gauges.note(self.gauge, count, self.cap);
@@ -1000,12 +1819,36 @@ impl TableWork {
     /// at the charge that [`TableWork::crossing`] gives, `before` and `after`
     /// bindings from the count now.
     pub fn charge_crossing(&self, bindings: u64, before: u64, after: u64) {
+        if is_uncounted() && !self.counts_uncounted() {
+            return;
+        }
+        self.charge_parent(bindings);
         let Ok(from) = self.count.try_update(Ordering::Relaxed, Ordering::Relaxed, |count| Some(count.saturating_add(bindings))) else {
             unreachable!("an update that always gives a count")
         };
         if from.saturating_add(before) <= self.cap && from.saturating_add(after) > self.cap {
             self.cross(from.saturating_add(before), from.saturating_add(after));
         }
+    }
+
+    /// For the count of a prefix check ([`TableWork::prefix`]), gives the stop
+    /// once `rows`, the rows that an evaluation holds as it produces them,
+    /// would take the count past the cap with what it counts when it ends.
+    /// It adds nothing to the count, so a join that produces rows stops
+    /// before it holds the rows that the cap leaves no room for. Any other
+    /// count gives no stop here.
+    pub fn check_rows(&self, rows: u64) -> Result<(), ReachedBound> {
+        if !self.prefix {
+            return Ok(());
+        }
+        let reached = self.count.load(Ordering::Relaxed).saturating_add(rows);
+        if reached > self.cap {
+            if let Some(gauges) = self.gauges.get() {
+                gauges.hit(self.gauge, reached, self.cap);
+            }
+            return Err(ReachedBound::TableWork { cap: self.cap, assignment: false });
+        }
+        Ok(())
     }
 
     /// Whether the count is past the cap: each batch of an evaluation that
@@ -1057,44 +1900,37 @@ pub struct Limits {
     /// where this is `None`.
     pub copies: Option<super::copies::CopyViolations>,
     /// Where each session's bytes stood when it first checked its bound
-    /// under these limits, as [`crate::session::TaskSession::within_bound`]
+    /// under these limits, as [`crate::session::TaskSession::relieve`]
     /// reads them. The clones of these limits share them.
     pub heap_starts: crate::session::HeapStarts,
     /// The bound on the session's bytes under these limits, where it is not
-    /// the session's own.
+    /// the session's own. A session over its bound evicts its caches, and
+    /// stops nothing.
     pub byte_bound: Option<crate::session::SessionBound>,
-    /// What a materialization of the rows of an exported relation reserves
-    /// for each row at the least; none where the operation's export is not
-    /// known to reserve. See [`RowReserve`].
-    pub row_reserve: Option<RowReserve>,
-    /// The relation that the operation exports, which
-    /// [`Limits::row_reserve`] applies to, as the address of the resolution
-    /// it is a node of and the node: the evaluation of that node's clauses
-    /// stops as soon as the rows it has found would take a reservation past
-    /// the session's room ([`crate::eval::join::Budget::charge_rows`]). An
-    /// evaluation of another program under these limits, such as a
-    /// proposer's, holds no node of it.
-    pub exported: Option<(usize, crate::resolver::GraphNodeIndex)>,
     /// The computations of entries that the evaluation takes from the walks
     /// before it and keeps for those after it ([`super::carry`]); none where
     /// the evaluation is not a liveness walk of a decode.
     pub carry: Option<super::carry::Carry>,
 }
 
-/// The bytes that the export of a relation's rows reserves for each row at
-/// the least, as `per_column` for each column and `fixed` for the row. A
-/// column holds at least one cell, so a caller gives the reservation's bytes
-/// for one cell of each column.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct RowReserve {
-    pub per_column: usize,
-    pub fixed: usize,
+/// The limits of one assignment ([`Limits::for_assignment`]). Where the scope
+/// ends, the bytes that the assignment still holds are freed in the request.
+#[derive(Debug)]
+pub struct AssignmentScope(Limits);
+
+impl std::ops::Deref for AssignmentScope {
+    type Target = Limits;
+
+    fn deref(&self) -> &Limits {
+        &self.0
+    }
 }
 
-impl RowReserve {
-    /// The bytes reserved for each row of `arity` columns at the least.
-    pub fn bytes_per_row(self, arity: usize) -> usize {
-        self.per_column.saturating_mul(arity).saturating_add(self.fixed)
+impl Drop for AssignmentScope {
+    fn drop(&mut self) {
+        if let Some(work) = &self.0.table_work {
+            work.settle_bytes(&self.0.request);
+        }
     }
 }
 
@@ -1105,7 +1941,7 @@ impl Limits {
     /// that [`RequestWork::latest`] gives: a caller begins one with
     /// [`crate::stream::DecodeSettings::operation_limits`] or a decoder's call.
     pub fn new(request_cap: Option<u64>, cancellation: Cancellation) -> Self {
-        Limits { request: RequestWork::new(request_cap.unwrap_or(REQUEST_WORK_CAP)), cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default(), byte_bound: None, row_reserve: None, exported: None, carry: None }
+        Limits { request: RequestWork::new(request_cap.unwrap_or(REQUEST_WORK_CAP)), cancellation, table_work: None, held_stops: None, copies: None, heap_starts: Default::default(), byte_bound: None, carry: None }
     }
 
     /// These limits with the evaluation adding to `request`, the work of the
@@ -1120,6 +1956,46 @@ impl Limits {
         Limits { copies: Some(violations), ..self }
     }
 
+    /// These limits for the evaluation of one assignment, or of one step of
+    /// the walk of assignments: where these limits count table work, a count of
+    /// its own under the same cap ([`TableWork::scoped`]) and, where these
+    /// limits count none, an uncapped one, with the byte budget of the
+    /// assignment that the request gives ([`RequestWork::assignment_byte_cap`]).
+    /// The stop of such an evaluation at its count or at its byte budget
+    /// rejects that assignment alone ([`ReachedBound::is_assignment`]). The
+    /// request's work and bytes and the cancellation stay shared, so the stops
+    /// at the request's budgets end the walk. The scope frees the bytes that
+    /// the assignment held in the request when it drops.
+    pub fn for_assignment(&self) -> AssignmentScope {
+        // Limits that count no table work get an uncapped count, so that the assignment has its byte budget too.
+        let work = self.table_work.clone().unwrap_or_else(TableWork::uncapped).scoped(self.request.assignment_byte_cap(), Arc::clone(&self.request.gauges));
+        AssignmentScope(Limits { table_work: Some(work), ..self.clone() })
+    }
+
+    /// These limits for one candidate of a call that evaluates several
+    /// ([`RequestWork::candidate`]): the work and the bytes of the candidate
+    /// count from none, under the request's caps.
+    pub fn for_candidate(&self) -> Self {
+        Limits { request: self.request.candidate(), ..self.clone() }
+    }
+
+    /// Holds `bytes` in the request and in the assignment of these limits for
+    /// an allocation of the session, and gives the owner that frees them where
+    /// the allocation drops ([`crate::session::SessionAllocation::owned_by`]).
+    /// No measurement counts these bytes.
+    pub(crate) fn hold_bytes_owned(&self, bytes: u64) -> Result<Owner, ReachedBound> {
+        let bytes = bytes.min(1 << 50);
+        let owner = Owner { request: Arc::clone(&self.request.bytes), assignment: self.table_work.as_ref().and_then(|work| work.bytes.clone()) };
+        let held = self.request.charge_bytes_owned(bytes).and_then(|()| self.table_work.as_ref().map_or(Ok(()), |work| work.charge_bytes_owned(bytes)));
+        match held {
+            Ok(()) => Ok(owner),
+            Err(bound) => {
+                owner.free(bytes);
+                Err(bound)
+            }
+        }
+    }
+
     /// These limits with the evaluation counted in `work`.
     pub fn counted_in(self, work: TableWork) -> Self {
         // The first request that counts an observation keeps its gauges.
@@ -1131,19 +2007,6 @@ impl Limits {
     /// session's own bound.
     pub fn bound_by(self, bound: crate::session::SessionBound) -> Self {
         Limits { byte_bound: Some(bound), ..self }
-    }
-
-    /// These limits with the export of the rows of a relation reserving
-    /// `reserve` for each row at the least.
-    pub fn reserving_rows(self, reserve: RowReserve) -> Self {
-        Limits { row_reserve: Some(reserve), ..self }
-    }
-
-    /// These limits with the relation of `node` of `program` exported: where
-    /// [`Limits::row_reserve`] is set, the evaluation of its clauses stops at
-    /// the rows whose reservation would pass the session's room.
-    pub fn exporting(self, program: &crate::resolver::ResolvedProgram, node: crate::resolver::GraphNodeIndex) -> Self {
-        Limits { exported: Some((std::ptr::from_ref(program) as usize, node)), ..self }
     }
 
     /// These limits with the evaluation taking and keeping computations of

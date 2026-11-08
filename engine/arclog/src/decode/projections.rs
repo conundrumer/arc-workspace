@@ -502,7 +502,9 @@ impl<'a> Search<'a> {
                 let functions = found.into_iter().map(|position| this.columns[usize::from(position)].0).collect();
                 self.entries[entry].counted = Some(Counted { count, read, functions });
             }
+            // The content of the read is the part's rows. The rows read before the count passes the cap follow the order of the part's rows, which no content decides, and are effort.
             let read = self.entries[entry].counted.as_ref().map_or(0, |counted| counted.read);
+            self.budgets[relation].charge_content(this.rows.len() as u64)?;
             self.budgets[relation].charge_work(read)?;
             self.entries[entry].counted_by.mark(relation);
         }
@@ -523,6 +525,29 @@ impl<'a> Search<'a> {
     /// projected row whole. A group's first row is kept only while a column may
     /// still be a function, since no other read of it follows.
     fn count(part: &RelationPart, positions: &[u16], cap: u64) -> (usize, u64, Vec<u16>) {
+        // A projection of one to eight columns is scanned by code made for that count, which holds the
+        // positions and the cells of a row in registers, and fixes the loops over them.
+        macro_rules! fixed {
+            ($n:literal) => {{
+                let fixed: [u16; $n] = positions.try_into().expect("positions of the counted length");
+                Self::count_with(part, positions, cap, |groups, row| groups.number_n(row, &fixed))
+            }};
+        }
+        match positions.len() {
+            1 => fixed!(1),
+            2 => fixed!(2),
+            3 => fixed!(3),
+            4 => fixed!(4),
+            5 => fixed!(5),
+            6 => fixed!(6),
+            7 => fixed!(7),
+            8 => fixed!(8),
+            _ => Self::count_with(part, positions, cap, |groups, row| groups.number(row, positions)),
+        }
+    }
+
+    /// [`Search::count`] with `number` giving the group of a row.
+    fn count_with(part: &RelationPart, positions: &[u16], cap: u64, mut number: impl FnMut(&mut Groups, &[TermId]) -> (u32, bool)) -> (usize, u64, Vec<u16>) {
         let width = part.columns.len();
         let mut functions: Vec<u16> = (0..width as u16).filter(|position| !positions.contains(position)).collect();
         let mut groups = Groups::new(positions.len());
@@ -531,7 +556,7 @@ impl<'a> Search<'a> {
         let (mut count, mut read) = (0usize, 0u64);
         for row in part.rows.rows() {
             read += 1;
-            let (group, new) = groups.number(row, positions);
+            let (group, new) = number(&mut groups, row);
             if new {
                 count += 1;
                 if count as u64 > cap {
@@ -542,7 +567,7 @@ impl<'a> Search<'a> {
                 }
             } else if !functions.is_empty() {
                 let held = &first[group as usize * width..(group as usize + 1) * width];
-                functions.retain(|&position| row[usize::from(position)] == held[usize::from(position)]);
+                keep_equal(&mut functions, &row[..width], held);
             }
         }
         (count, read, functions)
@@ -566,6 +591,7 @@ impl<'a> Search<'a> {
         let entry = self.entry(class, positions);
         if !self.entries[entry].built_by.has(relation) {
             if !self.entries[entry].counted_by.has(relation) {
+                self.budgets[relation].charge_content(this.rows.len() as u64)?;
                 self.budgets[relation].charge_work(this.rows.len() as u64)?;
             }
             self.entries[entry].built_by.mark(relation);
@@ -614,6 +640,21 @@ impl<'a> Search<'a> {
     }
 }
 
+/// Keeps the positions of `functions` where `row` and `held` hold equal cells, in order. The scan
+/// for the first position to drop writes nothing, so a row that drops none writes none.
+fn keep_equal(functions: &mut Vec<u16>, row: &[TermId], held: &[TermId]) {
+    let Some(first) = functions.iter().position(|&position| row[usize::from(position)] != held[usize::from(position)]) else { return };
+    let mut kept = first;
+    for at in first + 1..functions.len() {
+        let position = functions[at];
+        if row[usize::from(position)] == held[usize::from(position)] {
+            functions[kept] = position;
+            kept += 1;
+        }
+    }
+    functions.truncate(kept);
+}
+
 /// The numbers of the distinct projected rows that a scan reads, in the order it
 /// reads them first. A table of open addressing holds, for each group, the group's
 /// projected cells, and a slot holds the hash of the cells in its upper 32 bits and
@@ -633,19 +674,76 @@ struct Groups {
     slots: Vec<u64>,
 }
 
+/// An odd 64-bit number for each rank of a cell in a projected row, which
+/// [`Groups::number`] multiplies the cell by.
+const CELL_MULTIPLIERS: [u64; 64] = {
+    let mut table = [0u64; 64];
+    let mut rank = 0;
+    while rank < table.len() {
+        let mut z = (rank as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        table[rank] = (z ^ (z >> 31)) | 1;
+        rank += 1;
+    }
+    table
+};
+
 impl Groups {
     fn new(width: usize) -> Self {
         Groups { width, cells: Vec::new(), count: 0, slots: vec![0; 64] }
     }
 
+    /// [`Groups::number`] for `N` positions, `N` the groups' `width`: the cells of the row are read once,
+    /// and the hash and the compare with a group's cells run over them.
+    fn number_n<const N: usize>(&mut self, row: &[TermId], positions: &[u16; N]) -> (u32, bool) {
+        let mut cells = [0u32; N];
+        for (cell, &position) in cells.iter_mut().zip(positions) {
+            *cell = row[usize::from(position)].encoding();
+        }
+        let mut sum = 0u64;
+        for (rank, &cell) in cells.iter().enumerate() {
+            sum = sum.wrapping_add((u64::from(cell) + 1).wrapping_mul(CELL_MULTIPLIERS[rank]));
+        }
+        let mixed = (sum ^ (sum >> 29)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        let hash = (mixed ^ (mixed >> 32)) as u32;
+        let mask = self.slots.len() - 1;
+        let mut at = hash as usize & mask;
+        loop {
+            let slot = self.slots[at];
+            if slot == 0 {
+                break;
+            }
+            if (slot >> 32) as u32 == hash {
+                let group = slot as u32 - 1;
+                if self.cells[group as usize * N..(group as usize + 1) * N] == cells {
+                    return (group, false);
+                }
+            }
+            at = (at + 1) & mask;
+        }
+        let group = self.count;
+        self.count += 1;
+        self.cells.extend_from_slice(&cells);
+        self.slots[at] = u64::from(hash) << 32 | u64::from(group + 1);
+        if self.count as usize * 2 > self.slots.len() {
+            self.grow();
+        }
+        (group, true)
+    }
+
     /// The number of the group of `row` projected onto `positions`, whose count
     /// is the groups' `width`, and whether the row is the first read of it.
     fn number(&mut self, row: &[TermId], positions: &[u16]) -> (u32, bool) {
-        let mut hash = 0x9E37_79B9_7F4A_7C15_u64;
-        for &position in positions {
-            hash = (hash.rotate_left(5) ^ u64::from(row[usize::from(position)].encoding())).wrapping_mul(0x517C_C1B7_2722_0A95);
+        // The cells' products are independent of each other, so a row of many cells
+        // takes about one step of the machine's multiplier for each, and not the
+        // latency of a chain. A hash decides no group, so any hash of equal cells is one.
+        let mut sum = 0u64;
+        for (rank, &position) in positions.iter().enumerate() {
+            sum = sum.wrapping_add((u64::from(row[usize::from(position)].encoding()) + 1).wrapping_mul(CELL_MULTIPLIERS[rank % CELL_MULTIPLIERS.len()]));
         }
-        let hash = (hash ^ (hash >> 32)) as u32;
+        let mixed = (sum ^ (sum >> 29)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        let hash = (mixed ^ (mixed >> 32)) as u32;
         let mask = self.slots.len() - 1;
         let mut at = hash as usize & mask;
         loop {

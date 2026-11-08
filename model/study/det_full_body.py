@@ -98,7 +98,7 @@ def _gold_key(ev,record,adapter,binding):
         task_input_sha256=_file(task)['sha256'],kept_sha256=_sha(record['evaluation']['kept_assignments']),
         physical_layout_sha256=_sha(binding['source_body_schema']),gold_native=record['native']['gold'],
         producer={k:record[k] for k in ('engine_commit','wheel_sha256','native_binary_sha256')},
-        runtime={k:deepcopy(ev.receipt[k]) for k in ('runtime','config_sha256','deadline_seconds',
+        runtime={k:deepcopy(ev.receipt[k]) for k in ('runtime','config_sha256',
             'table_work_cap','rule_tests','session_bytes','reference_sha256')},
         implementation={name:_file(CODE_ROOT/name)['sha256'] for name in (
             'det_full_body.py','evaluator_train.py','native_correspondence.py',
@@ -139,7 +139,7 @@ def acquire_det_full_body_train_point(ev,record,adapter,ntrain,ntest,side='mutan
     cache_root.mkdir(parents=True,exist_ok=True);path=cache_root/(_sha(key)+'.json.gz');ledger=[]
     try:
         packet=stored();kind='stored_raw'
-    except (ValueError,OSError) as error:
+    except (ev.arclog.Refusal,ValueError,OSError) as error:
         ledger.append(dict(source='stored_raw',status='unavailable',reason=str(error)))
         if path.exists():
             with gzip.open(path,'rt') as stream:envelope=json.load(stream)

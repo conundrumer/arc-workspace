@@ -19,7 +19,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from common import read_json  # noqa: E402
 from query_structure import Reader, parse_forms  # noqa: E402
-from tables_worker import BUDGET, CORPUS, PER_QUERY, REPO, SEED, TASKS, keep, read_table, split_of  # noqa: E402
+from tables_worker import BUDGET, CORPUS, PER_QUERY, REPO, SEED, TASKS, keep, read_table, read_checked, split_of  # noqa: E402
 
 
 def worker(old_root, new_root, task):
@@ -39,7 +39,7 @@ def worker(old_root, new_root, task):
     script = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(script)
     data = CORPUS / (task + '.arcdata')
-    cases = arclog.case_files(task, (CORPUS / (task + '.arclog')).read_text(), data.read_text() if data.exists() else '', str(CORPUS))
+    cases = arclog.case_files(task, read_checked(CORPUS / (task + '.arclog')), read_checked(data) if data.exists() else '', str(CORPUS))
     case = [held for held in cases if held.concept][0]
     settings = arclog.DecodeSettings()
     gold = arclog.StudyProgram.from_sexp(case.arclog, settings)
@@ -68,7 +68,7 @@ def worker(old_root, new_root, task):
         if any(query['form'] == form for query in lost):
             try:
                 specs, _ = gold.draw_specs(point, 1, 5000, 0, operation='mixed', source_revision=SEED, task=task, case=case.case)
-            except ValueError:
+            except arclog.Refusal:
                 continue
             specs_of.setdefault(form, []).extend(specs)
     gold_forms = parse_forms(case.arclog)

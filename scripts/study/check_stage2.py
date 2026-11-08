@@ -21,7 +21,7 @@ import tempfile
 from threading import Event, Lock, Thread
 import time
 
-from check_stage1_all import CaseDeadline, inventory
+from check_stage1_all import CaseDeadline, inventory, read_checked
 
 POLICY = "complete-domain-unique-text-gold-names-v7"
 READER = "complete-program-bindings-v2"
@@ -80,7 +80,7 @@ def audit_case(args, row, source, session, settings, samples):
                     if any(name.startswith("choice_check:") for name in stats["counts"]):
                         raise RuntimeError("invalid choices were offered to the sampler")
                     if any(name.startswith("domain_search_stopped:") for name in stats["counts"]):
-                        raise TimeoutError("completion-domain search reached its explicit deadline")
+                        raise TimeoutError("completion-domain search reached its explicit node cap")
                     identities = [spec.identity_json for spec in specs]
                     if len(set(identities)) != len(identities):
                         raise RuntimeError("sampling without replacement returned a duplicate")
@@ -160,11 +160,11 @@ def check_task(args):
     import arclog
     names = json.loads(args.worklist.read_text())
     emit(dict(event="inventory", task=args.worker, expected_cases=names))
-    sources = arclog.case_files(args.worker, (args.corpus / f"{args.worker}.arclog").read_text(),
-                               (args.corpus / f"{args.worker}.arcdata").read_text(), str(args.corpus))
+    sources = arclog.case_files(args.worker, read_checked(args.corpus / f"{args.worker}.arclog"),
+                               read_checked(args.corpus / f"{args.worker}.arcdata"), str(args.corpus))
     sources = {case.case: case for case in sources}
-    settings = (arclog.DecodeSettings(deadline_seconds=args.domain_seconds, rule_tests=False)
-                if args.domain_seconds else arclog.DecodeSettings.corpus())
+    settings = (arclog.DecodeSettings(mutation_node_cap=args.domain_nodes, rule_tests=False)
+                if args.domain_nodes else arclog.DecodeSettings.corpus())
     task = arclog.Task.from_json((args.tasks / f"{args.worker}.json").read_text(), arclog.World.Closed)
     session = arclog.Session(task, settings, session_bytes=arclog.STUDY_SESSION_BYTES)
     samples = [args.sample_start]
@@ -239,7 +239,7 @@ def run_task(args, task, names, receive, cancel, job_dir):
         command = [sys.executable, "-B", str(Path(__file__).resolve()), "--worker", task,
             "--worklist", str(worklist), "--export", str(args.export), "--corpus", str(args.corpus),
             "--tasks", str(args.tasks), "--case-seconds", str(args.case_seconds),
-            "--domain-seconds", str(args.domain_seconds), "--per-point", str(args.per_point),
+            "--domain-nodes", str(args.domain_nodes), "--per-point", str(args.per_point),
             "--seed", str(args.seed), "--program-samples", str(args.program_samples),
             "--sample-start", str(samples), "--ks", *map(str, args.ks), "--operations", *args.operations]
         if args.body is not None:
@@ -308,7 +308,7 @@ def run_task(args, task, names, receive, cancel, job_dir):
                         # A case's matrix grows with its AST and is not a unit
                         # of bounded work. A hard case/stall guard must
                         # be explicitly requested by the caller.
-                        deadline = (active_started + args.case_seconds + args.domain_seconds if args.case_seconds
+                        deadline = (active_started + args.case_seconds if args.case_seconds
                                     else active_started + args.stall_seconds if args.stall_seconds else float("inf"))
                     elif event == "cursor":
                         cursor = row["cursor"]
@@ -362,7 +362,7 @@ def main():
     parser.add_argument("--seed", type=int, default=4231)
     parser.add_argument("--workers", "--jobs", type=int, default=int(os.environ.get("ARC_HEAVY_CPUS", "1")))
     parser.add_argument("--case-seconds", type=float, default=0, help="optional whole-case limit; 0 (default) lets the full matrix finish")
-    parser.add_argument("--domain-seconds", type=float, default=0, help="optional native search deadline; 0 (default) finishes the finite domain")
+    parser.add_argument("--domain-nodes", type=int, default=0, help="optional native search node cap; 0 (default) finishes the finite domain")
     parser.add_argument("--startup-seconds", type=float, default=0, help="optional startup limit; 0 (default) lets task expansion finish")
     parser.add_argument("--stall-seconds", type=float, default=0, help="optional guard for time without a new audit phase; 0 disables it")
     parser.add_argument("--task-seconds", type=float, help="optional hard total task budget; default is case supervision")
@@ -395,7 +395,7 @@ def main():
         return
     budget = int(os.environ.get("ARC_HEAVY_CPUS", str(args.workers)))
     if (not 1 <= args.workers <= budget or min(args.case_seconds, args.startup_seconds) < 0
-            or min(args.domain_seconds, args.stall_seconds) < 0
+            or min(args.domain_nodes, args.stall_seconds) < 0
             or args.task_seconds is not None and args.task_seconds <= 0):
         parser.error("invalid workers/deadline; workers must not exceed ARC_HEAVY_CPUS")
     if args.per_point < 1 or args.program_samples < 0 or not args.ks or min(args.ks) < 1:
@@ -424,7 +424,7 @@ def main():
         export=str(args.export.resolve()), corpus=str(args.corpus.resolve()), tasks_path=str(args.tasks.resolve()),
         tasks=tasks, cases=args.cases, body=args.body, ks=args.ks, operations=args.operations,
         per_point=args.per_point, seed=args.seed, case_seconds=args.case_seconds,
-        domain_seconds=args.domain_seconds, program_samples=args.program_samples,
+        domain_nodes=args.domain_nodes, program_samples=args.program_samples,
         resume_from=str(args.resume_from.resolve()) if args.resume_from else None)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     output_lock = args.output.with_suffix(".lock").open("a+")
@@ -452,8 +452,8 @@ def main():
             coverage = ("policy", "export", "corpus", "tasks_path", "tasks", "cases", "body", "ks", "operations", "per_point", "seed")
             if any(source_config.get(key) != config[key] for key in coverage):
                 parser.error("--resume-from mutation policy or audit coverage differs")
-            if args.domain_seconds and source_config.get("domain_seconds") != args.domain_seconds:
-                parser.error("--resume-from native search deadline differs")
+            if args.domain_nodes and source_config.get("domain_nodes") != args.domain_nodes:
+                parser.error("--resume-from native search node cap differs")
             if source_config.get("reader") not in ("complete-program-grammar-v1", READER):
                 parser.error("--resume-from has an incompatible complete-program reader")
             source_cases = {}

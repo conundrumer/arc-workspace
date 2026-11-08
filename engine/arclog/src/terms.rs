@@ -513,30 +513,62 @@ fn ident_columns(ty: &ValueType, start: usize, positions: &mut Vec<usize>) -> us
 /// by member, each set's members in this order, from the inside out, and a
 /// set that is a prefix of the other comes first.
 pub(crate) fn content_order(types: &[ValueType], a: &[TermId], b: &[TermId], table: &InternTable) -> std::cmp::Ordering {
+    content_order_by(types, None, a, b, table, &IdentRanks::default())
+}
+
+/// [`content_order`], comparing the columns in the order `columns` gives where
+/// it is given, and not left to right, and ordering the file Idents by
+/// `ranks` before their written numbers.
+pub(crate) fn content_order_by(types: &[ValueType], columns: Option<&[usize]>, a: &[TermId], b: &[TermId], table: &InternTable, ranks: &IdentRanks) -> std::cmp::Ordering {
     use std::cmp::Ordering;
-    for ((ty, x), y) in types.iter().zip(a).zip(b) {
-        let order = match ty {
-            ValueType::Ident(_) if x != y => ident_order(Ident(x.0), Ident(y.0), table),
+    let at = |column: usize| {
+        let (x, y) = (a[column], b[column]);
+        match &types[column] {
+            ValueType::Ident(_) if x != y => ident_order(Ident(x.0), Ident(y.0), table, ranks),
             _ => x.0.cmp(&y.0),
-        };
-        if order != Ordering::Equal {
-            return order;
         }
+    };
+    match columns {
+        Some(columns) => columns.iter().map(|&column| at(column)).find(|order| order.is_ne()).unwrap_or(Ordering::Equal),
+        None => (0..types.len().min(a.len()).min(b.len())).map(at).find(|order| order.is_ne()).unwrap_or(Ordering::Equal),
     }
-    Ordering::Equal
+}
+
+/// A rank for each file Ident of a set of rows, so that their order does not
+/// depend on the numbers a file writes them with: the rank is the color of
+/// the Ident in the refinement of [`file_ident_ranks`].
+#[derive(Default)]
+pub(crate) struct IdentRanks {
+    /// The rank of each file Ident, by the Ident's number in the session.
+    ranks: crate::hash::StableHashMap<u32, u32>,
+    /// Whether two file Idents of one rank compare equal, as the refinement
+    /// has them, and not by their written numbers.
+    tied: bool,
+}
+
+impl IdentRanks {
+    /// Whether any file Ident has a rank.
+    pub(crate) fn is_ranked(&self) -> bool {
+        !self.ranks.is_empty()
+    }
+
+    fn order(&self, a: Ident, b: Ident, written: (u32, u32)) -> std::cmp::Ordering {
+        let rank = |ident: Ident| self.ranks.get(&ident.0).copied().unwrap_or(0);
+        rank(a).cmp(&rank(b)).then_with(|| if self.tied { std::cmp::Ordering::Equal } else { written.0.cmp(&written.1) })
+    }
 }
 
 /// The order of two Idents by their contents, as [`content_order`] gives it.
-fn ident_order(a: Ident, b: Ident, table: &InternTable) -> std::cmp::Ordering {
+fn ident_order(a: Ident, b: Ident, table: &InternTable, ranks: &IdentRanks) -> std::cmp::Ordering {
     use std::cmp::Ordering;
     match (table.content(a), table.content(b)) {
-        (Content::FromFile { written: x, .. }, Content::FromFile { written: y, .. }) => x.0.cmp(&y.0),
+        (Content::FromFile { written: x, .. }, Content::FromFile { written: y, .. }) => ranks.order(a, b, (x.0, y.0)),
         (Content::FromFile { .. }, Content::Set(_)) => Ordering::Less,
         (Content::Set(_), Content::FromFile { .. }) => Ordering::Greater,
         (Content::Set(x), Content::Set(y)) => {
             let mut types = Vec::new();
             column_types(&x.member, &mut types);
-            set_order(&types, x.each(), y.each(), table)
+            set_order_by(&types, x.each(), y.each(), table, ranks)
         }
     }
 }
@@ -550,10 +582,120 @@ pub(crate) fn set_order<'r>(
     b: impl Iterator<Item = &'r [TermId]>,
     table: &InternTable,
 ) -> std::cmp::Ordering {
+    set_order_by(types, a, b, table, &IdentRanks::default())
+}
+
+/// [`set_order`], with the file Idents ordered by `ranks` first.
+fn set_order_by<'r>(
+    types: &[ValueType],
+    a: impl Iterator<Item = &'r [TermId]>,
+    b: impl Iterator<Item = &'r [TermId]>,
+    table: &InternTable,
+    ranks: &IdentRanks,
+) -> std::cmp::Ordering {
     let (mut a, mut b): (Vec<&[TermId]>, Vec<&[TermId]>) = (a.collect(), b.collect());
-    a.sort_by(|x, y| content_order(types, x, y, table));
-    b.sort_by(|x, y| content_order(types, x, y, table));
-    a.iter().zip(&b).map(|(x, y)| content_order(types, x, y, table)).find(|order| order.is_ne()).unwrap_or_else(|| a.len().cmp(&b.len()))
+    a.sort_by(|x, y| content_order_by(types, None, x, y, table, ranks));
+    b.sort_by(|x, y| content_order_by(types, None, x, y, table, ranks));
+    a.iter().zip(&b).map(|(x, y)| content_order_by(types, None, x, y, table, ranks)).find(|order| order.is_ne()).unwrap_or_else(|| a.len().cmp(&b.len()))
+}
+
+/// The file Idents that the value `ident` is or holds, at any depth of sets,
+/// each once, added to `found`.
+fn reached_files(ident: Ident, table: &InternTable, found: &mut Vec<u32>) {
+    match table.content(ident) {
+        Content::FromFile { .. } => {
+            if !found.contains(&ident.0) {
+                found.push(ident.0);
+            }
+        }
+        Content::Set(set) => {
+            let mut types = Vec::new();
+            column_types(&set.member, &mut types);
+            for member in set.each() {
+                for (ty, id) in types.iter().zip(member) {
+                    if let ValueType::Ident(_) = ty {
+                        reached_files(Ident(id.0), table, found);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The ranks of the file Idents of `rows`, whose columns take `types`,
+/// compared in the order `columns` gives, that depend on the rows alone and
+/// not on the numbers the file writes the Idents with: color refinement of
+/// the Idents, from all of one color, where the next color of an Ident is
+/// the pair of its color and the sorted list, over the rows that hold it, of
+/// the column of the holding and the class of the row, a class being the
+/// rows that compare equal when Idents of one color do. Two Idents of one
+/// color at the end differ by no property of the rows that the refinement
+/// sees, and compare by their written numbers.
+pub(crate) fn file_ident_ranks<R: std::ops::Deref<Target = [TermId]>>(types: &[ValueType], columns: &[usize], rows: &[R], table: &InternTable) -> IdentRanks {
+    let reached: Vec<Vec<Vec<u32>>> = rows
+        .iter()
+        .map(|row| {
+            columns
+                .iter()
+                .map(|&column| {
+                    let mut found = Vec::new();
+                    if let Some(ValueType::Ident(_)) = types.get(column) {
+                        reached_files(Ident(row[column].0), table, &mut found);
+                    }
+                    found
+                })
+                .collect()
+        })
+        .collect();
+    let mut files: Vec<u32> = reached.iter().flatten().flatten().copied().collect();
+    files.sort_unstable();
+    files.dedup();
+    if files.is_empty() {
+        return IdentRanks::default();
+    }
+    let mut colors: crate::hash::StableHashMap<u32, u32> = files.iter().map(|&file| (file, 0)).collect();
+    let mut distinct = 1;
+    loop {
+        let ranks = IdentRanks { ranks: colors.clone(), tied: true };
+        let mut order: Vec<usize> = (0..rows.len()).collect();
+        order.sort_by(|&x, &y| content_order_by(types, Some(columns), &*rows[x], &*rows[y], table, &ranks));
+        let mut class = vec![0u32; rows.len()];
+        for at in 1..order.len() {
+            let apart = content_order_by(types, Some(columns), &*rows[order[at - 1]], &*rows[order[at]], table, &ranks).is_ne();
+            class[order[at]] = class[order[at - 1]] + u32::from(apart);
+        }
+        let mut signature: crate::hash::StableHashMap<u32, Vec<(usize, u32)>> = crate::hash::StableHashMap::default();
+        for (row, per_column) in reached.iter().enumerate() {
+            for (at, held) in per_column.iter().enumerate() {
+                for &file in held {
+                    signature.entry(file).or_default().push((at, class[row]));
+                }
+            }
+        }
+        let mut keyed: Vec<(u32, Vec<(usize, u32)>, u32)> = files
+            .iter()
+            .map(|&file| {
+                let mut held = signature.remove(&file).unwrap_or_default();
+                held.sort_unstable();
+                (colors[&file], held, file)
+            })
+            .collect();
+        keyed.sort();
+        let mut next = colors.clone();
+        let mut color = 0;
+        for at in 0..keyed.len() {
+            if at > 0 && (keyed[at - 1].0, &keyed[at - 1].1) != (keyed[at].0, &keyed[at].1) {
+                color += 1;
+            }
+            next.insert(keyed[at].2, color);
+        }
+        colors = next;
+        if color + 1 == distinct {
+            break;
+        }
+        distinct = color + 1;
+    }
+    IdentRanks { ranks: colors, tied: false }
 }
 
 /// Adds to `types` the type of each column a value of type `ty` takes: a

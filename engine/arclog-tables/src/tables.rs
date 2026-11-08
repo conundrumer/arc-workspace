@@ -494,14 +494,14 @@ pub(crate) fn relation_metadata(registry: &Registry, program: &CheckedProgram, f
         stats::units(Phase::TableLabelNames, program.program.program.value().forms.len());
         label_names(&program.program.program, registry).swap_remove(top)
     };
-    let label_text = |label: LabelId| named.iter().find(|(id, _)| *id == label).map(|(_, name)| name.clone()).expect("every label of the form is named");
+    let label_text = |label: LabelId| named.iter().find(|(id, _)| *id == label).map(|(_, name)| name.clone());
     let columns = names
         .into_iter()
         .zip(types)
         .zip(placements)
         .map(|((name, ty), placement)| {
             let label_id = placement.and_then(|placed| placed.label);
-            TableColumn { name, ty: ty.clone(), slot: placement.map(|placed| placed.slot), label_id, label: label_id.map(label_text) }
+            TableColumn { name, ty: ty.clone(), slot: placement.map(|placed| placed.slot), label_id, label: label_id.and_then(label_text) }
         })
         .collect();
     let flows = column_flows(program, relation.node, relation.output.as_deref(), &types, registry).into();
@@ -741,18 +741,6 @@ fn models_of_body(rows: &Assigned<BodyValue>) -> Assigned<Vec<RelationValue>> {
 /// enumeration as a last, stopped model.
 fn models_at(evaluation: &Evaluation<'_>, relation: &GraphRelation, example: Option<Example>) -> Result<Vec<RelationValue>, End> {
     let mut values = Vec::new();
-    // Where the operation's export reserves bytes for each row, the evaluation
-    // of this relation stops once its rows would take a reservation past the
-    // room ([`arclog::eval::join::Budget::charge_rows`]).
-    let limits;
-    let exporting;
-    let evaluation = if evaluation.limits.row_reserve.is_some() {
-        limits = evaluation.limits.clone().exporting(&evaluation.program.program, relation.node);
-        exporting = Evaluation { limits: &limits, ..*evaluation };
-        &exporting
-    } else {
-        evaluation
-    };
     let end = evaluation
         .models(relation, example, &mut |value| {
             values.push(value.clone());

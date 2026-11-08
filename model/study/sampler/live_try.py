@@ -33,7 +33,7 @@ import live
 import sampler_paths as P
 
 SCOPE = 3  # the first clauses that make the scope of --clause
-SETTINGS = dict(deadline_seconds=float(os.environ.get('WRITER_ROW_DEADLINE', 10.0)), rule_tests=False, table_work_cap=1 << 21, static_pruning=True)  # WRITER_ROW_DEADLINE: wall-clock seconds; training rows set it far above any table, so that no row depends on the machine's load
+SETTINGS = dict(rule_tests=False, table_work_cap=1 << 21, static_pruning=True)  # the engine reads no clock, so no row depends on the machine's load
 
 
 def session_of(task):

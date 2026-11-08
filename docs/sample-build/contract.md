@@ -387,7 +387,8 @@ The samples do not need it: a sample is one state and its target queries. Later 
 
 - An evaluation that steps the writer along a sequence: at each state, the weight the writer gives to the target query that the sequence takes next. That target query is the one whose `hash` the next state adds.
 - An evaluation that runs the writer from the root state, against the sequences that reach the goal.
-- A weight for each sample in a fit: the count of sequences that hold it.
+
+A fit weighs each sample once, whatever the count of sequences that hold it or of visits that a search made to its state.
 
 On disk, the source is `walk-seqs-SET.jsonl` in the `gold-union` folder, with each state given as its line number in `walk-states-SET.jsonl`. Those lines are keyed by (task, set of query identities), with the set of built graph tables kept as a measurement and `redundant_forms` as the count of queries that make no progress.
 

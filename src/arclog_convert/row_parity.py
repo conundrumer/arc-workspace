@@ -99,6 +99,7 @@ from pathlib import Path
 from arc.task import TASKS_DIR
 from arclog_convert import OUT_ENV, parity_text, paths, train_replay
 from engine import checkout
+from arclog_convert.plans import bound_to_one_cpu
 from engine.pool import pool_size, share_env
 
 BASELINE = Path(__file__).with_name("row_parity.tsv")
@@ -106,7 +107,7 @@ BASELINE = Path(__file__).with_name("row_parity.tsv")
 VERSION = 5
 """The form of a record."""
 
-CORPUS = "gen_check"
+CORPUS = paths.CORPUS
 """The directory beside `gen/` that holds, for each converted task, its
 program with the check relations of the relations it folds
 (`arclog_convert.checks`) and the clauses of the relations the projection pass
@@ -206,12 +207,6 @@ def check_chunk(souffle: ProcessPoolExecutor, stems: list[str], corpus: Path, ta
             write_record(records, stem, files[stem], sources, binary, lines[stem])
     finally:
         shutil.rmtree(work, ignore_errors=True)
-
-
-def bound_to_one_cpu() -> None:
-    """The initializer of a worker: its environment is `share_env(1)`, so the
-    Souffle runs it makes in process take a bound of one."""
-    os.environ.update(share_env(1))
 
 
 def chunks(stems: list[str], solvers: Path) -> list[list[str]]:

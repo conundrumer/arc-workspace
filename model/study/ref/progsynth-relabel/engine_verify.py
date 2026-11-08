@@ -294,7 +294,7 @@ def main():
     ap.add_argument('--only', nargs='*', default=None); ap.add_argument('--verbose', action='store_true'); ap.add_argument('--deadline', type=float, default=None)
     a = ap.parse_args()
     cfg = json.load(open(DATA_ROOT / 'ast/run/corpus-v11/run.json'))
-    settings = arclog.DecodeSettings(deadline_seconds=a.deadline or cfg['deadline'], table_work_cap=cfg['work_cap'] * (64 if a.deadline else 1), rule_tests=False)
+    settings = arclog.DecodeSettings(table_work_cap=cfg['work_cap'] * (64 if a.deadline else 1), rule_tests=False)
     pairs = []
     for mp in sorted(glob.glob(os.path.join(a.render, '*', 'meta.json'))):
         meta = json.load(open(mp)); pid = meta['pair_id']

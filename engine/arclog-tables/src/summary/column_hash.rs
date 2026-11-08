@@ -104,14 +104,12 @@ impl Cells<'_> {
                         .map(|row| {
                             let mut run = StableHasher::new();
                             for &column in columns {
-                                for &cell in run_of(rows, self.width, self.starts[column], self.widths[column], row) {
-                                    run.write_i32(cell);
-                                }
+                                run.write_i32s(run_of(rows, self.width, self.starts[column], self.widths[column], row));
                             }
                             run.finish128().0
                         })
                         .collect();
-                    runs.sort_unstable();
+                    super::sort_hashes(&mut runs);
                     runs.dedup();
                     digest(&runs)
                 })
@@ -137,14 +135,12 @@ impl Cells<'_> {
                         .map(|row| {
                             let mut hasher = StableHasher::new();
                             for &column in order {
-                                for &cell in run_of(rows, self.width, self.starts[column], self.widths[column], row) {
-                                    hasher.write_i32(cell);
-                                }
+                                hasher.write_i32s(run_of(rows, self.width, self.starts[column], self.widths[column], row));
                             }
                             hasher.finish128().0
                         })
                         .collect();
-                    hashes.sort_unstable();
+                    super::sort_hashes(&mut hashes);
                     digest(&hashes)
                 })
                 .collect();

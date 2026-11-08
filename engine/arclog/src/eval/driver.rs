@@ -43,11 +43,20 @@ pub(super) struct Driver<'e, 'a> {
     pub(super) trace: Option<&'e RefCell<RunTrace>>,
     /// The `DET` relations whose values this driver has read.
     pub(super) determined: std::cell::Cell<u64>,
+    /// Whether a factor of more than one model, met outside an enumeration,
+    /// takes its first model, as [`Evaluation::body`] has it, and not a fault.
+    pub(super) first_model: bool,
 }
 
 impl<'e, 'a> Driver<'e, 'a> {
     pub(super) fn new(evaluation: &'e Evaluation<'a>) -> Self {
-        Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default(), det: None, trace: None, determined: std::cell::Cell::new(0) }
+        Driver { evaluation, values: RefCell::default(), model: RefCell::default(), met: RefCell::default(), det: None, trace: None, determined: std::cell::Cell::new(0), first_model: false }
+    }
+
+    /// The driver of a body in progress, which reads a factor of several
+    /// models at its first model.
+    pub(super) fn taking_first_models(evaluation: &'e Evaluation<'a>) -> Self {
+        Driver { first_model: true, ..Driver::new(evaluation) }
     }
 
     /// The driver of `evaluation`, a nested one of a driver that keeps
@@ -302,12 +311,9 @@ impl<'e, 'a> Driver<'e, 'a> {
         };
         let all: Vec<usize> = (0..body.clause.nodes.len()).collect();
         let reads = self.reads(&body.clause, &all, &inputs);
-        // The rows of a clause of the exported relation are held by its export.
-        let exported = self.evaluation.limits.exported.is_some_and(|(program, node)| program == std::ptr::from_ref(self.program()) as usize && self.program().forms_of(node).contains(form));
-        let reserve = self.evaluation.limits.row_reserve.filter(|_| exported).map(|reserve| reserve.bytes_per_row(body.clause.columns.len()));
         let shape = || carry::body_shape(&body);
         let measured = ir::measures().then(|| (crate::clock::Stopwatch::start(), super::RequestWork::latest().map_or(0, |request| request.count())));
-        let value = self.cached(form, &reads.request(&content, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example, reserve)));
+        let value = self.cached(form, &reads.request(&content, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example)));
         if let Some((start, before)) = measured {
             let work = super::RequestWork::latest().map_or(0, |request| request.count()).saturating_sub(before);
             if work > 0 {
@@ -322,7 +328,7 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// `form` on `example`, as [`Driver::body_relation`] gives it.
     pub(super) fn body(&self, form: &NodePath, kept: &[u32], example: Option<Example>) -> Outcome<RelationValue> {
         match self.compiled(form, kept, example)? {
-            Ok((body, inputs)) => Ok(self.body_relation(form, &body, &inputs, example, None)),
+            Ok((body, inputs)) => Ok(self.body_relation(form, &body, &inputs, example)),
             Err(value) => Ok(value),
         }
     }
@@ -345,28 +351,17 @@ impl<'e, 'a> Driver<'e, 'a> {
     /// the value of its own entry in the result cache, as
     /// `docs/engine/synthesis.md#factorized-bodies` gives. The first part
     /// that stops stops the relation.
-    ///
-    /// Where `reserve` gives the bytes that an export of the relation
-    /// reserves for each row at the least, the last part is evaluated under a
-    /// row floor ([`Budget::with_row_floor`]) whose multiplier is the product
-    /// of the rows of the parts before it, where each of them holds a row. No
-    /// other part has a floor: a part after it may hold no row, and then the
-    /// relation holds no row to export.
-    fn body_relation(&self, form: &NodePath, body: &CompiledBody, inputs: &JoinInputs, example: Option<Example>, reserve: Option<usize>) -> RelationValue {
+    fn body_relation(&self, form: &NodePath, body: &CompiledBody, inputs: &JoinInputs, example: Option<Example>) -> RelationValue {
         let clause = &body.clause;
         let order = plan::variable_order(clause, &join::sizes(clause, inputs), &[]);
         let all: Vec<usize> = (0..clause.nodes.len()).collect();
         let mut placed: Vec<(u32, RelationPart)> = Vec::new();
         let mut value = None;
         let parts = join::parts(clause, &all, &|node| body.conjuncts[node]);
-        let last = parts.len().saturating_sub(1);
-        for (at, part) in parts.into_iter().enumerate() {
+        for part in parts {
             let written = part.nodes.iter().map(|&node| clause.written[node]).min().unwrap_or(0);
             let entry = self.part_entry(form, body, &part, inputs);
-            let floor = reserve.filter(|_| at == last && placed.iter().all(|(_, found)| !found.rows.is_empty())).map(|bytes| {
-                (bytes, placed.iter().filter(|(_, found)| !found.columns.is_empty()).fold(1u64, |rows, (_, found)| rows.saturating_mul(found.rows.len() as u64)))
-            });
-            match self.part_value(form, body, &part, &entry, inputs, &order, example, floor) {
+            match self.part_value(form, body, &part, &entry, inputs, &order, example) {
                 RelationValue::Rows(relation) => placed.extend(relation.parts().iter().map(|found| (written, RelationPart {
                     columns: found.columns.iter().map(|column| entry.columns[usize::from(column.0)]).collect(),
                     rows: found.rows.clone(),
@@ -398,7 +393,6 @@ impl<'e, 'a> Driver<'e, 'a> {
         inputs: &JoinInputs,
         order: &plan::VariableOrder,
         example: Option<Example>,
-        floor: Option<(usize, u64)>,
     ) -> RelationValue {
         let evaluation = self.evaluation;
         let request = entry.reads.request(&entry.content, example);
@@ -407,13 +401,14 @@ impl<'e, 'a> Driver<'e, 'a> {
         }
         let compute = || {
             let limits = evaluation.limits;
-            let (value, cost) = limits.request.measure(|| {
+            let (value, cost) = limits.request.measure_holding(|| {
                 let mut budget = Budget::new(evaluation.limits, evaluation.session);
-                if let Some((bytes_per_row, multiplier)) = floor {
-                    budget = budget.with_row_floor(bytes_per_row, multiplier);
-                }
                 let Ok(value) = self.holding_stops::<Infallible>(&request, || {
-                    let relation = join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget);
+                    // The content of the part: the rows it reads and the rows it writes.
+                    let relation = budget
+                        .charge_reads(&part.nodes, inputs)
+                        .and_then(|()| join::search_part(&body.clause, &part.nodes, part.order(order, &[]), inputs, evaluation.registry, &entry.columns, &mut budget))
+                        .and_then(|relation| budget.charge_written(&relation).map(|()| relation));
                     Ok(match relation {
                         Ok(relation) => RelationValue::Rows(Arc::new(relation)),
                         Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
@@ -421,7 +416,7 @@ impl<'e, 'a> Driver<'e, 'a> {
                 });
                 record_whole(&budget, [&value]);
                 value
-            });
+            }, cache::held_by);
             cache::store(evaluation.session, &request, &value, cost);
             Ok(value)
         };
@@ -536,7 +531,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         let limits = self.evaluation.limits;
         let spent = Cell::new(Cost::default());
         let run = || {
-            let (value, cost) = limits.request.measure(|| self.holding_stops(request, compute));
+            let (value, cost) = limits.request.measure_holding(|| self.holding_stops(request, compute), |value| value.as_ref().map_or(0, cache::held_by));
             spent.set(cost);
             if let Ok(value) = &value {
                 cache::store(session, request, value, cost);
@@ -588,7 +583,9 @@ impl<'e, 'a> Driver<'e, 'a> {
         let session = self.evaluation.session;
         let limits = self.evaluation.limits;
         let Some(held) = &limits.held_stops else { return compute() };
-        if !limits.table_work.as_ref().is_some_and(|work| work.is_capped()) {
+        // The count of one assignment starts from none, and an entry that stops it there stops
+        // another assignment's count that began further on only by the work it did before.
+        if !limits.table_work.as_ref().is_some_and(|work| work.is_capped() && !work.is_scoped()) {
             return compute();
         }
         let entry_key = || cache::key(session, request);
@@ -659,7 +656,12 @@ impl<'e, 'a> Driver<'e, 'a> {
         let evaluation = self.evaluation;
         let order = plan::variable_order(clause, &join::sizes(clause, inputs), &[]);
         let mut budget = Budget::new(evaluation.limits, evaluation.session);
-        let value = match join::join(clause, &order, inputs, evaluation.registry, &mut budget) {
+        let all: Vec<usize> = (0..clause.nodes.len()).collect();
+        let joined = budget
+            .charge_reads(&all, inputs)
+            .and_then(|()| join::join(clause, &order, inputs, evaluation.registry, &mut budget))
+            .and_then(|relation| budget.charge_written(&relation).map(|()| relation));
+        let value = match joined {
             Ok(relation) => RelationValue::Rows(Arc::new(relation)),
             Err(bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
         };
@@ -816,7 +818,7 @@ impl FormBodies<'_> {
         if let Some(found) = cache::lookup(session, limits, &request, form) {
             return Ok(found.value);
         }
-        let (Ok(value), cost) = limits.request.measure(|| driver.holding_stops::<Infallible>(&request, || Ok(driver.join(form, clause, &inputs))));
+        let (Ok(value), cost) = limits.request.measure_holding(|| driver.holding_stops::<Infallible>(&request, || Ok(driver.join(form, clause, &inputs))), |value| value.as_ref().map_or(0, cache::held_by));
         cache::store(session, &request, &value, cost);
         Ok(value)
     }
@@ -830,7 +832,9 @@ impl FormBodies<'_> {
         let evaluation=self.driver.evaluation;
         let order=plan::variable_order(clause,&join::sizes(clause, &inputs),&bound.iter().map(|(v,_)|*v).collect::<Vec<_>>());
         let mut budget=Budget::new(evaluation.limits,evaluation.session);
-        let value=match join::join_at(clause,&order,&inputs,evaluation.registry,bound,&mut budget) {Ok(rows)=>RelationValue::Rows(Arc::new(rows)),Err(bound)=>RelationValue::Stopped(Stop {bound,form:form.clone()})};
+        let all:Vec<usize>=(0..clause.nodes.len()).collect();
+        let joined=budget.charge_reads(&all,&inputs).and_then(|()|join::join_at(clause,&order,&inputs,evaluation.registry,bound,&mut budget)).and_then(|relation|budget.charge_written(&relation).map(|()|relation));
+        let value=match joined {Ok(rows)=>RelationValue::Rows(Arc::new(rows)),Err(bound)=>RelationValue::Stopped(Stop {bound,form:form.clone()})};
         record_whole(&budget,[&value]);Ok(value)
     }
 
@@ -873,8 +877,8 @@ fn recorded(budget: &Budget<'_>, value: Outcome<RelationValue>) -> Outcome<Relat
 
 /// Records the counts of `budget` in its session where its evaluation,
 /// which gave `values` and no fault, ended whole: where no value is a stop.
-/// A stop at the byte bound, the request work cap or a cancellation leaves counts
-/// that depend on the machine, a stop at a cap is the fault of its solver,
+/// A stop at the request work cap, at a byte budget or a cancellation leaves counts
+/// that depend on the budget or the caller, a stop at a cap is the fault of its solver,
 /// and a stop at a margin leaves the counts of an evaluation cut short.
 pub(super) fn record_whole<'v>(budget: &Budget<'_>, values: impl IntoIterator<Item = &'v RelationValue>) {
     if values.into_iter().all(|value| matches!(value, RelationValue::Rows(_) | RelationValue::Undefined)) {

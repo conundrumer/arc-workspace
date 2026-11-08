@@ -49,7 +49,7 @@ fn columns(decoder: &Decoder<'_>, evidence: &[Table], before: Option<&StreamTabl
 /// The export by assignment of each model step of `program` on `task`.
 fn exports(task: &str, program: &str) -> Vec<CaseColumns> {
     let registry = Registry::get();
-    let settings = DecodeSettings { deadline: None, table_work_cap: 1 << 21, rule_tests: false, ..DecodeSettings::synthesis() };
+    let settings = DecodeSettings { table_work_cap: 1 << 21, rule_tests: false, ..DecodeSettings::synthesis() };
     let judged = read_judged_train_text(task).expect("the task's train pairs");
     let task = read_task_text(task).expect("the task");
     let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES }, settings.caps);

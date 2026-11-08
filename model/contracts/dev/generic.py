@@ -3,7 +3,7 @@
     python3 generic.py TASK [TASK ...]
 
 A query-generic postcondition is one that every query of its shape makes, whatever the task: its result is not empty (`empty`), and within its rows
-one column fixes another (`X fixes Y`). A postcondition is falsifiable where it is new or redundant: it fails on a variant whose preconditions hold.
+one column determines another (`X determines Y`). A postcondition is falsifiable where it is new or redundant: it fails on a variant whose preconditions hold.
 """
 import json
 import os
@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 OUTDIR = Path(os.environ.get('CONTRACTS_OUT', Path(__file__).parent / 'out'))
-KINDS = {'empty': lambda f: f == 'empty', 'a column fixes another': lambda f: ' fixes ' in f, 'any feature': lambda f: True}
+KINDS = {'empty': lambda f: f == 'empty', 'a column determines another': lambda f: ' determines ' in f, 'any feature': lambda f: True}
 c = Counter()
 cases = {}
 for task in sys.argv[1:]:

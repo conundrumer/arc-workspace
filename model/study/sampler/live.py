@@ -133,7 +133,6 @@ CHOOSE_LABEL = ' choose'  # what a CHOOSE lift adds to the label of the candidat
 GATE_RULES = frozenset(('no attempt', 'malformed', 'equals input', 'same size', 'colors'))  # the rules of Gate that refuse a fit (live_try.py --gold runs them on gold)
 FOLD_BYTES = 1 << 30  # a leave-one-out session's cap
 FILLS_HELD = 1000  # the most refused forms a Run keeps for its caller
-DEADLINE_SHARE = 0.9  # a request that took this share of the session's deadline ran to it
 STEERS = 'struct', 'tilt', 'rel', 'choice'
 STEER_FILES = dict(tilt='tilt_v1.json', rel='relR4_o.pkl', choice='choice5_o.pkl')
 
@@ -671,7 +670,7 @@ class Run:
         self.pri, self.session, self.deadline, self.gate, self.lim = pri, session, deadline, Gate(task, session.settings), limits
         self.V = V = session.vocabulary
         bind_vocabulary(V)
-        self.spent_after = DEADLINE_SHARE * (session.settings.deadline_seconds or math.inf)
+        self.spent_after = math.inf  # the engine reads no clock, so no table request runs to a deadline
         self.root = session.decoder()
         self.rng = random.Random(seed)
         self.orcs = {'RULE': or_counts(pri['compound'])} | {k: or_counts(v) for k, v in pri['compounds'].items()}

@@ -1,6 +1,7 @@
-"""Every table of a solver's concept case on a task JSON, in one engine call, at the assignment that solves the train pairs.
+"""Tables of a concept case, retaining assignments whose entries are complete.
 
-Runs under the engine runtime's python (-I). Reuses scripts/arclog.py's Tables and run_case.
+Each query uses the engine's evaluation caps. The task session has the same byte bound as verification. Each entry gives its rows as the
+evaluation holds them: a product of parts over the projection cap gives its row count and its parts, so no product is built.
 """
 import importlib.util
 import json
@@ -22,171 +23,332 @@ import arclog  # noqa: E402
 import numpy as np  # noqa: E402
 import provenance as PV  # noqa: E402
 
+SESSION_BYTES = arclog.SESSION_BYTES
+
+
+def product_of_parts(parts, columns):
+    """The distinct rows of the given columns of a product of parts, [(columns of the part, its rows, each cell hashable)]."""
+    held = [{}]
+    for cols, rows in parts:
+        here = [c for c in columns if c in cols]
+        if here:
+            at = [cols.index(c) for c in here]
+            values = list(dict.fromkeys(tuple(r[a] for a in at) for r in rows))
+            held = [dict(row, **{str(c): v for c, v in zip(here, value)}) for row in held for value in values]
+    return [[row[str(c)] for c in columns] for row in held] if all(str(c) in held[0] for c in columns) else []
+
+
+def decode_settings():
+    """The engine's corpus settings, with no query deadline."""
+    return arclog.DecodeSettings.corpus()
+
+
+class AssignmentUnavailable(RuntimeError):
+    """No required assignment has complete tables; selection records rejected bounds."""
+
+    def __init__(self, selection):
+        self.selection = selection
+        super().__init__('no %s assignment has complete tables: %s' % (selection['selection'], json.dumps(selection)))
+
 
 class FlowTables(CLI.Tables):
     """The engine's Tables, with the flows of every column (`flows`: {field: list}, as provenance reads them)."""
 
     def __init__(self, arclog_, np_, program, ct, task_json):
+        self.held_entries, self.held_keys = {}, {}
         super().__init__(arclog_, np_, program, ct, task_json)
         dt = ct.dtypes
         self.flows = {k: (np_.frombuffer(v, dt['flows.' + k]).tolist() if isinstance(v, bytes) else list(v)) for k, v in ct.flows.items()}
+        part = lambda name, cols: {k: (np_.frombuffer(v, dt['%s.%s' % (name, k)]) if isinstance(v, bytes) else v) for k, v in cols.items()}
+        self.P = part('projections', ct.projections)
+        self.PR = part('projection_rows', ct.projection_rows)
+        self.projection_runs = {}
+        for run, entry in enumerate(self.PR['entry'].tolist()):
+            if self.PR['defined'][run]:
+                self.projection_runs.setdefault(entry, []).append(run)
+        self.held_views = {}
+
+    def raw_rows(self, offset, n, types):
+        """The rows at the offset, whose columns convert with numpy when they are read."""
+        return RunRows(self.values, offset, n, types)
+
+    def entries(self, t):
+        if t not in self.held_entries:
+            self.held_entries[t] = super().entries(t)
+        return self.held_entries[t]
+
+    def assignments(self, t):
+        if t not in self.held_keys:
+            self.held_keys[t] = super().assignments(t)
+        return self.held_keys[t]
+
+    def entry_views(self, entry, t):
+        """[(columns of table t, raw rows)] of each part of the product at the entry."""
+        if entry not in self.held_views:
+            types = self.T['column_types'][t]
+            views = []
+            for run in self.projection_runs.get(entry, ()):
+                columns = [int(c) for c in self.P['columns'][int(self.PR['projection'][run])]]
+                views.append((columns, self.raw_rows(self.PR['offset'][run], int(self.PR['rows'][run]), [types[c] for c in columns])))
+            self.held_views[entry] = views
+        return self.held_views[entry]
+
+    def read_columns(self, entry, t, columns, raw):
+        """The distinct rows of the given columns of table t at the entry, from its rows, or as the product of what its parts give of them."""
+        if not self.counted(entry):
+            return [[r[c] for c in columns] for r in raw]
+        return product_of_parts(self.entry_views(entry, t), columns)
 
 
 CLI.Tables = FlowTables  # this module's own copy of scripts/arclog.py builds every Tables with the flows
 
 
-def decode_once(tb):
-    """Gives the engine's Tables tb a row decoder that converts each column with numpy, and decodes each table's entries once."""
-    values = tb.values
+class RunRows:
+    """The rows of a run of cells, converted each time they are read, so an entry that nothing reads costs nothing."""
 
-    def raw_rows(offset, n, types):
-        ws = [4 if ty in CLI.BOX_TYPES else 1 for ty in types]
-        w = sum(ws)
-        if n == 0 or w == 0:
-            return [[] for _ in range(n)] if w == 0 else []
-        a = values[int(offset):int(offset) + n * w].reshape(n, w)
+    __slots__ = ('values', 'offset', 'n', 'widths')
+
+    def __init__(self, values, offset, n, types):
+        self.values, self.offset, self.n = values, int(offset), n
+        self.widths = [4 if ty in CLI.BOX_TYPES else 1 for ty in types]
+
+    def __len__(self):
+        return self.n
+
+    def __iter__(self):
+        w = sum(self.widths)
+        if self.n == 0 or w == 0:
+            return iter([[] for _ in range(self.n)] if w == 0 else [])
+        a = self.values[self.offset:self.offset + self.n * w].reshape(self.n, w)
         cols, s = [], 0
-        for x in ws:
+        for x in self.widths:
             cols.append(list(map(tuple, a[:, s:s + 4].tolist())) if x == 4 else a[:, s].tolist())
             s += x
-        return [list(r) for r in zip(*cols)]
+        return iter([list(r) for r in zip(*cols)])
 
-    held, entries = {}, tb.entries
-    tb.raw_rows = raw_rows
-    tb.entries = lambda t: held[t] if t in held else held.setdefault(t, entries(t))
+
+def supported_case(case):
+    """Whether the case has a program without a DEMONSTRATED form, ignoring strings and comments."""
+    if case.arclog is None:
+        return False
+    forms = re.sub(r'"(?:[^"\\]|\\.)*"|;[^\n]*', ' ', case.arclog)
+    return re.search(r'\(\s*DEMONSTRATED(?=[\s()])', forms) is None
 
 
 class Solver:
     def __init__(self, task, text=None):
         """The task's solver, from its file in GEN, or from text in its place."""
         self.task = task
-        text = (GEN / (task + '.arclog')).read_text() if text is None else text
+        text = paths.read_gen(GEN / (task + '.arclog')) if text is None else text
         data = GEN / (task + '.arcdata')
-        cases = arclog.case_files(task, text, data.read_text() if data.exists() else ';; %s\n' % task, str(GEN))
-        self.case = ([c for c in cases if getattr(c, 'concept', False)] or cases)[0]
+        cases = arclog.case_files(task, text, paths.read_gen(data) if data.exists() else ';; %s\n' % task, str(GEN))
+        self.case = next((case for case in cases if case.concept), None)
+        if self.case is None or not supported_case(self.case):
+            raise ValueError(f'{task}: the concept case is not supported (it needs a program without DEMONSTRATED forms)')
         self.text = self.case.arclog
-        if self.text is None:
-            raise ValueError('the program does not read')
         m = re.search(r'^\(OUT (.*)\)\s*$', self.text, re.M)
         self.out = []  # [(relation, column)] of the OUT form's sites, in written order
         for rel, body in re.findall(r'\((&[\w.]+)((?:[^()]|\([^()]*\))*)\)', m[1] if m else ''):
             self.out += [(rel, c) for c in re.findall(r'\^(\w+)', body)]
         self.tmp = Path(tempfile.mkdtemp(prefix='contracts-'))
 
-    def run_engine(self, task_json):
-        """The engine's Tables of the program on task_json, every assignment included. The first call sets self.provenance to
-        provenance.provenance of the program's tables."""
+    def run_engine(self, task_json, pin=None, *, all_assignments=False):
+        """Read all entries from one native export and record unavailable assignment keys."""
         (self.tmp / (self.task + '.json')).write_text(json.dumps(task_json))
-        tb, why = CLI.run_case(arclog, np, self.case, self.task, self.tmp, task_json)
-        if tb is None:
-            raise RuntimeError(why)
-        decode_once(tb)
-        if getattr(self, 'provenance', None) is None:  # the program's flows, the same on every task file
+        settings = decode_settings()
+        try:
+            program = arclog.StudyProgram.from_sexp(self.text, settings)
+            evaluator = arclog.StudyTaskEvaluator(self.task, str(self.tmp), settings, session_bytes=SESSION_BYTES)
+            status, ct = evaluator.gold_tables(program, held_rows=True)
+            status = json.loads(status)
+            tb = CLI.Tables(arclog, np, program, ct, task_json)
+            dropped = []
+            for t, name in enumerate(tb.names):
+                for entry in tb.by_table.get(t, []):
+                    stops = []
+                    for field in ('fault', 'stop_bound', 'value_stop_bound'):
+                        value = tb.E[field][entry] if field in tb.E else None
+                        if value is not None and not (isinstance(value, int) and value < 0):
+                            stops.append('%s %s' % (field, value))
+                    if stops:
+                        dropped.append(dict(key=tb.entry_key(entry, t), relation=name, entry=int(entry), stops=stops))
+            if ct.materialization_stop:
+                dropped.append(dict(key=(), stop=ct.materialization_stop))
+            tb.selection = dict(status=status.get('status'), mode='ordinary', dropped_assignments=dropped,
+                                report=status)
+        except (arclog.Refusal, ValueError) as error:
+            raise RuntimeError(str(error)) from error
+        if not all_assignments:
+            needed = self.solving_key(tb, task_json) if pin is None else self.pinned_key(tb, pin)
+            if needed is None:
+                report = dict(tb.selection, selection='pinned' if pin is not None else 'solving')
+                raise AssignmentUnavailable(report)
+        if getattr(self, 'provenance', None) is None:
             self.provenance = PV.provenance(tb, self.text)
         return tb
 
+    @staticmethod
+    def retained(tb, key):
+        """Every table has compatible entries and none is stopped at this key."""
+        if any(consistent(item['key'], key) for item in tb.selection['dropped_assignments']):
+            return False
+        return all(any(consistent(other, key) for other in tb.assignments(t))
+                   for t, name in enumerate(tb.names) if name)
+
     def read(self, tb, best):
-        """{relation: {'columns': [(name, type, frame)], 'rows': {example: rows}}} at the assignment key best, or, where best is None, at
-        each table's first assignment. Sets self.stored and self.stored_types to best's stored values."""
+        """{relation: {'columns': [(name, type, frame)], 'rows': {example: rows}}} at the assignment key best, or the first retained joint
+        OUT key where best is None. Sets self.stored and self.stored_types to best's stored values. assignments counts the retained
+        assignment keys, including keys that do not fit the train outputs."""
+        if best is None:
+            best = next(iter(self.output_keys(tb)), None)
+        if best is None or not self.retained(tb, best):
+            raise AssignmentUnavailable(dict(tb.selection, selection='compatible'))
         self.stored = None if best is None else {rel: rows for rel, rows, _ in best}
         self.stored_types = None if best is None else {rel: types for rel, _, types in best}
         out = {}
+        retained = self.output_keys(tb)
         for t, name in enumerate(tb.names):
             if not name:
                 continue
             types = tb.T['column_types'][t]
             cols = list(zip(tb.T['column_names'][t], types, tb.T['column_frames'][t]))
             ents = tb.entries(t)
-            keys = tb.assignments(t)
-            key = next((k for k in keys if consistent(k, best)), keys[0] if keys else ())
-            rows = {}
-            for ex, model, k, raw, stop in ents:
+            keys = [key for key in tb.assignments(t) if any(consistent(key, full) for full in retained)]
+            key = next((k for k in keys if consistent(k, best)), None) if best is not None else (keys[0] if keys else ())
+            if key is None:
+                raise AssignmentUnavailable(dict(tb.selection, selection='compatible', relation=name))
+            rows, counts, views = {}, {}, {}
+            for entry, (ex, model, k, raw, stop) in zip(tb.by_table.get(t, []), ents):
                 if k == key and model == 0:
-                    rows[ex] = [[tb.value(t, ty, v) for ty, v in zip(types, r)] for r in raw]
-            out[name] = dict(columns=cols, rows=rows, assignments=len(keys))
+                    if tb.counted(entry):
+                        counts[ex] = int(tb.E['rows'][entry])
+                        views[ex] = [(held, [[tb.value(t, types[c], v) for c, v in zip(held, r)] for r in vrows]) for held, vrows in tb.entry_views(entry, t)]
+                    else:
+                        rows[ex] = [[tb.value(t, ty, v) for ty, v in zip(types, r)] for r in raw]
+            out[name] = dict(columns=cols, rows=rows, assignments=len(keys), **(dict(counts=counts, views=views) if counts else {}))
         return out
 
-    def tables(self, task_json, pin=None, no_assignment=None):
+    def tables(self, task_json, pin=None, no_assignment=None, keep_run=False):
         """{relation: {'columns': [(name, type, frame)], 'rows': {example: rows}}} at the assignment that solves the train pairs, or, with pin
-        ({stored relation: rows}), at the first assignment that gives those stored relations those rows. A pinned relation whose rows no
-        assignment gives is missing (self.missing); the assignment is then the first that gives every other pinned relation its rows. Where the
-        engine gives no assignment at all, no_assignment(pin) names the missing relations."""
-        tb = self.run_engine(task_json)
+        ({stored relation: rows}), at the first complete assignment that gives those stored relations those rows. Raises RuntimeError if
+        no required assignment has complete tables. no_assignment remains an accepted argument for existing callers. keep_run keeps the engine
+        result for other_assignments."""
+        tb = self.run_engine(task_json, pin=pin)
         self.missing = []
-        if pin is None:
-            best = self.solving_key(tb, task_json)
-        else:
-            self.missing = self.missing_pins(tb, pin)
-            if no_assignment is not None and set(self.missing) == set(pin) and not self.has_assignment(tb):
-                self.missing = no_assignment(pin)
-            best = self.pinned_key(tb, {r: v for r, v in pin.items() if r not in self.missing})
+        best = self.solving_key(tb, task_json) if pin is None else self.pinned_key(tb, pin)
+        if best is None:
+            raise RuntimeError('retained tables contain no required assignment')
+        if keep_run:
+            self.last_run = (tb, best)
         return self.read(tb, best)
 
+    def other_assignments(self, limit):
+        """The tables at each retained assignment other than the one the last call of tables with keep_run read, or none where more than limit
+        assignments are retained. Lets go of that call's engine result, which the tables of one assignment do not hold."""
+        tb, best = self.last_run
+        del self.last_run
+        keys = [key for key in self.output_keys(tb) if key != best]
+        if not keys or len(keys) >= limit:
+            return []
+        stored, types = self.stored, self.stored_types
+        others = [self.read(tb, key) for key in keys]
+        self.stored, self.stored_types = stored, types
+        return others
+
     def tables_each(self, task_json, pin, limit):
-        """([(assignment key, tables)], count): the tables at each assignment of the OUT relation's table that gives each relation of pin that
-        the key holds its rows, for the first `limit` such assignments, and how many such assignments there are."""
-        tb = self.run_engine(task_json)
+        """([(assignment key, tables)], count): tables at retained joint OUT keys matching pin, up to limit, and the number retained.
+        Unavailable assignments are recorded in the acquisition report."""
+        tb = self.run_engine(task_json, all_assignments=True)
         self.missing = []
-        t = tb.find(self.out[0][0]) if self.out else None
-        keys = [k for k in (tb.assignments(t) if t is not None else [])
+        keys = [k for k in self.output_keys(tb)
                 if all(set(rows) == set(pin[rel]) for rel, rows, _ in k if rel in pin)]
         return [(k, self.read(tb, k)) for k in keys[:limit]], len(keys)
 
     def has_assignment(self, tb):
-        t = tb.find(self.out[0][0]) if self.out else None
-        return t is not None and any(len(k) for k in tb.assignments(t))
+        return any(len(key) for key in self.output_keys(tb))
 
     def missing_pins(self, tb, pin):
         """The relations of pin whose rows no assignment key of the OUT relation's table gives."""
-        t = tb.find(self.out[0][0]) if self.out else None
-        keys = tb.assignments(t) if t is not None else []
+        keys = self.output_keys(tb)
         offered = {}
         for key in keys:
             for rel, rows, _ in key:
                 offered.setdefault(rel, set()).add(frozenset(rows))
         return sorted(r for r, rows in pin.items() if frozenset(rows) not in offered.get(r, set()))
 
+    def output_keys(self, tb):
+        """Joint keys of every relation read by OUT, in written relation and native assignment order."""
+        keys = [()]
+        for rel in dict.fromkeys(rel for rel, _ in self.out):
+            t = tb.find(rel)
+            if t is None:
+                return []
+            joined = []
+            for key in keys:
+                for other in tb.assignments(t):
+                    if consistent(other, key):
+                        names = {name for name, _, _ in key}
+                        merged = key + tuple(part for part in other if part[0] not in names)
+                        if merged not in joined:
+                            joined.append(merged)
+            keys = joined
+        return [key for key in keys if self.retained(tb, key)] if self.out else []
+
     def pinned_key(self, tb, pin):
-        """The first assignment key of the OUT relation's table that gives each relation of pin its rows, or None."""
-        t = tb.find(self.out[0][0]) if self.out else None
-        if t is None:
-            return None
-        for key in tb.assignments(t) or [()]:
+        """The first retained joint OUT key matching every pin."""
+        for key in self.output_keys(tb):
             have = {rel: rows for rel, rows, _ in key}
-            if all(set(have.get(rel, ())) == set(rows) for rel, rows in pin.items()):
+            if all(rel in have and set(have[rel]) == set(rows) for rel, rows in pin.items()):
                 return key
         return None
 
     def solving_key(self, tb, task_json):
-        """The assignment key of the OUT relation's table under which the OUT rows equal every train output, or None."""
-        if not self.out:
-            return None
-        rel = self.out[0][0]
-        t = tb.find(rel)
-        if t is None:
-            return None
-        for key in tb.assignments(t) or [()]:
-            if all(self.out_grid(tb, task_json, ex, key) == task_json['train'][i]['output'] for i, ex in enumerate('train/%d' % i for i in range(len(task_json['train'])))):
+        """The first retained joint OUT key whose first model gives each primary train output. If none does, accept an assignment whose
+        model set equals each train pair's tiebreak candidate. Parameters from every OUT relation participate in the key."""
+        keys = self.output_keys(tb)
+        for key in keys:
+            if all(self.out_grid(tb, task_json, 'train/%d' % i, key) == pair['output'] for i, pair in enumerate(task_json['train'])):
                 return key
+        # A tiebreak is a set of valid grids, not an ordering of native models.
+        if len({rel for rel, _ in self.out}) == 1 and any(pair.get('alt', {}).get('kind') == 'tiebreak' for pair in task_json['train']):
+            t = tb.find(self.out[0][0])
+            freeze = lambda grid: tuple(map(tuple, grid)) if grid is not None else None
+            for key in keys:
+                fits = True
+                for i, pair in enumerate(task_json['train']):
+                    ex = 'train/%d' % i
+                    accepted = {freeze(pair['output'])}
+                    alt = pair.get('alt', {})
+                    if alt.get('kind') == 'tiebreak':
+                        accepted.add(freeze(alt['grid']))
+                    models = {model for e, model, k, _, stop in tb.entries(t) if e == ex and consistent(k, key) and not stop}
+                    actual = {freeze(self.out_grid(tb, task_json, ex, key, model=model)) for model in models}
+                    if actual != accepted:
+                        fits = False
+                        break
+                if fits:
+                    return key
         return None
 
-    def out_grid(self, tb, task_json, ex, key):
-        """The grid that the OUT form gives at ex, for the first OUT relation's assignment key; None where it gives none."""
+    def out_grid(self, tb, task_json, ex, key, model=0):
+        """The grid that OUT gives at ex and the joint key in one native model; None where it gives none."""
         cells = {}
         if len(self.out) == 1 or (len(self.out) >= 2 and self.out[0][0] == self.out[1][0]):
             t = tb.find(self.out[0][0])
             names = tb.T['column_names'][t]
             pc, cc = names.index(self.out[0][1]), names.index(self.out[1][1] if len(self.out) > 1 else names[-1])
-            for e, model, k, raw, stop in tb.entries(t):
-                if e == ex and k == key and model == 0:
-                    for r in raw:
-                        cells.setdefault(r[pc], set()).add(r[cc])
+            for entry, (e, m, k, raw, stop) in zip(tb.by_table.get(t, []), tb.entries(t)):
+                if e == ex and consistent(k, key) and m == model and not stop:
+                    for p, c in tb.read_columns(entry, t, [pc, cc], raw):
+                        cells.setdefault(p, set()).add(c)
         else:
             tp, tc = tb.find(self.out[0][0]), tb.find(self.out[1][0])
             pn, cn = tb.T['column_names'][tp], tb.T['column_names'][tc]
-            ps = [r[pn.index(self.out[0][1])] for e, m, k, raw, s in tb.entries(tp) if e in (ex, 'task') and m == 0 for r in raw]
-            cs = {r[next(i for i, n in enumerate(cn) if n.split('.')[-1] == self.out[1][1] or n == self.out[1][1])]
-                  for e, m, k, raw, s in tb.entries(tc) if e in (ex, 'task') and m == 0 for r in raw}
+            at_p, at_c = pn.index(self.out[0][1]), next(i for i, n in enumerate(cn) if n.split('.')[-1] == self.out[1][1] or n == self.out[1][1])
+            ps = [r[0] for entry, (e, m, k, raw, s) in zip(tb.by_table.get(tp, []), tb.entries(tp)) if e in (ex, 'task') and m == model and consistent(k, key) and not s
+                  for r in tb.read_columns(entry, tp, [at_p], raw)]
+            cs = {r[0] for entry, (e, m, k, raw, s) in zip(tb.by_table.get(tc, []), tb.entries(tc)) if e in (ex, 'task') and m == model and consistent(k, key) and not s
+                  for r in tb.read_columns(entry, tc, [at_c], raw)}
             for p in ps:
                 cells.setdefault(p, set()).update(cs)
         if not cells or any(len(v) != 1 for v in cells.values()):

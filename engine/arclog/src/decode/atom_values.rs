@@ -781,6 +781,8 @@ impl<'a> Decoder<'a> {
         };
         let own = hashes(memo, part);
         let groups = Rc::clone(memo.groups.entry((at.0, at.1, part, places.as_slice().into())).or_insert_with(|| Rc::new(Groups::of(held, &own.rows, places.as_slice().into()))));
+        // The groups of the part's rows that the atom reads are content, and the candidate values of each are tried as effort.
+        budget.charge_content(groups.count() as u64)?;
         budget.charge_work(groups.count() as u64)?;
         // Where each site's value stands among the values of a group.
         let group_place = |column: u16| places.iter().position(|place| *place == place_of(column)).expect("a place of the groups") as u16;
@@ -812,10 +814,11 @@ impl<'a> Decoder<'a> {
             }),
         };
         budget.charge_rows(count)?;
-        // A program counts the rows of a product as the bindings of its walk, and stops at their cap.
+        // A program counts the rows of a product as content, and stops at their cap.
         if rows.parts().len() >= 2 {
             let product = (0..rows.parts().len()).filter(|other| *other != part).fold(count, |product, other| product.saturating_mul(rows.parts()[other].rows.len() as u64));
-            budget.charge_work(product)?;
+            budget.charge_content(product)?;
+            budget.charge_work(0)?;
         }
         let arity = (width + plan.made.len()) as u16;
         Ok(GroupedValue { rows: Arc::clone(rows), part, groups, result, negated: plan.negated, hashes: own, arity, hash: rows_hash_of(arity, hash_times(others, sum)) })

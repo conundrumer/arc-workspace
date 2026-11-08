@@ -22,6 +22,9 @@ import sys
 import time
 import zipfile
 
+sys.path.insert(0, str(REPO_ROOT / "src"))
+from arclog_convert.readback import read_checked  # the corpus is a gen/ directory
+
 
 def npy(archive, name):
     with archive.open(name + ".npy") as src:
@@ -55,11 +58,11 @@ def check_task(args):
     import arclog
     cases, offsets, exported_ids, exported_model = inventory(args.export, args.worker, True)
     print(json.dumps({"task": args.worker, "expected_cases": cases}), flush=True)
-    files = arclog.case_files(args.worker, (args.corpus / f"{args.worker}.arclog").read_text(),
-                              (args.corpus / f"{args.worker}.arcdata").read_text(), str(args.corpus))
+    files = arclog.case_files(args.worker, read_checked(args.corpus / f"{args.worker}.arclog"),
+                              read_checked(args.corpus / f"{args.worker}.arcdata"), str(args.corpus))
     files = {case.case: case for case in files}
     task = arclog.Task.from_json((args.tasks / f"{args.worker}.json").read_text(), arclog.World.Closed)
-    settings = arclog.DecodeSettings(deadline_seconds=2, rule_tests=False)
+    settings = arclog.DecodeSettings(rule_tests=False)
     vocab = json.loads((args.export / "vocab.json").read_text())
     session = arclog.Session(task, settings, session_bytes=256 * 1024 * 1024)
     v = session.vocabulary
@@ -87,9 +90,9 @@ def check_task(args):
                     checks = sorted(set(re.findall(r"Check\((\w+)\)", message)))
                     category = "+".join(checks) if checks else (
                         "echo_mismatch" if "echo mismatch" in message else
-                        "refusal" if type(exc).__name__ == "Refusal" else
                         "missing_out" if "through OUT" in message else
-                        "unsupported_form" if "standalone case" in message else type(exc).__name__)
+                        "unsupported_form" if "standalone case" in message else
+                        "refusal" if type(exc).__name__ == "Refusal" else type(exc).__name__)
                     row["failures"].append(dict(phase=label, category=category, exception=type(exc).__name__, message=message))
                     return None
 

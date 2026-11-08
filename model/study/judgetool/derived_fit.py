@@ -63,7 +63,7 @@ def _code():
 
 
 def _operation(ev, operations, name, path, invoke):
-    item=dict(operation=name,deadline_seconds=ev.deadline,table_work_cap=ev.work_cap,
+    item=dict(operation=name,table_work_cap=ev.work_cap,
               session_bytes=ev.receipt['session_bytes'],native_calls=1,artifact=str(path))
     operations.append(item);start=time.monotonic()
     try:
@@ -388,7 +388,7 @@ def check(ev,record,*,native_base):
         elif type(result['fits_test']) is bool:
             result.update(status='complete',reason=None)
         else:result['reason']=result['receipt'].get('test_unavailable','TEST outcomes incomplete for TRAIN-fitting assignments')
-    except (ValueError,KeyError,IndexError,TypeError,OSError) as error:
+    except (ev.arclog.Refusal,ValueError,KeyError,IndexError,TypeError,OSError) as error:
         result['reason']=f'{type(error).__name__}: {error}'
     finally:
         result['receipt'].update(wall_seconds=time.monotonic()-start,
