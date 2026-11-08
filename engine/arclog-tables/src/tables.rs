@@ -246,7 +246,7 @@ pub fn mark_selected<'t>(decoder: &Decoder<'_>, tables: impl Iterator<Item = &'t
 /// `input`'s, has no slot.
 pub fn selected_columns(decoder: &Decoder<'_>) -> Vec<(u32, SelectedColumns)> {
     let (Some(form), Some(before)) = (decoder.output(), decoder.before()) else { return Vec::new() };
-    let Ok(checked) = decoder.finished_checked(before, decoder.state()) else { return Vec::new() };
+    let Ok(checked) = decoder.finished_evaluated(before, decoder.state()) else { return Vec::new() };
     let Some(NodeRef::Out(out)) = node_at(NodeRef::Program(decoder.program().value()), form) else { return Vec::new() };
     let mut marks: Vec<(u32, SelectedColumns)> = Vec::new();
     for (selected, site) in selected_sites(out).into_iter().enumerate() {
@@ -362,7 +362,7 @@ pub(crate) fn relation_tables(decoder: &Decoder<'_>, before: &State, earlier: &[
     if decoder.state().declared_from(before.finished_slots()).next().is_none() {
         return Vec::new();
     }
-    let checked = match decoder.finished_checked(before, decoder.state()) {
+    let checked = match decoder.finished_evaluated(before, decoder.state()) {
         Ok(checked) => checked,
         Err(fault) => return vec![Table { form, point: Point::Relation, contents: Err(fault.clone()) }],
     };
