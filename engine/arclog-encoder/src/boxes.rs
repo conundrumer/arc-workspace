@@ -52,7 +52,7 @@ pub struct Boxes {
 }
 
 /// The distinct tuples of the rows of `inside` at some columns, in order, each with the count of rows of `inside` that hold it.
-struct Counted {
+pub(crate) struct Counted {
     /// The tuples, one cell for each column of the key, in ascending order.
     tuples: Vec<Cell>,
     weights: Vec<u64>,
@@ -61,6 +61,16 @@ struct Counted {
 }
 
 impl Counted {
+    /// The tuples, one cell for each column of the key, in ascending order.
+    pub(crate) fn tuples(&self) -> &[Cell] {
+        &self.tuples
+    }
+
+    /// The count of rows that hold each tuple, in the order of the tuples.
+    pub(crate) fn weights(&self) -> &[u64] {
+        &self.weights
+    }
+
     /// The tuples as rows of `arity` cells, with 0 at each column that is not in `key`.
     fn wide(&self, key: &[u16], arity: usize) -> Arc<Table> {
         self.wide
@@ -441,7 +451,7 @@ impl Boxes {
     }
 
     /// The distinct tuples of the rows of `inside` at the columns `key`, which stand sorted and distinct, each with the count of rows of `inside` that hold it, from the value's own keep where it holds this read. No value where `key` is empty or names a column past the rows of `inside`.
-    fn counted(&self, key: &[u16]) -> Option<Arc<Counted>> {
+    pub(crate) fn counted(&self, key: &[u16]) -> Option<Arc<Counted>> {
         if let Some(found) = self.counts.lock().expect("a count lock").1.get(key).cloned() {
             return Some(found);
         }

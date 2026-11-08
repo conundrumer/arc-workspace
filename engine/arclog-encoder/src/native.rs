@@ -482,6 +482,18 @@ impl Val {
         matches!(self, Val::Boxes(_) | Val::Joined(_))
     }
 
+    /// The distinct tuples of the rows of a lazy value at the columns `key`, which stand sorted and distinct, each with the count of rows that hold it. No value where the value is not lazy, or `key` is empty or names a column that is not one of its rows.
+    pub(crate) fn counts_at(&self, key: &[u16]) -> Option<Counts> {
+        if key.is_empty() {
+            return None;
+        }
+        match self {
+            Val::Boxes(boxes) => boxes.counted(key).map(Counts::Boxes),
+            Val::Joined(joined) => joined.counted(key).map(Counts::Joined),
+            _ => None,
+        }
+    }
+
     /// Whether `step` takes what it needs from a lazy value as its first relation or, where `first` is false, as its second, without writing the rows.
     pub fn lazy_reads(&self, step: &Step, first: bool) -> bool {
         match self {
@@ -949,6 +961,95 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    /// The count of rows of a `join` where a side stands as the relations its rows come from, and of an `antijoin` of such a side that pairs no column, with no rows written. A lazy side is read at the columns it joins on as its distinct tuples, each with the count of rows that hold it, where `count` reads a histogram of rows written out; each tuple counts as many times as its rows do, so the count is the written rows' count. A side that is one table or a product of parts is read as `count` reads it. `None` where the count is not read so: neither side is lazy, the step is another, a column stands twice among the lazy side's columns, a column is not one of its rows, or the other side holds the columns it joins on in several parts. The caller then writes the rows out.
+    pub fn count_lazy(&mut self, step: &Step, first: &Val, second: &Val) -> Option<Option<u64>> {
+        if !first.is_lazy() && !second.is_lazy() {
+            return None;
+        }
+        match step {
+            Step::Join { left, right, .. } => {
+                if left.len() != right.len() {
+                    return None;
+                }
+                if matches!(first, Val::None) || matches!(second, Val::None) {
+                    return Some(None);
+                }
+                if matches!(first, Val::Empty) || matches!(second, Val::Empty) {
+                    return Some(Some(0));
+                }
+                if left.is_empty() {
+                    return Some(Some(rows_held(first)?.saturating_mul(rows_held(second)?)));
+                }
+                let width = left.len();
+                let paired: Vec<usize> = (0..width).collect();
+                let product = |parts: &[&Part]| parts.iter().map(|part| part.table.len as u64).fold(1u64, u64::saturating_mul);
+                match (first.is_lazy(), second.is_lazy()) {
+                    (true, false) => {
+                        let (order, key) = ascending(left)?;
+                        let counts = first.counts_at(&key)?;
+                        let Val::Rows(parts) = second else { return None };
+                        let (part, rest, places) = one_part(parts, right)?;
+                        let histogram = self.histogram(&part.table, &places);
+                        let mut probe: Vec<Cell> = vec![0; width];
+                        let mut matched = 0u64;
+                        for (tuple, weight) in counts.tuples().chunks_exact(width).zip(counts.weights()) {
+                            for (cell, place) in tuple.iter().zip(&order) {
+                                probe[*place] = *cell;
+                            }
+                            if let Some(count) = histogram.get(key_word(&probe, &paired)) {
+                                matched = matched.saturating_add(weight.saturating_mul(u64::from(count)));
+                            }
+                        }
+                        Some(Some(matched.saturating_mul(product(&rest))))
+                    }
+                    (false, true) => {
+                        let (order, key) = ascending(right)?;
+                        let counts = second.counts_at(&key)?;
+                        let Val::Rows(parts) = first else { return None };
+                        let (part, rest, places) = one_part(parts, left)?;
+                        let mut probe: Vec<Cell> = vec![0; width];
+                        let mut matched = 0u64;
+                        for row in part.table.rows() {
+                            for (cell, place) in probe.iter_mut().zip(&order) {
+                                *cell = row[places[*place]];
+                            }
+                            if let Some(weight) = counts.weight_of(&probe) {
+                                matched = matched.saturating_add(weight);
+                            }
+                        }
+                        Some(Some(matched.saturating_mul(product(&rest))))
+                    }
+                    _ => {
+                        let ((first_order, first_key), (second_order, second_key)) = (ascending(left)?, ascending(right)?);
+                        let (mine, theirs) = (first.counts_at(&first_key)?, second.counts_at(&second_key)?);
+                        let mut paired_cells: Vec<Cell> = vec![0; width];
+                        let mut probe: Vec<Cell> = vec![0; width];
+                        let mut matched = 0u64;
+                        for (tuple, weight) in mine.tuples().chunks_exact(width).zip(mine.weights()) {
+                            for (cell, place) in tuple.iter().zip(&first_order) {
+                                paired_cells[*place] = *cell;
+                            }
+                            for (cell, place) in probe.iter_mut().zip(&second_order) {
+                                *cell = paired_cells[*place];
+                            }
+                            if let Some(other) = theirs.weight_of(&probe) {
+                                matched = matched.saturating_add(weight.saturating_mul(other));
+                            }
+                        }
+                        Some(Some(matched))
+                    }
+                }
+            }
+            // With no column to pair, a row of the first is kept where the second has no row, and each is kept as often as the join's rows are.
+            Step::Antijoin { left, .. } if left.is_empty() && matches!(first, Val::Joined(_)) && !second.is_lazy() => match second {
+                Val::None => Some(None),
+                Val::Empty => rows_held(first).map(Some),
+                _ => Some(Some(0)),
+            },
+            _ => None,
+        }
+    }
+
     /// The count of distinct rows of `table` at `places`.
     fn distinct_count(&mut self, table: &Table, places: &[usize]) -> u64 {
         if places.len() == table.arity {
@@ -1390,6 +1491,67 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
+    }
+}
+
+/// The distinct tuples of the rows of a lazy value at some columns, in ascending order, each with the count of rows that hold it.
+pub(crate) enum Counts {
+    Boxes(Arc<crate::boxes::Counted>),
+    Joined(Arc<crate::joined::Counted>),
+}
+
+impl Counts {
+    /// The tuples, one cell for each column of the key.
+    fn tuples(&self) -> &[Cell] {
+        match self {
+            Counts::Boxes(counted) => counted.tuples(),
+            Counts::Joined(counted) => counted.tuples(),
+        }
+    }
+
+    /// The count of rows that hold each tuple.
+    fn weights(&self) -> &[u64] {
+        match self {
+            Counts::Boxes(counted) => counted.weights(),
+            Counts::Joined(counted) => counted.weights(),
+        }
+    }
+
+    /// The count of rows that hold the tuple `probe`, which has a cell for each column of the key.
+    fn weight_of(&self, probe: &[Cell]) -> Option<u64> {
+        let stride = probe.len();
+        let (tuples, weights) = (self.tuples(), self.weights());
+        let (mut low, mut high) = (0, weights.len());
+        while low < high {
+            let middle = low + (high - low) / 2;
+            match tuples[middle * stride..(middle + 1) * stride].cmp(probe) {
+                std::cmp::Ordering::Equal => return Some(weights[middle]),
+                std::cmp::Ordering::Less => low = middle + 1,
+                std::cmp::Ordering::Greater => high = middle,
+            }
+        }
+        None
+    }
+}
+
+/// The places of `columns` in ascending order of their column, and the columns in that order. `None` where a column stands twice.
+fn ascending(columns: &[u16]) -> Option<(Vec<usize>, Vec<u16>)> {
+    let mut order: Vec<usize> = (0..columns.len()).collect();
+    order.sort_unstable_by_key(|place| columns[*place]);
+    if order.windows(2).any(|pair| columns[pair[0]] == columns[pair[1]]) {
+        return None;
+    }
+    let key = order.iter().map(|place| columns[*place]).collect();
+    Some((order, key))
+}
+
+/// The count of rows of a value that stands as one table or as the relations its rows come from, which a product of parts gives as the product of their counts.
+fn rows_held(value: &Val) -> Option<u64> {
+    match value {
+        Val::Boxes(boxes) => Some(boxes.rows()),
+        Val::Joined(joined) => Some(joined.rows()),
+        Val::Rows(parts) => Some(parts.iter().fold(1u64, |total, part| total.saturating_mul(part.table.len as u64))),
+        Val::None | Val::Empty => None,
     }
 }
 

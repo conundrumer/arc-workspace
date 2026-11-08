@@ -448,12 +448,7 @@ impl Generated {
     }
 
     /// The family of two tables of a state, T and U: how the rows, values and cells of one stand to the
-    /// other's, and what the two say together of the output.
-    pub fn of_two_tables(t_types: &[ValueType], u_types: &[ValueType], names: &NameStore, keep_text: bool) -> Generated {
-        Generated::of_two_tables_keyed(t_types, &[], u_types, &[], names, keep_text)
-    }
-
-    /// As [`Generated::of_two_tables`], where `t_keys` and `u_keys` say which columns of each table are key columns, which group its cells beside its Ident and Color columns.
+    /// other's, and what the two say together of the output. `t_keys` and `u_keys` say which columns of each table are key columns, which group its cells beside its Ident and Color columns.
     pub fn of_two_tables_keyed(t_types: &[ValueType], t_keys: &[bool], u_types: &[ValueType], u_keys: &[bool], names: &NameStore, keep_text: bool) -> Generated {
         let t_names: Vec<String> = (0..t_types.len()).map(|at| format!("T{at}")).collect();
         let u_names: Vec<String> = (0..u_types.len()).map(|at| format!("T{}", t_types.len() + at)).collect();
@@ -3075,12 +3070,17 @@ impl<'a> Walker<'a> {
                 return (found, 0);
             }
         }
-        // The count of a `join` or an `antijoin` is read from its sides' histograms, with no rows written. Their sides are written where they stand as the rows of `inside` or of a `join`.
+        // The count of a `join` or an `antijoin` is read from its sides' histograms, with no rows written. A side that stands as the rows of `inside` or of a `join` is read from the distinct tuples of its rows at the columns it joins on, each with the count of rows that hold it, and is written where its tuples cannot give the count.
         if !number && matches!(step, Step::Join { .. } | Step::Antijoin { .. }) {
             crate::bounds::begin();
             if let Some(value) = self.lazy_extension(step, id, b) {
                 crate::bounds::end(id == 0 || b == 0);
                 return (count_of(&value), 0);
+            }
+            let (held_first, held_second) = (self.values[id as usize].clone(), self.values[b as usize].clone());
+            if let Some(found) = self.eval.count_lazy(step, &held_first, &held_second) {
+                crate::bounds::end(id == 0 || b == 0);
+                return (found.map(Count::of), 0);
             }
             let first_id = self.written_id(step, id, true);
             let second_id = self.written_id(step, b, false);
@@ -3543,25 +3543,11 @@ impl Generated {
         (self.terms.len(), self.first_term)
     }
 
-    /// A term's type, where the family keeps it.
-    pub fn term_refined(&self, at: usize) -> Option<&Refined> {
-        self.refined.get(at)
-    }
-
-    /// The values of a rejected term over the values of its relations.
-    pub fn rejected_value(walker: &mut Walker<'_>, term: &RejectedTerm, first: &Val, second: Option<&Val>) -> Val {
-        match second {
-            Some(second) => walker.eval.apply(&term.step, &[first, second]),
-            None => walker.eval.apply(&term.step, &[first]),
-        }
-    }
-
     /// The count of a term's roots.
     pub fn term_roots(&self, at: usize) -> usize {
         self.terms[at].roots.len()
     }
 
-    /// Whether a term stands for two relations, whose ratios are its roots.
     /// The roots of a term, by their ids, and the terms it reads.
     pub fn term_links(&self, at: usize) -> (Vec<u128>, u32, u32) {
         let term = &self.terms[at];
@@ -3579,58 +3565,11 @@ impl Generated {
         (!text.is_empty()).then(|| shape_text(text, "T", types))
     }
 
-    pub fn is_pair_term(&self, at: usize) -> bool {
-        self.terms[at].root == RootKind::Against
-    }
-
     /// A term's text, the names of its columns and types, what it reads, and whether it has roots,
     /// where the family keeps them.
     pub fn term_info(&self, at: usize) -> (&str, Vec<(String, ValueType)>, u8) {
         let term = &self.terms[at];
         (&term.text, term.columns.iter().map(|column| (column.name.clone(), column.ty.clone())).collect(), term.flags)
-    }
-}
-
-impl Walker<'_> {
-    /// The rows at each instance of each term that `chosen` picks, with what they read computed on
-    /// the way, for a check against the expression a term stands for.
-    pub fn term_values(&mut self, leaves: &[Vec<Val>], train: usize, chosen: &dyn Fn(usize) -> bool) -> Vec<(usize, Vec<Val>)> {
-        let family = self.family;
-        let pairs = leaves[0].len();
-        let mut ids: Vec<Vec<u32>> = Vec::with_capacity(family.terms.len());
-        for leaf in leaves {
-            let held: Vec<u32> = leaf.iter().map(|value| self.value_id(value.clone())).collect();
-            ids.push(held);
-        }
-        let mut out = Vec::new();
-        for (at, held) in ids.iter().enumerate().skip(FIRST_CONSTANT as usize) {
-            if chosen(at) {
-                out.push((at, held.iter().map(|id| self.values[*id as usize].written()).collect()));
-            }
-        }
-        for (at, term) in family.terms.iter().enumerate().skip(family.first_term) {
-            let picked = chosen(at);
-            let step = term.step.as_ref().expect("a term has a step");
-            let scope = if term.flags & READS_OUTPUT != 0 { train } else { pairs };
-            let mut own = Vec::with_capacity(pairs);
-            for pair in 0..scope {
-                let id = if picked || term.used {
-                    let a = ids[term.a as usize][pair];
-                    let b = if term.b == NO_TERM { NO_TERM } else { ids[term.b as usize][pair] };
-                    let value = self.apply(step, a, b);
-                    self.value_id(value)
-                } else {
-                    0
-                };
-                own.push(id);
-            }
-            own.resize(pairs, 0);
-            if picked {
-                out.push((at, own.iter().map(|id| self.values[*id as usize].written()).collect()));
-            }
-            ids.push(own);
-        }
-        out
     }
 }
 

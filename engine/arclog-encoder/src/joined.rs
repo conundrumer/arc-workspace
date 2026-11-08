@@ -80,7 +80,7 @@ struct Sketch {
 }
 
 /// The distinct tuples of the rows of a join at the columns `key`, in order, each with the count of rows of the join that hold it.
-struct Counted {
+pub(crate) struct Counted {
     tuples: Vec<Cell>,
     weights: Vec<u64>,
     /// The tuples as rows of the join's width, with 0 at each column that is not in the key, once something has read them.
@@ -88,6 +88,16 @@ struct Counted {
 }
 
 impl Counted {
+    /// The tuples, one cell for each column of the key, in ascending order.
+    pub(crate) fn tuples(&self) -> &[Cell] {
+        &self.tuples
+    }
+
+    /// The count of rows that hold each tuple, in the order of the tuples.
+    pub(crate) fn weights(&self) -> &[u64] {
+        &self.weights
+    }
+
     /// The tuples as rows of `width` cells, with 0 at each column that is not in `key`.
     fn wide(&self, key: &[u16], width: usize) -> Arc<Table> {
         self.wide
@@ -972,7 +982,7 @@ impl Joined {
     }
 
     /// The distinct tuples of the rows of the join at the columns `key`, which stand sorted and distinct, each with the count of rows of the join that hold it, from what a thread kept of an earlier read where it holds this one. No value where a column is not one of the join.
-    fn counted(&self, key: &[u16]) -> Option<Arc<Counted>> {
+    pub(crate) fn counted(&self, key: &[u16]) -> Option<Arc<Counted>> {
         let at = self.shared_key(key);
         if let Some(found) = SHARED.with(|shared| shared.borrow().counted.get(&at).cloned()) {
             return Some(found);
