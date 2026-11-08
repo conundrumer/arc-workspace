@@ -49,7 +49,7 @@ TASKS = ROOT / 'data' / 'tasks'
 VALUE_BYTES = 12
 ZERO = bytes(VALUE_BYTES)
 # The encoder's environment variables that change its values, and the prefixes of such variables.
-VALUE_VARIABLES = ('GENERATE_NO_RULES', 'GENERATE_FAMILIES_BUILD')
+VALUE_VARIABLES = ('GENERATE_NO_RULES',)
 VALUE_PREFIXES = ('GOLD_PRUNE_',)
 # The most encoder calls a refresh makes for the tables that the store holds in part. Past it, those tables are walked in one call,
 # with each shape that one of them lacks.

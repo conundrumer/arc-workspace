@@ -3795,14 +3795,11 @@ pub fn example_bits(example: usize) -> u32 {
     arclog::terms::Term::Constant(arclog::terms::Constant::Example(arclog::terms::Example::at(example as u16))).encode().expect("an example has bits").encoding()
 }
 
-/// A hash of this program's file. Saved families stand under it, so that a build reads only the families it wrote itself.
+/// A hash of this program's file. Saved families stand under it, so that a build reads only the families it wrote itself, and a new
+/// binary never reads an older one's.
 fn build_id() -> &'static str {
     static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     ID.get_or_init(|| {
-        // A run whose code builds the same families may name another build's folder of them.
-        if let Ok(named) = std::env::var("GENERATE_FAMILIES_BUILD") {
-            return named;
-        }
         let program = std::env::current_exe().and_then(std::fs::read).expect("this program's file");
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         std::hash::Hash::hash(&program, &mut hasher);
