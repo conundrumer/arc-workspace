@@ -129,29 +129,49 @@ impl TableVector {
     }
 }
 
+/// The vector of a walk, one slot per shape and example. `example_of` gives the example of each instance of the walk, in the order of the instances. An example with several instances
+/// takes the mean over them, and one with none has no value.
 fn combined(table: RootTable, example_of: &[usize], examples: usize, train: usize, over_budget: bool) -> TableVector {
     let instances = example_of.len();
     let order = table.sorted_roots();
-    let single = instances == examples;
+    let mut per_example = vec![0u32; examples];
+    for example in example_of {
+        per_example[*example] += 1;
+    }
+    // Each instance stands for the example at its own place, so the walk's slots are the vector's.
+    let identity = instances == examples && example_of.iter().enumerate().all(|(place, example)| *example == place);
+    // The instances of example `e`, in order, are `members[starts[e]..starts[e + 1]]`.
+    let (mut starts, mut members) = (Vec::new(), Vec::new());
+    if !identity {
+        starts.reserve(examples + 1);
+        starts.push(0usize);
+        for count in &per_example {
+            starts.push(starts[starts.len() - 1] + *count as usize);
+        }
+        members = vec![0usize; instances];
+        let mut next = starts.clone();
+        for (instance, example) in example_of.iter().enumerate() {
+            members[next[*example]] = instance;
+            next[*example] += 1;
+        }
+    }
     let mut slots = Vec::with_capacity(order.len() * examples);
     let mut shapes = Vec::with_capacity(order.len());
     let mut meta = Vec::with_capacity(order.len());
+    let mut held: Vec<&Slot> = Vec::new();
     for (hash, at) in order {
         shapes.push(hash as u64);
         meta.push(table.meta[at]);
         let own = &table.slots[at * instances..(at + 1) * instances];
-        if single {
+        if identity {
             slots.extend_from_slice(own);
             continue;
         }
         for example in 0..examples {
-            let held: Vec<&Slot> = own.iter().zip(example_of).filter(|(_, of)| **of == example).map(|(slot, _)| slot).collect();
+            held.clear();
+            held.extend(members[starts[example]..starts[example + 1]].iter().map(|instance| &own[*instance]));
             slots.push(mean_over_models(&held));
         }
-    }
-    let mut per_example = vec![0u32; examples];
-    for example in example_of {
-        per_example[*example] += 1;
     }
     let total: u32 = per_example.iter().sum();
     let table_rows = (f64::from(total) / examples.max(1) as f64, per_example.iter().copied().max().unwrap_or(0));
