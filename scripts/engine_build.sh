@@ -4,7 +4,7 @@
 # The build root is $ENGINE_BUILD_ROOT, or work/engine-builds in the main checkout of the repo. It holds:
 #   checkout/      the build checkout, a detached worktree of the repo. Each build moves it to SHA, so git rewrites only the files that differ.
 #   target/        the cargo target folder. Only the build checkout builds into it, so cargo never reuses a crate built from another tree.
-#   builds/NAME/   the engine build: the arclog and arclog_features packages, for PYTHONPATH.
+#   builds/NAME/   the engine build: the arclog and arclog_features packages, for PYTHONPATH, and COMMIT, the full SHA of the commit they were built from.
 #   linux/NAME/    Linux x86_64 wheels of arclog and arclog_features and the feature-encoder binary, with SHA256SUMS and COMMIT, for a pod.
 #   zig/           the C compiler wrappers that link the Linux binaries with zig, through maturin's `zig cc`.
 #   bin/           tool binaries, each as TOOL-NAME.
@@ -29,6 +29,7 @@ SHA=$1; NAME=$2; shift 2
 PARTS=${*:-wheel}
 MAIN=$(dirname "$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)")
 R=${ENGINE_BUILD_ROOT:-$MAIN/work/engine-builds}
+COMMIT=$(git -C "$MAIN" rev-parse --verify --quiet "$SHA^{commit}") || { echo "no commit $SHA"; exit 1; }
 B=$R/checkout; T=$R/target; LOG=$R/logs/$NAME.log; LOCK=$R/build.lock
 mkdir -p "$R/builds" "$R/bin" "$R/logs" "$R/wheels" "$R/linux"
 : > "$LOG"
@@ -38,8 +39,8 @@ step() { echo "$(date +%H:%M:%S) $*" | tee -a "$LOG"; }
 locked() {
   until mkdir "$LOCK" 2>/dev/null; do sleep 1; done
   trap 'rmdir "$LOCK" 2>/dev/null' EXIT
-  [ -d "$B" ] || git -C "$MAIN" worktree add --detach "$B" "$SHA" > /dev/null 2>&1
-  git -C "$B" checkout -q --detach --force "$SHA" && git -C "$B" clean -fdq && "$@" >> "$LOG" 2>&1
+  [ -d "$B" ] || git -C "$MAIN" worktree add --detach "$B" "$COMMIT" > /dev/null 2>&1
+  git -C "$B" checkout -q --detach --force "$COMMIT" &&git -C "$B" clean -fdq && "$@" >> "$LOG" 2>&1
   local status=$?
   rmdir "$LOCK" 2>/dev/null; trap - EXIT
   return $status
@@ -120,6 +121,7 @@ for PART in $PARTS; do
       locked wheel || fail wheel
       rm -rf "$R/builds/$NAME" && mkdir -p "$R/builds/$NAME"
       for WHEEL in "$R/wheels/$NAME"/*.whl; do unzip -o -q "$WHEEL" -d "$R/builds/$NAME"; done
+      echo "$COMMIT" > "$R/builds/$NAME/COMMIT"
       rm -rf "$R/wheels/$NAME"
       step "engine build $R/builds/$NAME";;
     encoder) locked encoder || fail encoder; step "$R/bin/feature-encoder-$NAME";;
