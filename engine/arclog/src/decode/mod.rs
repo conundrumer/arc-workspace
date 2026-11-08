@@ -109,6 +109,10 @@ pub struct Decoder<'a> {
     trace: DecodeTrace,
     /// The sum of `capped_sets` over the records of `trace`.
     capped_sets: u64,
+    /// The count of the records of `trace` that the model's tokens made.
+    model_steps: usize,
+    /// The index in `trace` of the last of those records.
+    last_model_step: Option<usize>,
     /// The hash of the ids of the tokens of the trace, in order, or none
     /// where the decode stands at a state that its tokens did not reach.
     path: Option<u128>,
@@ -295,7 +299,7 @@ impl<'a> Decoder<'a> {
         };
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings), key_base };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, requests: Requests::default(), output: None, assignments: Vec::new(), trace: DecodeTrace::default(), capped_sets: 0, path: Some(0), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default(), evaluates: true }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, requests: Requests::default(), output: None, assignments: Vec::new(), trace: DecodeTrace::default(), capped_sets: 0, model_steps: 0, last_model_step: None, path: Some(0), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default(), evaluates: true }
     }
 
     /// The decode, with steps that evaluate nothing: a step runs the
@@ -755,6 +759,8 @@ impl<'a> Decoder<'a> {
         }
         record.capped_sets = step.capped_sets + step.rule_capped_sets;
         self.capped_sets += record.capped_sets;
+        self.model_steps += 1;
+        self.last_model_step = Some(self.trace.len());
         self.extend_path(&record.token);
         self.trace.push(record);
         for forced in step.forced.iter() {
@@ -829,6 +835,13 @@ impl<'a> Decoder<'a> {
     /// trace's records.
     pub fn capped_sets(&self) -> u64 {
         self.capped_sets
+    }
+
+    /// The count of the records of the trace that the model's tokens made,
+    /// and the index in the trace of the last of them, or `None` before the
+    /// first.
+    pub fn model_steps(&self) -> (usize, Option<usize>) {
+        (self.model_steps, self.last_model_step)
     }
 
     /// Attaches `top_k`, the language model's top tokens at the decision of
