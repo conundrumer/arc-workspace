@@ -166,7 +166,7 @@ impl BodyWidening<'_, '_> {
         }
         let own = Clause { keyword: self.keyword(), derives: decoder.fresh_relation(), ones: Arc::from([]), set: false, ..clause.clone() };
         let made = |kept: &[Conjunct]| crate::read::columns::made_labels(&Body { conjuncts: kept.into() });
-        lists.into_iter().map(|kept| decoder.body_of(finished, own.clone(), kept.clone(), made(&kept))).collect()
+        lists.into_iter().map(|kept| decoder.body_of(finished, own.clone(), kept, made)).collect()
     }
 
     /// Each written input clause, including its key context, widened in
@@ -404,8 +404,7 @@ impl<'a> Decoder<'a> {
         let open = open?;
         let (_, finished) = program.value().forms.split_last().expect("a partial program holds its partial form");
         let OpenClause { clause, kept, .. } = self.open_clause_in(&self.state, &program, &open, || self.form_keyword(&self.state, &program))?;
-        let labels = atom_labels(&kept);
-        Some(self.body_of(finished, clause, kept, labels))
+        Some(self.body_of(finished, clause, kept, atom_labels))
     }
 
     /// The clause in progress of the form in progress of `program`, the
@@ -486,8 +485,7 @@ impl<'a> Decoder<'a> {
         if kept.is_empty() {
             return Some(None);
         }
-        let labels = atom_labels(&kept);
-        Some(Some(self.body_of(finished, clause, kept, labels)))
+        Some(Some(self.body_of(finished, clause, kept, atom_labels)))
     }
 
     /// The keyword of a clause of the side of the form in progress of
@@ -544,8 +542,7 @@ impl<'a> Decoder<'a> {
         if kept.is_empty() {
             return None;
         }
-        let labels = atom_labels(&kept);
-        Some(self.body_of(finished, clause, kept, labels))
+        Some(self.body_of(finished, clause, kept, atom_labels))
     }
 
     /// Bind body reification to the checked owner before any branch or
@@ -562,17 +559,23 @@ impl<'a> Decoder<'a> {
         ProgramRelation::Declared(RelationName(DeclaredName::Slot(self.state.open_slot())))
     }
 
-    /// The sub-body of `clause` with the conjuncts `kept`: a complete clause
-    /// that ends the program of the `finished` forms, whose relation has a
-    /// column for each of `labels`, the labels `kept` makes.
-    fn body_of(&self, finished: &[Form], clause: Clause, kept: Vec<Conjunct>, labels: Vec<LabelId>) -> Outcome<SubBody> {
+    /// The sub-body of `clause` with the conjuncts of `kept` that read only
+    /// names that the `finished` forms and the lib give: a complete clause that
+    /// ends the program of the `finished` forms, whose relation has a column
+    /// for each of the labels that `labels` gives for those conjuncts. A
+    /// conjunct that reads a name of the form in progress, such as an `Unfold`
+    /// instance's read of its own outputs, stands outside the clause's scope
+    /// and is left out, so the rows of the sub-body hold the rows of the completion.
+    fn body_of(&self, finished: &[Form], clause: Clause, kept: Vec<Conjunct>, labels: impl FnOnce(&[Conjunct]) -> Vec<LabelId>) -> Outcome<SubBody> {
         let form = NodePath::top(finished.len() as u32);
-        let columns = crate::read::columns::slot_columns(labels, 0);
+        let registry = self.context.registry;
+        let earlier = self.state.resolved(registry);
+        let kept: Vec<Conjunct> = kept.into_iter().filter(|conjunct| reads_resolve(conjunct, &earlier, registry)).collect();
+        let columns = crate::read::columns::slot_columns(labels(&kept), 0);
         let count = u32::try_from(kept.len()).expect("fewer than 2^32 conjuncts");
         let sub = Clause { body: Node::new(Body { conjuncts: kept.into() }), columns, ..clause };
         let forms = finished.iter().cloned().chain([Form::Clause(Node::new(sub))]).collect();
-        let registry = self.context.registry;
-        let resolved = resolve_last(&self.state.resolved(registry), &Node::new(Program { forms }), registry);
+        let resolved = resolve_last(&earlier, &Node::new(Program { forms }), registry);
         let checked = self.checked(Arc::new(resolved), &form);
         checked.map(|program| {
             let relation = derived_at(&program, &form);
@@ -733,6 +736,26 @@ fn widen(list: Vec<Conjunct>, split: bool, reads: &dyn Fn(&Atom) -> bool, out: &
         next.extend(list[at + 1..].iter().cloned());
         widen(next, true, reads, out)
     })
+}
+
+/// Whether each name that `conjunct` reads, at any depth, resolves in a
+/// program that ends the forms of `earlier`: a fact, a lib name of the
+/// registry, or a relation that `earlier` declares.
+fn reads_resolve(conjunct: &Conjunct, earlier: &ResolvedProgram, registry: &Registry) -> bool {
+    let body = |body: &Node<Body>| body.value().conjuncts.iter().all(|conjunct| reads_resolve(conjunct, earlier, registry));
+    match conjunct {
+        Conjunct::Atom(atom) | Conjunct::Not(Negated::Atom(atom)) => match &atom.value().relation {
+            RelationRef::Declared(_) | RelationRef::Output(_) => earlier.program_read(&atom.value().relation).is_some(),
+            RelationRef::Lib(name) => registry.entry(name).is_some(),
+            RelationRef::Fact(_) => true,
+            RelationRef::DefinedPort(_) => false,
+        },
+        Conjunct::Not(Negated::Form(form)) => reads_resolve(form, earlier, registry),
+        Conjunct::Constraint(_) => true,
+        Conjunct::Or(branches) => branches.iter().all(body),
+        Conjunct::If { test, then, otherwise } => body(test) && body(then) && body(otherwise),
+        Conjunct::All { domain, body: inner } => body(domain) && body(inner),
+    }
 }
 
 /// The distinct labels of the sites of the positive atoms of `conjuncts`, in
