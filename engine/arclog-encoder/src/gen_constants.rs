@@ -10,7 +10,6 @@ use arclog::terms::{Color, Constant, Term, TermId};
 use arclog::types::ValueType;
 
 use crate::catalog_facts::*;
-use crate::lookup::InsertionMap;
 use crate::native::{Cell, FastMap, Table};
 
 /// How cells are written: the bits of each color and orientation.
@@ -433,13 +432,13 @@ fn periods_of(g: &GridFacts) -> Periods {
 }
 
 /// How the input's diff stands to the output's: each move, with the input's diff cells that it lands on
-/// output diff cells of their color. The moves stand in the order of their first landing.
-fn moves_between(from: &[(usize, Cell, [i32; 4])], to: &[(usize, Cell, [i32; 4])]) -> InsertionMap<Cell, Vec<usize>> {
+/// output diff cells of their color, in the order of `from`.
+fn moves_between(from: &[(usize, Cell, [i32; 4])], to: &[(usize, Cell, [i32; 4])]) -> FastMap<Cell, Vec<usize>> {
     let mut by_color: FastMap<Cell, Vec<[i32; 4]>> = FastMap::default();
     for (_, color, margins) in to {
         by_color.entry(*color).or_default().push(*margins);
     }
-    let mut out: InsertionMap<Cell, Vec<usize>> = InsertionMap::default();
+    let mut out: FastMap<Cell, Vec<usize>> = FastMap::default();
     for (at, color, margins) in from {
         for held in by_color.get(color).into_iter().flatten() {
             let v = box_bits(held[0] - margins[0], held[1] - margins[1], held[2] - margins[2], held[3] - margins[3]);
@@ -538,12 +537,13 @@ pub fn constant_tables(f: &PairFacts) -> Vec<Arc<Table>> {
         (0..one.h * one.w).filter(|at| one.color[*at] != other.color[*at]).map(|at| (at, e.colors[one.color[at] as usize], margins_of(cell_bits(one.h, one.w, at)))).collect()
     };
     let moves = moves_between(&side(&f.input, &f.output), &side(&f.output, &f.input));
-    let most = moves.values().map(Vec::len).max().unwrap_or(0);
+    let most = moves.max_of(|_, cells| cells.len()).unwrap_or(0);
     let mut move_rows = Vec::with_capacity(moves.len() * 2);
     let mut best_rows = Vec::new();
     let mut best_cells = Vec::new();
     let mut farthest = None;
-    for (v, cells) in &moves {
+    // The moves stand in the order of their value.
+    for (v, cells) in moves.sorted_entries() {
         move_rows.extend_from_slice(&[*v, number_bits(cells.len() as i64)]);
         if cells.len() == most {
             best_rows.push(*v);

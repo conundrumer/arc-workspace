@@ -8,7 +8,7 @@
 
 use crate::catalog::*;
 use crate::catalog_facts::*;
-use crate::lookup::InsertionMap;
+use crate::lookup::LookupMap;
 
 /// An exact fraction in lowest terms, with a positive denominator.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -109,10 +109,10 @@ struct Per {
     values: Vec<Vec<Fraction>>,
 }
 
-/// One table's vector, with its records at each train pair.
+/// One table's vector, with its records at each train pair, its entries in the order of their names.
 pub fn vector_of(records: &[Vec<Record>], kinds: &[Kind]) -> Vec<Entry> {
     let examples = records.len();
-    let mut per: InsertionMap<String, Per> = InsertionMap::new();
+    let mut per: LookupMap<String, Per> = LookupMap::new();
     for (example, held) in records.iter().enumerate() {
         for record in held {
             let name = shape_name(record, kinds);
@@ -138,7 +138,7 @@ pub fn vector_of(records: &[Vec<Record>], kinds: &[Kind]) -> Vec<Entry> {
         }
     }
     let mut out = Vec::with_capacity(per.len());
-    for (name, held) in per {
+    for (name, held) in per.into_sorted_vec() {
         let mut greatest = Vec::with_capacity(examples);
         let mut second = Vec::with_capacity(examples);
         for values in &held.values {
@@ -164,7 +164,6 @@ pub fn vector_of(records: &[Vec<Record>], kinds: &[Kind]) -> Vec<Entry> {
         };
         out.push(Entry { name, ratio: held.ratio, present: greatest.len() as u8, greatest: combined(&greatest), second: combined(&second) });
     }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }
 

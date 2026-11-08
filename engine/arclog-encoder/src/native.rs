@@ -25,7 +25,6 @@ use arclog::types::ValueType;
 
 use crate::bounds::Bound;
 use crate::expression::Op;
-use crate::lookup::InsertionMap;
 
 pub type Cell = u32;
 
@@ -1234,9 +1233,9 @@ fn one_part<'p>(parts: &'p [Part], positions: &[u16]) -> Option<(&'p Part, Vec<&
 }
 
 /// The rows of an input at each key: a table keyed by its first `key_width`
-/// columns, as a map from a key to its count of rows. It iterates its keys in order of first appearance.
-fn key_counts<'t>(table: &'t Table, key_width: usize) -> InsertionMap<&'t [Cell], u32> {
-    let mut counts: InsertionMap<&[Cell], u32> = InsertionMap::default();
+/// columns, as a map from a key to its count of rows.
+fn key_counts<'t>(table: &'t Table, key_width: usize) -> FastMap<&'t [Cell], u32> {
+    let mut counts: FastMap<&[Cell], u32> = FastMap::default();
     if table.arity == 0 {
         return counts;
     }
@@ -1249,7 +1248,7 @@ fn key_counts<'t>(table: &'t Table, key_width: usize) -> InsertionMap<&'t [Cell]
 /// The frequent components, read straight off their inputs' rows, where their
 /// inputs have a simple form: what each construction gives on each key group, with
 /// no row sets. `None` leaves the instance to its construction.
-fn fast_component(shape: &CompShape, tables: &[Arc<Table>]) -> Option<Outputs> {
+fn fast_component<'t>(shape: &CompShape, tables: &'t [Arc<Table>]) -> Option<Outputs> {
     let key_width = shape.key_width;
     match shape.name.as_str() {
         "Cardinality" => {
@@ -1274,7 +1273,7 @@ fn fast_component(shape: &CompShape, tables: &[Arc<Table>]) -> Option<Outputs> {
             let _ = domain_every;
             let counts = key_counts(table, key_width);
             let mut cells = Vec::with_capacity(counts.len() * (key_width + 1));
-            for (key, count) in &counts {
+            for (key, count) in counts.sorted_entries() {
                 cells.extend_from_slice(key);
                 cells.push(Term::encode_count(*count as usize).encoding());
             }
@@ -1301,7 +1300,7 @@ fn fast_component(shape: &CompShape, tables: &[Arc<Table>]) -> Option<Outputs> {
                 }
             }
             let mut plural = Vec::new();
-            for (key, count) in &counts {
+            for (key, count) in counts.sorted_entries() {
                 if *count > 1 {
                     plural.extend_from_slice(key);
                 }
@@ -1331,11 +1330,11 @@ fn fast_component(shape: &CompShape, tables: &[Arc<Table>]) -> Option<Outputs> {
                 return Some(Some(vec![Table::new(1, cells)]));
             }
             // A key that either keyed input holds, each input's rows at that key.
-            let counts = |held: &Option<(&Arc<Table>, bool)>| -> Option<(InsertionMap<Vec<Cell>, u32>, u32)> {
-                match held {
-                    Some((table, true)) => Some((key_counts(table, key_width).into_iter().map(|(key, count)| (key.to_vec(), count)).collect(), 0)),
-                    Some((table, false)) => Some((InsertionMap::default(), table.len as u32)),
-                    None => Some((InsertionMap::default(), 0)),
+            let counts = |held: &Option<(&'t Arc<Table>, bool)>| -> Option<(FastMap<&'t [Cell], u32>, u32)> {
+                match *held {
+                    Some((table, true)) => Some((key_counts(table, key_width), 0)),
+                    Some((table, false)) => Some((FastMap::default(), table.len as u32)),
+                    None => Some((FastMap::default(), 0)),
                 }
             };
             let (plus_keys, plus_all) = counts(&plus)?;
@@ -1349,13 +1348,12 @@ fn fast_component(shape: &CompShape, tables: &[Arc<Table>]) -> Option<Outputs> {
                     cells.push(Term::encode_count((a - b) as usize).encoding());
                 }
             };
-            for key in plus_keys.keys() {
+            // The keys of either input, in order.
+            let mut keys: Vec<&[Cell]> = plus_keys.sorted_keys().into_iter().copied().collect();
+            keys.extend(minus_keys.sorted_keys().into_iter().copied().filter(|key| !plus_keys.contains_key(*key)));
+            keys.sort_unstable();
+            for key in keys {
                 emit(key);
-            }
-            for key in minus_keys.keys() {
-                if !plus_keys.contains_key(key) {
-                    emit(key);
-                }
             }
             Some(Some(vec![Table::new(key_width + 1, cells)]))
         }
@@ -1383,7 +1381,7 @@ fn fast_component(shape: &CompShape, tables: &[Arc<Table>]) -> Option<Outputs> {
                     by_member.entry(&row[pattern_id..]).or_default().push(&row[..pattern_id]);
                 }
             }
-            let mut shared: InsertionMap<(&[Cell], &[Cell]), u32> = InsertionMap::default();
+            let mut shared: FastMap<(&[Cell], &[Cell]), u32> = FastMap::default();
             if observed_table.arity > 0 {
                 for row in observed_table.rows() {
                     if let Some(found) = by_member.get(&row[observed_id..]) {
@@ -1395,7 +1393,7 @@ fn fast_component(shape: &CompShape, tables: &[Arc<Table>]) -> Option<Outputs> {
             }
             let width = observed_id + pattern_id;
             let (mut superset, mut equal) = (Vec::new(), Vec::new());
-            for ((observed_key, pattern_key), count) in &shared {
+            for ((observed_key, pattern_key), count) in shared.sorted_entries() {
                 let size = pattern_sizes[*pattern_key];
                 if *count == size {
                     superset.extend_from_slice(observed_key);
