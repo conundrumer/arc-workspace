@@ -912,6 +912,67 @@ fn digest(items: &[u128]) -> u128 {
     hasher.finish128().0
 }
 
+/// The hashes, sorted and without repeat, of the runs of the cells of `columns`, in that order, over the rows of `rows`:
+/// the hash of a run is that of its cells written one by one. A run of at most four cells is packed into one key, the
+/// keys are sorted and made distinct first, and only a distinct run is hashed. The rows of a column repeat its few values,
+/// so that is far fewer hashes to sort than one for each row.
+fn run_hashes(rows: &Encoded, width: usize, starts: &[usize], widths: &[usize], columns: &[usize]) -> Vec<u128> {
+    fn hashed<K: Ord + Copy>(count: usize, key: impl Fn(usize) -> K, cell: impl Fn(K, usize) -> i32, total: usize) -> Vec<u128> {
+        let mut keys: Vec<K> = (0..count).map(key).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        let mut cells = [0i32; 4];
+        keys.iter()
+            .map(|&key| {
+                for (at, held) in cells[..total].iter_mut().enumerate() {
+                    *held = cell(key, at);
+                }
+                let mut hasher = StableHasher::new();
+                hasher.write_i32s(&cells[..total]);
+                hasher.finish128().0
+            })
+            .collect()
+    }
+    let count = rows.count as usize;
+    let total: usize = columns.iter().map(|&column| widths[column]).sum();
+    let mut hashes: Vec<u128> = if total <= 2 {
+        let key = |row: usize| {
+            let mut key = 0u64;
+            for &column in columns {
+                for &cell in run_of(rows, width, starts[column], widths[column], row) {
+                    key = key << 32 | u64::from(cell as u32);
+                }
+            }
+            key
+        };
+        hashed(count, key, |key: u64, at| (key >> (32 * (total - 1 - at))) as u32 as i32, total)
+    } else if total <= 4 {
+        let key = |row: usize| {
+            let mut key = 0u128;
+            for &column in columns {
+                for &cell in run_of(rows, width, starts[column], widths[column], row) {
+                    key = key << 32 | u128::from(cell as u32);
+                }
+            }
+            key
+        };
+        hashed(count, key, |key: u128, at| (key >> (32 * (total - 1 - at))) as u32 as i32, total)
+    } else {
+        (0..count)
+            .map(|row| {
+                let mut run = StableHasher::new();
+                for &column in columns {
+                    run.write_i32s(run_of(rows, width, starts[column], widths[column], row));
+                }
+                run.finish128().0
+            })
+            .collect()
+    };
+    sort_hashes(&mut hashes);
+    hashes.dedup();
+    hashes
+}
+
 /// The `len` cells at `start` in the row `row` of `rows`, a row being `width` cells.
 fn run_of(rows: &Encoded, width: usize, start: usize, len: usize, row: usize) -> &[i32] {
     &rows.cells[row * width + start..][..len]
@@ -982,18 +1043,7 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
             for (_, _, distinct) in examples {
                 let mut sets: Vec<u128> = distinct
                     .iter()
-                    .map(|rows| {
-                        let mut runs: Vec<u128> = (0..rows.count as usize)
-                            .map(|row| {
-                                let mut run = StableHasher::new();
-                                run.write_i32s(run_of(rows, width, starts[column], widths[column], row));
-                                run.finish128().0
-                            })
-                            .collect();
-                        sort_hashes(&mut runs);
-                        runs.dedup();
-                        digest(&runs)
-                    })
+                    .map(|rows| digest(&run_hashes(rows, width, &starts, &widths, &[column])))
                     .collect();
                 sets.sort_unstable();
                 sets.dedup();

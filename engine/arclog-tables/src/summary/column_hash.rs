@@ -59,7 +59,7 @@ use std::hash::Hasher;
 use arclog::hash::{StableHash, StableHashMap, StableHasher};
 use arclog::types::ValueType;
 
-use super::{digest, hashed_names, run_of, Assemblies, Encoded};
+use super::{digest, hashed_names, run_hashes, run_of, Assemblies, Encoded};
 
 /// The most table rows that the pair hashes of the refinement, and the swaps
 /// of the exchange check, read in all at one assignment.
@@ -156,20 +156,7 @@ impl Cells<'_> {
         for (kind, index, distinct) in self.examples {
             let mut sets: Vec<u128> = distinct
                 .iter()
-                .map(|rows| {
-                    let mut runs: Vec<u128> = (0..rows.count as usize)
-                        .map(|row| {
-                            let mut run = StableHasher::new();
-                            for &column in columns {
-                                run.write_i32s(run_of(rows, self.width, self.starts[column], self.widths[column], row));
-                            }
-                            run.finish128().0
-                        })
-                        .collect();
-                    super::sort_hashes(&mut runs);
-                    runs.dedup();
-                    digest(&runs)
-                })
+                .map(|rows| digest(&run_hashes(rows, self.width, &self.starts, &self.widths, columns)))
                 .collect();
             sets.sort_unstable();
             sets.dedup();
