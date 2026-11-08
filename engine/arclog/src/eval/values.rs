@@ -1231,7 +1231,7 @@ fn merge_notes(into: &mut Vec<Note>, from: &[Note]) {
 /// rest of what `run` charges in it.
 pub(crate) fn noting<T>(run: impl FnOnce() -> T) -> (T, NoteId) {
     tally(|tally| {
-        tally.frames.push(Frame { request: 0, effort: 0, notes: Vec::new(), owner: false, held: 0, assignment: None, cost: Cost::default() });
+        tally.frames.push(Frame { request: 0, effort: 0, notes: Vec::new(), owner: false, held: 0, assignment: None, owned_from: 0, cost: Cost::default() });
     });
     let mut open = Unwind(true);
     let value = run();
@@ -1239,7 +1239,7 @@ pub(crate) fn noting<T>(run: impl FnOnce() -> T) -> (T, NoteId) {
     let frame = tally(|tally| {
         let frame = tally.frames.pop().expect("the measurement this call opened");
         if let Some(outer) = tally.frames.last_mut() {
-            outer.cost.absorb(&frame.cost, false, false);
+            outer.cost.absorb(&frame.cost, false, false, 0);
             merge_notes(&mut outer.notes, &frame.notes);
         }
         frame
@@ -1401,6 +1401,10 @@ struct Frame {
     /// The account of the assignment whose bytes the measurement counts, once
     /// it counts any ([`TableWork::charge_bytes`]).
     assignment: Option<Arc<AssignmentBytes>>,
+    /// The bytes that allocations of the session owned in the request's
+    /// account when the measurement began ([`ByteAccount::owned`]): the owned
+    /// bytes above that count belong to the measurement while they live.
+    owned_from: u64,
     cost: Cost,
 }
 
@@ -1454,6 +1458,14 @@ pub(crate) fn tally_counts(counts: Counts) {
 
 /// The bytes that a computation holds, counted from its start: the most it
 /// held at a time, and what it still holds at its end.
+///
+/// The most it held (`peak`) counts the bytes that allocations of the session
+/// owned while they lived ([`Owner`]) beside the bytes it charged, and what it
+/// still holds at its end (`net`) counts the charged bytes alone: the owner of
+/// an allocation frees it where the allocation drops. Each method takes `live`,
+/// the owned bytes that the computation holds at that point, so that a
+/// computation that owned a buffer and one whose entry a hit gives show the same
+/// peak.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct ByteSpan {
     pub peak: u64,
@@ -1462,9 +1474,9 @@ pub struct ByteSpan {
 
 impl ByteSpan {
     /// The computation allocates `bytes`, which it holds.
-    fn acquire(&mut self, bytes: u64) {
+    fn acquire(&mut self, bytes: u64, live: u64) {
         self.net = self.net.saturating_add(bytes);
-        self.peak = self.peak.max(self.net);
+        self.peak = self.peak.max(self.net.saturating_add(live));
     }
 
     /// The computation frees `bytes` that it held.
@@ -1473,13 +1485,18 @@ impl ByteSpan {
     }
 
     /// The computation holds `bytes` more for a moment and frees them.
-    fn transient(&mut self, bytes: u64) {
-        self.peak = self.peak.max(self.net.saturating_add(bytes));
+    fn transient(&mut self, bytes: u64, live: u64) {
+        self.peak = self.peak.max(self.net.saturating_add(live).saturating_add(bytes));
+    }
+
+    /// The computation holds `live` owned bytes.
+    fn owned(&mut self, live: u64) {
+        self.peak = self.peak.max(self.net.saturating_add(live));
     }
 
     /// The computation runs `inner` as a part of it, from where it stands.
-    fn absorb(&mut self, inner: ByteSpan) {
-        self.peak = self.peak.max(self.net.saturating_add(inner.peak));
+    fn absorb(&mut self, inner: ByteSpan, live: u64) {
+        self.peak = self.peak.max(self.net.saturating_add(live).saturating_add(inner.peak));
         self.net = self.net.saturating_add(inner.net);
     }
 }
@@ -1538,10 +1555,12 @@ impl Cost {
     }
 
     /// Adds what a computation inside the one this cost counts charged.
-    fn absorb(&mut self, inner: &Cost, same_request: bool, same_effort: bool) {
+    /// `live` are the bytes that allocations of the session owned, in the
+    /// request's account, when the inner computation began.
+    fn absorb(&mut self, inner: &Cost, same_request: bool, same_effort: bool, live: u64) {
         if same_request {
             self.request = self.request.saturating_add(inner.request);
-            self.bytes.absorb(inner.bytes);
+            self.bytes.absorb(inner.bytes, live);
             self.bytes_noted |= inner.bytes_noted;
         }
         if same_effort {
@@ -1955,7 +1974,7 @@ impl RequestWork {
     pub fn charge_bytes(&self, bytes: u64) -> Result<(), ReachedBound> {
         // Past 2^50 a charge is past every budget, and the clamp keeps the sum from wrapping.
         let bytes = bytes.min(1 << 50);
-        self.tally_bytes(|span| span.acquire(bytes));
+        self.tally_bytes(|span, live| span.acquire(bytes, live));
         self.bytes_reached(self.bytes.acquire(bytes, self.byte_caps.request))
     }
 
@@ -1963,7 +1982,7 @@ impl RequestWork {
     /// and the bytes are freed again.
     pub fn charge_bytes_transient(&self, bytes: u64) -> Result<(), ReachedBound> {
         let bytes = bytes.min(1 << 50);
-        self.tally_bytes(|span| span.transient(bytes));
+        self.tally_bytes(|span, live| span.transient(bytes, live));
         let acquired = self.bytes.acquire(bytes, self.byte_caps.request);
         if matches!(acquired, Acquired::Within(_)) {
             self.bytes.release(bytes);
@@ -1974,7 +1993,7 @@ impl RequestWork {
     /// Frees `bytes` that [`RequestWork::charge_bytes`] held.
     pub fn credit_bytes(&self, bytes: u64) {
         let bytes = bytes.min(1 << 50);
-        self.tally_bytes(|span| span.release(bytes));
+        self.tally_bytes(|span, _| span.release(bytes));
         self.bytes.release(bytes);
     }
 
@@ -1983,7 +2002,7 @@ impl RequestWork {
     /// holds.
     fn charge_hit_bytes(&self, span: ByteSpan) -> Result<(), ReachedBound> {
         let peak = span.peak.min(1 << 50);
-        self.tally_bytes(|counted| counted.absorb(span));
+        self.tally_bytes(|counted, live| counted.absorb(span, live));
         let acquired = self.bytes.acquire(peak, self.byte_caps.request);
         if matches!(acquired, Acquired::Within(_)) {
             self.bytes.release(peak.saturating_sub(span.net));
@@ -1992,11 +2011,15 @@ impl RequestWork {
     }
 
     /// Holds `bytes` that an allocation of the session owns until it drops
-    /// ([`Owner`]): no measurement counts them, and the owner frees them.
+    /// ([`Owner`]): the owner frees them, and no measurement keeps them in the
+    /// bytes its value holds. The measurement open counts them in the most it
+    /// held while they live ([`ByteSpan::peak`]), so a hit on its entry checks
+    /// and notes the bytes that a computation with empty caches holds.
     pub(crate) fn charge_bytes_owned(&self, bytes: u64) -> Result<(), ReachedBound> {
         let bytes = bytes.min(1 << 50);
         let acquired = self.bytes.acquire(bytes, self.byte_caps.request);
         self.bytes.owned.fetch_add(bytes, Ordering::Relaxed);
+        self.tally_bytes(|span, live| span.owned(live));
         self.bytes_reached(acquired)
     }
 
@@ -2027,14 +2050,17 @@ impl RequestWork {
     }
 
     /// Applies `with` to the bytes that the innermost open measurement counts
-    /// for this request, where it measures this request.
-    fn tally_bytes(&self, with: impl FnOnce(&mut ByteSpan)) {
+    /// for this request, where it measures this request, and to the bytes that
+    /// allocations of the session own in the request's account, above those
+    /// that they owned when the measurement began.
+    fn tally_bytes(&self, with: impl FnOnce(&mut ByteSpan, u64)) {
         let key = self.key();
+        let owned = self.bytes.owned.load(Ordering::Relaxed);
         tally(|tally| {
             if let Some(top) = tally.frames.last_mut()
                 && top.request == key
             {
-                with(&mut top.cost.bytes);
+                with(&mut top.cost.bytes, owned.saturating_sub(top.owned_from));
                 top.cost.bytes_noted = true;
             }
         });
@@ -2077,9 +2103,10 @@ impl RequestWork {
     }
 
     fn measure_with<T>(&self, owner: bool, run: impl FnOnce() -> T, held_by: impl FnOnce(&T) -> u64) -> (T, Cost) {
+        let owned_from = self.bytes.owned.load(Ordering::Relaxed);
         tally(|tally| {
             let held = std::mem::take(&mut tally.unbilled);
-            tally.frames.push(Frame { request: self.key(), effort: self.effort_key(), notes: Vec::new(), owner, held, assignment: None, cost: Cost::default() });
+            tally.frames.push(Frame { request: self.key(), effort: self.effort_key(), notes: Vec::new(), owner, held, assignment: None, owned_from, cost: Cost::default() });
         });
         let mut open = Unwind(true);
         let value = run();
@@ -2094,7 +2121,7 @@ impl RequestWork {
             frame.cost.bytes.net -= freed;
             if let Some(outer) = tally.frames.last_mut() {
                 let same_request = frame.request == outer.request;
-                outer.cost.absorb(&frame.cost, same_request, frame.effort == outer.effort);
+                outer.cost.absorb(&frame.cost, same_request, frame.effort == outer.effort, frame.owned_from.saturating_sub(outer.owned_from));
                 merge_notes(&mut outer.notes, &frame.notes);
                 if let Some(account) = &frame.assignment {
                     outer.assignment.get_or_insert_with(|| Arc::clone(account));
@@ -2573,7 +2600,8 @@ impl Limits {
     /// Holds `bytes` in the request and in the assignment of these limits for
     /// an allocation of the session, and gives the owner that frees them where
     /// the allocation drops ([`crate::session::SessionAllocation::owned_by`]).
-    /// No measurement counts these bytes.
+    /// A measurement counts these bytes in the most it held while they live,
+    /// and in the bytes its value holds not at all.
     pub(crate) fn hold_bytes_owned(&self, bytes: u64) -> Result<Owner, ReachedBound> {
         let bytes = bytes.min(1 << 50);
         let owner = Owner { request: Arc::clone(&self.request.bytes), assignment: self.table_work.as_ref().and_then(|work| work.bytes.clone()) };

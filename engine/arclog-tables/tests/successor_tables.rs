@@ -10,7 +10,7 @@
 
 use arclog::decode::Decoder;
 use arclog::eval::join::Materializer;
-use arclog::eval::Gauge;
+use arclog::eval::{Gauge, Limits};
 use arclog::judge::candidates::{PairCandidates, Section, World};
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession, SESSION_BYTES};
@@ -39,8 +39,12 @@ fn rows(columns: &CaseColumns) -> Vec<Row> {
 /// of `decoder`, after the stream `before`, as `step_tables` of the Python
 /// binding gives them, and the stream after them.
 fn columns(decoder: &Decoder<'_>, evidence: &[Table], before: Option<&StreamTables>, index: usize, tables: Vec<Table>, summaries: &SummaryCache) -> (CaseColumns, StreamTables) {
-    let limits = decoder.limits();
-    let materializer = Materializer::new(decoder.evaluation_inputs().1, &limits);
+    columns_under(decoder, &decoder.limits(), evidence, before, index, tables, summaries)
+}
+
+/// [`columns`], with the export counted under `limits`.
+fn columns_under(decoder: &Decoder<'_>, limits: &Limits, evidence: &[Table], before: Option<&StreamTables>, index: usize, tables: Vec<Table>, summaries: &SummaryCache) -> (CaseColumns, StreamTables) {
+    let materializer = Materializer::new(decoder.evaluation_inputs().1, limits);
     let queries = tables
         .iter()
         .map(|table| match table.point {
@@ -167,8 +171,11 @@ fn successors_of_a_program_with_init_port_bodies_equal_the_oracle() {
 type Gauges = Vec<(&'static str, u64, u64, u64)>;
 
 /// At each model token of `ids`, the largest value, the cap and the hits of
-/// each gauge of the request of `successor_tables` for that token, but for the
-/// session's own ledger, with `decoder` stepping the tokens.
+/// each gauge of the request of `successor_tables` for that token, with the
+/// export of its tables, as the Python binding makes it, but for the session's
+/// own ledger, with `decoder` stepping the tokens. The export of the body in
+/// progress counts in the call's request, and the export of a successor in the
+/// request of that successor, whose gauges are those of the call's.
 fn successor_gauges(decoder: &mut Decoder<'_>, ids: &[u32], vocabulary: &arclog::stream::Vocabulary, evidence: &[Table], summaries: &SummaryCache) -> Vec<Gauges> {
     let mut before: Option<StreamTables> = None;
     let mut last: Vec<Table> = Vec::new();
@@ -182,7 +189,15 @@ fn successor_gauges(decoder: &mut Decoder<'_>, ids: &[u32], vocabulary: &arclog:
             _ => None,
         };
         let limits = decoder.limits();
-        let _ = successor_tables(decoder, &limits, vec![token.clone()], &earlier, held);
+        let successors = successor_tables(decoder, &limits, vec![token.clone()], &earlier, held);
+        if let Some(table) = &successors.current {
+            let _ = columns_under(decoder, &limits, evidence, before.as_ref(), index, vec![table.clone()], summaries);
+        }
+        for successor in successors.each.iter().filter_map(|successor| successor.as_ref().ok()) {
+            if matches!(successor.kind, SuccessorKind::Body | SuccessorKind::LeftOut(_) | SuccessorKind::Finished) && successor.same_as.is_none() {
+                let _ = columns_under(&successor.decoder, &successor.decoder.limits(), evidence, before.as_ref(), index, successor.tables.clone(), summaries);
+            }
+        }
         found.push(limits.request.all_gauges().into_iter().filter(|(gauge, ..)| *gauge != Gauge::SessionBytes).map(|(gauge, max, cap, hits)| (gauge.name(), max, cap, hits)).collect());
         decoder.step(token).expect("the decode takes the program's token");
         let mut own = step_tables(decoder, Points::All, &earlier);
@@ -194,10 +209,20 @@ fn successor_gauges(decoder: &mut Decoder<'_>, ids: &[u32], vocabulary: &arclog:
     found
 }
 
+/// What a decode of the session did before the decode that is measured.
+#[derive(Clone, Copy, Debug)]
+enum Before {
+    Nothing,
+    /// A fork of the decode went through the program.
+    AFork,
+    /// Another decoder of the session went through the program.
+    AnotherDecoder,
+}
+
 /// The gauges of the request of `successor_tables` at each model token of
-/// `program`, where another decode of the session went through the program
-/// first, with the caches of the decode that this one stepped from, if `warm`.
-fn gauges_by_token(task: &str, program: &str, warm: bool) -> Vec<Gauges> {
+/// `program`, where a decode of the session went through the program first, as
+/// `before` says. The decodes share the session's caches and the summaries.
+fn gauges_by_token(task: &str, program: &str, before: Before) -> Vec<Gauges> {
     let registry = Registry::get();
     let settings = DecodeSettings { table_work_cap: 1 << 21, rule_tests: false, ..DecodeSettings::synthesis() };
     let judged = read_judged_train_text(task).expect("the task's train pairs");
@@ -205,14 +230,21 @@ fn gauges_by_token(task: &str, program: &str, warm: bool) -> Vec<Gauges> {
     let session = TaskSession::new(SessionBound { bytes: SESSION_BYTES }, settings.caps);
     let constructions = arclog_constructions::shared().expect("the constructions");
     let train: std::sync::Arc<[PairCandidates<'_>]> = judged.iter().map(|pair| PairCandidates::of(pair, Section::Train, World::Open)).collect();
-    let mut decoder = Decoder::new(&task, &session, registry, constructions, &settings).judging(train);
+    let mut decoder = Decoder::new(&task, &session, registry, constructions, &settings).judging(train.clone());
     let stream = StudyProgram::from_sexp(program, registry).expect("the program reads").decode_stream(registry, &settings).expect("the program's stream");
     let vocabulary = arclog::stream::Vocabulary::new(registry, &settings);
     let evidence = evidence_tables(&task, registry);
     let ids: Vec<u32> = stream.ids.iter().zip(&stream.model).filter(|(_, model)| **model != 0).map(|(id, _)| *id).collect();
     let summaries = SummaryCache::default();
-    if warm {
-        let _ = successor_gauges(&mut decoder.fork(), &ids, &vocabulary, &evidence, &summaries);
+    match before {
+        Before::Nothing => {}
+        Before::AFork => {
+            let _ = successor_gauges(&mut decoder.fork(), &ids, &vocabulary, &evidence, &summaries);
+        }
+        Before::AnotherDecoder => {
+            let mut other = Decoder::new(&task, &session, registry, constructions, &settings).judging(train);
+            let _ = successor_gauges(&mut other, &ids, &vocabulary, &evidence, &summaries);
+        }
     }
     successor_gauges(&mut decoder, &ids, &vocabulary, &evidence, &summaries)
 }
@@ -220,10 +252,12 @@ fn gauges_by_token(task: &str, program: &str, warm: bool) -> Vec<Gauges> {
 #[test]
 fn the_gauges_of_successor_tables_are_the_same_with_cold_caches_and_with_caches_another_decoder_filled() {
     let program = "(DET &r0 D4Domain)\n(RULE &r1 (input (:P *P) (:Col *Col)) (&r0 (:D *D)) (apply (:D D) (:P P) (:P_out *POut)))\n(OUT (input ^P ^Col))\n";
-    let cold = gauges_by_token(D4_TASK, program, false);
-    let warm = gauges_by_token(D4_TASK, program, true);
+    let cold = gauges_by_token(D4_TASK, program, Before::Nothing);
     assert!(!cold.is_empty(), "no model token");
-    assert_eq!(cold.len(), warm.len());
-    let differ: Vec<usize> = (0..cold.len()).filter(|&at| cold[at] != warm[at]).collect();
-    assert!(differ.is_empty(), "the model steps whose gauges differ: {differ:?}; the first: cold {:?}, warm {:?}", differ.first().map(|&at| &cold[at]), differ.first().map(|&at| &warm[at]));
+    for before in [Before::AFork, Before::AnotherDecoder] {
+        let warm = gauges_by_token(D4_TASK, program, before);
+        assert_eq!(cold.len(), warm.len());
+        let differ: Vec<usize> = (0..cold.len()).filter(|&at| cold[at] != warm[at]).collect();
+        assert!(differ.is_empty(), "after {before:?}, the model steps whose gauges differ: {differ:?}; the first: cold {:?}, warm {:?}", differ.first().map(|&at| &cold[at]), differ.first().map(|&at| &warm[at]));
+    }
 }

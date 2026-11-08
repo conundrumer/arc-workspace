@@ -529,7 +529,7 @@ fn gauges_of(arclog: &str, ask: Ask, before: Before) -> Vec<(&'static str, u64, 
 
 #[test]
 fn the_gauges_of_rows_and_projections_are_the_same_with_cold_caches_and_with_caches_another_decoder_filled() {
-    for arclog in [COPIES, "(RULE &twin (input *P (:Col *C)) (input *Q (:Col *E)))\n"] {
+    for arclog in [COPIES, "(RULE &twin (input *P *Col) (input (:P *Q) Col))\n"] {
         for ask in [Ask::Rows, Ask::Projections] {
             let cold = gauges_of(arclog, ask, Before::Nothing);
             for before in [Before::AFork, Before::AnotherDecoder] {

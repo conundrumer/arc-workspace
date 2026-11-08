@@ -334,8 +334,8 @@ fn same_assigned(a: &Assigned<Vec<RelationValue>>, b: &Assigned<Vec<RelationValu
 fn same_relation(a: &Arc<Relation>, b: &Arc<Relation>, compared: Compared<'_>) -> bool {
     if Arc::ptr_eq(a, b) {
         // Two relations that a cache gave twice are one allocation, and a comparison of two allocations of the same rows notes their count: so the gauge does not depend on what the cache held.
-        if a.len() <= COMPARED_ROWS {
-            gauges.note(Gauge::ComparedRows, a.len(), COMPARED_ROWS);
+        if a.len() <= compared.cap {
+            compared.gauges.note(Gauge::ComparedRows, a.len(), compared.cap);
         }
         return true;
     }
