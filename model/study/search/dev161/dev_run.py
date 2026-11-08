@@ -333,7 +333,7 @@ def main():
             parity_gate(a, out, arm, tasks)
     print('%d %s tasks, %d jobs to run, %d done' % (len(tasks), a.split, len(todo), len(done)), flush=True)
     t0, n, dead = time.time(), 0, 0
-    with cf.ThreadPoolExecutor(16) as ex:  # gate() holds the jobs to the limit
+    with cf.ThreadPoolExecutor(max(16, a.jobs)) as ex:  # gate() holds the jobs to the limit; a pool smaller than --jobs would hold them below it
         for fut in cf.as_completed([ex.submit(job, a, out, *j) for j in todo]):
             r = fut.result()
             n += 1
