@@ -542,7 +542,7 @@ impl<'a> Search<'a> {
                 }
             } else if !functions.is_empty() {
                 let held = &first[group as usize * width..(group as usize + 1) * width];
-                functions.retain(|&position| row[usize::from(position)] == held[usize::from(position)]);
+                keep_equal(&mut functions, &row[..width], held);
             }
         }
         (count, read, functions)
@@ -612,6 +612,21 @@ impl<'a> Search<'a> {
         }
         Ok(Relation::from_parts(arity, parts.into()))
     }
+}
+
+/// Keeps the positions of `functions` where `row` and `held` hold equal cells, in order. The scan
+/// for the first position to drop writes nothing, so a row that drops none writes none.
+fn keep_equal(functions: &mut Vec<u16>, row: &[TermId], held: &[TermId]) {
+    let Some(first) = functions.iter().position(|&position| row[usize::from(position)] != held[usize::from(position)]) else { return };
+    let mut kept = first;
+    for at in first + 1..functions.len() {
+        let position = functions[at];
+        if row[usize::from(position)] == held[usize::from(position)] {
+            functions[kept] = position;
+            kept += 1;
+        }
+    }
+    functions.truncate(kept);
 }
 
 /// The numbers of the distinct projected rows that a scan reads, in the order it
