@@ -175,6 +175,13 @@ impl Table {
         Arc::new(Table { arity, len, cells: cells.into_boxed_slice(), hash: std::sync::OnceLock::new(), id: next_table_id(), masks: std::sync::OnceLock::new(), groupings: std::sync::OnceLock::new(), sorted: std::sync::OnceLock::new() })
     }
 
+    /// The table of `cells`, whose rows are distinct and whose hash is `hash`, which a read of the hash would give.
+    pub fn with_hash(arity: usize, cells: Vec<Cell>, hash: u128) -> Arc<Table> {
+        let table = Table::new(arity, cells);
+        let _ = table.hash.set(hash);
+        table
+    }
+
     /// A hash of the set of rows, which their order does not change.
     pub fn hash(&self) -> u128 {
         *self.hash.get_or_init(|| {

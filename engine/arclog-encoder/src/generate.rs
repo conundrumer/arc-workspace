@@ -2419,12 +2419,24 @@ pub struct Walker<'a> {
     spill_dir: Option<SpillDir>,
     /// The count of copies made, which names the next.
     spill_serial: u64,
+    /// What the copies on disk have cost so far.
+    spill_cost: SpillCost,
     /// The count of examples of a task-wide walk.
     pub examples: u32,
     /// The cells and the memo entries it holds at most between walks.
     budget: (usize, usize),
     /// Whether the last walk stopped a term that passed `WALK_CELLS` cells of its own, so that the term, and every term that reads it, have no value.
     pub over_budget: bool,
+}
+
+/// What a walker's copies on disk have cost: the values and cells written and read back, and the time of each.
+#[derive(Default)]
+struct SpillCost {
+    written: (u64, u64),
+    read: (u64, u64),
+    write_nanos: u64,
+    read_nanos: u64,
+    compact_nanos: u64,
 }
 
 /// A stored value's copy on disk.
@@ -2534,7 +2546,7 @@ impl Drop for SpillDir {
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, charged: FastMap::default(), forced: Vec::new(), written_of: FastMap::default(), spilled: FastMap::default(), spill_dir: None, spill_serial: 0, examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_cells: 0, charged: FastMap::default(), forced: Vec::new(), written_of: FastMap::default(), spilled: FastMap::default(), spill_dir: None, spill_serial: 0, spill_cost: SpillCost::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
     }
 
     /// A walker that holds more between walks than [`Walker::new`], for many related tables.
@@ -2651,10 +2663,14 @@ impl<'a> Walker<'a> {
         if !self.spilled.contains_key(&id) {
             let Val::Rows(parts) = self.values[id as usize].clone() else { return false };
             let Some(path) = self.next_copy_path() else { return false };
+            let started = std::time::Instant::now();
             if crate::spill::write(&path, &parts).is_err() {
                 let _ = std::fs::remove_file(&path);
                 return false;
             }
+            self.spill_cost.write_nanos += started.elapsed().as_nanos() as u64;
+            self.spill_cost.written.0 += 1;
+            self.spill_cost.written.1 += cells as u64;
             if crate::bounds::enabled() {
                 crate::bounds::tally("spill", "values written to disk".to_string(), 1);
                 crate::bounds::tally("spill", "cells written to disk".to_string(), cells as u64);
@@ -2677,7 +2693,11 @@ impl<'a> Walker<'a> {
         if copy.here {
             return;
         }
+        let started = std::time::Instant::now();
         let value = crate::spill::read(&copy.path).unwrap_or_else(|error| panic!("a stored value's copy on disk, {}, cannot be read: {error}", copy.path.display()));
+        self.spill_cost.read_nanos += started.elapsed().as_nanos() as u64;
+        self.spill_cost.read.0 += 1;
+        self.spill_cost.read.1 += copy.cells as u64;
         copy.here = true;
         self.held_cells += copy.cells;
         self.values[id as usize] = value;
@@ -2753,6 +2773,14 @@ impl<'a> Walker<'a> {
     /// The sizes of what the walker and its evaluator hold, for a check of the memory of a walk.
     fn footprint(&self) {
         use crate::bounds::tally_max;
+        let cost = &self.spill_cost;
+        tally_max("spill", "values written, running total", cost.written.0);
+        tally_max("spill", "cells written, running total", cost.written.1);
+        tally_max("spill", "values read back, running total", cost.read.0);
+        tally_max("spill", "cells read back, running total", cost.read.1);
+        tally_max("spill", "ms writing, running total", cost.write_nanos / 1_000_000);
+        tally_max("spill", "ms reading back, running total", cost.read_nanos / 1_000_000);
+        tally_max("spill", "ms in compactions and moves, writing included, running total", cost.compact_nanos / 1_000_000);
         let (histogram_cells, histograms) = self.eval.histograms_held();
         tally_max("held", "cells of stored values", self.held_cells as u64);
         tally_max("held", "cells of stored joined values", self.values.iter().map(|value| if let Val::Joined(joined) = value { joined.held_cells() } else { 0 }).sum::<usize>() as u64);
@@ -3224,8 +3252,13 @@ impl<'a> Walker<'a> {
             }
             let lazy = crate::native::lazy_written_cells().saturating_sub(lazy_base);
             if self.held_cells + lazy > self.budget.0.max(2 * floor) || entries > self.budget.1 {
+                let started = std::time::Instant::now();
                 self.compact(&mut ids);
                 self.spill(&ids, &readers, at);
+                self.spill_cost.compact_nanos += started.elapsed().as_nanos() as u64;
+                if crate::bounds::enabled() {
+                    self.footprint();
+                }
                 floor = self.held_cells + crate::native::lazy_written_cells().saturating_sub(lazy_base);
             }
         }

@@ -29,6 +29,7 @@ pub fn write(path: &Path, parts: &[Part]) -> std::io::Result<()> {
         }
         out.write_all(&(part.table.arity as u64).to_ne_bytes())?;
         out.write_all(&(part.table.len as u64).to_ne_bytes())?;
+        out.write_all(&part.table.hash().to_ne_bytes())?;
         for cells in part.table.cells.chunks(BLOCK_CELLS) {
             block.clear();
             for cell in cells {
@@ -62,6 +63,9 @@ pub fn read(path: &Path) -> std::io::Result<Val> {
         }
         let arity = read_count(&mut input)?;
         let len = read_count(&mut input)?;
+        let mut hash = [0u8; 16];
+        input.read_exact(&mut hash)?;
+        let hash = u128::from_ne_bytes(hash);
         let mut cells: Vec<Cell> = Vec::with_capacity(arity * len);
         let mut left = arity * len;
         while left > 0 {
@@ -71,7 +75,7 @@ pub fn read(path: &Path) -> std::io::Result<Val> {
             left -= take;
         }
         // A table of no columns holds no cells, and its length is 0 or 1.
-        let table = if arity == 0 { Table::unit(len == 1) } else { Table::new(arity, cells) };
+        let table = if arity == 0 { Table::unit(len == 1) } else { Table::with_hash(arity, cells, hash) };
         parts.push(Part { table, columns: columns.into_boxed_slice() });
     }
     Ok(Val::Rows(Arc::new(parts)))
