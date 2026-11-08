@@ -71,6 +71,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+from arclog_convert.readback import read_checked  # every file of the corpus is read through it: the corpus is a `gen/` directory
 STAGE_BOUND = 60  # seconds of CPU time
 WALL_BOUND = 10 * STAGE_BOUND  # seconds on the wall clock, for a process that waits without using CPU
 CONSTRAINT_OPS = ("=", "!=", "<", "<=", ">", ">=")
@@ -538,7 +540,7 @@ def proposer_pool(corpus):
     """The proposer names that some `DET` of the corpus states in place of a body, sorted."""
     pool = set()
     for path in Path(corpus).glob("*.arclog"):
-        pool.update(re.findall(r"\(DET\s+&[\w.]+\s+([A-Z]\w*)\s*\)", path.read_text()))
+        pool.update(re.findall(r"\(DET\s+&[\w.]+\s+([A-Z]\w*)\s*\)", read_checked(path)))
     return sorted(pool)
 
 
@@ -579,7 +581,7 @@ def named_solvers(corpus, task):
             found.append(name)
             path = Path(corpus) / f"{name}.arcdata"
             if path.exists():
-                todo += re.findall(r"\(representative\s+(\w+)", path.read_text())
+                todo += re.findall(r"\(representative\s+(\w+)", read_checked(path))
     return found
 
 
@@ -665,7 +667,7 @@ class Runner:
             for extension in ("arcdata", "arclog"):
                 source = Path(self.args.corpus) / f"{name}.{extension}"
                 if source.exists():
-                    shutil.copy(source, directory / source.name)
+                    (directory / source.name).write_text(read_checked(source))
         (directory / f"{mutant.task}.arclog").write_text(mutant.text)
         return directory
 
@@ -737,7 +739,7 @@ def main():
         if not wanted:
             break
         try:
-            drawn = draw(Context(task, (Path(args.corpus) / f"{task}.arclog").read_text(), lib, proposers), wanted, args.per_operator, args.seed)
+            drawn = draw(Context(task, read_checked(Path(args.corpus) / f"{task}.arclog"), lib, proposers), wanted, args.per_operator, args.seed)
         except (ValueError, OSError) as error:
             print(f"left out {task}: {error}", file=sys.stderr)
             continue
