@@ -5,7 +5,9 @@
 //! relations come from the atoms that hold its label, and through the `copies` rows of a component. A
 //! clause whose other atoms keep each row of its first relation has that relation's rows.
 
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use arclog::algebra::algebra;
@@ -1189,7 +1191,92 @@ struct Expansion {
     /// Whether the part reads only the columns its holes name: a column more changes nothing.
     reads_only_holes: OnceLock<bool>,
     /// What the forms give where the native term's places are `out` and the relation holes hold `r` and `s`. Given the forms, the result follows from those three alone.
-    results: Mutex<LookupMap<(Vec<Option<usize>>, RelationInput, Option<RelationInput>), Arc<PartResult>>>,
+    results: Mutex<LookupMap<ResultKey, Arc<PartResult>>>,
+}
+
+/// The three things that a part's result follows from, given its expansion: the native term's places, and what the relation holes hold.
+trait ResultInputs {
+    fn out(&self) -> &[Option<usize>];
+    fn r(&self) -> &RelationInput;
+    fn s(&self) -> Option<&RelationInput>;
+}
+
+impl PartialEq for dyn ResultInputs + '_ {
+    fn eq(&self, other: &Self) -> bool {
+        self.out() == other.out() && self.r() == other.r() && self.s() == other.s()
+    }
+}
+
+impl Eq for dyn ResultInputs + '_ {}
+
+impl Hash for dyn ResultInputs + '_ {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.out().hash(state);
+        self.r().hash(state);
+        self.s().hash(state);
+    }
+}
+
+/// A key of an expansion's results, owned. It is equal to, and hashes as, the borrowed [`ResultInputs`] with the same three things, so a lookup needs no copy of them.
+struct ResultKey {
+    out: Vec<Option<usize>>,
+    r: RelationInput,
+    s: Option<RelationInput>,
+}
+
+impl ResultInputs for ResultKey {
+    fn out(&self) -> &[Option<usize>] {
+        &self.out
+    }
+
+    fn r(&self) -> &RelationInput {
+        &self.r
+    }
+
+    fn s(&self) -> Option<&RelationInput> {
+        self.s.as_ref()
+    }
+}
+
+impl<'a> Borrow<dyn ResultInputs + 'a> for ResultKey {
+    fn borrow(&self) -> &(dyn ResultInputs + 'a) {
+        self
+    }
+}
+
+impl PartialEq for ResultKey {
+    fn eq(&self, other: &Self) -> bool {
+        <dyn ResultInputs as PartialEq>::eq(self, other)
+    }
+}
+
+impl Eq for ResultKey {}
+
+impl Hash for ResultKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        <dyn ResultInputs as Hash>::hash(self, state);
+    }
+}
+
+/// The three things that a part's result follows from, borrowed.
+struct ResultProbe<'a> {
+    out: &'a [Option<usize>],
+    r: &'a RelationInput,
+    s: Option<&'a RelationInput>,
+}
+
+impl ResultInputs for ResultProbe<'_> {
+    fn out(&self) -> &[Option<usize>] {
+        self.out
+    }
+
+    fn r(&self) -> &RelationInput {
+        self.r
+    }
+
+    fn s(&self) -> Option<&RelationInput> {
+        self.s
+    }
 }
 
 /// A call's forms, read once.
@@ -1381,12 +1468,13 @@ fn finite_clause(atoms: &[SExpr], columns: &[(String, String)], registry: &'stat
 impl PartPlan {
     /// What the call gives where its relation holes hold `r` and `s`.
     pub fn result(&self, r: &RelationInput, s: Option<&RelationInput>) -> Arc<PartResult> {
-        let key = (self.out.clone(), r.clone(), s.cloned());
-        if let Some(found) = self.expansion.results.lock().expect("no panic").get(&key) {
+        let probe = ResultProbe { out: &self.out, r, s };
+        if let Some(found) = self.expansion.results.lock().expect("no panic").get(&probe as &dyn ResultInputs) {
             return found.clone();
         }
         let facts = read_forms(&self.expansion.forms, &self.expansion.export, r, s, &self.expansion.s_columns);
         let result = Arc::new(self.judge(&facts));
+        let key = ResultKey { out: self.out.clone(), r: r.clone(), s: s.cloned() };
         let mut held = self.expansion.results.lock().expect("no panic");
         // A long run meets many relations, and this is a cache.
         if held.len() >= 256 {
