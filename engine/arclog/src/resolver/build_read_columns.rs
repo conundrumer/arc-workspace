@@ -141,7 +141,7 @@ fn columns_fixed(resolved: &ResolvedProgram, node: GraphNodeIndex) -> bool {
 /// The columns that the reads in the forms that `keep` marks, the top-level
 /// forms of a use closure, name for each read-named node of `resolved` that
 /// those reads read, with the columns that its marks name, by the node's
-/// relation, and the nodes whose columns those reads leave other than
+/// relation, and the nodes whose columns those reads leave fewer than
 /// `resolved` keeps. `None` where there is no such node, so the closure's
 /// resolution is `resolved` itself. A node whose columns its clause fixes is
 /// left out.
@@ -154,7 +154,7 @@ pub(in crate::resolver) fn closure_columns(resolved: &ResolvedProgram, keep: &[b
         let path = NodePath::top(top as u32);
         for read in form_reads(form, &path) {
             let Some(Resolution::Node(node)) = resolved.resolution(&path.join(&read.at)) else { continue };
-            if !matches!(resolved.graph.nodes[node.0 as usize].kind, DependencyKind::Parameter(_) | DependencyKind::Chosen(_)) {
+            if resolved.read_columns_of(*node).is_none() {
                 continue;
             }
             add_columns(named.entry(node.0).or_default(), read.atom.sites.iter().map(|site| &site.column));
@@ -164,15 +164,13 @@ pub(in crate::resolver) fn closure_columns(resolved: &ResolvedProgram, keep: &[b
     let mut narrowed = Vec::new();
     for (node, mut columns) in named {
         let node = GraphNodeIndex(node);
+        let Some(held) = resolved.read_columns_of(node) else { continue };
         if columns_fixed(resolved, node) {
             continue;
         }
         let Some(found) = read_named_of(resolved, node) else { continue };
         add_columns(&mut columns, &found.marked);
-        // A node that no earlier form reads and that the last form reads with no site has no read columns in a layered
-        // resolution and keeps every column, as `read_columns` leaves it, while a resolution of the whole program gives it none.
-        let same = resolved.read_columns_of(node).is_some_and(|held| held.len() == columns.len() && columns.iter().all(|column| held.contains(column)));
-        if !same {
+        if held.len() != columns.len() || !columns.iter().all(|column| held.contains(column)) {
             narrowed.push(node);
         }
         match exact.iter_mut().find(|(relation, _)| *relation == found.relation) {
