@@ -107,6 +107,8 @@ pub struct Decoder<'a> {
     assignments: Vec<Vec<(ProgramRelation, Arc<crate::relations::Relation>)>>,
     /// One record per accepted token, shared with the forks.
     trace: DecodeTrace,
+    /// The sum of `capped_sets` over the records of `trace`.
+    capped_sets: u64,
     /// The hash of the ids of the tokens of the trace, in order, or none
     /// where the decode stands at a state that its tokens did not reach.
     path: Option<u128>,
@@ -293,7 +295,7 @@ impl<'a> Decoder<'a> {
         };
         let context = Context { registry, settings: *settings, vocabulary: Vocabulary::new(registry, settings), key_base };
         let state = state::State::new();
-        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, requests: Requests::default(), output: None, assignments: Vec::new(), trace: DecodeTrace::default(), path: Some(0), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default(), evaluates: true }
+        Decoder { task, session, constructions, context: Arc::new(context), state, before: None, train: None, cancellation: Cancellation::default(), operation_limits:None, requests: Requests::default(), output: None, assignments: Vec::new(), trace: DecodeTrace::default(), capped_sets: 0, path: Some(0), held: Held::default(), copies: settings.check_copies.then(CopyViolations::default), held_stops: Arc::default(), evaluates: true }
     }
 
     /// The decode, with steps that evaluate nothing: a step runs the
@@ -752,6 +754,7 @@ impl<'a> Decoder<'a> {
             record.stop = record.stop.or(stop);
         }
         record.capped_sets = step.capped_sets + step.rule_capped_sets;
+        self.capped_sets += record.capped_sets;
         self.extend_path(&record.token);
         self.trace.push(record);
         for forced in step.forced.iter() {
@@ -825,7 +828,7 @@ impl<'a> Decoder<'a> {
     /// ended at the model cap with the grids found so far, summed over the
     /// trace's records.
     pub fn capped_sets(&self) -> u64 {
-        self.trace.records().iter().map(|record| record.capped_sets).sum()
+        self.capped_sets
     }
 
     /// Attaches `top_k`, the language model's top tokens at the decision of
