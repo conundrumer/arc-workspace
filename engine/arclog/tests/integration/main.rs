@@ -29,6 +29,7 @@ mod keyed_body_views;
 mod line_readings;
 mod lint_checks;
 mod mask_constraint_completion;
+mod measurement_profile;
 mod named_case_analysis;
 mod negated_atom_modes;
 mod no_key_columns;

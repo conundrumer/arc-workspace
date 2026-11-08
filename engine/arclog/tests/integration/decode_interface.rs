@@ -18,7 +18,7 @@ use arclog::read::read_solver;
 use arclog::registry::Registry;
 use arclog::resolver::resolve;
 use arclog::session::{SessionBound, TaskSession};
-use arclog::stream::{token_stream, Control, DecodeSettings, Emitter, Token, Vocabulary};
+use arclog::stream::{token_stream, Control, DecodeSettings, Emitter, Token, Vocabulary, MEASURED_CAP};
 use arclog::task::{Grid, JudgedPair, JudgedTask, Task, TrainPair};
 use arclog::terms::{Color, Example};
 
@@ -54,11 +54,16 @@ struct Inputs {
 }
 
 fn inputs(output: &[u8], caps: Caps) -> Inputs {
+    inputs_under(output, DecodeSettings { caps, rule_tests: true, ..DecodeSettings::default() })
+}
+
+/// [`inputs`] under `settings`, whose caps are those of the session.
+fn inputs_under(output: &[u8], settings: DecodeSettings) -> Inputs {
     let task = Task { train: Box::new([TrainPair { input: grid(INPUT), output: grid(output) }]), test: Box::new([]) };
     let judged = JudgedTask { train: Box::new([JudgedPair { output: grid(output), alt: None }]), test: Box::new([]) };
     let constructions = Constructions::new(Vec::new(), Registry::get()).expect("an empty table");
-    let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, caps);
-    Inputs { task, judged, session, constructions, settings: DecodeSettings { caps, rule_tests: true, ..DecodeSettings::default() } }
+    let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, settings.caps);
+    Inputs { task, judged, session, constructions, settings }
 }
 
 fn decoder(inputs: &Inputs) -> Decoder<'_> {
@@ -397,6 +402,70 @@ fn gauges_of_admits(arclog: &str, warm: bool) -> Vec<(&'static str, u64, u64)> {
     }
     let _ = decoder.admits(&ids);
     request_gauges()
+}
+
+/// The gauges whose cap is no setting of `DecodeSettings`: a constant of the engine.
+const CONSTANT_CAP_GAUGES: [&str; 6] = ["box_margin", "projection_steps", "atom_states", "study_row_work", "compared_rows", "column_search_work"];
+
+/// What the decode of `COPIES_OUT` gave under `settings`: the verdict of every token of the vocabulary
+/// before the last token, the verdicts of the `RULE` end and of the `OUT` end, whether the decode ended,
+/// and the gauges of the request that checked the vocabulary.
+struct Decoded {
+    admitted: Vec<bool>,
+    rule: String,
+    ended: String,
+    output: bool,
+    gauges: Vec<(&'static str, u64, u64)>,
+}
+
+fn verdict(consistency: &Option<Consistency>) -> String {
+    match consistency {
+        None => "none".into(),
+        Some(Consistency::Consistent { assignments, stop }) => format!("consistent {} {}", assignments.len(), stop.is_some()),
+        Some(Consistency::NotConsistent) => "not consistent".into(),
+        Some(Consistency::SeveralValues { values, .. }) => format!("several {}", values.len()),
+        Some(Consistency::Fault(_)) => "fault".into(),
+        Some(Consistency::Stopped(_)) => "stopped".into(),
+    }
+}
+
+fn decode_under(settings: DecodeSettings) -> Decoded {
+    let inputs = inputs_under(INPUT, DecodeSettings { rule_tests: true, ..settings });
+    let mut decoder = decoder(&inputs);
+    let tokens = model_tokens(COPIES_OUT);
+    let (last, prefix) = tokens.split_last().expect("a stream");
+    let (_, rule) = walk_both(&mut decoder, prefix);
+    let ids: Vec<u32> = (0..u32::try_from(decoder.vocabulary().len()).expect("fewer than 2^32 tokens")).collect();
+    let admitted = decoder.admits(&ids);
+    let gauges = request_gauges();
+    let step = decoder.step(last.clone()).unwrap_or_else(|refusal| panic!("{last:?}: {refusal:?}"));
+    Decoded { admitted, rule: verdict(&rule), ended: verdict(&step.consistency), output: decoder.output().is_some(), gauges }
+}
+
+#[test]
+fn a_program_decodes_under_the_measurement_profile_as_under_the_default_settings() {
+    let default = decode_under(DecodeSettings::default());
+    let measured = decode_under(DecodeSettings::measurement());
+    assert_eq!(default.admitted, measured.admitted, "the verdicts of the vocabulary");
+    assert_eq!((&default.rule, &default.ended, default.output), (&measured.rule, &measured.ended, measured.output));
+    assert!(default.output, "the program solves the pair and ends the decode");
+    assert!(default.admitted.iter().any(|admitted| *admitted), "the vocabulary has an admitted token");
+}
+
+#[test]
+fn the_measurement_profile_gives_every_gauge_a_cap_of_2_to_the_48_but_the_constant_ones() {
+    let default = decode_under(DecodeSettings::default());
+    let measured = decode_under(DecodeSettings::measurement());
+    assert_eq!(default.gauges.iter().map(|gauge| gauge.0).collect::<Vec<_>>(), measured.gauges.iter().map(|gauge| gauge.0).collect::<Vec<_>>());
+    // A default cap of u64::MAX is a count with no cap, which no setting gives.
+    for ((name, _, default_cap), (_, _, cap)) in default.gauges.iter().zip(&measured.gauges) {
+        if CONSTANT_CAP_GAUGES.contains(name) {
+            assert_eq!(cap, default_cap, "the constant cap of {name}");
+        } else if *default_cap != 0 && *default_cap != u64::MAX {
+            assert_eq!(*cap, MEASURED_CAP, "the cap of {name}");
+        }
+    }
+    assert!(measured.gauges.iter().any(|(name, _, cap)| !CONSTANT_CAP_GAUGES.contains(name) && *cap == MEASURED_CAP), "some gauge ran under the profile: {:?}", measured.gauges);
 }
 
 #[test]

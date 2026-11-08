@@ -1,7 +1,8 @@
 //! The decode settings of `docs/engine/synthesis.md#decode-settings`, each
 //! with its default. [`DecodeSettings::default`] gives the settings of a
 //! replay of the corpus; [`DecodeSettings::synthesis`] gives the settings of
-//! the synthesis decode. A decode always offers the proposers
+//! the synthesis decode; [`DecodeSettings::measurement`] gives the settings of
+//! a stage that measures what the gold programs need. A decode always offers the proposers
 //! and the type-domain proposers as tokens, always applies the static prune
 //! and always gives the grids at the model cap: `docs/engine/synthesis.md#switches`.
 
@@ -15,6 +16,12 @@ pub const MUTATION_NODE_CAP: u64 = 1 << 17;
 /// replay of the corpus, whose search runs to the end of its finite domain
 /// where the cap allows: a cap that no feasible search reaches.
 pub const MUTATION_NODE_CAP_CORPUS: u64 = 1 << 30;
+
+/// The cap that [`DecodeSettings::measurement`] gives each setting that a
+/// gauge measures: far above any quantity that the memory of a machine can
+/// hold, and far below `u64::MAX`, which `TableWork` reads as
+/// no cap.
+pub const MEASURED_CAP: u64 = 1 << 48;
 
 /// The relation, column and label slots of the vocabulary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -108,6 +115,31 @@ impl DecodeSettings {
     /// decode, which only the mutation draw's search reads.
     pub fn synthesis() -> DecodeSettings {
         DecodeSettings { mutation_node_cap: MUTATION_NODE_CAP, ..DecodeSettings::default() }
+    }
+    /// The settings of a stage that measures what the gold programs need:
+    /// each setting that a gauge of a request measures
+    /// ([`crate::eval::Gauge`]) is [`MEASURED_CAP`], and every other setting
+    /// is its corpus default. A request under them stops at no cap that a
+    /// gold program's request reaches, and no code takes one of these caps as
+    /// the size of an allocation or the bound of a loop that runs to the cap,
+    /// so a request that needs little uses little.
+    ///
+    /// A gauge whose cap is no setting keeps that cap: `projection_steps`,
+    /// `study_row_work`, `compared_rows`, `atom_states`, `column_search_work`,
+    /// `labeling_nodes`, `box_margin` and `session_bytes`.
+    pub fn measurement() -> DecodeSettings {
+        DecodeSettings {
+            caps: Caps { bindings: MEASURED_CAP, rows: MEASURED_CAP, models: MEASURED_CAP, nodes: MEASURED_CAP, assignments: MEASURED_CAP },
+            projection_cap: MEASURED_CAP,
+            table_work_cap: MEASURED_CAP,
+            request_work_cap: MEASURED_CAP,
+            effort_cap: MEASURED_CAP,
+            prefix_content_cap: MEASURED_CAP,
+            request_byte_cap: MEASURED_CAP,
+            assignment_byte_cap: MEASURED_CAP,
+            candidate_byte_cap: MEASURED_CAP,
+            ..DecodeSettings::default()
+        }
     }
 }
 

@@ -81,12 +81,6 @@ pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession
     let limits=settings.operation_limits();
     let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(limits.clone());
     let dets=arclog::decode::held_dets(&frontier);
-    // Pre-admit the canonical walk vector, the retained receipt copy and
-    // per-query projections before their bounded capacity can be allocated.
-    let bytes=(assignment_cap as usize).saturating_mul(4usize.saturating_mul(
-        std::mem::size_of::<Vec<Assignment>>().saturating_add(dets.len().saturating_mul(std::mem::size_of::<Assignment>()))))
-        .saturating_add(std::mem::size_of::<Universe>()+512);
-    let allocation=Materializer::new(session,&limits).copy(bytes).map_err(OpenError::Stopped)?;
     let work=decoder.query_work();
     let root=dets.last().map_or(arclog::resolver::GraphNodeIndex(0),|d|d.node);
     let walk_start=Stopwatch::start();
@@ -96,6 +90,12 @@ pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession
         Ok(rows)=>(rows.at.into_iter().map(|(a,_)|a).collect::<Vec<_>>(),rows.stop.map(|s|stopped(&s))),
         Err(f)=>(Vec::new(),Some(faulted(&f))),
     };
+    // Admit the retained receipt copy and per-query projections of the parents found, before they are allocated.
+    // The size comes from the parents the walk found: the assignment cap bounds the walk and sizes nothing.
+    let bytes=parents.len().saturating_mul(4usize.saturating_mul(
+        std::mem::size_of::<Vec<Assignment>>().saturating_add(dets.len().saturating_mul(std::mem::size_of::<Assignment>()))))
+        .saturating_add(std::mem::size_of::<Universe>()+512);
+    let allocation=Materializer::new(session,&limits).copy(bytes).map_err(OpenError::Stopped)?;
     let missing=parents.iter().map(|a|dets.iter().filter(|d|!a.iter().any(|(name,_)|name==&d.relation))
         .map(|d|relation_spelled(&d.relation)).collect::<Vec<_>>()).collect::<Vec<_>>();
     let complete=terminal.is_none();

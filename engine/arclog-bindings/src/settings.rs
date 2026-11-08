@@ -106,6 +106,16 @@ impl PyDecodeSettings {
         Self::of(&DecodeSettings::default())
     }
 
+    /// The measurement profile: every setting that a gauge of `request_stats()`
+    /// measures has a cap of 2^48, and every other setting its corpus value
+    /// (`DecodeSettings::measurement` of the engine). A stage that measures
+    /// what the gold programs need names this profile and keeps no list of
+    /// caps of its own.
+    #[staticmethod]
+    fn measurement() -> Self {
+        Self::of(&DecodeSettings::measurement())
+    }
+
     #[getter]
     fn proposer_tokens(&self) -> bool {
         true
