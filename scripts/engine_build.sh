@@ -30,6 +30,12 @@ PARTS=${*:-wheel}
 MAIN=$(dirname "$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)")
 R=${ENGINE_BUILD_ROOT:-$MAIN/work/engine-builds}
 COMMIT=$(git -C "$MAIN" rev-parse --verify --quiet "$SHA^{commit}") || { echo "no commit $SHA"; exit 1; }
+# Every timestamp a build writes, such as those in its wheels, is the commit time, so two builds of one commit give the same bytes.
+export SOURCE_DATE_EPOCH=$(git -C "$MAIN" log -1 --format=%ct "$COMMIT")
+# The C and C++ sources that a build compiles, such as mimalloc, write __DATE__ and __TIME__ into the library, and the compiler does not take them from
+# SOURCE_DATE_EPOCH, so both are set to the commit time. The values hold no space, since the build splits these flags at spaces.
+STAMP="-Wno-builtin-macro-redefined -D__DATE__=\"$(LC_ALL=C date -u -r "$SOURCE_DATE_EPOCH" +%b_%d_%Y)\" -D__TIME__=\"$(LC_ALL=C date -u -r "$SOURCE_DATE_EPOCH" +%H:%M:%S)\""
+export CFLAGS="${CFLAGS:+$CFLAGS }$STAMP" CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }$STAMP"
 B=$R/checkout; T=$R/target; LOG=$R/logs/$NAME.log; LOCK=$R/build.lock
 mkdir -p "$R/builds" "$R/bin" "$R/logs" "$R/wheels" "$R/linux"
 : > "$LOG"
