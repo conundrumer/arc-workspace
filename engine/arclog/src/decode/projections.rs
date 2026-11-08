@@ -523,6 +523,29 @@ impl<'a> Search<'a> {
     /// projected row whole. A group's first row is kept only while a column may
     /// still be a function, since no other read of it follows.
     fn count(part: &RelationPart, positions: &[u16], cap: u64) -> (usize, u64, Vec<u16>) {
+        // A projection of one to eight columns is scanned by code made for that count, which holds the
+        // positions and the cells of a row in registers, and fixes the loops over them.
+        macro_rules! fixed {
+            ($n:literal) => {{
+                let fixed: [u16; $n] = positions.try_into().expect("positions of the counted length");
+                Self::count_with(part, positions, cap, |groups, row| groups.number_n(row, &fixed))
+            }};
+        }
+        match positions.len() {
+            1 => fixed!(1),
+            2 => fixed!(2),
+            3 => fixed!(3),
+            4 => fixed!(4),
+            5 => fixed!(5),
+            6 => fixed!(6),
+            7 => fixed!(7),
+            8 => fixed!(8),
+            _ => Self::count_with(part, positions, cap, |groups, row| groups.number(row, positions)),
+        }
+    }
+
+    /// [`Search::count`] with `number` giving the group of a row.
+    fn count_with(part: &RelationPart, positions: &[u16], cap: u64, mut number: impl FnMut(&mut Groups, &[TermId]) -> (u32, bool)) -> (usize, u64, Vec<u16>) {
         let width = part.columns.len();
         let mut functions: Vec<u16> = (0..width as u16).filter(|position| !positions.contains(position)).collect();
         let mut groups = Groups::new(positions.len());
@@ -531,7 +554,7 @@ impl<'a> Search<'a> {
         let (mut count, mut read) = (0usize, 0u64);
         for row in part.rows.rows() {
             read += 1;
-            let (group, new) = groups.number(row, positions);
+            let (group, new) = number(&mut groups, row);
             if new {
                 count += 1;
                 if count as u64 > cap {
@@ -666,6 +689,44 @@ const CELL_MULTIPLIERS: [u64; 64] = {
 impl Groups {
     fn new(width: usize) -> Self {
         Groups { width, cells: Vec::new(), count: 0, slots: vec![0; 64] }
+    }
+
+    /// [`Groups::number`] for `N` positions, `N` the groups' `width`: the cells of the row are read once,
+    /// and the hash and the compare with a group's cells run over them.
+    fn number_n<const N: usize>(&mut self, row: &[TermId], positions: &[u16; N]) -> (u32, bool) {
+        let mut cells = [0u32; N];
+        for (cell, &position) in cells.iter_mut().zip(positions) {
+            *cell = row[usize::from(position)].encoding();
+        }
+        let mut sum = 0u64;
+        for (rank, &cell) in cells.iter().enumerate() {
+            sum = sum.wrapping_add((u64::from(cell) + 1).wrapping_mul(CELL_MULTIPLIERS[rank]));
+        }
+        let mixed = (sum ^ (sum >> 29)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        let hash = (mixed ^ (mixed >> 32)) as u32;
+        let mask = self.slots.len() - 1;
+        let mut at = hash as usize & mask;
+        loop {
+            let slot = self.slots[at];
+            if slot == 0 {
+                break;
+            }
+            if (slot >> 32) as u32 == hash {
+                let group = slot as u32 - 1;
+                if self.cells[group as usize * N..(group as usize + 1) * N] == cells {
+                    return (group, false);
+                }
+            }
+            at = (at + 1) & mask;
+        }
+        let group = self.count;
+        self.count += 1;
+        self.cells.extend_from_slice(&cells);
+        self.slots[at] = u64::from(hash) << 32 | u64::from(group + 1);
+        if self.count as usize * 2 > self.slots.len() {
+            self.grow();
+        }
+        (group, true)
     }
 
     /// The number of the group of `row` projected onto `positions`, whose count
