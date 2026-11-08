@@ -20,9 +20,11 @@ OUT = Path(__file__).parent / 'out'
 
 
 def status(s, tj, base):
-    (s.tmp / (s.task + '.json')).write_text(json.dumps(tj))
-    tb, why = E.CLI.run_case(E.arclog, E.np, s.case, s.task, s.tmp, tj)
-    if tb is None:
+    try:
+        tb = s.run_engine(tj)
+    except E.AssignmentUnavailable as error:
+        return 'error' if error.selection['dropped_assignments'] or error.selection.get('enumeration_stop') else 'unsolved'
+    except RuntimeError:
         return 'error'
     best = s.solving_key(tb, tj)
     if best is None:

@@ -25,9 +25,12 @@ import jsonl as J  # noqa: E402
 import tablecache as C  # noqa: E402
 
 
+MAX_LABELS = 1 << 27  # the bytes of Ident labels that a table's rows may hold; a row holds its Ident's whole label, so the total grows as the square of an Ident's rows
+
+
 def canonical(tab, rows):
     """The rows as sorted strings, each Ident value in place of its name given as the rows it appears in with every Ident masked, so that a
-    renaming of the Idents leaves the result unchanged."""
+    renaming of the Idents leaves the result unchanged. Where those names would take more than MAX_LABELS, each name is a digest of itself."""
     idc = {i for i, c in enumerate(tab['columns']) if c[1] == 'Ident'}
     if not idc:
         return sorted(json.dumps(x) for x in rows)
@@ -37,6 +40,8 @@ def canonical(tab, rows):
         for i in idc:
             sig.setdefault(r[i], []).append([i, m])
     label = {v: json.dumps(sorted(x)) for v, x in sig.items()}
+    if sum(len(label[r[i]]) for r in rows for i in idc) > MAX_LABELS:
+        label = {v: hashlib.blake2b(x.encode(), digest_size=16).hexdigest() for v, x in label.items()}
     return sorted(json.dumps([label[v] if i in idc else v for i, v in enumerate(r)]) for r in rows)
 
 

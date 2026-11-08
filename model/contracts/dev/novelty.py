@@ -72,7 +72,7 @@ def upstream_of(t, rd, names, ports):
 
 
 def matrix(dicts):
-    """(array, names): numbers and bools as floats, None as NaN, a category as indicator columns of its commonest values."""
+    """(array, names): numbers and bools as floats, None as NaN, a category as indicator columns of its most frequent values."""
     keys = sorted({k for d in dicts for k in d})
     cols, names = [], []
     for k in keys:

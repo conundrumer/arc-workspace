@@ -63,7 +63,7 @@ def readout(feats_by_example, t, own, train):
         exs = [e for e in (train if A.is_output(tp) else own) if tp in per_ex[e]]
         if groups[tp] != 'rows':
             exs = exs[:1]
-        stats, shares = defaultdict(list), defaultdict(float)
+        stats, proportions = defaultdict(list), defaultdict(float)
         for e in exs:
             vs = [v for v in per_ex[e][tp] if v is not None]
             nums = [float(v) for v in vs if isinstance(v, (bool, int, float))]

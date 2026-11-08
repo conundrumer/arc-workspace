@@ -12,25 +12,22 @@ import re
 
 import engine as E
 from features import STRUCTURE
+from grammar import SCHEMAS, tails
+import across as AX
+import assignments as AS
+import progress as PR
 
 BASE = {'input', 'ex_input', 'ex_output'}
 OTHER = re.compile('⟨t:[^⟩]*⟩')  # another table's token in a feature key (features.py)
 PLACE = re.compile(r'^\[(parent|ancestor (\d+)|table) ')  # how another table stands to the owner, in its `<token> describe`
-PROVENANCE = (' origin kinds', ' copy steps', ' from the input', ' from the train outputs', ' from a task parameter', ' has joined sources',
-              ' has alternative sources')
-TABLE_PROVENANCE = re.compile(r'^(columns of \w+ origin|every column is a copy|some column from the train outputs|some column from a task parameter)$')
+PROVENANCE = (' origin kinds', ' copy steps', ' from the input', ' from the train outputs', ' from a task parameter')
+TABLE_PROVENANCE = re.compile(r'^(columns of \w+ origin|every column is a copy|some column from the train outputs|some column from a task parameter|steps from the input grid|tables before it)$')
 DEPENDENCE = re.compile(r' (relation atoms|joins|alternatives|alternatives bind it from different sources|under a NOT|under an ALL|(computed|tested) by \w+|'
                         r'compared by \S+|made equal to (zero|another variable))$|^(relation atoms|lib atoms|comparisons|NOTs|ALLs|ORs|joined variables|'
                         r'reads one table twice|variables not at a column)$| (shares an atom with|interchangeable with) (\w+\.)?\u27e8c:[^\u27e9]*\u27e9$')  # dependence.py
-WITH_OUTPUT = ('is the set of painted colors', 'within the output colors', 'overlap with the output cells', 'agrees with the output colors, share',
-               'has the output size', 'vs the output colors', 'vs the output foreground cells', 'is the output foreground box',
-               'vs the output foreground', 'vs the output cells of its colors', 'color counts agree with the output, share',
-               'vs the output foreground components')
-WITH_CHANGED = ('vs the changed cells', 'overlap with the changed cells')  # the cells where the input and the train output differ
-WITH_INPUT = ('input colors distinct', 'is a union of input colors', 'agrees with the input colors, share', 'within the input colors',
-              'includes the commonest input color', 'frame is the input size', 'frame share of the input', 'vs the input colors',
-              'max vs the longer side of the input', 'max vs the shorter side of the input', 'includes the rarest input color',
-              'vs the input foreground', 'max vs the input color count', 'frame is a multiple of the input size', 'frame divides the input size')  # the input grid as a base table
+WITH_OUTPUT = tuple(x.strip() for x in tails(SCHEMAS, lambda reads: reads == {'output'})) + tuple(x.strip() for x in PR.WITH_OUTPUT)
+WITH_CHANGED = tuple(x.strip() for x in tails(SCHEMAS, lambda reads: reads == {'input', 'output'})) + tuple(x.strip() for x in PR.WITH_BOTH)  # the cells where the input and the train output differ
+WITH_INPUT = tuple(x.strip() for x in tails(SCHEMAS, lambda reads: reads == {'input'})) + tuple(x.strip() for x in PR.WITH_INPUT)
 
 
 def depth(graph, a, b):
@@ -83,4 +80,5 @@ def coordinates(key, graph, static=frozenset(), describe=None):
         others = [other(graph, owner, u) for u in sorted(E.upstream(graph, owner))] + [other(graph, owner, 'input')]
     else:
         others = []
-    return dict(reads='dynamic', level='per example', arity=1 + len(others), others=others)
+    level = 'across assignments' if feat.endswith(AS.ACROSS) or feat == 'assignments of its table' else 'per assignment' if feat.endswith(AX.ACROSS) else 'per example'
+    return dict(reads='dynamic', level=level, arity=1 + len(others), others=others)

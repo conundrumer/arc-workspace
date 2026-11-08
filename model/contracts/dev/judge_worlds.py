@@ -1,6 +1,6 @@
 """Dev labeling layer: the input worlds of a task, which novelty.py reads. Not model input.
 
-    <runtime python> -I -B judge_worlds.py OUT_DIR K TASK [TASK ...]
+    <runtime python> -I -B judge_worlds.py OUT_DIR K TASK [TASK ...] [--raw-ids]
 
 A task's worlds are its own examples and K input variants of its corpus (a seeded sample), each run as an extra test input. Each world holds
 every table's features at its example, the row digests, the solver's output grid there, and the base tables' features
@@ -8,6 +8,11 @@ every table's features at its example, the row digests, the solver's output grid
 
 Writes OUT_DIR/<task>.worlds.jsonl: a base record with the own examples, each form's reads (engine.table_reads), each instance's input
 ports and each table's columns, then one record per variant. A restart skips the variants written.
+
+--raw-ids reruns cached worlds that predate the auxiliary raw-ID equality maps.
+It writes only the new world records, leaving the old table cache intact. This
+costs an engine call per such world; without it, legacy worlds cannot expose
+features that join opaque object IDs between tables.
 """
 import random
 import sys
@@ -37,23 +42,23 @@ def solver_grid(T, ex, out):
         return None
 
 
-def base_of(task_json, ex):
-    """{base table: {feature: value}} at ex, descriptions left out."""
+def base_of(task_json, ex, own=True):
+    """{base table: {feature: value}} at ex, descriptions left out. own: whether ex is one of the task's own examples."""
     out = {}
-    for (b, k), v in F.base_features(task_json, ex, R.grids_of).items():
+    for (b, k), v in F.base_features(task_json, ex, R.grids_of, own=own).items():
         if not k.endswith(' describe'):
             out.setdefault(b, {})[k] = v
     return out
 
 
-def main(out_dir, k, tasks):
+def main(out_dir, k, tasks, raw_ids=False):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for task in tasks:
         dst = out_dir / (task + '.worlds.jsonl')
         done = {r['id'] for r in J.records(dst)} if J.exists(dst) else set()
         t0 = time.time()
-        eng = C.Engine(task)
+        eng = C.Engine(task, others='base' not in done)
         s, bj, T0 = eng.s, eng.bj, eng.T0
         graph, rd = E.reads(s.text), E.table_reads(s.text)
         up = lambda g, name: E.upstream(g, name)
@@ -65,18 +70,21 @@ def main(out_dir, k, tasks):
         with J.Appender(dst) as fo:
             if 'base' not in done:
                 exs = ['train/%d' % j for j in range(len(bj['train']))] + ['test/%d' % j for j in range(len(bj['test']))]
-                worlds = {ex: dict(features=R.enc(F.all_features(T0, ex, bj, graph, up, R.grids_of, fcache, reads=rd, prov=s.provenance)),
+                worlds = {ex: dict(features=R.enc(F.all_features(T0, ex, bj, graph, up, R.grids_of, fcache, reads=rd, prov=s.provenance, others=eng.others)),
                                    digests=digests(T0, ex), solver_out=solver_grid(T0, ex, s.out), base=base_of(bj, ex)) for ex in exs}
                 qf = Q.query_features(s.text)
                 ports = {f: sorted(Q.component_inputs().get(q.get('component'), ())) for f, q in qf.items() if q.get('component')}
                 fo.write(dict(id='base', task=task, examples=worlds, reads={kk: sorted(v) for kk, v in rd.items()}, instance_inputs=ports,
                               tables={nm: [list(c) for c in t['columns']] for nm, t in T0.items()}))
-            with C.Cache(task, eng, hold=False) as cache:
+                eng.others = []
+            with C.Cache(task, eng, hold=False, read_only=True) as cache:
                 for r, T, tj, ex in cache.hits(want):
                     try:
+                        if raw_ids and any('Ident' in [c[1] for c in t['columns']] and 'ident_values' not in t for t in T.values()):
+                            T, _ = eng.run(tj)
                         rec = dict(id=r['id'], ex=ex, source=r.get('source'),
-                                   features=R.enc(F.all_features(T, ex, tj, graph, up, R.grids_of, fcache, reads=rd, prov=s.provenance)),
-                                   digests=digests(T, ex), solver_out=solver_grid(T, ex, s.out), base=base_of(tj, ex))
+                                   features=R.enc(F.all_features(T, ex, tj, graph, up, R.grids_of, fcache, reads=rd, prov=s.provenance, own=False)),
+                                   digests=digests(T, ex), solver_out=solver_grid(T, ex, s.out), base=base_of(tj, ex, own=False))
                     except Exception as e:  # noqa: BLE001
                         rec = dict(id=r['id'], error='%s: %s' % (type(e).__name__, str(e)[:200]))
                     fo.write(rec)
@@ -88,4 +96,4 @@ def main(out_dir, k, tasks):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], int(sys.argv[2]), sys.argv[3:])
+    main(sys.argv[1], int(sys.argv[2]), [t for t in sys.argv[3:] if t != '--raw-ids'], '--raw-ids' in sys.argv[3:])

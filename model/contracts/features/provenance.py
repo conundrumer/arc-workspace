@@ -111,47 +111,6 @@ def sites_computing(x, label):
     return out
 
 
-def walk_to(form, path):
-    """The node of a RULE or DET form that the flow path's components after the form's index lead to, or None."""
-    node = [b for b in form[2:] if isinstance(b, list)]
-    for comp in path[2:]:
-        if not isinstance(node, list) or not node:
-            return None
-        if isinstance(node[0], str) and node[0] in ('OR', 'IF'):
-            node = node[1 + comp] if 1 + comp < len(node) else None
-        elif isinstance(node[0], list) or not node[0]:
-            node = node[comp] if comp < len(node) else None
-        else:
-            return node
-    return node
-
-
-def combination(form, paths):
-    """(joined, alternative): whether two of the flow paths meet in one conjunction, and whether two lie in different branches of an OR or
-    in the then and the else of an IF. The paths are those of the flows that give a column its value: copies, constants and lib names."""
-    joined = alternative = False
-    ps = sorted({tuple(int(c) for c in p.split('.')) for p in paths if p})
-    for a in range(len(ps)):
-        for b in range(a + 1, len(ps)):
-            p, q = ps[a], ps[b]
-            k = 0
-            while k < min(len(p), len(q)) and p[k] == q[k]:
-                k += 1
-            if k < 2 or k >= min(len(p), len(q)):
-                continue
-            node = walk_to(form, p[:k])
-            if isinstance(node, list) and node and node[0] == 'OR':
-                alternative = True
-            elif isinstance(node, list) and node and node[0] == 'IF':
-                if 2 in (p[k], q[k]):
-                    alternative = True
-                else:
-                    joined = True
-            else:
-                joined = True
-    return joined, alternative
-
-
 def bodies_of(tb):
     """For each table of tb by number, (bodies, symmetries) as dependence.features reads them, from the engine's export of each table's
     body IR (`body_ir`) and column symmetries (`column_symmetries`); None for a table with no body. None where the export has no such fields."""
@@ -231,7 +190,7 @@ def provenance(tb, text):
     """{table: {'given': how a reader names the table, 'describe': [the name of each column], 'columns': [{provenance feature: value}],
     'table': {provenance feature: value}, 'pairs': [(column, column, feature, value)]}} of every table of tb other than the facts, as a
     Provenance with the identities of tb. Where the export gives each table's IR, the dependence features (dependence.py) stand in each
-    column's and the table's features, in place of the joined and alternative sources that the flows' atoms give."""
+    column's and the table's features."""
     T, fl = tb.T, tb.flows
     structure = bodies_of(tb)
     forms = Q.parse(text)
@@ -364,16 +323,12 @@ def provenance(tb, text):
                 n_copy_only = False
             cf = {'origin kinds': '+'.join(k for k in KINDS if k in kinds) or 'none', 'copy steps': steps,
                   'from the input': 'input' in reach, 'from the train outputs': 'output' in reach, 'from a task parameter': 'parameter' in reach}
-            if f and f[0] in ('RULE', 'DET'):
-                cf['has joined sources'], cf['has alternative sources'] = combination(f, [fl['atom'][i] for i in flows_here if fl['kind'][i] != COMPUTED])
             columns.append(cf)
         pairs = []
         dep = DEP.features(*structure[t]) if structure is not None and structure[t] is not None else None
         if dep is not None:
             dcols, dtable, pairs = dep
             for cf, dc in zip(columns, dcols):
-                cf.pop('has joined sources', None)
-                cf.pop('has alternative sources', None)
                 cf.update(dc)
         tf = {'columns of %s origin' % k: sum(k in cf['origin kinds'].split('+') for cf in columns) for k in KINDS[:5]}
         tf['every column is a copy'] = n_copy_only and bool(columns)
@@ -383,4 +338,4 @@ def provenance(tb, text):
             tf.update(dep[1])
         out[name] = dict(given=given, describe=describe, columns=columns, table=tf, pairs=pairs)
     named = [n for n in names if n]
-    return Provenance(out, ids=I.Identities(tb, reads=I.form_reads(text, named), params={names[t] for t in range(len(names)) if names[t] and is_parameter(t)}))
+    return Provenance(out, ids=I.Identities(tb, reads=I.form_reads(text, named), params={names[t] for t in range(len(names)) if names[t] and is_parameter(t)}, text=text))

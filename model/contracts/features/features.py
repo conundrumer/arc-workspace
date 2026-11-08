@@ -18,13 +18,26 @@ import json
 import re
 from collections import Counter, OrderedDict
 
+import across as AX
+import assignments as AS
+import inputs as IN
+import vocabulary as LB
+import dependencies  # noqa: F401
+import outputs  # noqa: F401
+import tables  # noqa: F401
+import upstream  # noqa: F401
+from grammar import SCHEMAS, VERSION, tails
+if VERSION > 1:
+    import typed  # noqa: F401
+import maps as MP
+import progress as PR
 import provenance as PV
+import relations as RL
+import roles as RO
+import values as VL
 
-OUTPUT_FEATURES = (' vs the changed cells', ' overlap with the changed cells', ' is the set of painted colors', ' within the output colors',
-                   ' overlap with the output cells', ' agrees with the output colors, share', ' has the output size',
-                   ' vs the output colors', ' vs the output foreground cells', ' is the output foreground box',
-                   ' vs the output foreground', ' vs the output cells of its colors', ' color counts agree with the output, share',
-                   ' vs the output foreground components')  # the features that read the train output
+OUTPUT_FEATURES = tails(SCHEMAS, lambda reads: 'output' in reads) + PR.WITH_OUTPUT + PR.WITH_BOTH  # the features that read the train output
+INPUT_CLAIMS = tails(LB.OWN_STAGE.rules + LB.BASE_STAGE.rules, lambda reads: reads == {'input'})  # the claims about the input grid that a table may be the first to hold
 ORIENT = {'Dir', 'Dir8', 'DiagDir', 'Axis', 'Axis4', 'DiagAxis', 'D4', 'C4', 'Sym', 'Sense'}
 NUM = {'Nat', 'Int'}
 TYPE_SIZE = {'Dir': 4, 'DiagDir': 4, 'Dir8': 8, 'Axis': 2, 'DiagAxis': 2, 'Axis4': 4, 'D4': 8, 'C4': 4, 'Sense': 2}
@@ -375,7 +388,7 @@ def box_features(B, H, W):
     if len(B) == 1:
         t, b, l, r = next(iter(B))
         h, w = H - t - b, W - l - r
-        f['share of the grid'] = round(h * w / (H * W), 3) if h > 0 and w > 0 else 0.0
+        f['proportion of the grid'] = round(h * w / (H * W), 3) if h > 0 and w > 0 else 0.0
         f['more than one cell along each axis'] = h > 1 and w > 1
         f['is the whole grid'] = (t, b, l, r) == (0, 0, 0, 0)
     return f
@@ -391,12 +404,82 @@ def rows_at(tab, ex):
     return r.get(ex, r.get('task'))
 
 
+def view_at(tab, ex):
+    """(row count, [(columns, rows)]) of a table whose rows at ex are a product of parts over the engine's projection cap, or None."""
+    counts = tab.get('counts', {})
+    at = ex if ex in counts else 'task' if 'task' in counts else None
+    return None if at is None else (counts[at], tab['views'][at])
+
+
+def columns_at(tab, ex, columns):
+    """The rows of the columns at the given places of a table at ex: from its rows, or the product of what its parts give of them. None where the
+    table gives neither."""
+    rows = rows_at(tab, ex)
+    if rows is not None:
+        return [[r[c] for c in columns] for r in rows]
+    held = view_at(tab, ex)
+    if held is None:
+        return None
+    out = [{}]
+    for cols, part in held[1]:
+        here = [c for c in columns if c in cols]
+        if here:
+            at = [cols.index(c) for c in here]
+            values = {json.dumps([r[a] for a in at]): [r[a] for a in at] for r in part}.values()
+            out = [dict(row, **dict(zip(here, value))) for row in out for value in values]
+    return [[row[c] for c in columns] for row in out] if all(c in out[0] for c in columns) else []
+
+
+# What a feature reads of a whole table beside one part's columns: the rows that repeat a value, and the grouping by all of its Ident, Color and
+# key columns. A part's rows answer a feature that is a function of the set of its columns' values, and no other.
+WHOLE_TABLE = ('rows', 'empty', 'one row', 'key determines the row')
+WHOLE_TABLE_ENDS = (' top-two count ratio', ' top-two ratio', ' rows per value max', ' rows per value min', ' rows per value all distinct',
+                    ' rows per value all equal', ' is unique', ' agrees with the input colors, proportion', ' agrees with the output colors, proportion',
+                    ' rows per value agree with the output color counts, proportion')
+WHOLE_TABLE_STARTS = ('rows per ', 'rows vs ')
+WHOLE_TABLE_HOLDS = ('its Ident, Color and key columns', ' groups vs ', ' group count vs ', ' group shapes vs ')
+
+
+def whole_table(key):
+    return key in WHOLE_TABLE or key.endswith(WHOLE_TABLE_ENDS) or key.startswith(WHOLE_TABLE_STARTS) or any(x in key for x in WHOLE_TABLE_HOLDS)
+
+
+def row_count(tab, ex):
+    """The count of a table's rows at ex, or None where it gives neither its rows nor their count."""
+    rows = rows_at(tab, ex)
+    if rows is not None:
+        return len(rows)
+    held = view_at(tab, ex)
+    return None if held is None else held[0]
+
+
+def view_features(name, tab, ex, sizes, up_tabs, grids):
+    """{feature: value} of a table whose rows at ex are a product of parts: its row count, and the features of each part's rows with the other
+    columns absent, without those that read the whole table."""
+    held = view_at(tab, ex)
+    if held is None:
+        return {}
+    count, views = held
+    f = {'rows': count, 'empty': count == 0, 'one row': count == 1}
+    for columns, rows in views:
+        part = dict(tab, columns=[tab['columns'][c] for c in columns], rows={ex: rows})
+        del part['counts'], part['views']
+        f.update({k: v for k, v in table_features(name, part, ex, sizes, up_tabs, grids).items() if not whole_table(k)})
+    for un, ut in up_tabs.items():
+        theirs = row_count(ut, ex)
+        if theirs is not None:
+            f['rows vs %s' % un] = '<' if count < theirs else '=' if count == theirs else '>'
+    return f
+
+
 def frame_of(fr, vals, frame_size):
-    """The grid frame of a Position column: its declared frame, or else the one grid whose extents every value's margins add up to."""
-    if fr in frame_size:
+    """The grid frame of a Position column: its declared frame where every value is a cell of it, or else the one grid whose extents every value's
+    margins add up to. A column of values of several extents, such as the rows and the columns of a grid, is a cell set of no frame."""
+    fits = lambda H, W: all(v[0] + v[1] + 1 == H and v[2] + v[3] + 1 == W for v in vals)
+    if fr in frame_size and fits(*frame_size[fr]):
         return fr
     for f, (H, W) in frame_size.items():
-        if vals and all(v[0] + v[1] + 1 == H and v[2] + v[3] + 1 == W for v in vals):
+        if vals and fits(H, W):
             return f
     return None
 
@@ -406,13 +489,18 @@ def cellsets(tab, rows, frame_size):
     are the cells of one frame of their own: a frame that the values imply, each value as a cell. Such a frame enters frame_size under the
     column's declared frame, or under the column's name where none is declared."""
     out = {}
-    for i, (n, ty, fr) in enumerate(tab['columns']):
+    columns = list(enumerate(tab['columns']))
+    # A frame that no grid gives takes its extents from the first column that declares it, so the columns go in an order of their own values.
+    if sum(ty in ('Position', 'Box') and fr not in frame_size for _, (_, ty, fr) in columns) > 1:
+        rank = {'Position': 0, 'Box': 1}
+        columns.sort(key=lambda c: (rank.get(c[1][1], 2), sorted(tuple(r[c[0]]) for r in rows) if c[1][1] in rank else []))
+    for i, (n, ty, fr) in columns:
         vals = [r[i] for r in rows]
         f = frame_of(fr, vals, frame_size) if ty == 'Position' else None
         if f is None and ty in ('Position', 'Box') and not (ty == 'Box' and fr in frame_size) and vals:
             implied = {(v[0] + v[1] + 1, v[2] + v[3] + 1) for v in vals}
             if len(implied) == 1 and all(min(v) >= 0 for v in vals):
-                f = fr or 'own frame of ' + n
+                f = 'own frame of ' + n if not fr or fr in frame_size else fr
                 frame_size.setdefault(f, next(iter(implied)))
                 if frame_size[f] != next(iter(implied)):
                     f = None
@@ -435,239 +523,21 @@ def table_features(name, tab, ex, sizes, up_tabs, grids, shared=None, cache=None
     the features that read no grid across examples, under dig: {table: rows_digest of its rows at ex}."""
     rows = rows_at(tab, ex)
     if rows is None:
-        return {}
+        return view_features(name, tab, ex, sizes, up_tabs, grids)
     key = None
     if cache is not None:
-        key = (name, dig.get(name), tuple(dig.get(u) for u in up_tabs), frozenset(sizes.items()))
+        aliases = tuple(json.dumps(t.get('ident_values', {}), sort_keys=True) for t in [tab, *up_tabs.values()])
+        key = (name, dig.get(name), tuple(dig.get(u) for u in up_tabs), frozenset(sizes.items()), aliases)
         hit = cache.get(key)
         if hit is not None:
             core, cs, sizes_after = hit
             f = dict(core)
             f.update(grid_features(tab, rows, cs, sizes_after, grids))
             return f
-    f = {'rows': len(rows), 'empty': len(rows) == 0, 'one row': len(rows) == 1}
     cols = tab['columns']
     sizes = dict(sizes)
     cs = cellsets(tab, rows, sizes)
-    for i, (n, ty, fr) in enumerate(cols):
-        vals = [r[i] for r in rows]
-        if ty == 'Color':
-            f[n + ' distinct'] = len(set(vals))
-            if cs:
-                per = Counter(vals)
-                f[n + ' top-two count ratio'] = top2(per.values())
-        elif ty in NUM:
-            f[n + ' distinct'] = len(set(vals))
-            if vals:
-                f[n + ' max'] = max(vals)
-                f[n + ' min'] = min(vals)
-                f[n + ' top-two ratio'] = top2(vals)
-                f[n + ' forms a run'] = max(vals) - min(vals) + 1 == len(set(vals))
-                dv = sorted(set(vals))
-                if len(dv) >= 3:
-                    f[n + ' in equal steps'] = len({b - a for a, b in zip(dv, dv[1:])}) == 1
-                per = Counter(vals)
-                f[n + ' rows per value max'] = max(per.values())
-                f[n + ' rows per value min'] = min(per.values())
-                if len(per) > 1:
-                    f[n + ' rows per value all distinct'] = len(set(per.values())) == len(per)
-        elif ty in ORIENT or ty == 'Ident':
-            f[n + ' distinct'] = len(set(map(str, vals)))
-            if ty in TYPE_SIZE:
-                f[n + ' covers its type'] = len(set(vals)) == TYPE_SIZE[ty]
-            if vals and ty in ('Dir', 'Dir8', 'DiagDir'):
-                f[n + ' on one axis'] = len({AXIS_OF[v] for v in vals}) == 1
-                f[n + ' includes an opposite pair'] = any(OPPOSITE[v] in set(vals) for v in vals)
-            if vals and ty in ('D4', 'C4'):
-                f[n + ' all turns'] = set(vals) <= TURNS
-                f[n + ' includes the identity'] = 'D4_ID' in vals
-            if vals and ty == 'Ident':
-                per = Counter(map(str, vals))
-                f['rows per %s min' % n] = min(per.values())
-                f['rows per %s max' % n] = max(per.values())
-                if len(per) > 1:
-                    f['rows per %s all distinct' % n] = len(set(per.values())) == len(per)
-                for j, (cn, cty, _) in enumerate(cols):
-                    if cty == 'Color':
-                        sets = {}
-                        for r in rows:
-                            sets.setdefault(str(r[i]), set()).add(r[j])
-                        f['%s values per %s max' % (cn, n)] = max(len(x) for x in sets.values())
-                        f['%s value sets per %s distinct' % (cn, n)] = len({frozenset(x) for x in sets.values()})
-        elif ty == 'Offset':
-            moves = {(v[0], v[2]) for v in vals}
-            f[n + ' distinct'] = len(moves)
-            if moves:
-                lens = {max(abs(a), abs(b)) for a, b in moves}
-                f[n + ' includes no move'] = (0, 0) in moves
-                f[n + ' along rows or columns'] = all(a == 0 or b == 0 for a, b in moves)
-                f[n + ' longest move'] = max(lens)
-                f[n + ' moves of one length'] = len(lens) == 1
-    for n, (fr, S) in cs.items():
-        H, W = sizes[fr]
-        grid = {(r, c) for r in range(H) for c in range(W)}
-        f[n + ' cells'] = len(S)
-        f[n + ' covers the grid'] = len(S) == H * W
-        f[n + ' components'] = comps(S)
-        f[n + ' on one line'] = len({c[0] for c in S}) <= 1 or len({c[1] for c in S}) <= 1
-        f[n + ' touches the grid edge'] = any(c[0] in (0, H - 1) or c[1] in (0, W - 1) for c in S)
-        f[n + ' outside is one region'] = comps(grid - S, diag=False) == 1
-        if fr != 'input' and 'input' in sizes:
-            f[n + ' frame is the input size'] = (H, W) == sizes['input']
-            f[n + ' frame is square'] = H == W
-            f[n + ' frame share of the input'] = round(H * W / (sizes['input'][0] * sizes['input'][1]), 3)
-            Hi_, Wi_ = sizes['input']
-            f[n + ' frame is a multiple of the input size'] = (H, W) != (Hi_, Wi_) and H % Hi_ == 0 and W % Wi_ == 0
-            f[n + ' frame divides the input size'] = (H, W) != (Hi_, Wi_) and Hi_ % H == 0 and Wi_ % W == 0
-        if S:
-            f[n + ' 4-connected components'] = comps(S, diag=False)
-            f[n + ' every component is a straight line'] = all(straight(p) for p in components(S))
-            f[n + ' full lines'] = full_lines(S, H, W)
-            f[n + ' cells per line max'] = max(max(Counter(c[0] for c in S).values()), max(Counter(c[1] for c in S).values()))
-            f[n + ' fills its bounding box'] = fills_box(S)
-            f[n + ' is the outline of its bounding box'] = outlines_box(S)
-            f[n + ' symmetry count'] = symmetry_count(S)
-            f[n + ' enclosed regions'] = enclosed_regions(S)
-            rs, ks = [c[0] for c in S], [c[1] for c in S]
-            f[n + ' box share of the grid'] = round((max(rs) - min(rs) + 1) * (max(ks) - min(ks) + 1) / (H * W), 3)
-            for k, v in box_features({bounding_box(S, H, W)}, H, W).items():
-                f['%s bounding box %s' % (n, k)] = v
-        gcols = [j for j, (m, ty, _) in enumerate(cols) if ty in ('Ident', 'Color') or m.startswith('key.')]
-        if gcols:
-            pi = [j for j, c in enumerate(cols) if c[0] == n][0]
-            groups = {}
-            for r in rows:
-                groups.setdefault(tuple(str(r[j]) for j in gcols), set()).add(cell(r[pi]))
-            gname = 'its Ident, Color and key columns'
-            f['%s least distance between groups of %s' % (n, gname)] = least_distance(groups)
-            for k, v in box_features({bounding_box(g, H, W) for g in groups.values()}, H, W).items():
-                f['%s bounding box per group of %s %s' % (n, gname, k)] = v
-            if groups:
-                sizes_ = [len(g) for g in groups.values()]
-                parts = [comps(g) for g in groups.values()]
-                f['%s cells per group of %s min' % (n, gname)] = min(sizes_)
-                f['%s cells per group of %s max' % (n, gname)] = max(sizes_)
-                if len(sizes_) > 1:
-                    f['%s largest group of %s is unique' % (n, gname)] = sizes_.count(max(sizes_)) == 1
-                    f['%s smallest group of %s is unique' % (n, gname)] = sizes_.count(min(sizes_)) == 1
-                    if len(groups) <= 30 and sum(sizes_) <= 300:
-                        f['%s distance to the nearest other group of %s, max' % (n, gname)] = max(group_distances(groups, each=True, cap=False).values())
-                f['%s components per group of %s max' % (n, gname)] = max(parts)
-                f['%s components per group of %s total' % (n, gname)] = sum(parts)
-                gs = [g for g in groups.values() if g]
-                f['%s distinct shapes per group of %s' % (n, gname)] = len({normalized(g) for g in gs})
-                f['%s distinct shapes per group of %s up to rotation and reflection' % (n, gname)] = len({canon(g) for g in gs})
-                f['%s fills its bounding box per group of %s' % (n, gname)] = all(fills_box(g) for g in gs)
-                f['%s symmetry count per group of %s min' % (n, gname)] = min(symmetry_count(g) for g in gs)
-                f['%s enclosed regions per group of %s max' % (n, gname)] = max(enclosed_regions(g) for g in gs)
-                f['%s full lines per group of %s max' % (n, gname)] = max(full_lines(g, H, W) for g in gs)
-                if len(gs) > 1 and sum(len(g) for g in gs) <= 900:
-                    owner = {}
-                    for gi_, g in enumerate(gs):
-                        for c in g:
-                            owner.setdefault(c, set()).add(gi_)
-
-                    def rests(gi_, g, d):
-                        return any(not (0 <= c[0] + d[0] < H and 0 <= c[1] + d[1] < W) or owner.get((c[0] + d[0], c[1] + d[1]), {gi_}) - {gi_} for c in g)
-                    f['%s every group of %s rests toward one side' % (n, gname)] = any(all(rests(gi_, g, d) for gi_, g in enumerate(gs))
-                                                                                      for d in ((1, 0), (-1, 0), (0, 1), (0, -1)))
-    for n, (fr, B) in boxes(tab, rows, sizes).items():
-        H, W = sizes[fr]
-        for k, v in box_features(B, H, W).items():
-            f['%s %s' % (n, k)] = v
-    # a column whose value differs from row to row
-    if len(rows) > 1:
-        for i, (a_, _, _) in enumerate(cols):
-            f['%s is unique' % a_] = len({str(r[i]) for r in rows}) == len(rows)
-    # two columns of one row: the order of two numbers, the move between two cells, a cell in a box
-    if rows:
-        for i, (a_, ta, fa) in enumerate(cols):
-            for j, (b_, tb, fb) in enumerate(cols):
-                if j <= i and not (ta == 'Position' and tb == 'Box'):
-                    continue
-                if ta in NUM and tb in NUM:
-                    signs = {(r[i] > r[j]) - (r[i] < r[j]) for r in rows}
-                    f['%s vs %s in every row' % (a_, b_)] = {frozenset({-1}): '<', frozenset({-1, 0}): '<=', frozenset({0}): '=', frozenset({0, 1}): '>=',
-                                                             frozenset({1}): '>'}.get(frozenset(signs), 'mixed')
-                if ta in NUM and tb in NUM and len({r[i] for r in rows}) > 1 and len({r[j] for r in rows}) > 1:
-                    pairs = sorted({(r[i], r[j]) for r in rows})
-                    up_ = all(p[1] <= q[1] for p, q in zip(pairs, pairs[1:]) if p[0] < q[0]) and all(p[1] == q[1] for p, q in zip(pairs, pairs[1:]) if p[0] == q[0])
-                    down = all(p[1] >= q[1] for p, q in zip(pairs, pairs[1:]) if p[0] < q[0]) and all(p[1] == q[1] for p, q in zip(pairs, pairs[1:]) if p[0] == q[0])
-                    f['%s as %s rises' % (b_, a_)] = 'rises' if up_ else 'falls' if down else 'neither'
-                if ta == tb and (ta in ORIENT or ta in ('Ident', 'Color')):
-                    eq = {str(r[i]) == str(r[j]) for r in rows}
-                    f['%s equals %s' % (a_, b_)] = 'in every row' if eq == {True} else 'in no row' if eq == {False} else 'in some rows'
-                if ta == tb and ta in ('Ident', 'Position', 'Color', 'Nat', 'Int'):
-                    comps_, degree = graph_shape([(str(r[i]), str(r[j])) for r in rows])
-                    f['%s-%s graph components' % (a_, b_)] = comps_
-                    f['%s-%s graph greatest degree' % (a_, b_)] = degree
-                if ta == 'Position' and tb == 'Position' and a_ in cs and b_ in cs and cs[a_][0] == cs[b_][0]:
-                    moves = {(r[j][0] - r[i][0], r[j][2] - r[i][2]) for r in rows}
-                    dist = [max(abs(x), abs(y)) for x, y in moves]
-                    f['%s to %s moves distinct' % (a_, b_)] = len(moves)
-                    f['%s to %s distance max' % (a_, b_)] = max(dist)
-                    f['%s to %s distance min' % (a_, b_)] = min(dist)
-                    f['%s to %s along rows or columns' % (a_, b_)] = all(x == 0 or y == 0 for x, y in moves)
-                    f['%s to %s along diagonals' % (a_, b_)] = all(abs(x) == abs(y) for x, y in moves)
-                if ta == 'Position' and tb == 'Position' and a_ in cs and b_ in cs and cs[a_][0] != cs[b_][0]:
-                    f['%s to %s offsets distinct, across frames' % (a_, b_)] = len({(r[j][0] - r[i][0], r[j][2] - r[i][2]) for r in rows})
-                elif ta == 'Position' and tb == 'Box' and a_ in cs and fb == cs[a_][0]:
-                    f['%s inside %s in every row' % (a_, b_)] = all(r[i][0] >= r[j][0] and r[i][1] >= r[j][1] and r[i][2] >= r[j][2] and r[i][3] >= r[j][3]
-                                                                  for r in rows)
-    # the key columns fix the rest of the row: one row per key
-    keys = [i for i, (a, _, _) in enumerate(cols) if a.startswith('key.')]
-    if rows and keys and len(keys) < len(cols):
-        seen = {}
-        f['key fixes the row'] = all(seen.setdefault(tuple(str(r[i]) for i in keys), tuple(str(x) for x in r)) == tuple(str(x) for x in r) for r in rows)
-    # functional dependencies: within the table's rows, one column's value fixes another's
-    if rows and len(cols) > 1:
-        for i, (a, _, _) in enumerate(cols):
-            for j, (b, _, _) in enumerate(cols):
-                if i != j:
-                    seen = {}
-                    f['%s fixes %s' % (a, b)] = all(seen.setdefault(str(r[i]), str(r[j])) == str(r[j]) for r in rows)
-    # colored cell sets: a Position column with a Color column, where the column's cells hold one color each
-    for i, (cn, ty, _) in enumerate(cols):
-        if ty != 'Color' or not rows:
-            continue
-        per = Counter(r[i] for r in rows)
-        f[cn + ' rows per value all equal'] = len(set(per.values())) == 1
-        if len(per) > 1:
-            f[cn + ' rows per value all distinct'] = len(set(per.values())) == len(per)
-        for j, (pn, pty, _) in enumerate(cols):
-            if pn in cs:
-                M = {}
-                for r in rows:
-                    M.setdefault(cell(r[j]), set()).add(r[i])
-                if all(len(x) == 1 for x in M.values()):
-                    M = {c: next(iter(x)) for c, x in M.items()}
-                    f['%s,%s symmetry count' % (pn, cn)] = colored_symmetry_count(M)
-                    by = {}
-                    for c, v in M.items():
-                        by.setdefault(v, set()).add(c)
-                    if 1 < len(by) <= 10:
-                        hl = {v: holes(x) for v, x in by.items()}
-                        f['%s,%s a color lies in the holes of another' % (pn, cn)] = any(hl[a] and by[b] <= hl[a] for a in by for b in by if a != b)
-                        touch = {frozenset((M[c], M[(c[0] + a, c[1] + b)])) for c in M for a, b in ((1, 0), (0, 1))
-                                 if (c[0] + a, c[1] + b) in M and M[(c[0] + a, c[1] + b)] != M[c]}
-                        f['%s,%s touching color pairs' % (pn, cn)] = len(touch)
-                    if fills_box(set(M)):
-                        f['%s,%s least period' % (pn, cn)] = least_period(M)
-        for j, (pn, pty, _) in enumerate(cols):
-            if pn not in cs:
-                continue
-            for g, (gn, gty, _) in enumerate(cols):
-                if g in (i, j) or not (gty == 'Ident' or gn.startswith('key.')):
-                    continue
-                cells_g, colors_g = {}, {}
-                for r in rows:
-                    cells_g.setdefault(str(r[g]), set()).add(cell(r[j]))
-                    colors_g.setdefault(str(r[g]), set()).add(r[i])
-                if len(cells_g) > 1:
-                    shape = {k: normalized(v) for k, v in cells_g.items()}
-                    col = {k: frozenset(v) for k, v in colors_g.items()}
-                    f['%s,%s same shape, same colors, per %s' % (pn, cn, gn)] = fixes(shape, col)
-                    f['%s,%s same colors, same shape, per %s' % (pn, cn, gn)] = fixes(col, shape)
+    f = LB.TABLE_STAGE.run(LB.Context(tab, rows, ex, None, None, sizes, cs))
     # pair features with upstream tables
     memo = shared if shared is not None else {}
 
@@ -683,151 +553,16 @@ def table_features(name, tab, ex, sizes, up_tabs, grids, shared=None, cache=None
             sizes.setdefault(k, v)
         return got
 
-    def groups_of(tname, tcols, trows, col):
-        key = ('grouped', tname, col)
-        if key not in memo:
-            memo[key] = grouped(tcols, trows, [j for j, c in enumerate(tcols) if c[0] == col][0])
-        return memo[key]
-
-    def form(key, S, fn):
-        if (key, fn) not in memo:
-            memo[key, fn] = fn(S)
-        return memo[key, fn]
-
+    c = LB.Context(tab, rows, ex, None, None, sizes, cs, up_tabs=up_tabs)
+    c.shared, c.name = memo, name
     for un, ut in up_tabs.items():
         urows = rows_at(ut, ex)
         if urows is None:
+            c.views.append(LB.View(un, ut, None, row_count(ut, ex), None, None, None))
             continue
-        f['rows vs %s' % un] = '<' if len(rows) < len(urows) else '=' if len(rows) == len(urows) else '>'
-        for a, (an, aty, _) in enumerate(cols):
-            if aty != 'Ident' or not rows:
-                continue
-            mine_by = {}
-            for r in rows:
-                mine_by.setdefault(str(r[a]), []).append(r)
-            for b, (bn, bty, _) in enumerate(ut['columns']):
-                if bty != 'Ident':
-                    continue
-                theirs_by = {}
-                for r in urows:
-                    theirs_by.setdefault(str(r[b]), []).append(r)
-                if set(mine_by) != set(theirs_by):
-                    continue
-                for c, (cn2, cty, _) in enumerate(cols):
-                    if c == a or not (cty == 'Color' or cty in NUM or cty in ORIENT):
-                        continue
-                    for d, (dn, dty, _) in enumerate(ut['columns']):
-                        if d == b or dty != cty:
-                            continue
-                        agree = [{str(r[c]) for r in mine_by[k]} == {str(r[d]) for r in theirs_by[k]} for k in mine_by]
-                        f['%s agrees with %s.%s by %s' % (cn2, un, dn, an)] = 'for every one' if all(agree) else 'for none' if not any(agree) else 'for some'
-        for i, (cn, ty, _) in enumerate(cols):
-            if ty == 'Color' or ty in NUM:
-                for j, (ucn, uty, _) in enumerate(ut['columns']):
-                    if (uty == 'Color') == (ty == 'Color') and (uty in NUM) == (ty in NUM):
-                        f['%s vs %s.%s' % (cn, un, ucn)] = setrel2({r[i] for r in rows}, {r[j] for r in urows})
-            if ty in ORIENT:
-                for j, (ucn, uty, _) in enumerate(ut['columns']):
-                    if uty == ty:
-                        f['%s orientations vs %s.%s' % (cn, un, ucn)] = setrel2({str(r[i]) for r in rows}, {str(r[j]) for r in urows})
-            if ty in NUM and rows:
-                top = max(r[i] for r in rows)
-                f['%s max vs rows of %s' % (cn, un)] = '<' if top < len(urows) else '=' if top == len(urows) else '>'
         ucs = framed('cellsets', un, lambda: cellsets(ut, urows, sizes))
-        ucols = ut['columns']
-        for i, (cn, ty, _) in enumerate(cols):
-            if ty in NUM and rows:
-                top_ = max(r[i] for r in rows)
-                for un2 in ucs:
-                    theirs = groups_of(un, ucols, urows, un2)
-                    if theirs:
-                        f['%s max vs groups of %s.%s' % (cn, un, un2)] = '<' if top_ < len(theirs) else '=' if top_ == len(theirs) else '>'
-        for j, (pn, _, _) in enumerate(cols):
-            if pn not in cs:
-                continue
-            for i, (cn, cty, _) in enumerate(cols):
-                if cty != 'Color':
-                    continue
-                mine_m = {}
-                for r in rows:
-                    mine_m.setdefault(cell(r[j]), set()).add(r[i])
-                for pj, (pu, _, _) in enumerate(ucols):
-                    if pu not in ucs or ucs[pu][0] != cs[pn][0]:
-                        continue
-                    for ci, (cu, cuty, _) in enumerate(ucols):
-                        if cuty != 'Color':
-                            continue
-                        theirs_m = {}
-                        for r in urows:
-                            theirs_m.setdefault(cell(r[pj]), set()).add(r[ci])
-                        shared = set(mine_m) & set(theirs_m)
-                        if shared:
-                            agree = [mine_m[c] == theirs_m[c] for c in shared]
-                            f['%s,%s agrees with %s.%s,%s at shared cells' % (pn, cn, un, pu, cu)] = 'at every one' if all(agree) else 'at none' if not any(agree) else 'at some'
-        mine_b, theirs_b = boxes(tab, rows, sizes), framed('boxes', un, lambda: boxes(ut, urows, sizes))
-        for n, (fr, B) in mine_b.items():
-            for un2, (ufr, UB) in theirs_b.items():
-                if ufr == fr:
-                    f['%s boxes vs %s.%s boxes' % (n, un, un2)] = setrel2(B, UB)
-        for n, (fr, S) in cs.items():
-            mine = groups_of(name, cols, rows, n)
-            if not mine:
-                continue
-            for un2, (ufr, U) in ucs.items():
-                theirs = groups_of(un, ut['columns'], urows, un2)
-                if not theirs:
-                    continue
-                if ufr == fr:
-                    f['%s groups vs %s.%s groups' % (n, un, un2)] = setrel2({frozenset(g) for g in mine.values()}, {frozenset(g) for g in theirs.values()})
-                f['%s group count vs %s.%s groups' % (n, un, un2)] = '<' if len(mine) < len(theirs) else '=' if len(mine) == len(theirs) else '>'
-                f['%s group shapes vs %s.%s group shapes' % (n, un, un2)] = setrel2({normalized(g) for g in mine.values() if g}, {normalized(g) for g in theirs.values() if g})
-        for n, (fr, S) in cs.items():
-            for un2, (ufr, U) in ucs.items():
-                if S and U:
-                    alike = len(S) == len(U)
-                    f['%s same shape as %s.%s' % (n, un, un2)] = alike and form((name, n), S, normalized) == form((un, un2), U, normalized)
-                    f['%s same shape up to rotation and reflection as %s.%s' % (n, un, un2)] = alike and form((name, n), S, canon) == form((un, un2), U, canon)
-        for n, (fr, S) in cs.items():
-            H, W = sizes[fr]
-            grid = {(r, c) for r in range(H) for c in range(W)}
-            for un2, (ufr, U) in ucs.items():
-                if ufr == fr:
-                    f['%s vs %s.%s' % (n, un, un2)] = setrel(S, U, grid)
-                    f['%s cells vs %s.%s cells' % (n, un, un2)] = '<' if len(S) < len(U) else '=' if len(S) == len(U) else '>'
-                    if U:
-                        f['%s vs the holes of %s.%s' % (n, un, un2)] = setrel(S, form((un, un2), U, holes), grid)
-                        f['%s vs the box of %s.%s' % (n, un, un2)] = setrel(S, form((un, un2), U, box_cells), grid)
-                    if S and U:
-                        rs, ks, urs, uks = {c[0] for c in S}, {c[1] for c in S}, {c[0] for c in U}, {c[1] for c in U}
-                        f['%s shares rows or columns with %s.%s' % (n, un, un2)] = (min(rs) <= max(urs) and min(urs) <= max(rs)) or (min(ks) <= max(uks) and min(uks) <= max(ks))
-                        if len(S) <= 300 and len(U) <= 300:
-                            f['%s least distance to %s.%s' % (n, un, un2)] = least_distance({0: S, 1: U})
-                    if S and S <= U:
-                        rim = [c for c in S if any((c[0] + a, c[1] + b) not in U for a, b in ((-1, 0), (1, 0), (0, -1), (0, 1)))]
-                        f['%s on the boundary of %s.%s, share' % (n, un, un2)] = round(len(rim) / len(S), 3)
-                    if S:
-                        nb = sum((c[0] + a, c[1] + b) in U for c in S for a in (-1, 0, 1) for b in (-1, 0, 1) if (a, b) != (0, 0))
-                        f['%s neighbors in %s.%s, mean' % (n, un, un2)] = round(nb / len(S), 3)
-            for un2, (ufr, B) in boxes(ut, urows, sizes).items():
-                if ufr == fr and len(B) > 1 and S:
-                    spans = [(t, H - 1 - b, l, W - 1 - r) for t, b, l, r in B]
-                    f['%s inside the boxes of %s.%s' % (n, un, un2)] = all(any(r0 <= c[0] <= r1 and c0 <= c[1] <= c1 for r0, r1, c0, c1 in spans) for c in S)
-                if ufr != fr or len(B) != 1:
-                    continue
-                t, b, l, r = next(iter(B))
-                r0, r1, c0, c1 = t, H - 1 - b, l, W - 1 - r
-                inside = [c for c in S if r0 <= c[0] <= r1 and c0 <= c[1] <= c1]
-                f['%s inside %s.%s' % (n, un, un2)] = len(inside) == len(S)
-                edge = [c for c in S if c in inside and (c[0] in (r0, r1) or c[1] in (c0, c1))]
-                f['%s on the border of %s.%s, share' % (n, un, un2)] = round(len(edge) / len(S), 3) if S else None
-                if len(S) == 1:
-                    (x, y), = S
-                    offs = []
-                    if y in (c0, c1) and r0 <= x <= r1:
-                        offs.append(abs(x - (r0 + r1) / 2))
-                    if x in (r0, r1) and c0 <= y <= c1:
-                        offs.append(abs(y - (c0 + c1) / 2))
-                    f['%s distance from the middle of an edge of %s.%s' % (n, un, un2)] = min(offs) if offs else None
+        c.views.append(LB.View(un, ut, urows, row_count(ut, ex), ucs, framed('boxes', un, lambda: boxes(ut, urows, sizes)), boxes(tab, rows, sizes)))
+    LB.UPSTREAM_STAGE.run(c, f)
     if key is not None:
         cache.put(key, (dict(f), cs, dict(sizes)))
     f.update(grid_features(tab, rows, cs, sizes, grids))
@@ -837,111 +572,12 @@ def table_features(name, tab, ex, sizes, up_tabs, grids, shared=None, cache=None
 def grid_features(tab, rows, cs, sizes, grids):
     """{feature: value} of a table's rows at an example that read the example's grids: the input grid, and the train output where there is one.
     cs and sizes: the table's cell sets and frames, as table_features gives them."""
-    f = {}
     cols = tab['columns']
-    gi = grids[0]
-    incount = Counter(x for row in gi for x in row) if gi is not None else Counter()
-    if gi is not None:
-        for n, (fr, S) in cs.items():
-            if S and fr == 'input':
-                H, W = sizes[fr]
-                under = Counter(gi[c[0]][c[1]] for c in S if 0 <= c[0] < H and 0 <= c[1] < W)
-                f[n + ' input colors distinct'] = len(under)
-                f[n + ' is a union of input colors'] = all(incount[k] == m for k, m in under.items())
-    # colors against the input grid
-    if gi is not None and incount:
-        top, low = max(incount.values()), min(incount.values())
-        Hi, Wi = len(gi), len(gi[0])
-        for i, (cn, ty, _) in enumerate(cols):
-            if ty != 'Color':
-                continue
-            colors = {r[i] for r in rows}
-            f[cn + ' within the input colors'] = colors <= set(incount)
-            f[cn + ' vs the input colors'] = setrel2(colors, set(incount))
-            f[cn + ' includes the commonest input color'] = any(incount[k] == top for k in colors)
-            f[cn + ' includes the rarest input color'] = any(incount[k] == low for k in colors)
-            for j, (pn, pty, _) in enumerate(cols):
-                if pn in cs and sizes.get(cs[pn][0]) == (Hi, Wi) and rows:
-                    agree = sum(0 <= r[j][0] < Hi and 0 <= r[j][2] < Wi and gi[r[j][0]][r[j][2]] == r[i] for r in rows)
-                    f['%s,%s agrees with the input colors, share' % (pn, cn)] = round(agree / len(rows), 3)
-    if gi is not None and incount:
-        itops = [k for k, m in incount.items() if m == max(incount.values())]
-        if len(itops) == 1:
-            Hi, Wi = len(gi), len(gi[0])
-            ifg = {(r, c) for r in range(Hi) for c in range(Wi) if gi[r][c] != itops[0]}
-            for n, (fr, S) in cs.items():
-                if fr == 'input':
-                    f[n + ' vs the input foreground'] = setrel(S, ifg, {(r, c) for r in range(Hi) for c in range(Wi)})
-    if gi is not None:
-        longer, shorter = max(len(gi), len(gi[0])), min(len(gi), len(gi[0]))
-        cmp = lambda x, y: '<' if x < y else '=' if x == y else '>'
-        for i, (n, ty, _) in enumerate(cols):
-            if ty in NUM and rows:
-                top = max(r[i] for r in rows)
-                f[n + ' max vs the longer side of the input'] = cmp(top, longer)
-                f[n + ' max vs the shorter side of the input'] = cmp(top, shorter)
-                f[n + ' max vs the input color count'] = cmp(top, len(incount))
-    # output features
     gi, go = grids
+    c = LB.Context(tab, rows, None, gi, go, sizes, cs)
+    f = LB.INPUT_GRID_STAGE.run(c)
     if go is not None:
-        same = len(gi) == len(go) and len(gi[0]) == len(go[0])
-        ch = {(r, c) for r in range(len(go)) for c in range(len(go[0])) if same and gi[r][c] != go[r][c]}
-        painted = {go[r][c] for r, c in ch}
-        outcells = {(r, c): go[r][c] for r in range(len(go)) for c in range(len(go[0]))}
-        for n, (fr, S) in cs.items():
-            if fr == 'input' and same:
-                f[n + ' vs the changed cells'] = setrel(S, ch, {(r, c) for r in range(len(gi)) for c in range(len(gi[0]))})
-                f[n + ' overlap with the changed cells'] = round(len(S & ch) / len(S | ch), 3) if S | ch else 1.0
-        Ho, Wo = len(go), len(go[0])
-        ocount = Counter(v for row in go for v in row)
-        tops = [c for c, m in ocount.items() if m == max(ocount.values())]
-        if len(tops) == 1:
-            fg = {(r, c) for r in range(Ho) for c in range(Wo) if go[r][c] != tops[0]}
-            fg_parts = comps(fg) if fg else 0
-            for n, (fr, S) in cs.items():
-                f[n + ' cells vs the output foreground cells'] = '<' if len(S) < len(fg) else '=' if len(S) == len(fg) else '>'
-                if S and fg and (fr == 'output' or (fr == 'input' and same)):
-                    f[n + ' bounding box is the output foreground box'] = bounding_box(S, Ho, Wo) == bounding_box(fg, Ho, Wo)
-                if fr == 'output' or (fr == 'input' and same):
-                    f[n + ' vs the output foreground'] = setrel(S, fg, {(r, c) for r in range(Ho) for c in range(Wo)})
-                pi = [j for j, c in enumerate(cols) if c[0] == n][0]
-                groups = grouped(cols, rows, pi)
-                if groups:
-                    gname = 'its Ident, Color and key columns'
-                    f['%s groups of %s vs the output foreground components' % (n, gname)] = '<' if len(groups) < fg_parts else '=' if len(groups) == fg_parts else '>'
-        for n, (fr, S) in cs.items():
-            if S and fr in sizes:
-                rs, ks = [c[0] for c in S], [c[1] for c in S]
-                f[n + ' bounding box has the output size'] = (max(rs) - min(rs) + 1, max(ks) - min(ks) + 1) == (Ho, Wo)
-        for n, (fr, B) in boxes(tab, rows, sizes).items():
-            H, W = sizes[fr]
-            f[n + ' some box has the output size'] = any((H - t - b, W - l - r) == (Ho, Wo) for t, b, l, r in B)
-        ci = [i for i, (n, ty, fr) in enumerate(cols) if ty == 'Color']
-        for i in ci:
-            cn = cols[i][0]
-            for n, (fr, S) in cs.items():
-                if rows and (fr == 'output' or (fr == 'input' and same)):
-                    pi = [j for j, c in enumerate(cols) if c[0] == n][0]
-                    agree = sum(0 <= r[pi][0] < Ho and 0 <= r[pi][2] < Wo and go[r[pi][0]][r[pi][2]] == r[i] for r in rows)
-                    f['%s,%s agrees with the output colors, share' % (n, cn)] = round(agree / len(rows), 3)
-            colors = {r[i] for r in rows}
-            for n, (fr, S) in cs.items():
-                if rows and (fr == 'output' or (fr == 'input' and same)):
-                    pi = [j for j, c in enumerate(cols) if c[0] == n][0]
-                    grid_o = {(r, c) for r in range(Ho) for c in range(Wo)}
-                    f['%s,%s vs the output cells of its colors' % (n, cn)] = setrel(S, {x for x in grid_o if go[x[0]][x[1]] in colors}, grid_o)
-                    per = Counter(v for _, v in {(cell(r[pi]), r[i]) for r in rows})
-                    f['%s,%s color counts agree with the output, share' % (n, cn)] = round(sum(per[v] == ocount[v] for v in per) / len(per), 3)
-            if ch:
-                f[cn + ' is the set of painted colors'] = colors == painted
-            f[cn + ' within the output colors'] = colors <= set(outcells.values())
-            f[cn + ' vs the output colors'] = setrel2(colors, set(outcells.values()))
-            for n, (fr, S) in cs.items():
-                if fr == 'output' or (fr == 'input' and not same):
-                    pi = [j for j, c in enumerate(cols) if c[0] == n][0]
-                    pairs = {(cell(r[pi]), r[i]) for r in rows}
-                    want = set(outcells.items())
-                    f['%s,%s overlap with the output cells' % (n, cn)] = round(len(pairs & want) / len(pairs | want), 3) if pairs | want else 1.0
+        LB.GRID_STAGE.run(c, f)
     return f
 
 
@@ -950,28 +586,62 @@ STRUCTURE = ('duplicate of a relation it reads', 'projection of a relation it re
              'Cartesian product', 'degenerate', 'selectivity')  # the features of structure_features
 
 
-def row_set(rows):
-    return {tuple(json.dumps(v) for v in r) for r in rows}
+def row_set(rows, types, idents=None):
+    """The rows as a set, a color kept apart from a number of the same value. idents: {Ident label: the object it stands for}, since a label holds
+    only within its table."""
+    idents = idents or {}
+
+    def value(v, ty):
+        if ty == 'Color':
+            return 'color %s' % v
+        if ty == 'Ident':
+            return 'ident %s' % idents.get(str(v), v)
+        return json.dumps(v)
+    return {tuple(value(v, ty) for v, ty in zip(r, types)) for r in rows}
 
 
 def column_matches(cand):
-    """The injective choices of one candidate per position, at most MAX_MATCHES of them."""
-    n = 0
-    for m in itertools.product(*cand):
-        if len(set(m)) == len(m):
-            yield m
-            n += 1
-            if n >= MAX_MATCHES:
+    """The injective choices of one candidate per position, or none where they number more than MAX_MATCHES, so that the answer depends on no
+    order of the columns."""
+    out, chosen = [], []
+
+    def walk(at):
+        if at == len(cand):
+            out.append(tuple(chosen))
+            return
+        for j in cand[at]:
+            if len(out) > MAX_MATCHES:
                 return
+            if j not in chosen:
+                chosen.append(j)
+                walk(at + 1)
+                chosen.pop()
+    walk(0)
+    return out if len(out) <= MAX_MATCHES else []
 
 
 def cartesian(R, k):
-    """Whether the k columns of rows R split into two groups, each with two or more distinct rows, whose product R is."""
+    """Whether the k columns of rows R split into two groups, each with two or more distinct rows, whose product R is. Two columns on opposite sides
+    of such a split are independent: each pair of their values occurs. So only the splits between groups of columns that depend on each other are
+    tried, and a column of one value stands on neither side, since it changes no count."""
     if not 2 <= k <= 10:
         return False
-    for a in range(1, 2 ** (k - 1)):
-        A = [i for i in range(k) if a >> i & 1]
-        B = [i for i in range(k) if not a >> i & 1]
+    values = [{r[i] for r in R} for i in range(k)]
+    varying = [i for i in range(k) if len(values[i]) >= 2]
+    group = {i: i for i in varying}
+
+    def root(i):
+        while group[i] != i:
+            i = group[i]
+        return i
+    for at, i in enumerate(varying):
+        for j in varying[at + 1:]:
+            if root(i) != root(j) and len({(r[i], r[j]) for r in R}) < len(values[i]) * len(values[j]):
+                group[root(i)] = root(j)
+    groups = [[i for i in varying if root(i) == g] for g in sorted({root(i) for i in varying})]
+    for a in range(1, 2 ** max(len(groups) - 1, 0)):
+        A = [i for g, held in enumerate(groups) if a >> g & 1 for i in held]
+        B = [i for g, held in enumerate(groups) if not a >> g & 1 for i in held]
         pa, pb = {tuple(r[i] for i in A) for r in R}, {tuple(r[i] for i in B) for r in R}
         if len(pa) >= 2 and len(pb) >= 2 and len(pa) * len(pb) == len(R):
             return True
@@ -1135,27 +805,42 @@ def identity_names(feats, owner, T, graph, prov):
     return out
 
 
-def all_features(T, ex, task_json, graph, upstream, grids_of, cache=None, reads=None, prov=None):
+def all_features(T, ex, task_json, graph, upstream, grids_of, cache=None, reads=None, prov=None, own=True, others=None):
     """{(owner, feature): value} at example ex, for every table of T. cache: a FeatureCache that the calls of one task share. reads:
     engine.table_reads of the program, for the relations each form reads directly; without it, selectivity reads every table of each
     relation or instance that the graph gives, and not the input grid. prov: the Solver's provenance, which gives the identities and the
-    descriptions of the tables and the columns."""
+    descriptions of the tables and the columns. Cross-table Ident observations additionally need the auxiliary ident_values maps that
+    observations.Solver supplies; legacy tables without them contribute no such observations. The maps are read only for equality. own: whether
+    ex is one of the task's own examples; a variant of a task takes neither the features across its examples nor the input claims. others: the
+    tables at each other retained assignment, for the features across assignments."""
     if prov is None:
         raise ValueError('all_features needs the provenance of the program, which gives the identities of its tables and columns')
     gi, go = grids_of(task_json, ex)
     sizes = {'input': (len(gi), len(gi[0]))}
     if go is not None:
         sizes['output'] = (len(go), len(go[0]))
-    out, shared, sets, toks = {}, {}, {}, {}
-    dig = {n: rows_digest(rows_at(t, ex)) for n, t in T.items() if n not in ('ex_input', 'ex_output')} if cache is not None else None
+    out, shared, sets, toks, earlier = {}, {}, {}, {}, {}
+    dig = {n: rows_digest(rows_at(t, ex) if rows_at(t, ex) is not None else view_at(t, ex)) for n, t in T.items() if n not in ('ex_input', 'ex_output')} if cache is not None else None
     dig_t = None if dig is None else {table_token(n): d for n, d in dig.items()}
+    if dig is not None:
+        dig['input'] = rows_digest(gi)  # structure_of compares a table with the input grid, which T does not hold
     tok = lambda n: toks[n] if n in toks else toks.setdefault(n, tokened(n, T[n]))
     for name, tab in T.items():
         if name in ('ex_input', 'ex_output'):
             continue
         ups = upstream(graph, name)
         up_tabs = {u: t for u, t in T.items() if u.split('.')[0] in ups}
+        earlier[name] = [u for u in up_tabs if u.split('.')[0] != name.split('.')[0] and u not in ('ex_input', 'ex_output')]
         feats = table_features(table_token(name), tok(name), ex, sizes, {table_token(u): tok(u) for u in up_tabs}, (gi, go), shared, cache, dig_t)
+        if own:
+            feats.update(IN.claims(tok(name), ex, sizes, gi))
+            feats.update(AX.claims(tok(name), ex, task_json, grids_of))
+            feats['assignments of its table'] = tab.get('assignments', 1)
+            LB.own(tok(name), ex, sizes, gi, go, feats, {table_token(u): tok(u) for u in up_tabs})
+            if ex.startswith('train/'):
+                LB.TRAIN_EXAMPLES_STAGE.run(LB.Context(tok(name), rows_at(tok(name), ex), ex, gi, go, task=task_json, grids_of=grids_of), feats)
+            if others:
+                feats.update(AS.claims(name, tok(name), ex, others, sizes, gi))
         feats.update(structure_of(name, tab, ex, T, graph, up_tabs, gi, reads, sets, cache, dig))
         p = prov.get(name)
         if p:
@@ -1168,10 +853,16 @@ def all_features(T, ex, task_json, graph, upstream, grids_of, cache=None, reads=
             feats.update(p['table'])
         for k, v in identity_names(feats, name, T, graph, prov).items():
             out[(name, k)] = v
+    if own:
+        out.update(PR.claims(out, T, ex, earlier, sizes, gi, go, OUTPUT_FEATURES, INPUT_CLAIMS))
+        memo = {}
+        for name, before in earlier.items():
+            for k, v in PR.static_claims(name, graph, before, memo).items():
+                out[(name, k)] = v
     return out
 
 
-def base_features(task_json, ex, grids_of):
+def base_features(task_json, ex, grids_of, own=True):
     """{(base table, feature): value} at example ex: the features of the input grid, and where the example has a train output, of the output
     grid and of the changed cells (the output's cells whose color differs from the input's at that place, where the two have one size). Each
     is a table of a Position and a Color column, which keep the lib's names (input's `P` and `Col`), so the keys name no program's table.
@@ -1184,12 +875,27 @@ def base_features(task_json, ex, grids_of):
         rows = [[[r, H - 1 - r, c, W - 1 - c], g[r][c]] for r in range(H) for c in range(W) if keep((r, c), g[r][c])]
         return {'columns': [[COLUMN_P, 'Position', frame], [COLUMN_COL, 'Color', frame]], 'rows': {ex: rows}}
 
+    def whole(names, side, frame):
+        """The table of one grid of each of the named examples: its input (side 0) or its train output (side 1)."""
+        rows = {}
+        for e in names:
+            g = grids_of(task_json, e)[side]
+            H, W = len(g), len(g[0])
+            rows[e] = [[[r, H - 1 - r, c, W - 1 - c], g[r][c]] for r in range(H) for c in range(W)]
+        return {'columns': [[COLUMN_P, 'Position', frame], [COLUMN_COL, 'Color', frame]], 'rows': rows}
+
     sizes = {'input': (hi, wi)}
     if go is not None:
         sizes['output'] = (len(go), len(go[0]))
     out = {('input', k): v for k, v in table_features('input', table(gi, 'input'), ex, dict(sizes), {}, (gi, go)).items()}
+    if own:
+        out.update({('input', k): v for k, v in IN.claims(table(gi, 'input'), ex, sizes, gi).items()})
+        names = ['train/%d' % i for i in range(len(task_json['train']))] + ['test/%d' % i for i in range(len(task_json['test']))]
+        out.update({('input', k): v for k, v in AX.table_claims(whole(names, 0, 'input')).items()})
     if go is not None:
         out.update({('output', k): v for k, v in table_features('output', table(go, 'output'), ex, dict(sizes), {}, (gi, go)).items()})
+        if own:
+            out.update({('output', k): v for k, v in AX.table_claims(whole(names[:len(task_json['train'])], 1, 'output')).items()})
         if (len(go), len(go[0])) == (hi, wi):
             ch = table(go, 'output', lambda p, c: gi[p[0]][p[1]] != c)
             out.update({('changed', k): v for k, v in table_features('changed', ch, ex, dict(sizes), {}, (gi, go)).items()})
@@ -1204,7 +910,12 @@ def structure_of(name, tab, ex, T, graph, up_tabs, gi, reads, sets, cache, dig):
     example share."""
     rows = rows_at(tab, ex)
     if rows is None:
-        return {}
+        held = view_at(tab, ex)
+        if held is None:
+            return {}
+        # Two parts of two rows or more are what `cartesian` finds, up to its limit on the columns.
+        cross = len(tab['columns']) <= 10 and sum(len(part) >= 2 for _, part in held[1]) >= 2
+        return {'Cartesian product': cross, 'degenerate': cross or held[0] == 0}
     node = name.split('.')[0]
     if reads is not None:
         direct = reads.get(node, set())
@@ -1215,7 +926,8 @@ def structure_of(name, tab, ex, T, graph, up_tabs, gi, reads, sets, cache, dig):
     up = [u for u in up_tabs if u != name] + ['input']
     key = None
     if cache is not None:
-        key = ('structure', name, dig.get(name), tuple((u, dig.get(u)) for u in up), tuple((u, dig.get(u)) for u in par))
+        aliases = tuple(json.dumps(T[u].get('ident_values', {}), sort_keys=True) for u in [name, *up] if u in T)
+        key = ('structure', name, dig.get(name), tuple((u, dig.get(u)) for u in up), tuple((u, dig.get(u)) for u in par), aliases)
         hit = cache.get(key)
         if hit is not None:
             return dict(hit)
@@ -1224,14 +936,14 @@ def structure_of(name, tab, ex, T, graph, up_tabs, gi, reads, sets, cache, dig):
         if u not in sets:
             if u == 'input':
                 H, W = len(gi), len(gi[0])
-                sets[u] = (row_set([[[r, H - 1 - r, c, W - 1 - c], gi[r][c]] for r in range(H) for c in range(W)]), 2)
+                sets[u] = (row_set([[[r, H - 1 - r, c, W - 1 - c], gi[r][c]] for r in range(H) for c in range(W)], ('Position', 'Color')), 2)
             else:
                 ur = rows_at(T[u], ex)
-                sets[u] = (None if ur is None else row_set(ur), len(T[u]['columns']))
+                sets[u] = (None if ur is None else row_set(ur, [c[1] for c in T[u]['columns']], T[u].get('ident_values')), len(T[u]['columns']))
         return sets[u]
     R, k = set_of(name)
     f = structure_features(R, k, [set_of(u) for u in up if set_of(u)[0] is not None],
-                           [len(gi) * len(gi[0]) if u == 'input' else len(set_of(u)[0]) for u in par if set_of(u)[0] is not None])
+                           [len(gi) * len(gi[0]) if u == 'input' else row_count(T[u], ex) for u in par if u == 'input' or row_count(T[u], ex) is not None])
     if key is not None:
         cache.put(key, dict(f))
     return f
