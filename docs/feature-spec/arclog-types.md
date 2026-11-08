@@ -75,11 +75,11 @@ An Ident has a meaning only with respect to what made it, so the type contains i
 - **`Open`:** a declared column with no maker yet, and an Ident read from a file.
 - **`Form(id)`:** the one source of the column. The id is a hash of the maker form's resolved content and its output port. So one query has one source in every program, and two forms of one content in one program have one source. A form with no content takes its name and its canonical form in place of the content.
 
-The check gives each maker's Ident output its own source. A join, a `NOT`, an `=` or `!=`, a union or a type parameter that meets two sources is refused. A TableHash and the type names of a table export hold no source, so two makers that give equal Ident contents give equal TableHashes.
+The check gives each maker's Ident output its own source. A join, a `NOT`, an `=` or `!=`, a union or a type parameter that meets two sources is refused. The type name of an Ident column in a TableHash holds the column's source, `Open` or `Form(id)` with the whole id, so two tables whose Ident columns have different sources have different TableHashes, and two tables of equal content whose Ident columns have one source have equal TableHashes. The type names of a table export hold no source; `column_ident_sources` gives it. `column_type_keys` gives the name as the TableHash writes it. The TableHash has a version (`arclog.table_hash_version()`), 3 for this definition.
 
 The intern table keeps a digest of each content, the same in every session. A table export gives the digest's first 32 bits as the Ident's cell. The digest does not contain the maker, so equal contents of two makers have one cell.
 
-The environment variable `ARCLOG_IDENT_SOURCE` has no effect.
+No environment variable changes a TableHash or any other result of the engine.
 
 ## Frames
 

@@ -39,13 +39,19 @@
 //! 5. The TableHash is the hash of the sorted type names and the body hash.
 //!
 //! A type name in the TableHash is the name that the export writes
-//! ([`type_names`]), which holds no Ident source ([`hashed_names`]). So two
-//! tables are equal where their Types and their TableRows are equal, whichever
-//! forms make their Idents. A Pose type is the exception:
-//! the name that the export writes holds the slots of its `RIGID_DET` and of the
-//! `DET`s that the form reads, which differ between programs of one query, so
-//! its name in the TableHash names the assembly by the QueryHash of its
-//! `RIGID_DET` ([`pose_name`]).
+//! ([`type_names`]), with two kinds of type named otherwise
+//! ([`hashed_names`]):
+//!
+//! - An Ident type holds its source, as the type check gives it: `Open`, or
+//!   `Form` and the 32 hexadecimal digits of the source's identity
+//!   ([`ident_name`]). So two tables are equal where their Types, the sources
+//!   of their Ident columns and their TableRows are equal, and two tables
+//!   whose Ident columns have different sources have different TableHashes.
+//!   No environment variable changes a name or a hash.
+//! - A Pose type: the name that the export writes holds the slots of its
+//!   `RIGID_DET` and of the `DET`s that the form reads, which differ between
+//!   programs of one query, so its name in the TableHash names the assembly by
+//!   the QueryHash of its `RIGID_DET` ([`pose_name`]).
 //!
 //! The value hash of a TableRows has its columns in their order. The readers
 //! of a `DET` read its columns by position, so two values that differ only by
@@ -71,7 +77,7 @@ use arclog::relations::Relation;
 use arclog::session::SessionAllocation;
 use arclog::task::{Grid, Task};
 use arclog::program::RigidDetName;
-use arclog::types::{AssemblyId, ValueType};
+use arclog::types::{AssemblyId, IdentSource, SourceId, ValueType};
 use arclog_features::{Grid as FeatureGrid, Input, Pair, TableRows};
 
 mod column_hash;
@@ -86,7 +92,7 @@ use crate::tables::{example_axis, Contents, Point, Table, TableDet, TableRelatio
 
 /// The version of the TableHash's definition. A change to the TableHash of any table adds one. A store keyed by TableHash holds the version
 /// that wrote it (`arclog.table_hash_version()`), and two TableHashes compare only under one version.
-pub const TABLE_HASH_VERSION: u32 = 2;
+pub const TABLE_HASH_VERSION: u32 = 3;
 
 /// The reason of an assignment with no TableHash because the search for the order of its tied columns passed its cap.
 pub const COLUMN_SEARCH_BOUND: &str = "ColumnSearch";
@@ -1066,26 +1072,30 @@ fn run_of(rows: &Encoded, width: usize, start: usize, len: usize, row: usize) ->
 }
 
 /// The names of `types` as the TableHash writes them: the name that the export
-/// writes, with [`pose_name`] for each Pose type in it. The name holds no Ident
-/// source, so two tables whose Idents have equal contents have one TableHash
-/// whichever forms make the Idents.
+/// writes, with [`pose_name`] for each Pose type in it and [`ident_name`] for
+/// each Ident type in it. An Ident's name holds the Ident's source, so two
+/// tables whose Ident columns have different sources have different
+/// TableHashes, and two tables of equal content whose Ident columns have one
+/// source have one TableHash.
 fn hashed_names(types: &[ValueType], assemblies: &Assemblies) -> Vec<String> {
     types.iter().map(|ty| hashed_type_name(ty, assemblies)).collect()
 }
 
 /// The name of `ty` that the export writes ([`type_names`]), with
-/// [`pose_name`] in place of the name of each Pose type in it.
+/// [`pose_name`] in place of the name of each Pose type in it and
+/// [`ident_name`] in place of the name of each Ident type in it.
 fn hashed_type_name(ty: &ValueType, assemblies: &Assemblies) -> String {
-    fn has_pose(ty: &ValueType) -> bool {
+    fn has_special(ty: &ValueType) -> bool {
         match ty {
-            ValueType::Pose(_) => true,
-            ValueType::Record(fields) => fields.iter().any(|(_, field)| has_pose(field)),
+            ValueType::Pose(_) | ValueType::Ident(_) => true,
+            ValueType::Record(fields) => fields.iter().any(|(_, field)| has_special(field)),
             _ => false,
         }
     }
     match ty {
         ValueType::Pose(assembly) => pose_name(assembly, assemblies),
-        ValueType::Record(fields) if has_pose(ty) => {
+        ValueType::Ident(source) => ident_name(source),
+        ValueType::Record(fields) if has_special(ty) => {
             let fields: Vec<String> = fields.iter().map(|(name, field)| format!("({name:?}, {})", hashed_type_name(field, assemblies))).collect();
             format!("Record([{}])", fields.join(", "))
         }
@@ -1096,6 +1106,17 @@ fn hashed_type_name(ty: &ValueType, assemblies: &Assemblies) -> String {
 /// The QueryHash of the `RIGID_DET` of each assembly of a program, by the
 /// form's name.
 pub type Assemblies = StableHashMap<RigidDetName, StableHash>;
+
+/// The name of an Ident type in the TableHash and the value hash: `Ident(Open)`
+/// for the source `Open`, and `Ident(Form(` with the 32 hexadecimal digits of
+/// the source's identity and `))` for the source `Form`. The name that the
+/// export writes holds no source.
+fn ident_name(source: &IdentSource) -> String {
+    match source {
+        IdentSource::Open => "Ident(Open)".to_string(),
+        IdentSource::Form(SourceId(id)) => format!("Ident(Form({:032x}))", id.0),
+    }
+}
 
 /// The name of the Pose type of `assembly` in the TableHash and the value hash:
 /// `Pose(`, the 32 hexadecimal digits of the QueryHash of its `RIGID_DET` in

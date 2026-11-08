@@ -80,8 +80,10 @@ use pyo3::sync::PyOnceLock;
 ///   give each column the same hash, so ordering columns by (`column_type_keys`, `column_value_hashes`) gives one order for equal contents
 ///   where no column has a `column_ties` of 2. Columns that tie in their type and base hash are told apart by how they relate to the
 ///   other columns before the hash is given (the module doc of `arclog_tables::summary::column_hash` has the definition and the argument);
-/// - `column_type_keys`: the column's type name as the TableHash writes it, which equals `column_types` for each type but a Pose type, whose
-///   name holds the QueryHash of its `RIGID_DET` in place of its slots. Order by this, not by `column_types`;
+/// - `column_type_keys`: the column's type name as the TableHash writes it, which equals `column_types` for each type but two kinds. An
+///   Ident type's name holds its source, as the type check gives it: `Ident(Open)`, or `Ident(Form(<32 hexadecimal digits>))`. A Pose type's
+///   name holds the QueryHash of its `RIGID_DET` in place of its slots. A Record's name holds the names of these kinds in its fields. Order
+///   by this, not by `column_types`;
 /// - `column_ties`: 0 where no other column has the column's type key and value hash, 1 where another does and every exchange of those columns
 ///   leaves the table as it is, so that any order among them gives the same table, and 2 where another does and that was not shown (the order
 ///   among them is open).

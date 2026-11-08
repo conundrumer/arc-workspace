@@ -332,8 +332,8 @@ pub struct TableColumns {
     /// The value hash of each column of each row, in the order of `column_names`, each a `u128`, and empty where the row's assignment has no
     /// TableHash or the export gives no full summary. The hash depends on the column's content alone ([`crate::summary::ColumnKey`]).
     pub column_value_hashes: Vec<Vec<u128>>,
-    /// The type name that the TableHash writes for each column of each row, as `column_value_hashes` is given. It differs from `column_types` for a
-    /// Pose type, whose name here holds the QueryHash of its `RIGID_DET` and no slot.
+    /// The type name that the TableHash writes for each column of each row, as `column_value_hashes` is given. It differs from `column_types` for an
+    /// Ident type, whose name here holds the Ident's source, and for a Pose type, whose name here holds the QueryHash of its `RIGID_DET` and no slot.
     pub column_type_keys: Vec<Vec<String>>,
     /// The tie of each column of each row, as `column_value_hashes` is given: 0 where no other column has its type key and value hash, 1 where another
     /// does and the columns that have them can be exchanged without changing the table, 2 where another does and that was not shown.
