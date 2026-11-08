@@ -186,6 +186,97 @@ impl Walk {
     }
 }
 
+/// No cell.
+const NO_CELL: u32 = u32::MAX;
+
+/// The memory of a search for the connected pieces of cells that stand at distinct places of one frame, which one search after another reuse.
+#[derive(Default)]
+pub struct FramePieces {
+    /// The frame with one empty place around it, in rows of `w + 2` places: the number of the cell at each place, or `NO_CELL`. It has no cell between searches.
+    frame: Vec<u32>,
+    /// For each cell, its place in `frame`.
+    place: Vec<u32>,
+    /// For each cell, the number of its piece, or `NO_CELL` until the search reaches it.
+    piece_of: Vec<u32>,
+    stack: Vec<u32>,
+    /// For each piece, its count of cells, then the start of its cells in `order`, and one more start after the last piece.
+    start: Vec<u32>,
+    /// For each piece, the next place of `order` to write.
+    next: Vec<u32>,
+    /// The cells of each piece in ascending order, the pieces one after another.
+    order: Vec<u32>,
+}
+
+impl FramePieces {
+    /// Calls `each` with the connected pieces of the cells, which stand at distinct (row, column) places of a frame of `h` rows and `w` columns, given in order of their numbers. A piece is the numbers of its cells in ascending order, and the pieces come in order of their least number. A step in `steps` takes a cell to the cell at the place that lies that many rows and columns from its own.
+    pub fn pieces(&mut self, h: usize, w: usize, cells: impl Iterator<Item = (usize, usize)>, steps: &[(i32, i32)], mut each: impl FnMut(&[u32])) {
+        let stride = w + 2;
+        if self.frame.len() < (h + 2) * stride {
+            self.frame.resize((h + 2) * stride, NO_CELL);
+        }
+        self.place.clear();
+        for (number, (r, c)) in cells.enumerate() {
+            let at = (r + 1) * stride + c + 1;
+            self.frame[at] = number as u32;
+            self.place.push(at as u32);
+        }
+        let count = self.place.len();
+        let mut offsets = [0isize; 8];
+        for (offset, (dr, dc)) in offsets.iter_mut().zip(steps) {
+            *offset = *dr as isize * stride as isize + *dc as isize;
+        }
+        let offsets = &offsets[..steps.len().min(8)];
+        self.piece_of.clear();
+        self.piece_of.resize(count, NO_CELL);
+        self.start.clear();
+        for first in 0..count {
+            if self.piece_of[first] != NO_CELL {
+                continue;
+            }
+            let piece = self.start.len() as u32;
+            self.piece_of[first] = piece;
+            self.stack.push(first as u32);
+            let mut size = 0u32;
+            while let Some(cell) = self.stack.pop() {
+                size += 1;
+                let at = self.place[cell as usize] as isize;
+                for offset in offsets {
+                    let near = self.frame[(at + offset) as usize];
+                    if near != NO_CELL && self.piece_of[near as usize] == NO_CELL {
+                        self.piece_of[near as usize] = piece;
+                        self.stack.push(near);
+                    }
+                }
+            }
+            self.start.push(size);
+        }
+        for at in &self.place {
+            self.frame[*at as usize] = NO_CELL;
+        }
+        // The cells go to their pieces in ascending order, which spares a sort of each piece.
+        let mut total = 0;
+        for slot in &mut self.start {
+            let size = *slot;
+            *slot = total;
+            total += size;
+        }
+        self.start.push(total);
+        let pieces = self.start.len() - 1;
+        self.next.clear();
+        self.next.extend_from_slice(&self.start[..pieces]);
+        self.order.clear();
+        self.order.resize(count, 0);
+        for (cell, piece) in self.piece_of.iter().enumerate() {
+            let slot = &mut self.next[*piece as usize];
+            self.order[*slot as usize] = cell as u32;
+            *slot += 1;
+        }
+        for piece in 0..pieces {
+            each(&self.order[self.start[piece] as usize..self.start[piece + 1] as usize]);
+        }
+    }
+}
+
 /// Calls `each` with the places of each connected piece of the places of an `h` by `w` grid that `holds` accepts, by the steps given.
 pub fn grid_pieces(h: usize, w: usize, steps: &[(i32, i32)], holds: impl Fn(usize) -> bool, each: impl FnMut(&[usize])) {
     Walk::default().pieces(h * w, steps, &holds, |at, dr, dc| grid_neighbor(h, w, at, dr, dc).filter(|next| holds(*next)), each);

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::columns::Columns;
-use crate::cell_sets::{grid_pieces, relation, shape_hash, symmetry_count, Walk, STEPS};
+use crate::cell_sets::{grid_pieces, relation, shape_hash, symmetry_count, FramePieces, Walk, STEPS};
 pub use crate::cell_sets::SetRelation;
 use crate::gen_constants::{box_bits, encoding, margins_of, number_bits, number_of};
 use crate::grid_walks::{enclosed_regions, walk_outward};
@@ -629,9 +629,18 @@ fn lines_of(t: &Table, ids: &[u32], groups: usize, p: u16, mut each: impl FnMut(
     }
 }
 
+/// Adds a row of the key's head, a cell and the label of the piece for each cell of a piece, whose cells stand in ascending order. An Ident labels the set of its members, as `Connectivity` interns it.
+fn push_piece(out: &mut Vec<Cell>, head: &[Cell], keys: &[u16], piece: &[Cell]) {
+    let label = hash_words(piece.iter().map(|cell| u64::from(*cell))) as u32;
+    for cell in piece {
+        push_key(out, head, keys);
+        out.push(*cell);
+        out.push(label);
+    }
+}
+
 /// The connected pieces of each key's cells, as rows of keys, a cell and the label of its piece. Cells on one frame, none off it, find their neighbors on an array of the frame in place of a search.
 fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
-    const NONE: u32 = u32::MAX;
     let (grouping, first) = key_ids(t, keys);
     let pairs: Vec<u64> = if first.len() == 1 {
         // One group: its cells are the column's distinct values, in order.
@@ -641,10 +650,10 @@ fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
     };
     let steps = &STEPS[..if four { 4 } else { 8 }];
     let mut out = Vec::with_capacity(pairs.len() * (keys.len() + 2));
-    let mut grid: Vec<u32> = Vec::new();
     let mut held: Vec<Cell> = Vec::new();
     let mut margins: Vec<[i32; 4]> = Vec::new();
     let mut walk = Walk::default();
+    let mut frame_pieces = FramePieces::default();
     let mut piece: Vec<Cell> = Vec::new();
     let mut at = 0;
     while at < pairs.len() {
@@ -662,38 +671,20 @@ fn pieces(t: &Table, keys: &[u16], p: u16, four: bool) -> Val {
         let (h, w) = (margins[0][0] + margins[0][1] + 1, margins[0][2] + margins[0][3] + 1);
         let on_frame = h > 0 && w > 0 && h * w <= 1 << 16 && margins.iter().all(|m| is_cell(m) && m[0] + m[1] + 1 == h && m[2] + m[3] + 1 == w);
         if on_frame {
-            if grid.len() < (h * w) as usize {
-                grid.resize((h * w) as usize, NONE);
-            }
-            for (place, m) in margins.iter().enumerate() {
-                grid[(m[0] * w + m[2]) as usize] = place as u32;
-            }
-        }
-        let neighbor = |from: usize, dr: i32, dc: i32| {
-            let m = margins[from];
-            if on_frame {
-                let (r, c) = (m[0] + dr, m[2] + dc);
-                if r < 0 || c < 0 || r >= h || c >= w { None } else { Some(grid[(r * w + c) as usize]).filter(|place| *place != NONE).map(|place| place as usize) }
-            } else {
-                held.binary_search(&shifted_box(m, dr, dc)).ok()
-            }
-        };
-        walk.pieces(held.len(), steps, |_| true, neighbor, |members| {
-            piece.clear();
-            piece.extend(members.iter().map(|place| held[*place]));
-            // An Ident labels the set of its members, as `Connectivity` interns it.
-            piece.sort_unstable();
-            let label = hash_words(piece.iter().map(|cell| u64::from(*cell))) as u32;
-            for cell in &piece {
-                push_key(&mut out, head, keys);
-                out.push(*cell);
-                out.push(label);
-            }
-        });
-        if on_frame {
-            for m in &margins {
-                grid[(m[0] * w + m[2]) as usize] = NONE;
-            }
+            // The cells stand in ascending order, so the cells of each piece come in ascending order with no sort.
+            frame_pieces.pieces(h as usize, w as usize, margins.iter().map(|m| (m[0] as usize, m[2] as usize)), steps, |members| {
+                piece.clear();
+                piece.extend(members.iter().map(|number| held[*number as usize]));
+                push_piece(&mut out, head, keys, &piece);
+            });
+        } else {
+            let neighbor = |from: usize, dr: i32, dc: i32| held.binary_search(&shifted_box(margins[from], dr, dc)).ok();
+            walk.pieces(held.len(), steps, |_| true, neighbor, |members| {
+                piece.clear();
+                piece.extend(members.iter().map(|place| held[*place]));
+                piece.sort_unstable();
+                push_piece(&mut out, head, keys, &piece);
+            });
         }
     }
     // A cell is in one piece of its key, and two keys differ, so no row repeats.
@@ -740,6 +731,20 @@ fn frequent_rows(t: &Table, keys: &[u16], v: u16, second: bool, weights: Option<
     out
 }
 
+/// Whether `columns` are every column of a table of `arity` columns, each once, so that two rows of the table, which differ, differ at them.
+fn are_all_columns(arity: usize, columns: impl IntoIterator<Item = u16>) -> bool {
+    let mut seen = 0u64;
+    let mut count = 0;
+    for column in columns {
+        if usize::from(column) >= arity.min(64) || seen >> column & 1 == 1 {
+            return false;
+        }
+        seen |= 1 << column;
+        count += 1;
+    }
+    count == arity
+}
+
 fn push_key(out: &mut Vec<Cell>, row: &[Cell], keys: &[u16]) {
     for at in keys {
         out.push(row[usize::from(*at)]);
@@ -760,7 +765,14 @@ pub struct GridView {
     dense: bool,
     /// The places of each shape that `placements_on` has searched for on this grid, and the count of cells of those shapes.
     searched: std::sync::Mutex<(FastMap<Shape, Arc<Vec<(i32, i32)>>>, usize)>,
+    /// The offsets of each pattern and its images, by the hash of the pattern and its frame, that `turned_moves_of` has found for this grid, and the count of those offsets.
+    turned: std::sync::Mutex<(FastMap<u128, Arc<Vec<Cell>>>, usize)>,
+    /// The neighborhood of each place, once something has read them, for a dense grid.
+    hoods: std::sync::OnceLock<Vec<Hood>>,
 }
+
+/// The most offsets that a grid holds of the patterns it has been searched for with their images.
+const TURNED_HELD: usize = 1 << 19;
 
 thread_local! {
     static VIEWS: std::cell::RefCell<LookupMap<u128, Arc<GridView>>> = std::cell::RefCell::new(LookupMap::new());
@@ -808,7 +820,47 @@ pub fn keys_of(value: &Val, at: &[u16]) -> Option<Arc<Vec<u64>>> {
     Some(compute(&table))
 }
 
+/// What a cell of color `mine` has from the colors of the cells that eight steps reach from it.
+#[derive(Clone, Copy)]
+struct Hood {
+    /// A hash of the eight colors in the order of the steps, and `mine`.
+    class: u32,
+    /// A hash of the eight colors in ascending order.
+    colors: u32,
+    /// How many of the eight cells have the color `mine`.
+    same: i64,
+}
+
 impl GridView {
+    /// The neighborhood of a cell of color `mine`.
+    fn hood_of(&self, cell: Cell, mine: Cell) -> Hood {
+        let m = margins_of(cell);
+        let mut held = [u32::MAX; 8];
+        let mut same = 0i64;
+        for (at, (dr, dc)) in STEPS.iter().enumerate() {
+            if let Some(color) = moved(m, *dr, *dc).and_then(|next| self.color_of(next)) {
+                held[at] = color;
+                same += i64::from(color == mine);
+            }
+        }
+        let class = hash_words(held.iter().map(|x| u64::from(*x)).chain([u64::from(mine)])) as u32;
+        held.sort_unstable();
+        Hood { class, colors: hash_words(held.iter().map(|x| u64::from(*x))) as u32, same }
+    }
+
+    /// The neighborhood of each place of a dense grid, by the place's row times the grid's width plus its column; the places without a cell have an arbitrary one. Found for all places at the first call.
+    fn hoods(&self) -> &[Hood] {
+        self.hoods.get_or_init(|| {
+            (0..self.h * self.w).map(|at| {
+                let (r, c) = (at / self.w, at % self.w);
+                match self.colors[at as usize] {
+                    u32::MAX => Hood { class: 0, colors: 0, same: 0 },
+                    mine => self.hood_of(box_bits(r, self.h - 1 - r, c, self.w - 1 - c), mine),
+                }
+            }).collect()
+        })
+    }
+
     /// The color of a cell of the grid, if the grid has the cell.
     #[inline]
     fn color_of(&self, cell: Cell) -> Option<Cell> {
@@ -853,7 +905,7 @@ fn view_of(table: &Arc<Table>) -> Arc<GridView> {
                 let m = margins_of(row[0]);
                 is_cell(&m) && m[0] + m[1] + 1 == h && m[2] + m[3] + 1 == w && row[1] != u32::MAX
             });
-            Arc::new(GridView { h, w, colors, at, pairs, of_color, dense, searched: Default::default() })
+            Arc::new(GridView { h, w, colors, at, pairs, of_color, dense, searched: Default::default(), turned: Default::default(), hoods: Default::default() })
         }).clone()
     })
 }
@@ -1084,6 +1136,8 @@ type Framed = (Vec<PatternCell>, (i32, i32));
 struct OccurPatterns {
     /// Each distinct pattern, or none where its cells do not lie in one frame, which leaves no move.
     distinct: Vec<Option<Framed>>,
+    /// For each distinct pattern, a hash of its cells and frame, or 0 where it has none.
+    hashes: Vec<u128>,
     /// For each key group in order of first appearance, the place of its pattern in `distinct`.
     of_group: Vec<u32>,
 }
@@ -1112,7 +1166,7 @@ fn occur_patterns(table: &Table, ids: &[u32], groups: usize, (p, v): (u16, u16),
     }
     let (distinct, of_group) = distinct_patterns(per_group);
     // A pattern sorts by its margins, which in one frame is by row, then column.
-    let distinct = distinct.iter().map(|pattern| {
+    let distinct: Vec<Option<Framed>> = distinct.iter().map(|pattern| {
         let ((first, _), rest) = pattern.split_first()?;
         let frame = (first[0] + first[1], first[2] + first[3]);
         if rest.iter().any(|(m, _)| (m[0] + m[1], m[2] + m[3]) != frame) {
@@ -1120,7 +1174,10 @@ fn occur_patterns(table: &Table, ids: &[u32], groups: usize, (p, v): (u16, u16),
         }
         Some((pattern.iter().map(|(m, color)| (m[0], m[2], *color)).collect(), frame))
     }).collect();
-    let built = Arc::new(OccurPatterns { distinct, of_group });
+    let hashes = distinct.iter().map(|framed| framed.as_ref().map_or(0, |(cells, frame)| {
+        hash_words([frame.0 as u64, frame.1 as u64].into_iter().chain(cells.iter().flat_map(|&(r, c, color)| [r as u64, c as u64, u64::from(color)])))
+    })).collect();
+    let built = Arc::new(OccurPatterns { distinct, hashes, of_group });
     OCCURS.with(|held| {
         let mut held = held.borrow_mut();
         held.held += table.len;
@@ -1158,21 +1215,31 @@ fn occur_moves(patterns: &OccurPatterns, grid: &GridView, key: (u128, u128, u128
     built
 }
 
-/// The offsets that move a pattern, or its image under some element of D4, onto the grid, sorted and without repeats. `plain` holds those of the pattern itself.
-fn turned_moves_of(framed: &Option<Framed>, grid: &GridView, plain: &[Cell]) -> Vec<Cell> {
-    let mut out = plain.to_vec();
-    if let Some((cells, frame)) = framed {
-        each_turned_image(cells, *frame, true, |which, image| {
-            // A turn by a quarter swaps the frame's height and width.
-            let turned = if which >= 4 { (frame.1, frame.0) } else { *frame };
-            framed_moves(image, turned, grid, &mut out);
-            false
-        });
+/// The offsets that move a pattern, or its image under some element of D4, onto the grid, sorted and without repeats. `hash` is the pattern's hash with its frame, under which the grid keeps the offsets, since patterns of other tables repeat.
+fn turned_moves_of(framed: &Option<Framed>, hash: u128, grid: &GridView) -> Arc<Vec<Cell>> {
+    let Some((cells, frame)) = framed else { return Arc::new(Vec::new()) };
+    let lock = || grid.turned.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(found) = lock().0.get(&hash) {
+        return found.clone();
     }
+    let mut out = Vec::new();
+    framed_moves(cells, *frame, grid, &mut out);
+    each_turned_image(cells, *frame, true, |which, image| {
+        // A turn by a quarter swaps the frame's height and width.
+        let turned = if which >= 4 { (frame.1, frame.0) } else { *frame };
+        framed_moves(image, turned, grid, &mut out);
+        false
+    });
     // The offsets of the pattern and of each image come in runs that stand in order, which the merging sort reads as they are.
     out.sort();
     out.dedup();
-    out
+    let built = Arc::new(out);
+    let mut held = lock();
+    if held.1 + built.len() <= TURNED_HELD {
+        held.1 += built.len() + 1;
+        held.0.insert(hash, built.clone());
+    }
+    built
 }
 
 impl SetRelation {
@@ -1910,13 +1977,21 @@ impl PartStep {
                     }
                 }
                 let mut out = Vec::new();
+                let mut every_box = true;
                 for (row, id) in t.rows().zip(ids) {
                     let m = margins_of(row[usize::from(*p)]);
                     let s = &spans[*id as usize];
                     push_key(&mut out, row, keys);
-                    out.push(box_bits(m[0] - s[0], m[1] - s[1], m[2] - s[2], m[3] - s[3]));
+                    let rel = box_bits(m[0] - s[0], m[1] - s[1], m[2] - s[2], m[3] - s[3]);
+                    every_box &= rel != u32::MAX;
+                    out.push(rel);
                 }
-                Val::of_table(Table::distinct(keys.len() + 1, out))
+                // Where the keys and the cell are all the columns, two rows differ in them, and so do their rows here, as long as each cell has a box.
+                if every_box && are_all_columns(t.arity, keys.iter().copied().chain([*p])) {
+                    Val::of_table(Table::new(keys.len() + 1, out))
+                } else {
+                    Val::of_table(Table::distinct(keys.len() + 1, out))
+                }
             }
             PartStep::Count { keys } => {
                 let (grouping, first) = key_ids(t, keys);
@@ -2000,9 +2075,10 @@ impl PartStep {
                 let (grouping, first) = key_ids(t, keys);
                 let ids = &grouping.0;
                 let mut sums = vec![0u128; first.len()];
+                // The columns that are no key, in order.
+                let rest: Vec<usize> = (0..t.arity).filter(|at| !keys.contains(&(*at as u16))).collect();
                 for (row, id) in t.rows().zip(ids) {
-                    let rest = row.iter().enumerate().filter(|(at, _)| !keys.contains(&(*at as u16))).map(|(_, cell)| u64::from(*cell));
-                    sums[*id as usize] = sums[*id as usize].wrapping_add(hash_words(rest));
+                    sums[*id as usize] = sums[*id as usize].wrapping_add(hash_words(rest.iter().map(|at| u64::from(row[*at]))));
                 }
                 let mut out = Vec::new();
                 for (sum, head) in sums.iter().zip(&first) {
@@ -2015,30 +2091,24 @@ impl PartStep {
                 let grid = grid_of(children[1])?;
                 let own: Vec<(Cell, Cell)> = t.sorted_column(usize::from(*p)).iter().filter_map(|cell| grid.color_of(*cell).map(|color| (*cell, color))).collect();
                 let mut out = Vec::new();
+                // In a dense grid the three values of every cell are found once for the grid.
+                let hoods = grid.dense.then(|| grid.hoods());
                 for (cell, mine) in &own {
                     let (cell, mine) = (*cell, *mine);
-                    let m = margins_of(cell);
-                    let mut held = [u32::MAX; 8];
-                    let mut same = 0i64;
-                    for (at, (dr, dc)) in STEPS.iter().enumerate() {
-                        if let Some(color) = moved(m, *dr, *dc).and_then(|next| grid.color_of(next)) {
-                            held[at] = color;
-                            same += i64::from(color == mine);
+                    let hood = match hoods {
+                        Some(hoods) => {
+                            let m = margins_of(cell);
+                            hoods[(m[0] * grid.w + m[2]) as usize]
                         }
-                    }
+                        None => grid.hood_of(cell, mine),
+                    };
                     out.push(cell);
                     match self {
-                        PartStep::NeighborhoodClass { .. } => {
-                            out.push(hash_words(held.iter().map(|x| u64::from(*x)).chain([u64::from(mine)])) as u32);
-                        }
-                        PartStep::NeighborColorClass { .. } => {
-                            let mut sorted = held;
-                            sorted.sort_unstable();
-                            out.push(hash_words(sorted.iter().map(|x| u64::from(*x))) as u32);
-                        }
+                        PartStep::NeighborhoodClass { .. } => out.push(hood.class),
+                        PartStep::NeighborColorClass { .. } => out.push(hood.colors),
                         _ => {
                             out.push(mine);
-                            out.push(number_bits(same));
+                            out.push(number_bits(hood.same));
                         }
                     }
                 }
@@ -2127,19 +2197,19 @@ impl PartStep {
                 let (grouping, first) = key_ids(t, keys);
                 let word = hash_words(keys.iter().map(|at| u64::from(*at)).chain([u64::MAX, u64::from(*p), u64::from(*v)]));
                 let patterns = occur_patterns(t, &grouping.0, first.len(), (*p, *v), word);
-                // The moves of the patterns themselves are shared by the part with and without the turns.
-                let plain = occur_moves(&patterns, &grid, (t.hash(), word, children[1].hash()));
+                let plain;
                 let turned_moves;
-                let moves: &[Vec<Cell>] = if *turned {
-                    turned_moves = patterns.distinct.iter().zip(plain.iter()).map(|(pattern, held)| turned_moves_of(pattern, &grid, held)).collect::<Vec<_>>();
-                    &turned_moves
+                let moves: Vec<&[Cell]> = if *turned {
+                    turned_moves = patterns.distinct.iter().zip(&patterns.hashes).map(|(pattern, hash)| turned_moves_of(pattern, *hash, &grid)).collect::<Vec<_>>();
+                    turned_moves.iter().map(|held| held.as_slice()).collect()
                 } else {
-                    &plain
+                    plain = occur_moves(&patterns, &grid, (t.hash(), word, children[1].hash()));
+                    plain.iter().map(Vec::as_slice).collect()
                 };
                 let total: usize = patterns.of_group.iter().map(|which| moves[*which as usize].len()).sum();
                 let mut out = Vec::with_capacity(total * (keys.len() + 1));
                 for (head, which) in first.iter().zip(&patterns.of_group) {
-                    for moved in &moves[*which as usize] {
+                    for moved in moves[*which as usize] {
                         push_key(&mut out, head, keys);
                         out.push(*moved);
                     }
@@ -2355,7 +2425,8 @@ impl PartStep {
                         }
                     }
                 }
-                Val::of_table(Table::distinct(2, out))
+                // The cells differ, and so do the cells that the eight steps reach from one cell, so no row repeats.
+                Val::of_table(Table::new(2, out))
             }
             PartStep::OnBorder { b } => {
                 let other = flat(children[1])?;
@@ -2885,7 +2956,13 @@ impl PartStep {
                         }
                     }
                 }
-                Val::of_table(Table::distinct(if *kept { 4 } else { 5 }, out))
+                let width = if *kept { 4 } else { 5 };
+                // Where the two columns are all the columns, two rows differ in them, and so do their rows here.
+                if are_all_columns(t.arity, [*b, *x]) {
+                    Val::of_table(Table::new(width, out))
+                } else {
+                    Val::of_table(Table::distinct(width, out))
+                }
             }
         })
     }
