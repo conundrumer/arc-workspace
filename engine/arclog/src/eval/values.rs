@@ -378,7 +378,7 @@ const UNPOISONED: &str = "a store that no panic poisoned";
 pub const REQUEST_WORK_CAP: u64 = 1 << 30;
 
 /// The count of [`Gauge`]s.
-const GAUGES: usize = 17;
+const GAUGES: usize = 18;
 
 /// A capped quantity of a request, which [`Gauges`] keeps the largest value of
 /// and the hits at.
@@ -431,6 +431,12 @@ pub enum Gauge {
     /// The most bytes that one assignment held at a time
     /// ([`TableWork::charge_bytes`]), under the assignment byte budget.
     AssignmentBytes,
+    /// The search nodes of the canonical labeling of one label scope, under
+    /// [`crate::program::canonical::SEARCH_NODE_CAP`]. A search past the cap
+    /// is a hit, and refuses its form
+    /// ([`crate::program::canonical::LabelingBound`]). The count is of the
+    /// process, from the begin of the latest request ([`ambient`]).
+    LabelingNodes,
 }
 
 impl Gauge {
@@ -453,6 +459,7 @@ impl Gauge {
         Gauge::AtomStates,
         Gauge::RequestBytes,
         Gauge::AssignmentBytes,
+        Gauge::LabelingNodes,
     ];
 
     /// The gauge's name, which is stable.
@@ -475,6 +482,7 @@ impl Gauge {
             Gauge::AtomStates => "atom_states",
             Gauge::RequestBytes => "request_bytes",
             Gauge::AssignmentBytes => "assignment_bytes",
+            Gauge::LabelingNodes => "labeling_nodes",
         }
     }
 }
@@ -527,6 +535,10 @@ impl Gauges {
                 let (largest, hits) = ambient::margin();
                 return (gauge, largest, ambient::MARGIN_CAP, hits);
             }
+            if gauge == Gauge::LabelingNodes {
+                let (largest, hits) = ambient::labeling();
+                return (gauge, largest, ambient::LABELING_CAP, hits);
+            }
             let slot = self.slot(gauge);
             (gauge, slot.max.load(Ordering::Relaxed), slot.cap.load(Ordering::Relaxed), slot.hits.load(Ordering::Relaxed))
         })
@@ -544,8 +556,14 @@ pub mod ambient {
     /// margin bound is ([`super::Gauge::BoxMargin`]).
     pub const MARGIN_CAP: u64 = 127;
 
+    /// The cap on the search nodes of one canonical labeling
+    /// ([`super::Gauge::LabelingNodes`]).
+    pub const LABELING_CAP: u64 = crate::program::canonical::SEARCH_NODE_CAP as u64;
+
     static LARGEST_MARGIN: AtomicU32 = AtomicU32::new(0);
     static MARGIN_HITS: AtomicU64 = AtomicU64::new(0);
+    static LARGEST_LABELING: AtomicU32 = AtomicU32::new(0);
+    static LABELING_HITS: AtomicU64 = AtomicU64::new(0);
 
     /// Records the margin `extent` of a Box that a term packs: two compares
     /// while it is no new largest and holds.
@@ -564,10 +582,30 @@ pub mod ambient {
         (u64::from(LARGEST_MARGIN.load(Ordering::Relaxed)), MARGIN_HITS.load(Ordering::Relaxed))
     }
 
+    /// Records that a search for a canonical labeling visited `nodes` search
+    /// nodes: two compares while it is no new largest and holds.
+    #[inline]
+    pub fn note_labeling(nodes: u32) {
+        if nodes > LARGEST_LABELING.load(Ordering::Relaxed) {
+            LARGEST_LABELING.fetch_max(nodes, Ordering::Relaxed);
+        }
+        if u64::from(nodes) > LABELING_CAP {
+            LABELING_HITS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// The most search nodes of one labeling search and the count of searches
+    /// past the cap.
+    pub fn labeling() -> (u64, u64) {
+        (u64::from(LARGEST_LABELING.load(Ordering::Relaxed)), LABELING_HITS.load(Ordering::Relaxed))
+    }
+
     /// Starts the counters again from zero.
     pub fn reset() {
         LARGEST_MARGIN.store(0, Ordering::Relaxed);
         MARGIN_HITS.store(0, Ordering::Relaxed);
+        LARGEST_LABELING.store(0, Ordering::Relaxed);
+        LABELING_HITS.store(0, Ordering::Relaxed);
     }
 }
 

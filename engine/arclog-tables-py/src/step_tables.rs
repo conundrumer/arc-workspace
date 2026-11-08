@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use arclog_bindings::{budget_reached, PyDecoder};
+use arclog_bindings::{budget_reached, labeling_bound_reached, PyDecoder};
 use arclog_tables::columns::{step_case_columns_by_assignment_hashed, step_case_columns_by_assignment_in, step_case_columns_by_assignment_with, step_case_columns_in};
 use arclog_tables::split::{self, Part};
 use arclog_tables::summary::{train_pairs, Assemblies, DetFulls, SummaryCache};
@@ -14,6 +14,7 @@ use arclog_tables::columns::{CaseColumns, StreamTables};
 use arclog_tables::tables::successors::{exhaustion, successor_tables as successors_of, SuccessorKind};
 use arclog_tables::tables::{evidence_tables, input_table, mark_selected, selected_columns, step_tables as step_tables_of, Point, Points, Table};
 use arclog::decode::{Decoder, LeftOut};
+use arclog::program::canonical::LabelingBound;
 use arclog::program::Form;
 use arclog::eval::copies::CopyViolation;
 use arclog::eval::{Limits, ReachedBound};
@@ -120,7 +121,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     // The indexes of the tokens the model wrote, which the engine's forced tokens follow in the trace. The last is the index `stream_tables` gives the step; a decode before its first step has none, and no table.
     let (written, index) = engine.model_steps();
     let earlier = check_before(before.as_deref(), &task, &case, bodies, written, index)?;
-    let (columns, stream, left) = py.detach(|| {
+    let (columns, stream, left) = py.detach(|| -> Result<_, LabelingBound> {
         let limits=engine.limits();
         let operation=engine.clone().with_operation_limits(limits.clone());
         let engine=&operation;
@@ -136,25 +137,22 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         let materializer=Materializer::new(engine.evaluation_inputs().1,&limits);
         let (columns, stream) = if by_assignment {
             // The QueryHash of each table: the `query_hash` of its finished query; a body table has none.
-            let query_of = |table: &Table| match table.point {
-                Point::Relation => table.form.0.first().and_then(|top| engine.query_hash(top.0 as usize)),
-                Point::Body { .. } | Point::Evidence => None,
-            };
+            let query_of = |table: &Table| query_of_table(engine, table);
             let queries = {
                 let _timed = split::span(Part::OwnQueryHash);
-                tables.iter().map(|(_, table)| query_of(table)).collect()
+                tables.iter().map(|(_, table)| query_of(table)).collect::<Result<Vec<_>, _>>()?
             };
             let before = earlier.map(|step| &*step.stream);
             if summaries {
-                step_case_columns_by_assignment_with(&materializer, before, &evidence_tables, tables, &train, queries, rows, &cache, assemblies(engine))
+                step_case_columns_by_assignment_with(&materializer, before, &evidence_tables, tables, &train, queries, rows, &cache, assemblies(engine)?)
             } else {
-                step_case_columns_by_assignment_hashed(&materializer, before, &evidence_tables, tables, &train, queries, &cache, assemblies(engine))
+                step_case_columns_by_assignment_hashed(&materializer, before, &evidence_tables, tables, &train, queries, &cache, assemblies(engine)?)
             }
         } else {
             step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, evidence.train.len())
         };
-        (columns.with_copies(&engine.take_copy_violations()), stream, arclog::clock::Stopwatch::start())
-    });
+        Ok((columns.with_copies(&engine.take_copy_violations()), stream, arclog::clock::Stopwatch::start()))
+    }).map_err(|bound| labeling_bound_reached(py, bound))?;
     if arclog::stats::enabled() {
         split::add(Part::GilWait, left.elapsed().nanos());
     }
@@ -325,7 +323,7 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
     let earlier = check_before(before.as_deref(), &task, &case, true, written + 1, Some(index))?;
     let train = decoder.derived(|| train_pairs(evidence));
     let shapes = decoder.derived(|| ShapeRuntime::new(evidence));
-    let (current, each, unchanged) = py.detach(|| {
+    let (current, each, unchanged) = py.detach(|| -> Result<_, LabelingBound> {
         let limits = engine.limits();
         let stream = earlier.map(|step| &*step.stream);
         let before_tables = stream.map_or_else(Vec::new, StreamTables::tables);
@@ -338,12 +336,12 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             successors_of(engine, &limits, tokens, &before_tables, held)
         };
         // The export of a successor's tables counts in the request of the successor's own, as its evaluation does.
-        let columns_of = |tables: Vec<(usize, Table)>, queries: Vec<Option<arclog::hash::StableHash>>, program: &Decoder<'_>, own: &Limits| {
+        let columns_of = |tables: Vec<(usize, Table)>, queries: Vec<Option<arclog::hash::StableHash>>, program: &Decoder<'_>, own: &Limits| -> Result<(CaseColumns, StreamTables), LabelingBound> {
             let _timed = split::span(Part::SuccessorColumns);
             let materializer = Materializer::new(engine.evaluation_inputs().1, own);
-            step_case_columns_by_assignment_with(&materializer, stream, &evidence_tables, tables, &train, queries, rows, &summaries, assemblies(program))
+            Ok(step_case_columns_by_assignment_with(&materializer, stream, &evidence_tables, tables, &train, queries, rows, &summaries, assemblies(program)?))
         };
-        let current = found.current.as_ref().map(|table| columns_of(vec![(now.unwrap_or(0), table.clone())], vec![None], engine, &limits).0);
+        let current = found.current.as_ref().map(|table| columns_of(vec![(now.unwrap_or(0), table.clone())], vec![None], engine, &limits).map(|made| made.0)).transpose()?;
         let mut unchanged: Option<(CaseColumns, StreamTables)> = None;
         // The copy violations of each id's successor, empty for a refused id.
         let mut copies: Vec<Vec<CopyViolation>> = Vec::with_capacity(found.each.len());
@@ -389,8 +387,8 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             let violations = next.take_copy_violations();
             if successor.kind == SuccessorKind::Unchanged {
                 if unchanged.is_none() {
-                    let (columns, _) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), vec![None], next, &own_limits);
-                    let (_, stream) = columns_of(Vec::new(), Vec::new(), next, &own_limits);
+                    let (columns, _) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), vec![None], next, &own_limits)?;
+                    let (_, stream) = columns_of(Vec::new(), Vec::new(), next, &own_limits)?;
                     resident = resident.saturating_add(cells_bytes(&columns));
                     unchanged = Some((columns, stream));
                 }
@@ -403,12 +401,9 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
                 each.push(Ok((kind, note, Packed::Same(first))));
                 continue;
             }
-            let queries = successor.tables.iter().map(|table| match table.point {
-                Point::Relation => table.form.0.first().and_then(|top| next.query_hash(top.0 as usize)),
-                Point::Body { .. } | Point::Evidence => None,
-            }).collect();
+            let queries = successor.tables.iter().map(|table| query_of_table(next, table)).collect::<Result<Vec<_>, _>>()?;
             let own = u32::try_from(successor.tables.len()).expect("fewer than 2^32 tables");
-            let (columns, stream) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), queries, next, &own_limits);
+            let (columns, stream) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), queries, next, &own_limits)?;
             // The export that passed a budget of the id's request leaves the id with no tables.
             if let Some(bound) = exhaustion(&own_limits) {
                 copies.push(violations);
@@ -433,8 +428,8 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             copies.push(violations);
             each.push(Ok((kind, note, Packed::Own(columns, stream, own, spilled))));
         }
-        (current, each, unchanged)
-    });
+        Ok((current, each, unchanged))
+    }).map_err(|bound| labeling_bound_reached(py, bound))?;
     for columns in current.iter().chain(unchanged.as_ref().map(|(columns, _)| columns)).chain(each.iter().filter_map(|result| match result {
         Ok((_, _, Packed::Own(columns, _, _, _))) => Some(columns),
         _ => None,
@@ -527,14 +522,14 @@ pub(crate) fn atom_tables<'py>(py: Python<'py>, decoder: PyRef<'py, PyDecoder>, 
     let found = match key.and_then(|key| memo.get(key)) {
         Some(found) => found,
         None => {
-            let found = std::sync::Arc::new(py.detach(|| {
+            let found = std::sync::Arc::new(py.detach(|| -> Result<_, LabelingBound> {
                 let limits = engine.limits();
                 let operation = engine.clone().with_operation_limits(limits.clone());
                 let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
                 let tables = stream.map_or_else(Vec::new, StreamTables::tables);
-                let fulls = DetFulls::new(tables).with_assemblies(assemblies(engine));
-                arclog_tables::tables::atom_tables::atom_tables(&operation, &atoms, &materializer, &train, &fulls, by_program)
-            }));
+                let fulls = DetFulls::new(tables).with_assemblies(assemblies(engine)?);
+                Ok(arclog_tables::tables::atom_tables::atom_tables(&operation, &atoms, &materializer, &train, &fulls, by_program))
+            }).map_err(|bound| labeling_bound_reached(py, bound))?);
             if let Some(key) = key {
                 memo.keep(key, std::sync::Arc::clone(&found));
             }
@@ -584,18 +579,32 @@ pub(crate) fn step_tables_split(reset: bool) -> Vec<(&'static str, u64, f64)> {
     split::snapshot(reset).into_iter().map(|(name, calls, nanos)| (name, calls, nanos as f64 / 1e9)).collect()
 }
 
+/// The QueryHash of the finished query at `position` of `decoder`: none where
+/// the query has no content; the bound where the hash is refused
+/// ([`LabelingBound`]), which a caller raises and never reads as no hash.
+fn query_hash_at(decoder: &Decoder<'_>, position: usize) -> Result<Option<arclog::hash::StableHash>, LabelingBound> {
+    decoder.query_hash_or_bound(position).transpose()
+}
+
+/// The QueryHash of the query of `table`: none for a body table or an evidence table.
+fn query_of_table(decoder: &Decoder<'_>, table: &Table) -> Result<Option<arclog::hash::StableHash>, LabelingBound> {
+    match (table.point, table.form.0.first()) {
+        (Point::Relation, Some(top)) => query_hash_at(decoder, top.0 as usize),
+        _ => Ok(None),
+    }
+}
+
 /// The QueryHash of each finished `RIGID_DET` form of the program of `decoder`,
-/// by the form's name, by which the hashes of a step name each Pose type.
-fn assemblies(decoder: &Decoder<'_>) -> Assemblies {
-    decoder
-        .program()
-        .value()
-        .forms
-        .iter()
-        .enumerate()
-        .filter_map(|(position, form)| match form {
-            Form::RigidDet(rigid) => Some((rigid.value().name.clone(), decoder.query_hash(position)?)),
-            _ => None,
-        })
-        .collect()
+/// by the form's name, by which the hashes of a step name each Pose type; the
+/// bound where a hash is refused.
+fn assemblies(decoder: &Decoder<'_>) -> Result<Assemblies, LabelingBound> {
+    let mut found = Vec::new();
+    for (position, form) in decoder.program().value().forms.iter().enumerate() {
+        if let Form::RigidDet(rigid) = form {
+            if let Some(hash) = query_hash_at(decoder, position)? {
+                found.push((rigid.value().name.clone(), hash));
+            }
+        }
+    }
+    Ok(found.into_iter().collect())
 }

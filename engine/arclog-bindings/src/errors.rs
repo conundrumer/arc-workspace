@@ -3,6 +3,7 @@
 
 use arclog::diagnostic::Location;
 use arclog::eval::{Outcome, ReachedBound, RunFault};
+use arclog::program::canonical::LabelingBound;
 use arclog::study::StudyError;
 use arclog::trace::Stop;
 use pyo3::create_exception;
@@ -11,12 +12,18 @@ use pyo3::prelude::*;
 
 use crate::results::PyStopKind;
 
-create_exception!(arclog, Refusal, PyException, "The engine refuses its input: a decode refuses a token outside its mask, or `CheckRefused` for a program that its checks refuse. It is no `ValueError`: a `ValueError` from the engine is a bug of the caller.");
+create_exception!(arclog, Refusal, PyException, "The engine refuses its input: a decode refuses a token outside its mask, `CheckRefused` for a program that its checks refuse, or `LabelingBoundReached` for a query that has no hash. It is no `ValueError`: a `ValueError` from the engine is a bug of the caller.");
 create_exception!(
     arclog,
     CheckRefused,
     Refusal,
     "The engine's checks refuse a program. Attributes: `check`, the name of the first check that refused it (`Picks`, `Types`, `Grammar`, ...); `at`, the path of the node it refused, as the list of the indexes from the top-level form, or None where the refusal stands at a place of the program's text; `line` and `column`, from 1, of that place, or None where it stands at a path. The message holds the text of all of the refusals."
+);
+create_exception!(
+    arclog,
+    LabelingBoundReached,
+    Refusal,
+    "A query has no hash: the search for the canonical labeling of a form that it reads passed its cap of search nodes, so the hash would depend on the written order. The same query is refused again. Attributes: `bound`, the name of the bound (`LabelingNodes`); `cap`, the bound's cap as an int."
 );
 create_exception!(arclog, Fault, PyRuntimeError, "A run of the engine faults.");
 create_exception!(
@@ -74,6 +81,18 @@ pub fn study_error(py: Python<'_>, error: StudyError) -> PyErr {
         .and_then(|()| value.setattr("column", column));
     match named {
         Ok(()) => refused,
+        Err(failure) => failure,
+    }
+}
+
+/// The `LabelingBoundReached` for a query that passed `bound`: the error
+/// carries the bound's name as `bound` and its cap as `cap`. A caller tells
+/// such a refusal from a missing query by this type.
+pub fn labeling_bound_reached(py: Python<'_>, bound: LabelingBound) -> PyErr {
+    let error = LabelingBoundReached::new_err(bound.to_string());
+    let value = error.value(py);
+    match value.setattr("bound", "LabelingNodes").and_then(|()| value.setattr("cap", bound.cap)) {
+        Ok(()) => error,
         Err(failure) => failure,
     }
 }

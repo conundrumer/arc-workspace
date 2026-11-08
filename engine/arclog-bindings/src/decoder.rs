@@ -19,7 +19,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use crate::constructions;
-use crate::errors::{settled, Fault, Refusal};
+use crate::errors::{labeling_bound_reached, settled, Fault, Refusal};
 use crate::results::{assigned, grid_rows, rows_view, PyAssigned, PyConsistency, PyProjection, PyProjections};
 use crate::session::SessionData;
 use crate::study::{written_query_hash, finished_query};
@@ -339,10 +339,11 @@ impl PyDecoder {
     /// `index`: free of the names that the scope gives its tables. Index -1
     /// is the last finished query.
     #[pyo3(signature = (index=-1))]
-    fn query_hash(&self, index: isize) -> PyResult<u128> {
+    fn query_hash(&self, py: Python<'_>, index: isize) -> PyResult<u128> {
         let decoder = self.decoder();
         let (position, _) = finished_query(decoder.program(), index)?;
-        decoder.query_hash(position).map(|hash| hash.0).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))
+        let hash = decoder.query_hash_or_bound(position).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
+        hash.map(|hash| hash.0).map_err(|bound| labeling_bound_reached(py, bound))
     }
 
     /// The bytes that `query_hash` hashes, for the finished query at `index`.
@@ -350,16 +351,17 @@ impl PyDecoder {
     fn query_bytes<'py>(&self, py: Python<'py>, index: isize) -> PyResult<Bound<'py, PyBytes>> {
         let decoder = self.decoder();
         let (position, _) = finished_query(decoder.program(), index)?;
-        let content = decoder.query_content(position).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
+        let content = decoder.query_content_or_bound(position).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
+        let content = content.map_err(|bound| labeling_bound_reached(py, bound))?;
         Ok(PyBytes::new(py, content.canonical_bytes()))
     }
 
     /// The canonical hash of the finished query at `index`, with the
     /// names as written. Index -1 is the last finished query.
     #[pyo3(signature = (index=-1))]
-    fn written_query_hash(&self, index: isize) -> PyResult<u128> {
+    fn written_query_hash(&self, py: Python<'_>, index: isize) -> PyResult<u128> {
         let (_, query) = finished_query(self.decoder().program(), index)?;
-        Ok(written_query_hash(query).0)
+        written_query_hash(query).map(|hash| hash.0).map_err(|bound| labeling_bound_reached(py, bound))
     }
 
     /// For each part of the finished `RIGID_DET` form at `index`, in the

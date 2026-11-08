@@ -1,7 +1,7 @@
 //! Thin Python handles for the engine's study ASTs.
 
 use arclog::hash::StableHash;
-use arclog::program::canonical::{CanonicalOrder, SearchBudget};
+use arclog::program::canonical::{CanonicalOrder, LabelingBound, SearchBudget};
 use arclog::program::{Form, Node, Program};
 use arclog::registry::Registry;
 use arclog::resolver::{resolve, ResolvedContent, SolverScope};
@@ -13,7 +13,7 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyTuple};
 
-use crate::errors::{faulted, refused, study_error};
+use crate::errors::{faulted, labeling_bound_reached, refused, study_error};
 use crate::mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 use crate::session::PySession;
 use crate::settings::PyDecodeSettings;
@@ -30,9 +30,16 @@ pub(crate) fn finished_query(program: &Node<Program>, index: isize) -> PyResult<
     }
 }
 
-/// The hash of the canonical form of `query`, with the names as written.
-pub(crate) fn written_query_hash(query: &Form) -> StableHash {
-    CanonicalOrder::with_form(query, &mut SearchBudget::new()).1.hash
+/// The hash of the canonical form of `query`, with the names as written;
+/// the bound where the search for a canonical labeling of the query passed
+/// its cap.
+pub(crate) fn written_query_hash(query: &Form) -> Result<StableHash, LabelingBound> {
+    let mut search = SearchBudget::new();
+    let hash = CanonicalOrder::with_form(query, &mut search).1.hash;
+    if search.reached {
+        return Err(LabelingBound::at_cap());
+    }
+    Ok(hash)
 }
 
 /// A grammar/binder reader for this session's immutable settings. Each
@@ -58,12 +65,12 @@ impl PyStudyProgram {
     /// The resolver's content of the query at `index`, in the program of
     /// its use closure, as a decode that has finished it holds, with the
     /// query's position.
-    fn query_content(&self, index: isize) -> PyResult<(ResolvedContent, usize)> {
+    fn query_content(&self, py: Python<'_>, index: isize) -> PyResult<(ResolvedContent, usize)> {
         let (position, _) = finished_query(self.program.program(), index)?;
         let prefix = Node::new(Program { forms: self.program.program().value().forms[..=position].into() });
         let resolved = resolve(&prefix, None, &SolverScope::default(), Registry::get()).value;
-        let content = resolved.query_content(position, Registry::get());
-        content.map(|content| (content, position)).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))
+        let content = resolved.query_content_or_bound(position, Registry::get()).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
+        content.map(|content| (content, position)).map_err(|bound| labeling_bound_reached(py, bound))
     }
 }
 
@@ -229,22 +236,22 @@ impl PyStudyProgram {
     /// the query in the program of the queries up to it, as a decode
     /// that has just finished it holds, since a later read of a `DET`'s
     /// columns changes the columns that the resolution keeps.
-    fn query_hash(&self, index: isize) -> PyResult<u128> {
-        let (content, _) = self.query_content(index)?;
+    fn query_hash(&self, py: Python<'_>, index: isize) -> PyResult<u128> {
+        let (content, _) = self.query_content(py, index)?;
         Ok(content.content_hash().0)
     }
 
     /// The bytes that `query_hash` hashes, for the query at `index`.
     fn query_bytes<'py>(&self, py: Python<'py>, index: isize) -> PyResult<Bound<'py, PyBytes>> {
-        let (content, _) = self.query_content(index)?;
+        let (content, _) = self.query_content(py, index)?;
         Ok(PyBytes::new(py, content.canonical_bytes()))
     }
 
     /// The canonical hash of the query at `index`, with the names as
     /// written.
-    fn written_query_hash(&self, index: isize) -> PyResult<u128> {
+    fn written_query_hash(&self, py: Python<'_>, index: isize) -> PyResult<u128> {
         let (_, query) = finished_query(self.program.program(), index)?;
-        Ok(written_query_hash(query).0)
+        written_query_hash(query).map(|hash| hash.0).map_err(|bound| labeling_bound_reached(py, bound))
     }
 
     /// For each list of the query at `index`, by its source path, the

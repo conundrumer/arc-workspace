@@ -31,7 +31,7 @@ keeps its lines and makes the tasks it lacks. A line holds ids and counts, no gr
               (`study_row_work`, `pair_comparisons`) and none of the study filters' `max_work`, which `evaluate_pair` and the filters count in their own results.
     vocabulary  {relations, columns, labels: {max, cap}}: the relation slots (the largest slot index + 1 over the stream's tokens), the column positions
               (the largest position + 1) and the labels of one form (the largest label slot + 1 within a top-level form) that the stream uses, and the vocabulary caps
-              of the session's settings. The engine has no counter for these. `box_margin` is the process's, from the begin of the latest request.
+              of the session's settings. The engine has no counter for these. `box_margin` and `labeling_nodes` are the process's, from the begin of the latest request.
     hits      [{kind, token, form, name, cap, hits, max, limit}], one for each request that passed a cap: the kind of request, the model token index, the index and
               the name of the top-level form that the token writes, the gauge, the times it passed, its largest value and its cap. A `gold_tables` call that returns a
               table with a stop has a hit with the cap `table_status` and the form of that stop.

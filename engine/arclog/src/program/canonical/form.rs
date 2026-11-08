@@ -71,6 +71,11 @@ pub trait NameWriter {
     fn feature_sites(&self) -> bool {
         false
     }
+
+    /// Called where the search for a canonical labeling under this writer
+    /// passes [`SEARCH_NODE_CAP`], so that a writer which hands out the
+    /// content it writes can refuse it ([`LabelingBound`]).
+    fn labeling_bound_reached(&self) {}
 }
 
 /// The relation whose columns a `DEMO_RULE` form's fields are: its
@@ -376,9 +381,10 @@ impl NameWriter for AsWritten {
 /// The hash of the canonical form of `value`.
 ///
 /// Two values whose forms are equal under a reorder and a renaming may still
-/// hash apart in two cases. A body whose search reaches
-/// [`SEARCH_NODE_CAP`] takes the least labeling the search has found, which
-/// may differ between the two. A label that stands alone at a site on a
+/// hash apart in two cases. A value whose search passes
+/// [`SEARCH_NODE_CAP`] ends with a labeling that may differ between the two;
+/// the checks refuse such a value ([`LabelingBound`]), so no caller gets its
+/// hash. A label that stands alone at a site on a
 /// column of a type parameter, `(:v *Col)` against `(:v *X)` where `v` holds
 /// no record, enters the form by its name, since the value does not tell it
 /// from a partial read of the field of that name, `(:key *E)`; the resolved

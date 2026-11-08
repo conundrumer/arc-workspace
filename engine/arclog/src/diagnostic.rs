@@ -13,7 +13,8 @@ use crate::solver::CaseName;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum DiagnosticKind {
     Check(crate::check::CheckId),
-    /// A bound reached, which is an alert.
+    /// A bound reached: an alert, except the labeling bound
+    /// ([`crate::program::canonical::LabelingBound`]), which is an error.
     Bound,
     /// A fault of a run, reported by the evaluator, or by the writer of a
     /// token stream.
@@ -21,7 +22,8 @@ pub enum DiagnosticKind {
 }
 
 /// Whether a diagnostic refuses the program or is an alert on a bound. A
-/// bound that is reached is an alert, not a refusal.
+/// bound that is reached is an alert, not a refusal, except the labeling
+/// bound, which refuses the form that passes it.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Severity {
     Error,

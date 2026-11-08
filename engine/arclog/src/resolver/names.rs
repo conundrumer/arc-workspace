@@ -7,7 +7,7 @@ use super::columns::{ColumnOrders, Columns, Place};
 use super::{DependencyKind, GraphNodeIndex};
 use crate::hash::StableHashMap;
 use crate::program::canonical::{
-    cached_write, canonical_labeling, AsWritten, Canonical, CanonicalForm, CanonicalOrder, CanonicalWriter, LabelScope, NameWriter, SearchBudget,
+    cached_write, canonical_labeling, AsWritten, Canonical, CanonicalForm, CanonicalOrder, CanonicalWriter, LabelScope, LabelingBound, NameWriter, SearchBudget,
 };
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
@@ -217,9 +217,21 @@ pub(super) struct Names {
     /// Whether the content is written with the order of the named sites and
     /// head sites outside it, as [`NameWriter::feature_sites`] says.
     pub(super) feature_sites: bool,
+    /// Set when a search for a canonical labeling under a [`Writer`] of these
+    /// names passed [`crate::program::canonical::SEARCH_NODE_CAP`]: the
+    /// content that these names write is then not free of the written order.
+    pub(super) labeling_bound: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Names {
+    /// The bound that a search for a canonical labeling under these names, or
+    /// under the names of the forms before the last, passed.
+    pub(super) fn labeling_bound(&self) -> Option<LabelingBound> {
+        let reached = self.labeling_bound.load(std::sync::atomic::Ordering::Relaxed)
+            || self.earlier.as_ref().is_some_and(|earlier| earlier.names.labeling_bound().is_some());
+        reached.then(LabelingBound::at_cap)
+    }
+
     /// The target of `relation` read in `scope`: its declaration in
     /// `scope`, or in the program's.
     pub(super) fn find(&self, scope: &NameScope, relation: &RelationRef) -> Option<&Target> {
@@ -746,6 +758,10 @@ impl Writer<'_> {
 impl NameWriter for Writer<'_> {
     fn feature_sites(&self) -> bool {
         self.names.feature_sites
+    }
+
+    fn labeling_bound_reached(&self) {
+        self.names.labeling_bound.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn write_name(&self, relation: &RelationRef, out: &mut CanonicalWriter) {

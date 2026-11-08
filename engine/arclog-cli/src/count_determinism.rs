@@ -103,8 +103,8 @@ fn check(corpus: &Path, tasks: &Path, id: &str, threads: usize) -> Result<Vec<St
                 Err(fault) => format!("fault at {:?}", fault.form),
             })
             .collect();
-        // The session's bytes depend on the machine's heap, and the margin is the process's.
-        let gauges = limits.request.gauges().each().into_iter().filter(|(gauge, ..)| !matches!(gauge, Gauge::SessionBytes | Gauge::BoxMargin)).map(|(gauge, max, cap, hits)| (gauge.name(), max, cap, hits)).collect();
+        // The session's bytes depend on the machine's heap, and the margin and the labeling nodes are the process's.
+        let gauges = limits.request.gauges().each().into_iter().filter(|(gauge, ..)| !matches!(gauge, Gauge::SessionBytes | Gauge::BoxMargin | Gauge::LabelingNodes)).map(|(gauge, max, cap, hits)| (gauge.name(), max, cap, hits)).collect();
         (Seen { count: limits.request.count(), gauges, outcomes }, entries)
     };
     let cold_session = corpus_session();

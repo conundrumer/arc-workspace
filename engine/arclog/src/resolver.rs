@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::diagnostic::WithDiagnostics;
 use crate::hash::StableHash;
+use crate::program::canonical::LabelingBound;
 use crate::program::path::{node_at, NodePath, NodeRef};
 use crate::program::{
     ColumnName, InstanceName, LabelId, Node, OutputStep, PortName, RelationRef, Program, ProgramRelation, RelationName, RigidDetName,
@@ -788,10 +789,25 @@ impl ResolvedProgram {
     /// no table and no stream holds it, so the closure's clauses hold none;
     /// nor do a `DEMONSTRATED` form's rule names and texts, and its
     /// `&prediction` clauses hold the columns the stream fills alone
-    /// ([`query_form`]). `None` where `position` names no node.
+    /// ([`query_form`]). `None` where `position` names no node, and where a
+    /// labeling that the content rests on passed its cap, as
+    /// [`ResolvedProgram::query_content_or_bound`] gives.
     pub fn query_content(&self, position: usize, registry: &Registry) -> Option<ResolvedContent> {
+        self.query_content_or_bound(position, registry)?.ok()
+    }
+
+    /// [`ResolvedProgram::query_content`], with the [`LabelingBound`] in
+    /// place of the content where the search for a canonical labeling of a
+    /// form in the content's closure passed its cap, since the content then
+    /// may depend on the written order of the query. `None` where `position`
+    /// names no node.
+    pub fn query_content_or_bound(&self, position: usize, registry: &Registry) -> Option<Result<ResolvedContent, LabelingBound>> {
         let (closure, last) = self.query_closure(position, registry, false)?;
-        closure.content(&last)
+        let content = closure.content(&last)?;
+        Some(match closure.names.labeling_bound() {
+            Some(bound) => Err(bound),
+            None => Ok(content),
+        })
     }
 
     /// The resolved content of the finished query at the top-level position
@@ -799,7 +815,8 @@ impl ResolvedProgram {
     /// canonical order of the query's form through the resolver's writer of
     /// the same closure, so that the content and the order name the form's
     /// lists and labels alike. A `DEMONSTRATED` form has no
-    /// order. `None` where `position` names no node.
+    /// order. `None` where `position` names no node, and where a labeling that
+    /// the content rests on passed its cap.
     ///
     /// Unlike [`ResolvedProgram::query_content`], the closure keeps the
     /// columns of each `DET` node that its reads name in the order of their
@@ -810,7 +827,7 @@ impl ResolvedProgram {
         let (closure, last) = self.query_closure(position, registry, true)?;
         let content = closure.content(&last)?;
         let (order, _) = closure.names.order(&closure.program, &last)?;
-        Some(QueryIdentity { content, order })
+        closure.names.labeling_bound().is_none().then_some(QueryIdentity { content, order })
     }
 
     /// For each part of the `RIGID_DET` form at the top-level position

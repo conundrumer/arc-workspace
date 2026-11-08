@@ -71,6 +71,7 @@ use crate::eval::copies::{CopyViolation, CopyViolations};
 use crate::eval::values::HeldStops;
 use crate::eval::{Cancellation, Hit, RequestWork, TableWork};
 use crate::judge::candidates::PairCandidates;
+use crate::program::canonical::LabelingBound;
 use crate::program::path::NodePath;
 use crate::program::{ProgramRelation, RelationRef};
 use crate::program::{ConstraintOp, Node, Program};
@@ -264,6 +265,9 @@ pub enum Refusal {
     /// A check refuses the prefix that the token gives, at each of its
     /// refusals.
     Check { check: CheckId, refusals: Box<[crate::check::Refusal]> },
+    /// The token completes a form whose canonical labeling passes the search's
+    /// node cap ([`LabelingBound`]). Such a form has no hash.
+    LabelingBound(LabelingBound),
 }
 
 /// The tokens that may come next, by their ids in the decode's
@@ -894,12 +898,29 @@ impl<'a> Decoder<'a> {
 
     /// The hash of the resolver's content of the finished query at
     /// `index`, free of the names that its scope gives its tables; none where
-    /// `index` names no finished query.
+    /// `index` names no finished query, and where a labeling that the content
+    /// rests on passed its cap, as [`Decoder::query_hash_or_bound`] gives.
     pub fn query_hash(&self, index: usize) -> Option<crate::hash::StableHash> {
         self.query_content(index).map(|content| content.content_hash())
     }
 
-    /// The resolver's content of the finished query at `index`.
+    /// [`Decoder::query_hash`], with the [`LabelingBound`] in place of the
+    /// hash where the search for a canonical labeling of a form that the
+    /// query reads passed its cap. A query past the bound has no hash.
+    pub fn query_hash_or_bound(&self, index: usize) -> Option<Result<crate::hash::StableHash, LabelingBound>> {
+        Some(self.query_content_or_bound(index)?.map(|content| content.content_hash()))
+    }
+
+    /// [`Decoder::query_content`], with the [`LabelingBound`] in place of the
+    /// content where the search for a canonical labeling of a form that the
+    /// query reads passed its cap.
+    pub fn query_content_or_bound(&self, index: usize) -> Option<Result<crate::resolver::ResolvedContent, LabelingBound>> {
+        self.state.resolved(self.registry()).query_content_or_bound(index, self.registry())
+    }
+
+    /// The resolver's content of the finished query at `index`; none where
+    /// `index` names no finished query, and where a labeling that the content
+    /// rests on passed its cap.
     pub fn query_content(&self, index: usize) -> Option<crate::resolver::ResolvedContent> {
         self.state.resolved(self.registry()).query_content(index, self.registry())
     }
@@ -947,6 +968,9 @@ impl<'a> Decoder<'a> {
         }
         if let Some((program, open)) = state.partial() {
             if !program.value().forms.is_empty() {
+                if open.is_none() {
+                    Self::check_labeling_bound(&program)?;
+                }
                 let pruned = self.check_static_prune(&program, open.as_ref(), checks, memo);
                 if let (Some(open), true, Token::Lib(_) | Token::Relation(_)) = (&open, opened.is_some(), token) {
                     let _ = memo.head.set((open.clone(), pruned.clone()));
@@ -972,6 +996,19 @@ impl<'a> Decoder<'a> {
         }
         self.admit_written_dets(token, &state)?;
         Ok((state, forced))
+    }
+
+    /// The refusal of the last form of `program`, a complete form, where the
+    /// search for the canonical labeling of one of its label scopes passes
+    /// the cap.
+    fn check_labeling_bound(program: &Node<Program>) -> Result<(), Refusal> {
+        let Some(form) = program.value().forms.last() else { return Ok(()) };
+        let mut search = crate::program::canonical::SearchBudget::new();
+        crate::program::canonical::CanonicalOrder::with_form(form, &mut search);
+        if search.reached {
+            return Err(Refusal::LabelingBound(LabelingBound::at_cap()));
+        }
+        Ok(())
     }
 
     /// Check only conjuncts that this grammar step completed. An atom can

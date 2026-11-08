@@ -53,6 +53,8 @@ impl NameCall {
 struct Recording<'n> {
     names: &'n dyn NameWriter,
     calls: std::cell::RefCell<StableHashMap<NameCall, Box<[u8]>>>,
+    /// Whether a search under the write passed [`SEARCH_NODE_CAP`].
+    reached: std::cell::Cell<bool>,
 }
 
 impl Recording<'_> {
@@ -87,12 +89,19 @@ impl NameWriter for Recording<'_> {
     fn write_column_in(&self, relation: &RelationRef, column: &[ColumnName], order: usize, out: &mut CanonicalWriter) {
         self.call(NameCall::Column(relation.clone(), column.into(), order), out);
     }
+
+    fn labeling_bound_reached(&self) {
+        self.reached.set(true);
+        self.names.labeling_bound_reached();
+    }
 }
 
 /// The form `write` gives through `names`, a write of `form`, or the form
 /// of a write that the node of `form` keeps whose every call `names`
 /// answers with the same bytes. `write` writes `form` alone and reads no
-/// name but through the name writer it is given.
+/// name but through the name writer it is given. A write with a search past
+/// [`SEARCH_NODE_CAP`] is kept nowhere, so that each use of it reaches
+/// `names.labeling_bound_reached()`.
 pub(crate) fn cached_write(form: &Form, names: &dyn NameWriter, write: impl FnOnce(&dyn NameWriter) -> CanonicalForm) -> CanonicalForm {
     if names.feature_sites() {
         return write(names);
@@ -102,8 +111,11 @@ pub(crate) fn cached_write(form: &Form, names: &dyn NameWriter, write: impl FnOn
     if let Some(found) = cache.lock().expect("no write panics while it holds the cached writes").iter().find(|found| matches(found)) {
         return found.form.clone();
     }
-    let recording = Recording { names, calls: Default::default() };
+    let recording = Recording { names, calls: Default::default(), reached: Default::default() };
     let form_written = write(&recording);
+    if recording.reached.get() {
+        return form_written;
+    }
     let calls: Box<[(NameCall, Box<[u8]>)]> = recording.calls.into_inner().into_iter().collect();
     let mut cached = cache.lock().expect("no write panics while it holds the cached writes");
     cached.insert(0, CachedWrite { calls, form: form_written.clone() });
