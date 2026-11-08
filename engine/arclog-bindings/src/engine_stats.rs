@@ -37,8 +37,8 @@ pub(crate) fn engine_stats<'py>(py: Python<'py>, reset: bool) -> PyResult<Bound<
 /// dict from the name of each capped quantity to a dict of `max`, the largest
 /// value the request reached, `cap`, the cap it ran under (0 where it never
 /// gave one), and `hits`, how often it passed the cap. The count is the work
-/// the request did: an entry that the result cache held charged nothing.
-/// The read costs a few loads and changes nothing.
+/// the request did, with each entry that the result cache held charged the
+/// cost its entry recorded. The read costs a few loads and changes nothing.
 #[pyfunction]
 pub(crate) fn request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
     let Some(request) = arclog::eval::RequestWork::latest() else { return Ok(None) };
@@ -55,4 +55,24 @@ pub(crate) fn request_stats<'py>(py: Python<'py>) -> PyResult<Option<Bound<'py, 
     }
     stats.set_item("gauges", gauges)?;
     Ok(Some(stats))
+}
+
+/// Where [`work_total`] counts from: the total at its last reset.
+static WORK_TOTAL_BASE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The units of work that every request of this process has charged, on
+/// every thread, since the process started or since the last call with
+/// `reset` true: the sum of the `work` of each request that
+/// [`request_stats`] gives, a request that is still running included. With
+/// `reset` true, the count starts again from zero after it is read.
+#[pyfunction]
+#[pyo3(signature = (reset=false))]
+pub(crate) fn work_total(reset: bool) -> u64 {
+    use std::sync::atomic::Ordering;
+    let total = arclog::eval::RequestWork::total();
+    let since = total.saturating_sub(WORK_TOTAL_BASE.load(Ordering::Relaxed));
+    if reset {
+        WORK_TOTAL_BASE.store(total, Ordering::Relaxed);
+    }
+    since
 }

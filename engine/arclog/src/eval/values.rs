@@ -546,6 +546,9 @@ pub struct RequestWork {
     gauges: Arc<Gauges>,
 }
 
+/// The units that every request of the process has charged ([`RequestWork::total`]).
+static TOTAL: AtomicU64 = AtomicU64::new(0);
+
 thread_local! {
     /// The request most recently begun on this thread ([`RequestWork::begin`]).
     static LATEST: RefCell<Option<RequestWork>> = const { RefCell::new(None) };
@@ -715,6 +718,12 @@ impl RequestWork {
         LATEST.with(|latest| latest.borrow().clone())
     }
 
+    /// The units that the requests of this process have charged since it
+    /// started, on every thread: the sum of their counts.
+    pub fn total() -> u64 {
+        TOTAL.load(Ordering::Relaxed)
+    }
+
     /// Adds `units` to the count, and gives the stop once the count is past
     /// the cap. Each later call gives it too, so a request that reached the
     /// cap stops at each charge after it.
@@ -739,7 +748,12 @@ impl RequestWork {
             units
         });
         // A check that adds nothing reads the count alone.
-        let count = if units == 0 { self.count.load(Ordering::Relaxed) } else { self.count.fetch_add(units, Ordering::Relaxed).saturating_add(units) };
+        let count = if units == 0 {
+            self.count.load(Ordering::Relaxed)
+        } else {
+            TOTAL.fetch_add(units, Ordering::Relaxed);
+            self.count.fetch_add(units, Ordering::Relaxed).saturating_add(units)
+        };
         if count > self.cap {
             // The charge that takes the count past the cap is the one hit.
             if count - units <= self.cap {
