@@ -458,9 +458,7 @@ fn encode(materializer: &Materializer<'_>, rows: &Relation, types: &[ValueType],
     let (count, cells) = sorted_cells(materializer, rows, types, held)?;
     let mut hasher = StableHasher::new();
     hasher.write_u64(count);
-    for &cell in &cells {
-        hasher.write_i32(cell);
-    }
+    hasher.write_i32s(&cells);
     Ok(Encoded { count, cells, key: hasher.finish128() })
 }
 
@@ -638,9 +636,7 @@ fn value_hash_of(types: &[ValueType], rows: &Encoded, assemblies: &Assemblies) -
     let mut row_hashes: Vec<u128> = (0..rows.count as usize)
         .map(|row| {
             let mut hasher = StableHasher::new();
-            for &cell in &rows.cells[row * width..(row + 1) * width] {
-                hasher.write_i32(cell);
-            }
+            hasher.write_i32s(&rows.cells[row * width..(row + 1) * width]);
             hasher.finish128().0
         })
         .collect();
@@ -925,9 +921,7 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
                         let mut runs: Vec<u128> = (0..rows.count as usize)
                             .map(|row| {
                                 let mut run = StableHasher::new();
-                                for &cell in run_of(rows, width, starts[column], widths[column], row) {
-                                    run.write_i32(cell);
-                                }
+                                run.write_i32s(run_of(rows, width, starts[column], widths[column], row));
                                 run.finish128().0
                             })
                             .collect();
@@ -977,9 +971,7 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
                         .map(|row| {
                             let mut hasher = StableHasher::new();
                             for &column in columns {
-                                for &cell in run_of(rows, width, starts[column], widths[column], row) {
-                                    hasher.write_i32(cell);
-                                }
+                                hasher.write_i32s(run_of(rows, width, starts[column], widths[column], row));
                             }
                             hasher.finish128().0
                         })
