@@ -18,7 +18,7 @@ Each entry gives its evidence, or says that it is provisional.
 - Each case is its own program, with no `Choice` column, as [Cases](cases.md#cases) gives.
 - **Cost:** a solver costs its case count times one case, less what the result cache shares.
 - **Evidence:** some solvers have many cases, as [Alts structure](corpus-survey.md#alts-structure) gives, and on one input of one solver the rows of a `parse.copy` relation hold far fewer distinct contents, as [Causes of the outliers](outliers.md#causes-of-the-outliers) gives, so the cases' relations often hold the same rows.
-- **Proposal, provisional:** relations are hash-consed. Each relation gets the id of the hash of its rows when it is made, an entry's key is its clause with the ids of the relations it reads, and two equal results share one id. So the cases whose relations hold the same rows on an input share every entry downstream of those relations, and a lookup costs no hash of rows.
+- **Proposal, provisional:** relations are hash-consed. Each relation gets the id of the hash of its rows when it is made, an entry's key is its clause with the ids of the relations it reads. So the cases whose relations hold the same rows on an input share every entry downstream of those relations, and a lookup costs no hash of rows.
 
 ### Sets, not bags
 
