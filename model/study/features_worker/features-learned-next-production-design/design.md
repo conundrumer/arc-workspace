@@ -1,5 +1,7 @@
 # A learned model of gold's next production: experiment design
 
+Superseded. The writer's learned model now writes the next query, token by token: the [Writer spec](../../../../work/lm/data-study/sampler/sampler-worker/proposer-inventory/writer-spec.md) gives it, and [Training instances](../../../../docs/sample-build/training-instances.md) its training data. `R` below is stale, so the figures that cite it no longer hold.
+
 The question: can one learned model, which reads the whole search state, rank gold's next production above the other candidates? The search state is the task examples, the tables built so far with their contents, and a candidate next production. If it can, a plain best-first search driven by that model replaces the node score, the scope pick and the proposer's factorisation.
 
 This record is a design. Nothing is built. Each fact cites its source. Each estimate says that it is an estimate and shows its arithmetic.
@@ -22,7 +24,6 @@ Terms:
 - **Node score and scope pick.** `Policy.scope` takes three quarters of a scope's picks by weight e^(score − uses), and the rest are the oldest nodes among the least used (`K/policy/policy.py` lines 1-5). The score is `policy_model.pkl` (sha prefix bac5114e, equal to `features-worker/policy/policy_model.pkl`).
 - **Visits.** A visit is one (scope, kind) best-first clause search. It runs until PATIENCE tries in a row give no new node, or VISIT_SECONDS pass (`K/model/study/sampler/superdag_search.py` lines 13-17).
 - **Proposer factorisation.** The kind and the stop come from corpus counts. A RULE's or DET's atoms come from the Drawer, and an INIT takes a component, then ports, each with a body and a head (`K/model/study/sampler/live.py` lines 20-25). The relation pick is steered by `relsteer.Scorer` (`relsteer.py` lines 1-12), applied at `sample2_col.py:2428`. The choice pick (columns, values, operators, stop) has its own steer (`K/model/study/sampler/README.md`, "Proposal").
-- **Where the bits go.** Under a real scope, the proposer pays about 3 bits more than the DAG bits for a gold clause, and nearly all of that is in the relation pick (`R` "Where the proposal loses gold clauses in a held scope"). A held opening gets about 40 tries (5.4 bits), and the median gold clause costs 17 to 18 bits (`R` "Why M2's bits don't become forms live").
 
 ## Sets
 

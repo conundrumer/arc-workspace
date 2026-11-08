@@ -15,18 +15,15 @@ The objects of the search over programs and the maps between them. The [Type con
 - **Feature**: f(D, t) is a number or a boolean, for a table t. A feature is a query with an aggregate at its root, so a feature is a query reduced to a value.
 - **Levels**: [Levels](../sample-build/contract.md#levels) gives the levels from a feature's value on one table to the features of a state, each with its index.
 * comment: The user's words, session 12a37de8, 2026-11-06: "Always qualify or conventional terms . No more single loose words. Row is confusing".
-- **Feature vector**: r(q, S, E, e, a) is what a learned model reads of a candidate query q at a state S, an ARC example e of E and an assignment a of q's parameterized table. Offline ranking keeps one feature vector for each candidate query and ARC example. It holds q's features at e and a, the numbers across ARC examples (`stable`, `least`, `mean` and `most`) of q's features, and the features of S and E, each in a column that means one thing on every feature vector of every task. So a feature vector keeps which feature's value goes with which at an ARC example. At a test input, a feature that reads the output has no value. A learned model reads the numbers across ARC examples as columns of its feature vector, and finds out for itself whether the least value matters. [Feature export](export-design.md#what-a-learned-model-reads) gives the columns.
-    - How a query with several assignments gives feature vectors is not defined.
-- **Policy**: π(q | S, E) is a distribution over the queries that can be added at S. The writer realises it by writing one query, token by token.
-    - Each table token names one parameterized table of S, and every parameterized table of S is a choice. The writer's learned model scores that choice from the features of that parameterized table. Which tables a query reads is what the learned model learns, so no step before the writer narrows the choice. No column combines the features of the tables of S into one value for the state. A table token's column may compare its table with the other tables that the writing point admits.
-    - While a query is being written, the writer's learned model sees what the query so far computes.
+- **Feature vector**: r(q, S, E, e, a) is what a learned model reads of a candidate query q at a state S, an ARC example e of E and an assignment a of q's parameterized table. [Feature export](export-design.md#what-a-learned-model-reads) gives its columns.
+- **Policy**: π(q | S, E) is a distribution over the queries that can be added at S. The writer realises it by writing one query, token by token, as the [Writer spec](../../work/lm/data-study/sampler/sampler-worker/proposer-inventory/writer-spec.md) gives.
 
 ## The two searches
 
 - **Program search** grows one DAG of queries, S, as a theorem prover grows its set of derived clauses. Most queries in S are never part of a program. A program is a set of queries of S closed under inputs, with one `OUT`.
 - **Query search** is the writer: it writes one query at S, and that query's atoms are its result.
 - A query is an experiment, and its parameterized tables are the experiment's result. A feature is a hypothesis about that result. The features of the tables of S, such as [the judgments](#the-judgments) and progress toward the train output, guide the next query.
-- The learned model learns from negatives: tables that the search's own runs on train tasks computed and that no case of the task's solver holds, beside the tables of the solver's cases.
+- The learned model learns from ENIGMA-style negatives: the off-path states, which the search's own runs on train tasks reach and which lie on no path to a case of the task's solver, beside the states on those paths.
 
 ## Rules
 

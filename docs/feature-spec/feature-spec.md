@@ -72,7 +72,7 @@ Operand      ::= Column | 0
 - `LibRelation`, `LibColumn`: a `relation` or `macro` form of the registry, other than `pose_difference`, which takes Pose values, and one of its columns.
 - `Component`, `Input`, `Port`: a component of the registry, one of its inputs, and one of its outputs.
 - A proposer: a `proposer` form of the registry with no `domain` mark, read as the whole set of rows it gives. So it stands for no choice of a parameter. A domain belongs to determinations. The values of an orientation type come from a lib relation such as `dir_elem`, and the colors of a grid from a `project` of it.
-- `output`: the train output of the current ARC example, with the columns `P` and `Col`. It has no rows on a test input. So a per-input feature can compare a table with the output of its own ARC example, at each constraint model. It stands where `input` stands in the rule that gives an instance's level, in the check of what a form reads, and in the frames, where its `P` stands in the current ARC example's output.
+- `output`: the train output of the current ARC example, with the columns `P` and `Col`. It has no rows on a test input. So a per-input feature can compare a table with the output of its own ARC example, at each constraint model.
 
 ### Aggregates
 
@@ -104,7 +104,7 @@ Everything else is an operator under one of these. The number of distinct values
 
 ### Size and the encoder
 
-A feature expression's **size** is its count of distinct operators, without leaves and the root aggregate: a subexpression that appears twice counts once, since it is computed once. So `(ratio (semijoin R S) R)` has the size of `R`, plus that of `S`, plus 1. A `component` with k bound inputs counts as k, at least 1, since each bound input past the first combines one more relation, as a `join` does. A **part** is a composition that the library names, with holes, and its call counts as 1, whatever its expansion's size. So enumeration over parts reaches features that are large in operators, and the library's parts set which ones a small size reaches. The parts come from the fragments that recur across the train solvers, and from what the library's named features repeat. A feature that needs a part the library lacks shows which part to add.
+A feature expression's **size** is its count of distinct operators, without leaves and the root aggregate: a subexpression that appears twice counts once, since it is computed once. So `(ratio (semijoin R S) R)` has the size of `R`, plus that of `S`, plus 1. A `component` with k bound inputs counts as k, at least 1, since each bound input past the first combines one more relation, as a `join` does. A **part** is a composition that the library names, with holes, and its call counts as 1, whatever its expansion's size. So enumeration over parts reaches features that are large in operators, and the library's parts set which ones a small size reaches.
 
 Enumeration leaves out a `join`, `semijoin`, `antijoin`, `all` or `lib-join` with no column pair between its sides, since its count follows from its parts' counts. A product stands only under a `select` or a `lib-join` that relates its two sides. It leaves out a term that reads no column of its table, since its value follows from the row count, which the table's own `cardinality` gives. `nonempty` stands only over a relation with no columns. A `project` of all of a table's columns equals the table, and enumeration holds it as a term of its own: a shape is named by its text, so a statement has one name on tables of every width.
 
@@ -125,7 +125,7 @@ A rule need not be complete, since equivalence over negation and aggregates is u
 
 Two terms with equal values are not entailed by that alone. Where the table's rows could have given a different value, the equality is contingent, and both terms stay.
 
-**The encoder at size d** gives, for each table, the value of every feature that the library names, at any size, and of every ground expression of at most size d that reads that table, at every binding the checker accepts. An expression that reads no table has one value on every table, and a base table is a table here, so it has an encoding of its own. So a version of the library and the registry, and a size, fix an exact and finite set of features. Enumeration takes the two relations of a binary operator or of a `ratio` in both orders, so the set of names does not depend on text order.
+**The encoder at size d** gives, for each table, the value of every feature that the library names, at any size, and of every ground expression of at most size d that reads that table, at every binding the checker accepts, other than the terms that the [refusal rules](grammar-rules.md) give no derivation. An expression that reads no table has one value on every table, and a base table is a table here, so it has an encoding of its own. So a version of the library and the registry, and a size, fix an exact and finite set of features. Enumeration takes the two relations of a binary operator or of a `ratio` in both orders, so the set of names does not depend on text order.
 
 ## How an expression expands
 
@@ -214,7 +214,7 @@ So `0` and "no value" differ. `cardinality` gives `0` on no rows. A ground expre
 
 ### The budget of a term
 
-A walk gives each term a budget of 217,039,082,400 cells: twice the greatest charge of any term on the gold tables, so that no term on a gold table passes it. At each ARC example, a term is charged the cells of each relation it reads and the cells of the relation it gives. The cells of a relation are the count of its rows times the count of its columns, whether the relation stands as written rows or as the relations it comes from. The charge depends on the relations alone, and not on how an operator computes the term. A term is charged its inputs before it is evaluated, so a term whose inputs pass the budget is not evaluated, and it is charged its output as it is written, or by its count of rows where the rows stay unwritten. A term whose charges, added over its ARC examples, pass the budget has no value at any of them, and so has each term that reads it. A term that reads a relation which alone passes the budget has no value in the same way.
+A walk gives each term a budget of cells: twice the greatest charge of any term on the gold tables, so that no term on a gold table passes it. At each ARC example, a term is charged the cells of each relation it reads and the cells of the relation it gives. The cells of a relation are the count of its rows times the count of its columns, whether the relation stands as written rows or as the relations it comes from. The charge depends on the relations alone, and not on how an operator computes the term. A term is charged its inputs before it is evaluated, so a term whose inputs pass the budget is not evaluated, and it is charged its output as it is written, or by its count of rows where the rows stay unwritten. A term whose charges, added over its ARC examples, pass the budget has no value at any of them, and so has each term that reads it. A term that reads a relation which alone passes the budget has no value in the same way.
 
 ## Vectors
 
@@ -236,11 +236,10 @@ A vector is sparse. A table gives the entries whose value differs from the defau
 
 - A shape gives two numbers at each ARC example: the greatest and the sum of its ground expressions' values. The sum of a `nonempty` is the number of bindings with a row. With one binding, the two are equal. A `ratio` gives the greatest and the least, since a sum of fractions counts nothing. A fraction is exact, so two ARC examples have one value exactly where their fractions are equal.
 - A task-wide root gives those two numbers once.
-- A per-input root gives them per ARC example and constraint model. Within an ARC example it takes the mean over the constraint models, as the contract gives. The value at an ARC example is the feature's value. A learned model reads it at each ARC example, as [What a learned model reads](export-design.md#what-a-learned-model-reads) gives. The `least`, `mean` and `most` entries, which the encoder combines outside arclog, are a reading for a learned model with one feature vector per candidate: over the train ARC examples where the expression has an `output` leaf, and over every ARC example otherwise. They lose which value of one entry goes with which value of another at an ARC example.
+- A per-input root gives them at each ARC example, as the mean over its constraint models there. [What a learned model reads](export-design.md#what-a-learned-model-reads) gives how a learned model reads them.
 - A `value-set` over one number column gives a number where the set has one member, and no value otherwise. `Order`'s `maximal` and `minimal` give such a column. Another `value-set` is no vector entry, and it is for a consumer that reads a set.
 - In a QueryVector, a hole's type can also state the column's lineage root, as [What column metadata adds to features](arclog-types.md#what-column-metadata-adds-to-features) gives.
 - A task-wide count over the table rows of every ARC example depends on how many ARC examples there are, so a ratio pairs it with that count.
-- Aggregates over assignments are as the contract gives them: symmetric functions of the vectors, outside arclog. Assignments are not columns.
 
 ### State features
 
