@@ -245,16 +245,10 @@ fn distinct_packed<K: Packed>(flat: &[Cell], stride: usize) -> Vec<Cell> {
 
 /// The table of the rows of `table` that `keep` holds of; the table itself where all of them pass.
 fn filtered(table: &Arc<Table>, keep: impl Fn(&[Cell]) -> bool) -> Arc<Table> {
-    let mut cells: Vec<Cell> = Vec::new();
-    for row in table.rows() {
-        if keep(row) {
-            cells.extend_from_slice(row);
-        }
-    }
-    if cells.len() == table.cells.len() {
+    if table.all_rows(&keep) {
         table.clone()
     } else {
-        Table::new(table.arity, cells)
+        table.filter_rows(keep)
     }
 }
 
@@ -642,7 +636,7 @@ impl Joined {
 
     /// The cells that the nodes and the ids of the join hold, which a walker counts as held.
     pub fn held_cells(&self) -> usize {
-        self.nodes.iter().map(|table| table.cells.len()).sum::<usize>() + self.links.iter().map(|link| link.ids.len() + link.parent_ids.len() + 2 * link.weights.len()).sum::<usize>()
+        self.nodes.iter().map(|table| table.cell_count()).sum::<usize>() + self.links.iter().map(|link| link.ids.len() + link.parent_ids.len() + 2 * link.weights.len()).sum::<usize>()
     }
 
     /// Whether the rows of the join can be written out, in at most `CELL_CAP` cells.
@@ -705,7 +699,7 @@ impl Joined {
     fn write_below(&self, depth: usize, chosen: &mut [usize], by_id: &[(Vec<usize>, Vec<u32>)], emit: &[(usize, usize, u16)], cells: &mut Vec<Cell>) {
         if depth == self.nodes.len() {
             for (node, at, _) in emit {
-                cells.push(self.nodes[*node].cells[chosen[*node] * self.nodes[*node].arity + *at]);
+                cells.push(self.nodes[*node].cells()[chosen[*node] * self.nodes[*node].arity + *at]);
             }
             return;
         }
@@ -836,7 +830,7 @@ impl Joined {
             None => {
                 let sketch = Arc::new(Sketch { tuples: self.build_tuples(key), wide: OnceLock::new() });
                 let mut kept = self.sketches.lock().expect("a sketch lock");
-                let cells = sketch.tuples.as_ref().map_or(0, |table| table.cells.len());
+                let cells = sketch.tuples.as_ref().map_or(0, |table| table.cell_count());
                 if kept.0 + cells <= SKETCH_KEPT {
                     kept.0 += cells;
                     kept.1.insert(key.into(), sketch.clone());
@@ -879,8 +873,8 @@ impl Joined {
             Table::new(width, out)
         };
         let mut kept = self.sketches.lock().expect("a sketch lock");
-        if kept.0 + wide.cells.len() <= SKETCH_KEPT && sketch.wide.set(wide.clone()).is_ok() {
-            kept.0 += wide.cells.len();
+        if kept.0 + wide.cell_count() <= SKETCH_KEPT && sketch.wide.set(wide.clone()).is_ok() {
+            kept.0 += wide.cell_count();
         }
         Some(wide)
     }
@@ -1029,7 +1023,7 @@ impl Joined {
             return Some(self.one_side_count(1, &rights));
         }
         let (a, b) = (self.side_tuples(0, &lefts), self.side_tuples(1, &rights));
-        let (a_runs, b_runs) = (runs(&a.cells, a.arity), runs(&b.cells, b.arity));
+        let (a_runs, b_runs) = (runs(a.cells(), a.arity), runs(b.cells(), b.arity));
         let pairs = common(&a_runs, &b_runs);
         // Two values of the paired columns that the tuples do not tell apart can give a tuple twice; where the tuples hold each paired column, they cannot.
         let link = &self.links[0];
@@ -1047,11 +1041,11 @@ impl Joined {
         let mut sets: FastMap<Vec<u32>, u64> = FastMap::default();
         let mut start = 0;
         while start < by_tuple.len {
-            let tuple = &by_tuple.cells[start * a.arity..start * a.arity + width];
+            let tuple = &by_tuple.cells()[start * a.arity..start * a.arity + width];
             let mut end = start;
             let mut ids: Vec<u32> = Vec::new();
-            while end < by_tuple.len && by_tuple.cells[end * a.arity..end * a.arity + width] == *tuple {
-                ids.push(by_tuple.cells[end * a.arity + width]);
+            while end < by_tuple.len && by_tuple.cells()[end * a.arity..end * a.arity + width] == *tuple {
+                ids.push(by_tuple.cells()[end * a.arity + width]);
                 end += 1;
             }
             *sets.entry(ids).or_default() += 1;
@@ -1066,7 +1060,7 @@ impl Joined {
         Some(sets.saturating_sum_of(|ids, tuples| {
             let mut flat: Vec<Cell> = Vec::new();
             for (from, to) in ids.iter().filter_map(|id| range_of(*id)) {
-                for row in b.cells[from * b.arity..to * b.arity].chunks_exact(b.arity) {
+                for row in b.cells()[from * b.arity..to * b.arity].chunks_exact(b.arity) {
                     flat.extend_from_slice(&row[1..]);
                 }
             }
@@ -1249,7 +1243,7 @@ impl Joined {
                 return None;
             }
             for at in run {
-                let child_row = &child_table.cells[*at as usize * child_arity..(*at as usize + 1) * child_arity];
+                let child_row = &child_table.cells()[*at as usize * child_arity..(*at as usize + 1) * child_arity];
                 if holds(op, value(first, parent_row, child_row), value(second, parent_row, child_row)) {
                     cells.extend_from_slice(parent_row);
                     cells.extend_from_slice(child_row);

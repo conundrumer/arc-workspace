@@ -2598,7 +2598,7 @@ impl<'a> Walker<'a> {
                 }
                 let at = self.values.len() as u32;
                 if let Val::Rows(parts) = &value {
-                    self.held_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
+                    self.held_cells += parts.iter().map(|part| part.table.cell_count()).sum::<usize>();
                 }
                 if let Val::Joined(joined) = &value {
                     self.held_cells += joined.held_cells();
@@ -2626,7 +2626,7 @@ impl<'a> Walker<'a> {
                 let value = self.values[id as usize].written();
                 // The cells of the written rows count whether or not an earlier walk left them held, so a stop does not depend on what was walked before.
                 let cells = match &value {
-                    Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
+                    Val::Rows(parts) => parts.iter().map(|part| part.table.cell_count()).sum::<usize>(),
                     _ => 0,
                 };
                 let written = self.value_id(value);
@@ -2909,7 +2909,7 @@ impl<'a> Walker<'a> {
                     };
                     self.forced.truncate(mark);
                     if let Val::Rows(parts) = &self.values[id as usize] {
-                        walk_cells += parts.iter().map(|part| part.table.cells.len()).sum::<usize>();
+                        walk_cells += parts.iter().map(|part| part.table.cell_count()).sum::<usize>();
                     }
                     own.push(id);
                 }
@@ -3300,7 +3300,7 @@ fn number_word(value: &Val) -> u32 {
     let Some(table) = flat(value) else { return 0 };
     if table.len == 1 && table.arity == 1 {
         // 0 stands for no number. A number from 0 up stands one above itself, and one below 0 in two's complement, which is the word's top half.
-        let number = number_of(table.cells[0]);
+        let number = number_of(table.cells()[0]);
         if number >= 0 {
             (number + 1).min(i64::from(i32::MAX)) as u32
         } else {

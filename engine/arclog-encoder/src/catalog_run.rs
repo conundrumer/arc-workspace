@@ -15,7 +15,12 @@ pub struct ParsedTable {
     pub rows: Vec<Option<(usize, Vec<Cell>)>>,
 }
 
-fn cell_of(value: &serde_json::Value, kind: Kind, names: &mut LookupMap<String, i32>) -> Cell {
+/// Whether a kind's values are names, which stand as their rank among the table's names.
+fn is_named(kind: Kind) -> bool {
+    matches!(kind, Kind::Ident | Kind::Sym | Kind::Sense | Kind::Other)
+}
+
+fn cell_of(value: &serde_json::Value, kind: Kind, names: &LookupMap<String, i32>) -> Cell {
     match kind {
         Kind::Position | Kind::Box | Kind::Offset => {
             let mut out = [0i32; 4];
@@ -29,9 +34,7 @@ fn cell_of(value: &serde_json::Value, kind: Kind, names: &mut LookupMap<String, 
         Kind::Color | Kind::Nat | Kind::Int => [value.as_i64().unwrap_or(0) as i32, 0, 0, 0],
         Kind::Dir | Kind::DiagDir | Kind::Dir8 | Kind::Axis | Kind::DiagAxis | Kind::Axis4 | Kind::D4 | Kind::C4 => [orientation(value.as_str().unwrap_or("")), 0, 0, 0],
         _ => {
-            let text = value.to_string();
-            let next = names.len() as i32;
-            [*names.entry(text).or_insert(next), 0, 0, 0]
+            [names.get(&value.to_string()).copied().unwrap_or(0), 0, 0, 0]
         }
     }
 }
@@ -42,13 +45,21 @@ pub fn parse_table(table: &serde_json::Value, train: usize) -> ParsedTable {
     let columns = table["columns"].as_array().unwrap_or(&empty);
     let kinds: Vec<Kind> = types.iter().map(|name| Kind::of(name.as_str().unwrap_or(""))).collect();
     let keys: Vec<bool> = columns.iter().map(|name| name.as_str().unwrap_or("").starts_with("key.")).collect();
-    let mut names = LookupMap::new();
+    // The names of all pairs in the order of their text, so that a name's number follows from the names alone.
+    let mut texts: BTreeSet<String> = BTreeSet::new();
+    for pair in 0..train {
+        let Some(held) = table["rows"].get(format!("train/{pair}")).and_then(serde_json::Value::as_array) else { continue };
+        for row in held {
+            texts.extend(row.as_array().unwrap_or(&empty).iter().zip(&kinds).filter(|(_, kind)| is_named(**kind)).map(|(value, _)| value.to_string()));
+        }
+    }
+    let names: LookupMap<String, i32> = texts.into_iter().enumerate().map(|(rank, text)| (text, rank as i32)).collect();
     let rows = (0..train).map(|pair| {
         let held = table["rows"].get(format!("train/{pair}"))?.as_array()?;
         let mut cells = Vec::with_capacity(held.len() * kinds.len());
         for row in held {
             for (value, kind) in row.as_array().unwrap_or(&empty).iter().zip(&kinds) {
-                cells.push(cell_of(value, *kind, &mut names));
+                cells.push(cell_of(value, *kind, &names));
             }
         }
         Some((held.len(), cells))

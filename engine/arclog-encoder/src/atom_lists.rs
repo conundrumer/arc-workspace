@@ -47,6 +47,13 @@ fn places(values: &[u32]) -> String {
     base64(&values.iter().flat_map(|value| value.to_le_bytes()).collect::<Vec<u8>>())
 }
 
+/// A table's list before its shapes have places: its place in the task, the shapes with one value at every example (shape, whether it reads the output, value), and the others (shape, whether it reads the output, least, mean and greatest).
+struct Pending {
+    at: i64,
+    stable: Vec<(u64, bool, f32)>,
+    graded: Vec<(u64, bool, [f32; 3])>,
+}
+
 /// One of a task's two files: its shapes so far, and each line as its own frame under a working name.
 struct Sink {
     path: PathBuf,
@@ -73,32 +80,48 @@ impl Sink {
         self.file.flush().map_err(|error| error.to_string())
     }
 
-    fn place(&mut self, shape: u64, reads_output: bool) -> u32 {
-        let next = self.index.len() as u32;
-        *self.index.entry(shape).or_insert_with(|| {
-            self.fresh.push((shape, u8::from(reads_output)));
-            next
-        })
-    }
-
-    /// A table's list, as a line's entry.
-    fn list(&mut self, at: i64, vector: &TableVector) -> serde_json::Value {
-        let (mut ids, mut values) = (Vec::new(), Vec::new());
-        let (mut graded, mut least, mut mean, mut most) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    /// A table's list before its shapes have places.
+    fn pending(at: i64, vector: &TableVector) -> Pending {
+        let mut pending = Pending { at, stable: Vec::new(), graded: Vec::new() };
         for shape in 0..vector.shapes.len() {
             let (low, middle, high, count) = vector.over_examples(shape, false);
             let reads_output = vector.meta[shape].0 & READS_OUTPUT != 0;
             if vector.stable(shape) {
-                ids.push(self.place(vector.shapes[shape], reads_output));
-                values.push(middle as f32);
+                pending.stable.push((vector.shapes[shape], reads_output, middle as f32));
             } else if count == 0 || low != 0.0 || high != 0.0 {
-                graded.push(self.place(vector.shapes[shape], reads_output));
-                least.push(low as f32);
-                mean.push(middle as f32);
-                most.push(high as f32);
+                pending.graded.push((vector.shapes[shape], reads_output, [low as f32, middle as f32, high as f32]));
             }
         }
-        serde_json::json!({"at": at, "ids": places(&ids), "values": floats(&values), "graded": places(&graded), "least": floats(&least), "mean": floats(&mean), "most": floats(&most)})
+        pending
+    }
+
+    /// The lists of one decision's new tables, as the line's entries. The shapes that the file does not list yet take the next places in the order of their ids.
+    fn lists(&mut self, pending: &[Pending]) -> Vec<serde_json::Value> {
+        let mut fresh: BTreeMap<u64, bool> = BTreeMap::new();
+        for list in pending {
+            let stable = list.stable.iter().map(|(shape, reads_output, _)| (*shape, *reads_output));
+            let graded = list.graded.iter().map(|(shape, reads_output, _)| (*shape, *reads_output));
+            for (shape, reads_output) in stable.chain(graded) {
+                if !self.index.contains_key(&shape) {
+                    fresh.entry(shape).or_insert(reads_output);
+                }
+            }
+        }
+        for (shape, reads_output) in fresh {
+            let next = self.index.len() as u32;
+            self.index.insert(shape, next);
+            self.fresh.push((shape, u8::from(reads_output)));
+        }
+        pending.iter().map(|list| {
+            let place_of = |shape: &u64| self.index[shape];
+            let ids: Vec<u32> = list.stable.iter().map(|(shape, _, _)| place_of(shape)).collect();
+            let values: Vec<f32> = list.stable.iter().map(|(_, _, value)| *value).collect();
+            let graded: Vec<u32> = list.graded.iter().map(|(shape, _, _)| place_of(shape)).collect();
+            let least: Vec<f32> = list.graded.iter().map(|(_, _, bounds)| bounds[0]).collect();
+            let mean: Vec<f32> = list.graded.iter().map(|(_, _, bounds)| bounds[1]).collect();
+            let most: Vec<f32> = list.graded.iter().map(|(_, _, bounds)| bounds[2]).collect();
+            serde_json::json!({"at": list.at, "ids": places(&ids), "values": floats(&values), "graded": places(&graded), "least": floats(&least), "mean": floats(&mean), "most": floats(&most)})
+        }).collect()
     }
 
     fn fresh_shapes(&mut self) -> (String, String) {
@@ -234,32 +257,45 @@ struct TaskRun<'r> {
 }
 
 impl TaskRun<'_> {
-    /// The place of a table in the task, with its lists in the decision's lines where it is new.
-    fn place(&mut self, table: &serde_json::Value, orient: &LookupMap<i64, String>, real: &mut Vec<serde_json::Value>, null: &mut Vec<serde_json::Value>) -> i64 {
+    /// The content of the table in `table`, or None where the file gives no table. The table goes into `fresh` where the task has not listed it yet.
+    fn content_of(&mut self, table: &serde_json::Value, orient: &LookupMap<i64, String>, fresh: &mut BTreeMap<u128, Stored>) -> Option<u128> {
         let stored = match stored_of(table, self.train, self.test, orient) {
             Ok(Some(stored)) => stored,
-            Ok(None) => return -1,
+            Ok(None) => return None,
             Err(why) => {
                 *self.faults.entry(why).or_insert(0) += 1;
-                return -1;
+                return None;
             }
         };
         self.reads += 1;
         let content = stored.content();
-        if let Some(at) = self.table_at.get(&content) {
-            return *at;
+        if !self.table_at.contains_key(&content) {
+            fresh.entry(content).or_insert(stored);
         }
-        let at = self.table_at.len() as i64;
-        self.table_at.insert(content, at);
-        self.walks += 1;
-        let walker = Walkers::walker(&mut self.walkers.real, &mut self.walkers.families, self.generators, &stored, self.d);
-        let vector = table_vector(walker, &stored, &self.grids, self.examples, false);
-        real.push(self.real.list(at, &vector));
-        if let Some(grids) = &self.null_grids {
-            let vector = table_vector(walker, &stored, grids, self.examples, true);
-            null.push(self.null.list(at, &vector));
+        Some(content)
+    }
+
+    /// The lists of a decision's new tables, which take the next places in the task in the order of their contents: the real lists, then the lists of the permuted outputs.
+    fn walk_fresh(&mut self, fresh: BTreeMap<u128, Stored>) -> (Vec<Pending>, Vec<Pending>) {
+        let (mut real, mut null) = (Vec::new(), Vec::new());
+        for (content, stored) in fresh {
+            let at = self.table_at.len() as i64;
+            self.table_at.insert(content, at);
+            self.walks += 1;
+            let walker = Walkers::walker(&mut self.walkers.real, &mut self.walkers.families, self.generators, &stored, self.d);
+            let vector = table_vector(walker, &stored, &self.grids, self.examples, false);
+            real.push(Sink::pending(at, &vector));
+            if let Some(grids) = &self.null_grids {
+                let vector = table_vector(walker, &stored, grids, self.examples, true);
+                null.push(Sink::pending(at, &vector));
+            }
         }
-        at
+        (real, null)
+    }
+
+    /// The place in the task of a table that `content_of` gave, or -1 where the file gives no table.
+    fn place_of(&self, content: Option<u128>) -> i64 {
+        content.and_then(|content| self.table_at.get(&content).copied()).unwrap_or(-1)
     }
 }
 
@@ -308,10 +344,14 @@ fn lists_of_file(input: &Path, out: &Path, task_dir: &Path, generators: &Generat
             }
             Some("decision") => {
                 let run = run.as_mut().ok_or("a decision before its header")?;
-                let (mut real, mut null) = (Vec::new(), Vec::new());
-                let body = run.place(&record["body"], orient, &mut real, &mut null);
+                let mut fresh = BTreeMap::new();
+                let body = run.content_of(&record["body"], orient, &mut fresh);
                 let empty = Vec::new();
-                let cands: Vec<i64> = record["candidates"].as_array().unwrap_or(&empty).iter().map(|table| run.place(table, orient, &mut real, &mut null)).collect();
+                let cands: Vec<Option<u128>> = record["candidates"].as_array().unwrap_or(&empty).iter().map(|table| run.content_of(table, orient, &mut fresh)).collect();
+                let (real, null) = run.walk_fresh(fresh);
+                let (real, null) = (run.real.lists(&real), run.null.lists(&null));
+                let body = run.place_of(body);
+                let cands: Vec<i64> = cands.into_iter().map(|content| run.place_of(content)).collect();
                 let line_of = |shapes: (String, String), tables: Vec<serde_json::Value>| serde_json::json!({"record": "decision", "decision": record["decision"], "body": body, "cands": cands, "shapes": shapes.0, "reads_output": shapes.1, "tables": tables});
                 let (real_shapes, null_shapes) = (run.real.fresh_shapes(), run.null.fresh_shapes());
                 run.real.line(&line_of(real_shapes, real))?;

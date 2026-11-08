@@ -220,16 +220,12 @@ pub fn walk_in(free: &Bits, h: usize, w: usize) -> Bits {
     out
 }
 
-/// The dense id of each value, by first appearance.
-fn dense<T: std::hash::Hash + Eq + Clone>(values: Vec<T>) -> Vec<u32> {
-    let mut ids = crate::lookup::LookupMap::with_capacity(values.len());
-    values
-        .into_iter()
-        .map(|value| {
-            let next = ids.len() as u32;
-            *ids.entry(value).or_insert(next)
-        })
-        .collect()
+/// The dense id of each value, in the order of the values.
+fn dense<T: Ord>(values: Vec<T>) -> Vec<u32> {
+    let mut distinct: Vec<&T> = values.iter().collect();
+    distinct.sort_unstable();
+    distinct.dedup();
+    values.iter().map(|value| distinct.binary_search(&value).map_or(0, |at| at as u32)).collect()
 }
 
 impl GridFacts {

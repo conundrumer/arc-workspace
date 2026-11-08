@@ -195,45 +195,75 @@ pub(crate) fn share(hits: u32, of: u32) -> Value {
     }
 }
 
-/// The dense id of each row's value of one column, and how many there are.
+/// The dense id of each row's value of one column, and how many there are. The ids stand in the order of the values.
 pub(crate) fn dense_column(t: &TableAt<'_>, column: usize) -> (Vec<u32>, u32) {
     let mut ids = Vec::with_capacity(t.rows);
     let kind = t.kinds[column];
     // A column of small values reads an array, and any other column a hash.
     if matches!(kind, Kind::Color | Kind::Dir | Kind::DiagDir | Kind::Dir8 | Kind::Axis | Kind::DiagAxis | Kind::Axis4 | Kind::D4 | Kind::C4) {
-        let mut seen = [u32::MAX; 32];
-        let mut next = 0;
+        let mut seen = [false; 32];
         for row in 0..t.rows {
-            let value = (t.at(row, column)[0] & 31) as usize;
-            if seen[value] == u32::MAX {
-                seen[value] = next;
-                next += 1;
-            }
-            ids.push(seen[value]);
+            seen[(t.at(row, column)[0] & 31) as usize] = true;
         }
-        return (ids, next);
+        let mut rank = [0u32; 32];
+        let mut count = 0;
+        for (value, held) in seen.iter().enumerate() {
+            if *held {
+                rank[value] = count;
+                count += 1;
+            }
+        }
+        ids.extend((0..t.rows).map(|row| rank[(t.at(row, column)[0] & 31) as usize]));
+        return (ids, count);
     }
+    // The hash gives each value the number of its first row, and the ranks of the values replace those.
     let mut seen: crate::lookup::LookupMap<Cell, u32> = crate::lookup::LookupMap::with_capacity(t.rows.min(256));
     for row in 0..t.rows {
         let next = seen.len() as u32;
         ids.push(*seen.entry(t.at(row, column)).or_insert(next));
     }
     let count = seen.len() as u32;
+    let mut rank = vec![0u32; seen.len()];
+    for (at, (_, first)) in seen.sorted_entries().into_iter().enumerate() {
+        rank[*first as usize] = at as u32;
+    }
+    for id in &mut ids {
+        *id = rank[*id as usize];
+    }
     (ids, count)
 }
 
-/// A dense id per row over several dense columns.
+/// A dense id per row over several dense columns. The ids stand in the order of the rows' tuples of the columns' ids.
 pub(crate) fn dense_over(columns: &[&[u32]], rows: usize) -> (Vec<u32>, u32) {
     let mut ids = vec![0u32; rows];
     let mut count = 1u32;
     for column in columns {
-        let mut seen: crate::lookup::LookupMap<u64, u32> = crate::lookup::LookupMap::with_capacity(rows.min(256));
-        for row in 0..rows {
-            let key = u64::from(ids[row]) << 32 | u64::from(column[row]);
-            let next = seen.len() as u32;
-            ids[row] = *seen.entry(key).or_insert(next);
+        let width = column.iter().max().map_or(1, |most| u64::from(*most) + 1);
+        let keys: Vec<u64> = (0..rows).map(|row| u64::from(ids[row]) * width + u64::from(column[row])).collect();
+        let possible = u64::from(count) * width;
+        if possible <= 4 * rows as u64 + 64 {
+            // An array holds the rank of each possible key.
+            let mut rank = vec![u32::MAX; possible as usize];
+            for key in &keys {
+                rank[*key as usize] = 0;
+            }
+            count = 0;
+            for held in rank.iter_mut().filter(|held| **held == 0) {
+                *held = count;
+                count += 1;
+            }
+            for (id, key) in ids.iter_mut().zip(&keys) {
+                *id = rank[*key as usize];
+            }
+        } else {
+            let mut distinct = keys.clone();
+            distinct.sort_unstable();
+            distinct.dedup();
+            count = distinct.len() as u32;
+            for (id, key) in ids.iter_mut().zip(&keys) {
+                *id = distinct.binary_search(key).map_or(0, |at| at as u32);
+            }
         }
-        count = seen.len() as u32;
     }
     (ids, count)
 }
