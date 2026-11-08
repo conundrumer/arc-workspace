@@ -39,7 +39,7 @@ A learned model reads feature vectors, as [Structure of the search](structure.md
     - What the parameterized table has against the parameterized tables its query reads and the input: its entries, its stable entries, those new to these parameterized tables, the share of its entries that each of them has, and its table row count over theirs.
     - Its count of assignments. A feature vector reads one parameterized table at one assignment.
     - Its task-wide roots.
-    - Its place in the state's graph, and the state's other parameterized tables against it: each shape's mean over the parameterized tables its query reads, over their ancestors and over the rest.
+    - Its place in the state's graph, and the state's other parameterized tables against it: each shape's least, mean and greatest over the parameterized tables its query reads, over their ancestors and over the rest.
 - **What the task holds,** which is the same on every candidate's feature vector at an ARC example: the base tables' vectors, the roots of the parts with no hole, and the pair family. A ranking of a ground truth query against its one-edit mutants can use these only through their interactions with the rest, so such a test does not show what they are worth.
 
 ## How a fit stores its feature vectors
