@@ -8,11 +8,14 @@
 //!     block-boost compile DIR   each entry as the number of its bin, for the columns DIR/keep.i32 keeps
 //!     block-boost fit FILE      one lambdarank model per seed, from the JSON in FILE
 //!     block-boost softmax FILE  a model of the writer's softmax over the ids of each writing point, from the JSON in FILE
+//!     block-boost softmax-gpu FILE  the same, with the gradient, histograms, partitions and scores on a CUDA card (build with --features gpu)
 //!
 //! The objective and the tree growth are those of LightGBM's lambdarank, with the same parameters. A histogram entry holds
 //! the sums of a bin, and a leaf's rows add their sums to the blocks first, so one block's entries are read once for a leaf.
 //! Rows with the same blocks in every map have the same leaf in every tree, so `softmax` grows its trees over those pairs of rows, keeps one score for
 //! each pair, and goes over rows only for the gradient and for the sums of each pair's rows.
+
+mod gpu;
 
 use rayon::prelude::*;
 use serde_json::{Value, json};
@@ -1189,6 +1192,11 @@ impl Work {
         let bounds: Vec<u32> = first_column.iter().map(|&k| store.col_start[k]).collect();
         let offsets = store.uses.iter().map(|data| group_offsets(data, &bounds)).collect();
         Work { sums, pool: Vec::new(), seen: vec![false; store.bins], parts: Vec::new(), indices: Vec::new(), scratch: Vec::new(), flags: Vec::new(), memo, stamp: 0, group_of, groups, offsets, time: [0.0; 4] }
+    }
+
+    /// A `Work` with no arrays, for a fit whose tree steps run on the card.
+    fn lean() -> Work {
+        Work { sums: Vec::new(), pool: Vec::new(), seen: Vec::new(), parts: Vec::new(), indices: Vec::new(), scratch: Vec::new(), flags: Vec::new(), memo: Vec::new(), stamp: 0, group_of: Vec::new(), groups: 0, offsets: Vec::new(), time: [0.0; 4] }
     }
 
     /// A histogram of zeros.
@@ -2502,6 +2510,145 @@ fn replay<I: Items>(work: &mut Work, store: &Store, items: &I, tree: &Tree, acti
     places
 }
 
+/// `replay` on the card: partitions the pairs as the tree's splits did, and adds each leaf's value to the scores of its pairs.
+fn replay_gpu(card: &gpu::Gpu, tree: &Tree, count: usize) {
+    card.reset_items();
+    let mut places = vec![(0usize, count)];
+    let mut leaf_split = vec![0usize; tree.column.len()];
+    for n in 0..tree.column.len() {
+        for (child, is_left) in [(tree.left[n], true), (tree.right[n], false)] {
+            if child >= 0 {
+                leaf_split[child as usize] = if is_left { leaf_split[n] } else { n + 1 };
+            }
+        }
+    }
+    for n in 0..tree.column.len() {
+        let at = leaf_split[n];
+        let (start, len) = places[at];
+        let (left_len, _) = card.partition(start, len, tree.column[n], tree.pos[n], tree.default_left[n]);
+        places[at] = (start, left_len);
+        places.push((start + left_len, len - left_len));
+    }
+    assert_eq!(places.len(), tree.value.len(), "a tree's leaves and values differ in count");
+    for (leaf, &(start, len)) in places.iter().enumerate() {
+        card.add_value(start, len, tree.value[leaf]);
+    }
+}
+
+struct CardLeaf {
+    start: usize,
+    len: usize,
+    rows: usize,
+    g: f64,
+    h: f64,
+    /// The card's histogram of the leaf, while the leaf can split.
+    slot: Option<u32>,
+    best: Option<Split>,
+    open: Vec<u32>,
+    parent: i32,
+    is_left: bool,
+}
+
+/// `grow` with the histograms, the partitions and the order of the pairs on the card. The choice of the leaf, the best split of a histogram (the histogram is copied
+/// to the host) and the tree are as in `grow`. `times` gets the seconds of the partitions, of the copies of the histograms, of the fills, and of `best_split`.
+fn grow_gpu(card: &mut gpu::Gpu, store: &Store, config: &Config, used: &[u32], count: usize, times: &mut [f64; 4]) -> (Tree, Vec<(usize, usize)>) {
+    let profile = std::env::var_os("BB_SYNC_PROFILE").is_some();
+    let root_slot = card.take_slot();
+    let began = Instant::now();
+    let (sum_g, sum_h) = card.root(root_slot);
+    let (g, h) = (sum_g, EPSILON + sum_h);
+    times[2] += began.elapsed().as_secs_f64();
+    let began = Instant::now();
+    let mut left_hist = vec![Bin::default(); store.bins];
+    let mut right_hist = vec![Bin::default(); store.bins];
+    card.download(root_slot, &mut left_hist);
+    times[1] += began.elapsed().as_secs_f64();
+    let began = Instant::now();
+    let (best, open) = best_split(store, used, &left_hist, (g, h, store.rows as f64), config, &[]);
+    times[3] += began.elapsed().as_secs_f64();
+    let mut leaves = vec![CardLeaf { start: 0, len: count, rows: store.rows, g, h, slot: Some(root_slot), best, open, parent: -1, is_left: false }];
+    let mut tree = Tree::default();
+    while leaves.len() < config.num_leaves {
+        let mut chosen = None;
+        let mut most = 0.0;
+        for (at, leaf) in leaves.iter().enumerate() {
+            if let Some(split) = leaf.best {
+                if split.gain > most {
+                    most = split.gain;
+                    chosen = Some(at);
+                }
+            }
+        }
+        let Some(at) = chosen else { break };
+        let split = leaves[at].best.take().unwrap();
+        let (start, len) = (leaves[at].start, leaves[at].len);
+        let began = Instant::now();
+        let (left_len, left_rows) = card.partition(start, len, split.column, split.pos, split.default_left);
+        times[0] += began.elapsed().as_secs_f64();
+        let node = tree.column.len() as i32;
+        tree.column.push(split.column);
+        tree.pos.push(split.pos);
+        tree.default_left.push(split.default_left);
+        tree.gain.push(split.gain);
+        let right_leaf = leaves.len();
+        tree.left.push(!(at as i32));
+        tree.right.push(!(right_leaf as i32));
+        let (parent, is_left) = (leaves[at].parent, leaves[at].is_left);
+        if parent >= 0 {
+            if is_left {
+                tree.left[parent as usize] = node;
+            } else {
+                tree.right[parent as usize] = node;
+            }
+        }
+        let (total_g, total_h) = (leaves[at].g, leaves[at].h);
+        let (left_g, left_h) = (split.left_g, split.left_h + EPSILON);
+        let (right_g, right_h) = (total_g - split.left_g, (total_h - split.left_h).max(EPSILON));
+        let right_len = len - left_len;
+        let right_rows = leaves[at].rows - left_rows;
+        // The smaller child's histogram is read from its pairs, and the larger's is what remains of its parent's.
+        let began = Instant::now();
+        let parent_slot = leaves[at].slot.take().expect("a leaf that splits has its histogram");
+        let small_slot = card.take_slot();
+        let (small_start, small_len) = if left_len < right_len { (start, left_len) } else { (start + left_len, right_len) };
+        card.fill(small_slot, small_start, small_len);
+        card.subtract(parent_slot, small_slot);
+        if profile {
+            card.sync();
+        }
+        times[2] += began.elapsed().as_secs_f64();
+        let (left_slot, right_slot) = if left_len < right_len { (small_slot, parent_slot) } else { (parent_slot, small_slot) };
+        let began = Instant::now();
+        card.download(left_slot, &mut left_hist);
+        card.download(right_slot, &mut right_hist);
+        times[1] += began.elapsed().as_secs_f64();
+        let open = std::mem::take(&mut leaves[at].open);
+        let began = Instant::now();
+        let (left_best, left_open) = best_split(store, &open, &left_hist, (left_g, left_h, left_rows as f64), config, &[]);
+        let (right_best, right_open) = best_split(store, &open, &right_hist, (right_g, right_h, right_rows as f64), config, &[]);
+        times[3] += began.elapsed().as_secs_f64();
+        leaves[at] = CardLeaf { start, len: left_len, rows: left_rows, g: left_g, h: left_h, slot: Some(left_slot), best: left_best, open: left_open, parent: node, is_left: true };
+        if left_best.is_none() {
+            card.give_slot(leaves[at].slot.take().unwrap());
+        }
+        let mut right = CardLeaf { start: start + left_len, len: right_len, rows: right_rows, g: right_g, h: right_h, slot: Some(right_slot), best: right_best, open: right_open, parent: node, is_left: false };
+        if right_best.is_none() {
+            card.give_slot(right.slot.take().unwrap());
+        }
+        leaves.push(right);
+    }
+    let mut places = Vec::with_capacity(leaves.len());
+    tree.value = vec![0.0; leaves.len()];
+    for (at, leaf) in leaves.iter_mut().enumerate() {
+        if let Some(slot) = leaf.slot.take() {
+            card.give_slot(slot);
+        }
+        places.push((leaf.start, leaf.len));
+        tree.value[at] = if tree.column.is_empty() { 0.0 } else { leaf_output(leaf.g, leaf.h, config) * config.learning_rate };
+    }
+    (tree, places)
+}
+
 const CHECKPOINT_MAGIC: u64 = 0x4b43_5042_4f4f_5354;
 
 fn checkpoint_path(dir: &Path, trees: usize) -> PathBuf {
@@ -2606,11 +2753,12 @@ fn read_checkpoint(path: &Path, fingerprint: u64, trees: usize, kept: usize, pai
 /// Where the JSON has `resume` as {"model": FILE, "trees": k}, it starts from the first k trees of FILE, a `model.jsonl` of an earlier fit
 /// with the same train store, seed and settings, and runs the rounds after k as the earlier fit would have. It reads the checkpoint of k trees from the
 /// folder of FILE where there is one, and replays the k trees where there is none. It needs no dev store.
-fn softmax(file: &Path) {
+fn softmax(file: &Path, use_gpu: bool) {
     let v = read_json(file);
     let count = v["threads"].as_u64().unwrap() as usize;
     threads(count);
     let has_dev = v.get("dev").is_some_and(|d| !d.is_null());
+    assert!(!(use_gpu && has_dev), "softmax-gpu has no dev store");
     let config = Config {
         learning_rate: v["learning_rate"].as_f64().unwrap(),
         num_leaves: v["num_leaves"].as_u64().unwrap() as usize,
@@ -2653,20 +2801,31 @@ fn softmax(file: &Path) {
     let bounds: Vec<f64> = read_all(&path("train").join("bounds.f64"));
     let bound_start: Vec<u32> = read_all(&path("train").join("bound_start.u32"));
     let pairs_started = Instant::now();
-    let pairs = Pairs::build(&store);
+    let mut pairs = Pairs::build(&store);
     println!("pairs {} of {} rows, {:.2} rows a pair, {:.0}s", pairs.count(), store.rows, store.rows as f64 / pairs.count().max(1) as f64, pairs_started.elapsed().as_secs_f64());
     let seed = v["seed"].as_u64().unwrap_or(0);
     let settings = [config.learning_rate.to_bits(), config.num_leaves as u64, config.min_data_in_leaf.to_bits(), config.min_sum_hessian.to_bits(), config.lambda_l2.to_bits(), config.max_delta_step.to_bits(), config.fraction.to_bits(), seed, store.rows as u64, store.kept as u64, store.bins as u64];
     let fingerprint = settings.iter().fold(pairs.fingerprint(), |a, &x| mix(a ^ x));
-    let mut work = Work::new(&store);
+    let mut work = if use_gpu { Work::lean() } else { Work::new(&store) };
     let mut pair_score = vec![0.0f64; pairs.count()];
-    let (mut pair_g, mut pair_h) = (vec![0.0f64; pairs.count()], vec![0.0f64; pairs.count()]);
+    let (mut pair_g, mut pair_h) = if use_gpu { (Vec::new(), Vec::new()) } else { (vec![0.0f64; pairs.count()], vec![0.0f64; pairs.count()]) };
     let mut dev_score = dev.as_ref().map_or(Vec::new(), |(dev_store, _, _)| vec![0.0f64; dev_store.rows]);
-    let (mut grad, mut hess) = (vec![0.0f32; store.rows], vec![0.0f32; store.rows]);
+    let (mut grad, mut hess) = if use_gpu { (Vec::new(), Vec::new()) } else { (vec![0.0f32; store.rows], vec![0.0f32; store.rows]) };
     let mut random = Random(mix(seed));
     let mut columns: Vec<u32> = (0..store.kept as u32).collect();
     let sampled = ((config.fraction * store.kept as f64).round() as usize).clamp(1, store.kept.max(1));
-    let active: Vec<u32> = (0..pairs.count() as u32).collect();
+    let active: Vec<u32> = if use_gpu { Vec::new() } else { (0..pairs.count() as u32).collect() };
+    let mut gpu: Option<gpu::Gpu> = if use_gpu {
+        let began = Instant::now();
+        let card = gpu::Gpu::new(&store, &pairs, &label, &start, config.num_leaves);
+        // The card holds the pairs of the rows now.
+        pairs.rows = Vec::new();
+        pairs.row_pair = Vec::new();
+        println!("card holds the store {:.0}s", began.elapsed().as_secs_f64());
+        Some(card)
+    } else {
+        None
+    };
     let dev_rows: Vec<u32> = dev.as_ref().map_or(Vec::new(), |(dev_store, _, _)| (0..dev_store.rows as u32).collect());
     let (mut gain, mut splits) = (vec![0.0f64; store.kept], vec![0u32; store.kept]);
     if let Some(resume) = v.get("resume").filter(|r| !r.is_null()) {
@@ -2725,11 +2884,15 @@ fn softmax(file: &Path) {
                 let j = i + random.below(store.kept - i);
                 columns.swap(i, j);
             }
-            let places = {
-                let items = PairItems { pairs: &pairs, g: &pair_g, h: &pair_h };
-                replay(&mut work, &store, &items, &tree, &active)
-            };
-            add_leaf_values(&mut pair_score, &work.indices, &places, &tree.value);
+            if let Some(card) = &gpu {
+                replay_gpu(card, &tree, pairs.count());
+            } else {
+                let places = {
+                    let items = PairItems { pairs: &pairs, g: &pair_g, h: &pair_h };
+                    replay(&mut work, &store, &items, &tree, &active)
+                };
+                add_leaf_values(&mut pair_score, &work.indices, &places, &tree.value);
+            }
             for (&k, &g) in tree.column.iter().zip(&tree.gain) {
                 gain[k as usize] += g;
                 splits[k as usize] += 1;
@@ -2748,6 +2911,9 @@ fn softmax(file: &Path) {
             splits = loaded.splits;
             biggest_leaf = loaded.biggest_leaf;
             pair_score = loaded.pair_score;
+            if let Some(card) = &gpu {
+                card.set_score(&pair_score);
+            }
             println!("resumed {count} trees from {} {:.0}s", saved.display(), replay_started.elapsed().as_secs_f64());
         }
         model.flush().unwrap();
@@ -2761,8 +2927,11 @@ fn softmax(file: &Path) {
     work.time = [0.0; 4];
     for round in resumed + 1..=config.max_rounds {
         let mut train_loss = 0.0;
+        let round_started = Instant::now();
         let phase = Instant::now();
-        {
+        if let Some(card) = &gpu {
+            train_loss += card.gradient() / (start.len() - 1).max(1) as f64;
+        } else {
             let (mut rest_g, mut rest_h) = (&mut grad[..], &mut hess[..]);
             let mut slices = Vec::with_capacity(start.len() - 1);
             for g in 0..start.len() - 1 {
@@ -2789,7 +2958,9 @@ fn softmax(file: &Path) {
         }
         seconds[0] += phase.elapsed().as_secs_f64();
         let phase = Instant::now();
-        pair_sums(&pairs, &grad, &hess, &mut pair_g, &mut pair_h);
+        if !use_gpu {
+            pair_sums(&pairs, &grad, &hess, &mut pair_g, &mut pair_h);
+        }
         seconds[1] += phase.elapsed().as_secs_f64();
         let phase = Instant::now();
         for i in 0..sampled {
@@ -2799,12 +2970,24 @@ fn softmax(file: &Path) {
         let mut used = columns[..sampled].to_vec();
         used.sort_unstable();
         let items = PairItems { pairs: &pairs, g: &pair_g, h: &pair_h };
-        let (tree, places) = grow(&mut work, &store, &config, &items, &active, &used);
+        let (tree, places) = match &mut gpu {
+            Some(card) => grow_gpu(card, &store, &config, &used, pairs.count(), &mut work.time),
+            None => grow(&mut work, &store, &config, &items, &active, &used),
+        };
         let empty = tree.column.is_empty();
-        audit_tree(&store, &items, &tree, &places, &work.indices, &config, round, audit_rounds.contains(&round), &mut biggest_leaf);
+        if !use_gpu {
+            audit_tree(&store, &items, &tree, &places, &work.indices, &config, round, audit_rounds.contains(&round), &mut biggest_leaf);
+        }
         seconds[2] += phase.elapsed().as_secs_f64();
         let phase = Instant::now();
-        add_leaf_values(&mut pair_score, &work.indices, &places, &tree.value);
+        match &gpu {
+            Some(card) => {
+                for (leaf, &(at, len)) in places.iter().enumerate() {
+                    card.add_value(at, len, tree.value[leaf]);
+                }
+            }
+            None => add_leaf_values(&mut pair_score, &work.indices, &places, &tree.value),
+        }
         rounds_run = round;
         last_train_loss = train_loss;
         for (&k, &g) in tree.column.iter().zip(&tree.gain) {
@@ -2819,6 +3002,9 @@ fn softmax(file: &Path) {
             model.flush().unwrap();
             if checkpoint_every > 0 && (round % checkpoint_every == 0 || round == config.max_rounds) {
                 let checkpoint_started = Instant::now();
+                if let Some(card) = &gpu {
+                    card.get_score(&mut pair_score);
+                }
                 let state = CheckpointState { trees: round, random: random.0, columns: &columns, gain: &gain, splits: &splits, biggest_leaf, pair_score: &pair_score, model_hash };
                 match write_checkpoint(&out, fingerprint, &state) {
                     Ok(saved) => {
@@ -2834,6 +3020,9 @@ fn softmax(file: &Path) {
                 }
             }
             seconds[3] += phase.elapsed().as_secs_f64();
+            if use_gpu {
+                println!("round {round} train loss {train_loss:.6} {:.3}s", round_started.elapsed().as_secs_f64());
+            }
             if round % 25 == 0 || round == config.max_rounds || empty {
                 let elapsed = started.elapsed().as_secs_f64();
                 let done = (round - resumed) as f64;
@@ -2890,14 +3079,15 @@ fn softmax(file: &Path) {
 
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
-    let usage = "block-boost scan DIR | compile DIR | fit FILE | softmax FILE";
+    let usage = "block-boost scan DIR | compile DIR | fit FILE | softmax FILE | softmax-gpu FILE";
     let command = arguments.get(1).expect(usage).as_str();
     let path = PathBuf::from(arguments.get(2).expect(usage));
     match command {
         "scan" => scan(&path),
         "compile" => compile(&path),
         "fit" => fit(&path),
-        "softmax" => softmax(&path),
+        "softmax" => softmax(&path, false),
+        "softmax-gpu" => softmax(&path, true),
         _ => panic!("{usage}"),
     }
 }

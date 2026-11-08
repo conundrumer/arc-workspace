@@ -3,6 +3,11 @@ name = "block-boost"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+build = "build.rs"
+
+[features]
+# `softmax-gpu`: the gradient, histograms, partitions and scores of `softmax` on a CUDA card (gpu/bbgpu.cu, built with nvcc).
+gpu = []
 
 [dependencies]
 # Blocks and histograms are worked on by several threads.
