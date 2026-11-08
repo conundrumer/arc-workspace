@@ -640,7 +640,7 @@ fn value_hash_of(types: &[ValueType], rows: &Encoded, assemblies: &Assemblies) -
             hasher.finish128().0
         })
         .collect();
-    row_hashes.sort_unstable();
+    sort_hashes(&mut row_hashes);
     let mut hasher = StableHasher::new();
     hasher.write(b"arclog.value_hash");
     hasher.write_u64(types.len() as u64);
@@ -826,6 +826,37 @@ fn rows_hash_of_table(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], a
     hasher.finish128()
 }
 
+/// Sorts `items` as `sort_unstable` does. Items that are hashes stand evenly over their high bits, so
+/// one pass copies each item to the place of its bucket of the high 11 bits in another vector, and each bucket, which is
+/// small, is sorted on its own. The copies are independent of each other.
+fn sort_hashes(items: &mut [u128]) {
+    const BITS: u32 = 11;
+    const BUCKETS: usize = 1 << BITS;
+    if items.len() < 1 << 16 {
+        items.sort_unstable();
+        return;
+    }
+    let bucket = |item: u128| (item >> (128 - BITS)) as usize;
+    let mut starts = vec![0usize; BUCKETS + 1];
+    for &item in items.iter() {
+        starts[bucket(item) + 1] += 1;
+    }
+    for at in 0..BUCKETS {
+        starts[at + 1] += starts[at];
+    }
+    let mut next = starts[..BUCKETS].to_vec();
+    let mut sorted = vec![0u128; items.len()];
+    for &item in items.iter() {
+        let at = bucket(item);
+        sorted[next[at]] = item;
+        next[at] += 1;
+    }
+    for at in 0..BUCKETS {
+        sorted[starts[at]..starts[at + 1]].sort_unstable();
+    }
+    items.copy_from_slice(&sorted);
+}
+
 /// The hash of `items` and their count.
 fn digest(items: &[u128]) -> u128 {
     let mut hasher = StableHasher::new();
@@ -925,7 +956,7 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
                                 run.finish128().0
                             })
                             .collect();
-                        runs.sort_unstable();
+                        sort_hashes(&mut runs);
                         runs.dedup();
                         digest(&runs)
                     })
@@ -976,7 +1007,7 @@ fn table_hash(types: &[ValueType], examples: &[(u8, u32, &[Encoded])], assemblie
                             hasher.finish128().0
                         })
                         .collect();
-                    row_hashes.sort_unstable();
+                    sort_hashes(&mut row_hashes);
                     digest(&row_hashes)
                 })
                 .collect();

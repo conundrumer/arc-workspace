@@ -109,7 +109,7 @@ impl Cells<'_> {
                             run.finish128().0
                         })
                         .collect();
-                    runs.sort_unstable();
+                    super::sort_hashes(&mut runs);
                     runs.dedup();
                     digest(&runs)
                 })
@@ -140,7 +140,7 @@ impl Cells<'_> {
                             hasher.finish128().0
                         })
                         .collect();
-                    hashes.sort_unstable();
+                    super::sort_hashes(&mut hashes);
                     digest(&hashes)
                 })
                 .collect();
