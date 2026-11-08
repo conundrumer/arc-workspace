@@ -1900,6 +1900,10 @@ impl RequestWork {
             }
             (frame.cost, frame.notes, freed, frame.assignment)
         });
+        // What the measurement noted reaches the gauges of this request, as it does where a thread's ambient gauges are the request's; a hit on the entry notes it again.
+        for note in &notes {
+            self.gauges.note(Gauge::ALL[usize::from(note.gauge)], note.max, note.cap);
+        }
         cost.notes = intern_notes(notes);
         self.bytes.release(freed);
         if let Some(account) = assignment {
