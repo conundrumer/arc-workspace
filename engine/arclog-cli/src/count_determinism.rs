@@ -8,7 +8,8 @@
 //! caches, and again in sessions that earlier requests filled in other ways:
 //! the same entries in the reverse order, the first half of the entries, the
 //! same entries once more, and, at the same time, on several threads that
-//! share one session and each run a request of its own. Each run must give the
+//! share one session and each run a request of its own, at each thread count
+//! given, so that a count that thread scheduling moves differs at some count. Each run must give the
 //! same count of request work, the same largest value, cap and hits in each
 //! gauge that a request keeps, and the same value or stop for each entry. The
 //! runs repeat under caps that the cold count sets: at the cold count, one
@@ -17,8 +18,8 @@
 //! The report names task ids and counts, never rows.
 //!
 //! Its arguments: the corpus directory, the directory of the task files, the
-//! thread count of the shared-session run, then the task ids of the solvers
-//! to run.
+//! thread counts of the shared-session runs, comma-separated, then the task
+//! ids of the solvers to run.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -36,7 +37,7 @@ use arclog_constructions::shared as constructions;
 
 use crate::determinism::{entries, Entry};
 
-const USAGE: &str = "usage: arclog-cli count-determinism <corpus-dir> <tasks-dir> <threads> <task_id> [<task_id> ...]";
+const USAGE: &str = "usage: arclog-cli count-determinism <corpus-dir> <tasks-dir> <threads>[,<threads>...] <task_id> [<task_id> ...]";
 
 /// The subcommand on `args`, the arguments after its name.
 pub fn run(args: &[String]) -> ExitCode {
@@ -47,7 +48,7 @@ pub fn run(args: &[String]) -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
-    let Some(threads) = threads.parse::<usize>().ok().filter(|&n| n > 0) else {
+    let Some(threads) = threads.split(',').map(|count| count.parse::<usize>().ok().filter(|&n| n > 0)).collect::<Option<Vec<usize>>>() else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
@@ -58,7 +59,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let (corpus, tasks) = (PathBuf::from(corpus), PathBuf::from(tasks));
     let mut differences = 0usize;
     for id in ids {
-        match check(&corpus, &tasks, id, threads) {
+        match check(&corpus, &tasks, id, &threads) {
             Ok(lines) => {
                 differences += lines.iter().filter(|line| line.contains("DIFFERS")).count();
                 lines.iter().for_each(|line| println!("{line}"));
@@ -80,7 +81,7 @@ struct Seen {
 }
 
 /// The lines for the solver `id`, one for each run and cap.
-fn check(corpus: &Path, tasks: &Path, id: &str, threads: usize) -> Result<Vec<String>, String> {
+fn check(corpus: &Path, tasks: &Path, id: &str, counts: &[usize]) -> Result<Vec<String>, String> {
     let read = read_corpus_task(corpus, tasks, id)?;
     let (solver, task) = (read.solver, read.task);
     let registry = Registry::get();
@@ -142,12 +143,15 @@ fn check(corpus: &Path, tasks: &Path, id: &str, threads: usize) -> Result<Vec<St
                 request(&session, cap, Some(&listed)).0
             }),
         ];
-        let session = corpus_session();
-        let shared: Vec<Seen> = std::thread::scope(|scope| {
-            let handles: Vec<_> = (0..threads).map(|_| scope.spawn(|| request(&session, cap, Some(&listed)).0)).collect();
-            handles.into_iter().map(|handle| handle.join().expect("a request that no panic ends")).collect()
-        });
-        let shared = shared.into_iter().enumerate().map(|(at, seen)| (format!("on thread {at} of {threads} sharing a session"), seen));
+        let mut shared = Vec::new();
+        for &threads in counts {
+            let session = corpus_session();
+            let seen: Vec<Seen> = std::thread::scope(|scope| {
+                let handles: Vec<_> = (0..threads).map(|_| scope.spawn(|| request(&session, cap, Some(&listed)).0)).collect();
+                handles.into_iter().map(|handle| handle.join().expect("a request that no panic ends")).collect()
+            });
+            shared.extend(seen.into_iter().enumerate().map(|(at, seen)| (format!("on thread {at} of {threads} sharing a session"), seen)));
+        }
         for (run, seen) in runs.into_iter().chain(shared) {
             lines.push(compare(id, cap, &run, &base, &seen));
         }
