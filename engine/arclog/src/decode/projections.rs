@@ -633,6 +633,21 @@ struct Groups {
     slots: Vec<u64>,
 }
 
+/// An odd 64-bit number for each rank of a cell in a projected row, which
+/// [`Groups::number`] multiplies the cell by.
+const CELL_MULTIPLIERS: [u64; 64] = {
+    let mut table = [0u64; 64];
+    let mut rank = 0;
+    while rank < table.len() {
+        let mut z = (rank as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        table[rank] = (z ^ (z >> 31)) | 1;
+        rank += 1;
+    }
+    table
+};
+
 impl Groups {
     fn new(width: usize) -> Self {
         Groups { width, cells: Vec::new(), count: 0, slots: vec![0; 64] }
@@ -641,11 +656,15 @@ impl Groups {
     /// The number of the group of `row` projected onto `positions`, whose count
     /// is the groups' `width`, and whether the row is the first read of it.
     fn number(&mut self, row: &[TermId], positions: &[u16]) -> (u32, bool) {
-        let mut hash = 0x9E37_79B9_7F4A_7C15_u64;
-        for &position in positions {
-            hash = (hash.rotate_left(5) ^ u64::from(row[usize::from(position)].encoding())).wrapping_mul(0x517C_C1B7_2722_0A95);
+        // The cells' products are independent of each other, so a row of many cells
+        // takes about one step of the machine's multiplier for each, and not the
+        // latency of a chain. A hash decides no group, so any hash of equal cells is one.
+        let mut sum = 0u64;
+        for (rank, &position) in positions.iter().enumerate() {
+            sum = sum.wrapping_add((u64::from(row[usize::from(position)].encoding()) + 1).wrapping_mul(CELL_MULTIPLIERS[rank % CELL_MULTIPLIERS.len()]));
         }
-        let hash = (hash ^ (hash >> 32)) as u32;
+        let mixed = (sum ^ (sum >> 29)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        let hash = (mixed ^ (mixed >> 32)) as u32;
         let mask = self.slots.len() - 1;
         let mut at = hash as usize & mask;
         loop {
