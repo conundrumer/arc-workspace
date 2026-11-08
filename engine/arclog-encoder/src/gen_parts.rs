@@ -1889,6 +1889,14 @@ impl PartTerm {
         self.second.as_ref()
     }
 
+    /// The columns, sorted and distinct, of the first relation that fix which rows the part keeps, where the part keeps whole rows of the relation, each as often as the rows that agree with it at those columns count.
+    pub(crate) fn weighted_columns(&self) -> Option<Vec<u16>> {
+        let mut columns = self.step.weighted_list()?;
+        columns.sort_unstable();
+        columns.dedup();
+        Some(columns)
+    }
+
     /// The columns, sorted and distinct, of the first relation that fix what the part adds to a row, where the part gives every row it takes with its own cells first, and then cells that the cells at those columns alone fix, for as many rows as they allow.
     pub(crate) fn row_columns(&self) -> Option<Vec<u16>> {
         let mut columns = self.step.row_list()?;
@@ -1972,12 +1980,30 @@ impl PartStep {
         }
     }
 
+    /// The columns of the part's first relation that fix which of its rows the part keeps, for a part that keeps whole rows and counts each row as many times as `weights` says.
+    fn weighted_list(&self) -> Option<Vec<u16>> {
+        match self {
+            PartStep::MostFrequentRows { keys, v } | PartStep::SecondFrequentRows { keys, v } => Some(keys.iter().chain([v]).copied().collect()),
+            _ => None,
+        }
+    }
+
+    /// The cells of the rows of `t` that a part kept by `weighted_list` keeps, where row number `at` of `t` stands for `weights[at]` rows.
+    pub(crate) fn kept_rows(&self, t: &Table, weights: &[u64]) -> Option<Vec<Cell>> {
+        match self {
+            PartStep::MostFrequentRows { keys, v } => Some(frequent_rows(t, keys, *v, false, Some(weights))),
+            PartStep::SecondFrequentRows { keys, v } => Some(frequent_rows(t, keys, *v, true, Some(weights))),
+            _ => None,
+        }
+    }
+
     /// The columns of the part's first relation that fix what it adds to each row, for a part that gives every row it takes with its own cells first and then the cells that those columns alone fix.
     fn row_list(&self) -> Option<Vec<u16>> {
         match self {
             PartStep::DiffRows { p, .. } | PartStep::Neighbors { p } | PartStep::Split { p } | PartStep::Margin { p } | PartStep::CornerDist { p } | PartStep::Parity { p } | PartStep::BorderDistance { p } => Some(vec![*p]),
             PartStep::BoxMargin { b } | PartStep::BoxExtent { b } => Some(vec![*b]),
             PartStep::Displacement { a, b } => Some(vec![*a, *b]),
+            PartStep::SharedLine { a, .. } => Some(vec![*a]),
             _ => None,
         }
     }
@@ -1985,7 +2011,7 @@ impl PartStep {
     /// The columns of the part's second relation that it reads, where what it gives depends on the distinct tuples of the rows at those columns alone.
     fn second_list(&self) -> Option<Vec<u16>> {
         match self {
-            PartStep::DeterminesFlag { b, .. } => Some(vec![*b]),
+            PartStep::DeterminesFlag { b, .. } | PartStep::SharedLine { b, .. } => Some(vec![*b]),
             _ => None,
         }
     }

@@ -2971,6 +2971,21 @@ impl<'a> Walker<'a> {
             let value = &self.values[found as usize];
             return (count_of(value), if number { number_word(value) } else { 0 });
         }
+        // The count of distinct tuples of a `join`'s rows, of the rows of a `select` over it that compares two of its columns for inequality, and of the rows of a part that adds cells to each row, is read from its sides, with no rows written.
+        if !number {
+            let joined = match &self.values[id as usize] {
+                Val::Joined(joined) => Some(joined.clone()),
+                _ => None,
+            };
+            if let Some(joined) = joined {
+                crate::bounds::begin();
+                let second = (b != NO_TERM).then(|| &self.values[b as usize]);
+                if let Some(found) = joined.count_of(step).or_else(|| joined.count_over(step, second)) {
+                    crate::bounds::end(false);
+                    return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
+                }
+            }
+        }
         // A part that reads cells of `inside` runs on the rows written out, once per grouping. Rows of `inside` that the part takes as boxes group as the relation's rows do, where its keys are the relation's.
         let written = if steps.grouped[at].is_some() { self.written_id(step, id, true) } else { id };
         if let Some((part, keys)) = steps.grouped[at] {
@@ -3000,21 +3015,6 @@ impl<'a> Walker<'a> {
                     self.group_counts.insert(key, found);
                 }
                 return (found, 0);
-            }
-        }
-        // The count of distinct tuples of a `join`'s rows, of the rows of a `select` over it that compares two of its columns for inequality, and of the rows of a part that adds cells to each row, is read from its sides, with no rows written.
-        if !number {
-            let joined = match &self.values[id as usize] {
-                Val::Joined(joined) => Some(joined.clone()),
-                _ => None,
-            };
-            if let Some(joined) = joined {
-                crate::bounds::begin();
-                let second = (b != NO_TERM).then(|| &self.values[b as usize]);
-                if let Some(found) = joined.count_of(step).or_else(|| joined.count_over(step, second)) {
-                    crate::bounds::end(false);
-                    return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
-                }
             }
         }
         // The count of a `join` or an `antijoin` is read from its sides' histograms, with no rows written. Their sides are written where they stand as the rows of `inside` or of a `join`.
