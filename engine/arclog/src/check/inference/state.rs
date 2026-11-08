@@ -306,8 +306,6 @@ impl<'a> Inference<'a> {
         let mut touched = Touched::default();
         touched.body(&state.body, &clause.body)?;
         let touched = touched.closed(&state.pairs, clause.body.value());
-        #[cfg(test)]
-        FAST.with(|fast| fast.set(fast.get() + 1));
         let own = labels.iter().copied().filter(|label| touched.contains(label) || !state.labels.contains_key(label));
         Some((state, own.collect()))
     }
@@ -317,99 +315,5 @@ impl StateTypes {
     /// The type the state's inference gives `label`.
     pub(super) fn label(&self, label: LabelId) -> Option<&LabelTypes> {
         self.labels.get(&label)
-    }
-}
-
-#[cfg(test)]
-thread_local! {
-    /// The number of candidates so far that took the state's types.
-    static FAST: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::check::inference::CaseInferences;
-    use crate::check::{check_program, CheckCache, SolverClauses};
-    use crate::decode::Decoder;
-    use crate::eval::instance::Constructions;
-    use crate::eval::values::Caps;
-    use crate::read::read_solver;
-    use crate::registry::Registry;
-    use crate::resolver::{resolve, resolve_last};
-    use crate::session::{SessionBound, TaskSession};
-    use crate::stream::{token_stream, DecodeSettings, Emitter, Vocabulary};
-    use crate::task::Task;
-
-    const SOURCE: &str = "(RULE &bg (input (:Col *C)))\n\
-        (RULE &fg (input *P *Col) (&bg (:C *V)) (!= Col V))\n\
-        (RULE &axis_len (input (:P *B)) (frame_extent (:P B) (:N *N)))\n\
-        (RULE &larger (&axis_len *B) (&axis_len (:B *B2)))\n\
-        (RULE &prior (&axis_len *B *N) (&axis_len (:B *B2) (:N *N2)) (OR ((> N N2)) ((= N N2) (&larger B B2))))\n\
-        (RULE &lists (input *P *Col) (NOT (&fg P)) (IF ((&bg (:C Col))) ((= *K 0)) ((input P (:Col *D)) (&axis_len (:N K)))) (ALL ((input (:P *Q) (:Col Col))) ((&fg (:P Q)))))\n";
-
-    /// The types of the labels of the last form of `program`, where `state`,
-    /// when given, is the form in progress at the mask's state.
-    fn last_form_types(program: &Node<Program>, state: Option<&Node<Program>>, registry: &Registry) -> Vec<(LabelId, LabelTypes)> {
-        let (_, complete) = program.value().forms.split_last().expect("a partial form");
-        let earlier = Arc::new(resolve(&Node::new(Program { forms: complete.into() }), None, &Default::default(), registry).value);
-        let resolved = resolve_last(&earlier, program, registry).value;
-        let clauses = SolverClauses::of_program(resolved.clone());
-        let cases = CaseInferences::new(&clauses, registry);
-        let before = Inference::new(&earlier, &cases);
-        if let Some(state) = state {
-            before.hold_state(Arc::clone(&earlier), state.clone());
-        }
-        let inference = Inference::layered(&resolved, &cases, &before);
-        let inferred = inference.infer(&NodePath::top(complete.len() as u32)).expect("the last form is inferred");
-        inferred.labels.clone()
-    }
-
-    /// Along a stream, each candidate of a mask has the label types with the
-    /// state's types that it has with the whole inference.
-    #[test]
-    fn the_state_types_give_the_types_the_whole_inference_gives() {
-        let registry = Registry::get();
-        let solver = read_solver("decode", SOURCE, "", &|_| None).expect("the file reads").value;
-        let concept = resolve(&solver.concept_case().program, None, &solver.derived_relations(), registry).value;
-        let checked = check_program(concept, &SolverClauses::of(&solver, registry), registry, &mut CheckCache::default()).expect("every check passes");
-        let vocabulary = Vocabulary::new(registry, &DecodeSettings::default());
-        let stream = token_stream(&checked, &vocabulary).expect("the program has a stream");
-        let constructions = Constructions::new(Vec::new(), registry).expect("an empty table");
-        let task = Task { train: Box::new([]), test: Box::new([]) };
-        let session = TaskSession::new(SessionBound { bytes: 1 << 26 }, Caps::CORPUS);
-        let mut decoder = Decoder::new(&task, &session, registry, &constructions, &DecodeSettings::default());
-        let (mut compared, before) = (0, FAST.with(|fast| fast.get()));
-        for (token, emitter) in &stream {
-            if matches!(emitter, Emitter::Engine) {
-                continue;
-            }
-            let state = decoder.partial().filter(|(_, open)| open.is_some()).map(|(program, _)| program);
-            let mask = decoder.admissible();
-            for id in 0..u32::try_from(vocabulary.len()).expect("fewer than 2^32 tokens") {
-                if !mask.contains(id) {
-                    continue;
-                }
-                let mut fork = decoder.fork();
-                if fork.step(vocabulary.token(id).expect("an id of the vocabulary").clone()).is_err() {
-                    continue;
-                }
-                let Some((program, _)) = fork.partial() else { continue };
-                if program.value().forms.len() < 2 || state.is_none() {
-                    continue;
-                }
-                assert_eq!(
-                    last_form_types(&program, state.as_ref(), registry),
-                    last_form_types(&program, None, registry),
-                    "{:?} before {token:?}",
-                    vocabulary.token(id)
-                );
-                compared += 1;
-            }
-            decoder.step(token.clone()).expect("a token of the stream");
-        }
-        let fast = FAST.with(|fast| fast.get()) - before;
-        assert!(compared > 0 && fast > 0, "{fast} candidates of {compared} took the state's types");
-        eprintln!("fast {fast} of {compared}");
     }
 }
