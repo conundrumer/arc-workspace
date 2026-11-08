@@ -75,9 +75,12 @@ impl Decoder<'_> {
         let dets = held_dets(program);
         let picks: Vec<_> = written.into_iter().filter(|det| det.pick).collect();
         match self.walked(program, &dets, &picks, root).1 {
-            // These budgets bound the walk's time. Reaching one establishes
-            // no property of the program.
-            Err(DetRefusal::Bound(ReachedBound::TableWork { .. } | ReachedBound::RequestWork { .. } | ReachedBound::RequestBytes { .. })) => Ok(()),
+            // These bounds limit the walk's time, its rows and its bytes.
+            // Reaching one establishes no property of the program, so the
+            // token is admitted and the decision falls to the form's end.
+            // The assignment cap is the consistency test's cap too, and an
+            // effort stop is a fault of the call, so both stand.
+            Err(DetRefusal::Bound(bound)) if bound.is_resource() => Ok(()),
             verdict => verdict,
         }
     }

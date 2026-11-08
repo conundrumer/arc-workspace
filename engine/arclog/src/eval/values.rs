@@ -165,6 +165,25 @@ impl ReachedBound {
         matches!(self, Self::RequestWork { .. } | Self::RequestBytes { .. } | Self::Effort { .. })
     }
 
+    /// Whether this bound limits the time, the rows or the bytes of an
+    /// evaluation, and so establishes no property of the program that the
+    /// evaluation is of: a prefix check that it stops leaves its decision to
+    /// the form's end. The assignment cap, a margin, a variable with no values,
+    /// a cancellation and the effort guard are no such bound.
+    pub fn is_resource(self) -> bool {
+        matches!(
+            self,
+            Self::Bindings { .. }
+                | Self::Rows { .. }
+                | Self::Models { .. }
+                | Self::Nodes { .. }
+                | Self::TableWork { .. }
+                | Self::RequestWork { .. }
+                | Self::RequestBytes { .. }
+                | Self::AssignmentBytes { .. }
+        )
+    }
+
     /// Whether this bound stops a query that grew past a cap on its size.
     pub fn is_size(self) -> bool {
         matches!(self, Self::Bindings { .. } | Self::Rows { .. })
