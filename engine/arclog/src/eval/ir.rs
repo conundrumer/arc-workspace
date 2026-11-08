@@ -433,6 +433,15 @@ pub struct IrBuilder<'a> {
 /// domain, a Position or an Ident, and `Int` is none of them, so such a
 /// variable joins as a plain number. `0` is the same term for `Int` and for
 /// every other type that has a zero ([`ValueType::has_zero`]).
+///
+/// A variable that stops the join at
+/// [`ReachedBound::NoValues`](super::ReachedBound::NoValues) is one that no
+/// node binds and that has no orientation domain. The safety check that
+/// every compile makes first counts a label with no type as bound only
+/// where a node binds it (an atom, a union, a mode of a lib relation, or
+/// an `=`), and `plan::values_first` finds values from the same
+/// nodes. So the type that a label without one takes here decides no
+/// bound of the join.
 const UNTYPED_LABEL_TYPE: ValueType = ValueType::Int;
 
 /// The key of a node that stands after the nodes of every conjunct: a node
