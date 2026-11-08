@@ -23,8 +23,8 @@ WITNESSES = ROOT / "programs" / "witnesses"
 def out_dirs() -> tuple[Path, Path, Path, Path, Path]:
     """`gen/`, `plan/`, `names/`, `columns/` and `case_records/` of `arclog_out`.
     `convert_one` writes each solver's name map (`name_map`) to `names/` and
-    its column map (`column_map`) to `columns/`, and `convert_into` writes the
-    record of the inputs of each solver's case files (`convert_cases`) to
+    its column map (`column_map`) to `columns/`, and `convert_into` and `convert_cases` write the
+    record of each solver's files (`arclog_convert.readback`) to
     `case_records/`, beside `gen/`, whose globs read only arclog and arcdata
     files and whose `cases/` directories hold only case files."""
     root = arclog_out()
