@@ -1340,6 +1340,18 @@ struct Search<'c> {
     /// `step` fills and adds to the rows, so a row takes no allocation.
     row: Vec<TermId>,
     tried: Batch,
+    /// The projected rows of the leaves so far, row after row, while each leaf
+    /// is known to give a row no other leaf gives ([`Search::flat_ok`]).
+    flat: Vec<TermId>,
+    /// Whether the projected rows are collected in `flat` and not in a set that
+    /// tells equal rows apart. That holds while the projection holds every
+    /// variable of the order, so that two leaves differ in the value of a
+    /// variable, and `unique` held at each leaf so far.
+    flat_ok: bool,
+    /// Whether the values of each variable on the path to the current leaf
+    /// came from a list that holds no value twice, so that this leaf differs
+    /// from each other leaf in the value of some variable.
+    unique: bool,
 }
 
 impl<'c> Search<'c> {
@@ -1356,13 +1368,14 @@ impl<'c> Search<'c> {
         for &(variable, value) in bound {
             binding[usize::from(variable.0)] = Some(value);
         }
-        Search { clause, registry, inputs, plan, memo, binding, row: Vec::new(), tried: Batch::default() }
+        Search { clause, registry, inputs, plan, memo, binding, row: Vec::new(), tried: Batch::default(), flat: Vec::new(), flat_ok: false, unique: true }
     }
 
     /// The rows of `projected` over each binding that passes every node.
     fn run(mut self, projected: &[Variable], budget: &mut Budget<'_>) -> Result<RowSet, ReachedBound> {
         let mut rows = RowSet::empty(projected.len() as u16);
         let plan = self.plan;
+        self.flat_ok = !projected.is_empty() && plan.order.iter().all(|variable| projected.contains(variable));
         let mut cursors: Vec<(IndexNode<'_>, usize)> = Vec::with_capacity(plan.atoms.len());
         for atom in &plan.atoms {
             if atom.empty {
@@ -1391,6 +1404,9 @@ impl<'c> Search<'c> {
             self.step(0, &plan.atoms, &mut cursors, projected, &mut rows, budget)?;
         }
         self.tried.finish(budget)?;
+        if self.flat_ok && !self.flat.is_empty() {
+            rows = RowSet::of_distinct_deferred(projected.len() as u16, std::mem::take(&mut self.flat));
+        }
         Ok(rows)
     }
 
@@ -1408,6 +1424,19 @@ impl<'c> Search<'c> {
         let Some(&variable) = self.plan.order.get(rank) else {
             self.row.clear();
             self.row.extend(projected.iter().map(|v| self.binding[usize::from(v.0)].expect("a bound column")));
+            if self.flat_ok && self.unique {
+                self.flat.extend_from_slice(&self.row);
+                budget.charge_rows(1)?;
+                return Ok(true);
+            }
+            if self.flat_ok {
+                // A leaf may repeat a row: the rows so far, distinct, go in the set.
+                self.flat_ok = false;
+                for row in self.flat.chunks_exact(self.row.len()) {
+                    rows.insert_slice(row);
+                }
+                self.flat.clear();
+            }
             if rows.insert_slice(&self.row) {
                 budget.charge_rows(1)?;
             }
@@ -1416,6 +1445,10 @@ impl<'c> Search<'c> {
         let at = |atom: &AtomTrie, depth: usize| matches!(atom.levels.get(depth), Some(Argument::Variable(v)) if *v == variable);
         let sources: Vec<usize> = (0..atoms.len()).filter(|&a| at(&atoms[a], cursors[a].1)).collect();
         let mut held_union = None;
+        // Whether the candidates hold no value twice. Each list but a type's
+        // domain is made of the distinct values of an index run, or is sorted
+        // and deduplicated.
+        let mut distinct = true;
         let candidates: Vec<TermId> = if let Some(value) = self.equal_value(variable) {
             vec![value]
         } else if let Some(&smallest) = sources.iter().min_by_key(|&&a| (cursors[a].0.len(), a)) {
@@ -1439,7 +1472,11 @@ impl<'c> Search<'c> {
             values
         } else {
             let ty = &self.clause.variables[usize::from(variable.0)].ty;
-            domain(self.registry, ty).ok_or(ReachedBound::NoValues)?
+            let values = domain(self.registry, ty).ok_or(ReachedBound::NoValues)?;
+            let mut sorted = values.clone();
+            sorted.sort_unstable_by_key(|value| value.encoding());
+            distinct = sorted.windows(2).all(|pair| pair[0] != pair[1]);
+            values
         };
         let early = rank >= self.plan.stop_from;
         let mut candidates = candidates;
@@ -1456,6 +1493,8 @@ impl<'c> Search<'c> {
         }
         let stops = early && !matches!(self.clause.variables[usize::from(variable.0)].ty, ValueType::Ident(_));
         let mut passed = false;
+        let path_unique = self.unique;
+        self.unique = path_unique && distinct;
         for value in candidates {
             self.tried.count(budget, 1)?;
             let saved: Vec<(usize, (IndexNode<'t>, usize))> = sources.iter().map(|&a| (a, cursors[a])).collect();
@@ -1480,6 +1519,7 @@ impl<'c> Search<'c> {
                 break;
             }
         }
+        self.unique = path_unique;
         Ok(passed)
     }
 

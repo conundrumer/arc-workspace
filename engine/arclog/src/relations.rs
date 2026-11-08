@@ -62,6 +62,30 @@ struct Rows {
     /// compare of two hashes in the table, with no read of `values`, unless
     /// the hashes are equal. Its length is 0 or a power of two.
     slots: Box<[u64]>,
+    /// Whether the rows came without the table that their insertion would have
+    /// built ([`RowSet::of_distinct_deferred`]). Their [`Rows::bytes`] count that
+    /// table, and a lookup in them builds it, in `lookup`, past [`SCANNED`] rows.
+    deferred: bool,
+    /// The table of rows that came without one, built by the first lookup that
+    /// needs it. A row added drops it, with the table that it makes in `slots`.
+    lookup: std::sync::OnceLock<Box<[u64]>>,
+}
+
+/// The most rows that a lookup in a deferred set compares one by one.
+const SCANNED: usize = 16;
+
+/// The length of the table that the insertion of `rows` rows into an empty set
+/// builds: 0 for no row, else the least power of two from 8 that holds them
+/// within [`SLOTS_USED`].
+fn table_len(rows: usize) -> usize {
+    if rows == 0 {
+        return 0;
+    }
+    let mut len = 8;
+    while rows * SLOTS_USED.1 > len * SLOTS_USED.0 {
+        len *= 2;
+    }
+    len
 }
 
 /// The largest share of a [`Rows`] table's slots in use, as a fraction. A
@@ -110,10 +134,15 @@ impl Rows {
     /// compare of rows tells. So the slot found is the one that a probe that
     /// compares every row finds.
     fn slot(&self, row: &[TermId], hash: u32) -> usize {
-        let mask = self.slots.len() - 1;
+        self.slot_in(&self.slots, row, hash)
+    }
+
+    /// As [`Rows::slot`], in `slots`, a table over these rows.
+    fn slot_in(&self, slots: &[u64], row: &[TermId], hash: u32) -> usize {
+        let mask = slots.len() - 1;
         let mut at = hash as usize & mask;
         loop {
-            let slot = self.slots[at];
+            let slot = slots[at];
             if slot == 0 || ((slot >> 32) as u32 == hash && self.row(slot as u32 - 1, row.len()) == row) {
                 return at;
             }
@@ -127,7 +156,12 @@ impl Rows {
     /// that has slots reads no row to grow.
     fn grow(&mut self, arity: usize) {
         // Rows that came without a table have a table of their count on the first row added.
-        let least = (((self.count as usize + 1) * SLOTS_USED.1 / SLOTS_USED.0) + 1).next_power_of_two();
+        let least = if self.deferred && self.slots.is_empty() {
+            table_len(self.count as usize + 1)
+        } else {
+            (((self.count as usize + 1) * SLOTS_USED.1 / SLOTS_USED.0) + 1).next_power_of_two()
+        };
+        self.lookup.take();
         let old = std::mem::take(&mut self.slots);
         let mut slots = vec![0; (old.len() * 2).max(8).max(least)].into_boxed_slice();
         if old.is_empty() {
@@ -143,7 +177,8 @@ impl Rows {
     }
 
     fn bytes(&self) -> usize {
-        self.values.capacity() * std::mem::size_of::<TermId>() + self.slots.len() * std::mem::size_of::<u64>()
+        let slots = if self.deferred && self.slots.is_empty() { table_len(self.count as usize) } else { self.slots.len() };
+        self.values.capacity() * std::mem::size_of::<TermId>() + slots * std::mem::size_of::<u64>()
     }
 }
 
@@ -162,7 +197,16 @@ impl RowSet {
     /// other. It builds no table over them until a row is added.
     pub fn of_distinct(arity: u16, values: Vec<TermId>) -> Self {
         let count = values.len().checked_div(usize::from(arity)).unwrap_or(0);
-        RowSet { arity, rows: std::sync::Arc::new(Rows { values, count: u32::try_from(count).expect("a set of fewer than 2^32 rows"), slots: Box::default() }) }
+        RowSet { arity, rows: std::sync::Arc::new(Rows { values, count: u32::try_from(count).expect("a set of fewer than 2^32 rows"), slots: Box::default(), deferred: false, lookup: Default::default() }) }
+    }
+
+    /// As [`RowSet::of_distinct`], for the rows of a search that gives each row
+    /// once. The set counts the bytes of the table that the insertion of the rows
+    /// would have built, and builds a table only for a lookup that needs it.
+    pub(crate) fn of_distinct_deferred(arity: u16, values: Vec<TermId>) -> Self {
+        let mut set = Self::of_distinct(arity, values);
+        std::sync::Arc::get_mut(&mut set.rows).expect("rows that no clone shares").deferred = true;
+        set
     }
 
     /// The row at `number` in the order of [`RowSet::rows`].
@@ -203,7 +247,18 @@ impl RowSet {
             return false;
         }
         if self.rows.slots.is_empty() {
-            return self.rows().any(|held| held == row);
+            if !self.rows.deferred || self.rows.count as usize <= SCANNED {
+                return self.rows().any(|held| held == row);
+            }
+            let arity = usize::from(self.arity);
+            let table = self.rows.lookup.get_or_init(|| {
+                let mut slots = vec![0; table_len(self.rows.count as usize)].into_boxed_slice();
+                for number in 0..self.rows.count {
+                    place(&mut slots, entry(row_hash(self.rows.row(number, arity)), number));
+                }
+                slots
+            });
+            return table[self.rows.slot_in(table, row, row_hash(row))] != 0;
         }
         self.rows.slots[self.rows.slot(row, row_hash(row))] != 0
     }
