@@ -1544,7 +1544,7 @@ pub(crate) fn project(value: &Val, columns: &[u16]) -> Val {
     Val::of_parts(out)
 }
 
-fn holds(op: Op, a: Cell, b: Cell) -> bool {
+pub(crate) fn holds(op: Op, a: Cell, b: Cell) -> bool {
     match op {
         Op::Eq => a == b,
         Op::Ne => a != b,
