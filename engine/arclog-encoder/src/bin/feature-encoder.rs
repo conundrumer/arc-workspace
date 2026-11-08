@@ -274,7 +274,7 @@ fn run_grid_values(arguments: &Arguments, grids: &str) -> Result<(), String> {
 /// word at every grid is left out.
 fn run_grid_vectors(arguments: &Arguments, grids: &str) -> Result<(), String> {
     use arclog_encoder::closed::{task_of_inputs, task_of_pairs};
-    use arclog_encoder::generate::{Generators, Walker, READS_OUTPUT, SLOT_NO_VALUE, SLOT_VALUE};
+    use arclog_encoder::generate::{Generators, SlotState, Walker, READS_OUTPUT};
     use arclog_encoder::stored::Stored;
     use arclog_encoder::table_vector::{pair_vector, table_vector, Grids, TableVector};
     let text = arclog_encoder::zio::read_text(grids).map_err(|error| error.to_string())?;
@@ -313,9 +313,9 @@ fn run_grid_vectors(arguments: &Arguments, grids: &str) -> Result<(), String> {
                 continue;
             }
             let words: Vec<String> = vector.at(shape).iter().map(|slot| match slot.state {
-                SLOT_NO_VALUE => "-".to_string(),
-                SLOT_VALUE => format!("{:016x}", slot.digest | 2),
-                _ => format!("{:016x}", 1),
+                SlotState::NoValue => "-".to_string(),
+                SlotState::Value => format!("{:016x}", slot.digest | 2),
+                SlotState::Default => format!("{:016x}", 1),
             }).collect();
             if words.windows(2).all(|two| two[0] == two[1]) {
                 continue;
@@ -383,12 +383,12 @@ fn run_catalog_values(arguments: &Arguments, requests: &str) -> Result<(), Strin
 /// A shape's numbers at each example, as a vector's file writes them: `[greatest, second]`, where a
 /// fraction is `[top, bottom]`, null where a bound stopped it, and 0 at its default.
 fn slot_json(slot: &arclog_encoder::generate::Slot) -> serde_json::Value {
-    use arclog_encoder::generate::{Number, SLOT_DEFAULT, SLOT_NO_VALUE};
+    use arclog_encoder::generate::{Number, SlotState};
     let number = |value: Number| if value.bottom <= 1 { serde_json::json!(value.top) } else { serde_json::json!([value.top, value.bottom]) };
     match slot.state {
-        SLOT_DEFAULT => serde_json::json!(0),
-        SLOT_NO_VALUE => serde_json::Value::Null,
-        _ => serde_json::json!([number(slot.greatest), number(slot.second)]),
+        SlotState::Default => serde_json::json!(0),
+        SlotState::NoValue => serde_json::Value::Null,
+        SlotState::Value => serde_json::json!([number(slot.greatest), number(slot.second)]),
     }
 }
 
@@ -1299,9 +1299,9 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
                 for (hash, at) in found.sorted_roots() {
                     let at = at * found.stride;
                     let live = &found.slots[at..at + found.stride];
-                    active += usize::from(live.iter().any(|slot| slot.state != 0));
-                    for (instance, slot) in live.iter().enumerate().filter(|(_, slot)| slot.state != 0) {
-                        check = check.wrapping_add(((hash as u64) ^ slot.digest.rotate_left(instance as u32)).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (u64::from(slot.state) << 56) ^ u64::from(slot.undefined));
+                    active += usize::from(live.iter().any(|slot| slot.state != arclog_encoder::generate::SlotState::Default));
+                    for (instance, slot) in live.iter().enumerate().filter(|(_, slot)| slot.state != arclog_encoder::generate::SlotState::Default) {
+                        check = check.wrapping_add(((hash as u64) ^ slot.digest.rotate_left(instance as u32)).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (u64::from(slot.state as u8) << 56) ^ u64::from(slot.undefined));
                     }
                 }
                 println!("walk\t{name}\tseconds {:.1}\tactive entries {active}\tdigest {check:016x}\tpast the bound {}", started.elapsed().as_secs_f64(), walker.over_budget);
@@ -1624,7 +1624,7 @@ fn run_shape_count(arguments: &Arguments, files: &[String]) -> Result<(), String
             tables += 1;
             for (hash, at) in found.sorted_roots() {
                 let at = at * found.stride;
-                let live = found.slots[at..at + found.stride].iter().filter(|slot| slot.state != 0).count() as u64;
+                let live = found.slots[at..at + found.stride].iter().filter(|slot| slot.state != arclog_encoder::generate::SlotState::Default).count() as u64;
                 if live > 0 {
                     entries += 1;
                     values += live;
@@ -2055,12 +2055,12 @@ fn run_cap_hits(arguments: &Arguments, solvers: &[String]) -> Result<(), String>
                             continue;
                         }
                         let slots = vector.at(place);
-                        let valued = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SLOT_VALUE).count();
-                        let stopped = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SLOT_NO_VALUE).count();
+                        let valued = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SlotState::Value).count();
+                        let stopped = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SlotState::NoValue).count();
                         if valued == 0 && stopped == 0 {
                             continue;
                         }
-                        let distinct = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SLOT_VALUE).map(|slot| slot.digest).collect::<LookupSet<_>>().len();
+                        let distinct = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SlotState::Value).map(|slot| slot.digest).collect::<LookupSet<_>>().len();
                         let names = names.get_or_insert_with(|| names_of(&families.names));
                         listed_shapes.push(serde_json::json!([names.get(hash), valued, stopped, distinct, vector.scope(place)]));
                     }

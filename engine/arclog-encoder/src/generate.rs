@@ -2351,7 +2351,20 @@ impl Number {
     }
 }
 
-/// A root's numbers at one instance. A root with no slot, or with `state` 0, is at its default.
+/// What a root's numbers at one instance stand for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SlotState {
+    /// Every value of the root is its default, which is 0. The slot's numbers are unset.
+    #[default]
+    Default = 0,
+    /// At least one value of the root is not its default. The slot's numbers describe the values.
+    Value = 1,
+    /// A bound stopped a term that the root reads, or every binding of the root leaves the instance out. The root has no number here, and the slot's numbers are unset.
+    NoValue = 2,
+}
+
+/// A root's numbers at one instance. A root with no slot, or with the state [`SlotState::Default`], is at its default.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Slot {
     /// The greatest of its ground expressions' values.
@@ -2360,15 +2373,15 @@ pub struct Slot {
     pub second: Number,
     /// A commutative hash of the multiset of those values other than the default.
     pub digest: u64,
-    /// 0 where every value is the default, 1 where one is not, 2 where a bound stopped one.
-    pub state: u8,
+    /// What the slot stands for: the default, a value, or no value.
+    pub state: SlotState,
     /// The count of ground expressions that the root's definition leaves out here, as a ratio whose denominator counts 0.
     pub undefined: u32,
 }
 
-pub const SLOT_DEFAULT: u8 = 0;
-pub const SLOT_VALUE: u8 = 1;
-pub const SLOT_NO_VALUE: u8 = 2;
+// A `Number` is 8 bytes with 4-byte alignment. A slot holds two of them, a `u64`, a `u32` and a 1-byte state: 29 bytes, padded to the 8-byte alignment of the `u64`.
+const _: () = assert!(std::mem::size_of::<Slot>() == 32);
+const _: () = assert!(std::mem::size_of::<SlotState>() == 1);
 
 /// Each root's numbers at each instance of a table.
 #[derive(Default)]
@@ -2462,11 +2475,11 @@ pub struct Walker<'a> {
     values: Vec<Val>,
     value_index: FastMap<u128, u32>,
     memo: FastMap<(u32, u32, u32), u32>,
-    counts: FastMap<(u32, u32, u32), (u32, u32)>,
+    counts: FastMap<(u32, u32, u32), (Option<Count>, u32)>,
     /// How keys group a value's rows: a hash of the grouping, and the count of groups.
     groupings: FastMap<(u32, u32), (u128, u32)>,
     /// A part's count of rows at a grouping of its first value, with its second value.
-    group_counts: FastMap<(u32, u32, u128, u32), u32>,
+    group_counts: FastMap<(u32, u32, u128, u32), Option<Count>>,
     /// The cells that `values` holds.
     held_cells: usize,
     /// For a lazy value by id, the id of its written rows.
@@ -2526,8 +2539,26 @@ fn resident_cells() -> usize {
     static LIMIT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *LIMIT.get_or_init(|| std::env::var("GENERATE_RESIDENT_CELLS").ok().and_then(|text| text.parse().ok()).unwrap_or(RESIDENT_CELLS))
 }
-/// A count past this stands for "no value": a bound stopped the term.
-const NO_COUNT: u32 = u32::MAX;
+/// A count of rows. A count above [`Count::MOST`] is held as that. The count is stored as one more than its value, in a non-zero integer, so that an `Option<Count>` is as large as a `u32`. `None` stands for a term that has no value, because a bound stopped it or it reads a relation that has no value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Count(std::num::NonZeroU32);
+
+const _: () = assert!(std::mem::size_of::<Option<Count>>() == 4);
+
+impl Count {
+    /// The greatest count that is held.
+    const MOST: u32 = u32::MAX - 1;
+    const ZERO: Count = Count(std::num::NonZeroU32::MIN);
+
+    fn of(rows: u64) -> Count {
+        // The sum is at least 1, so the fallback is never taken.
+        Count(std::num::NonZeroU32::new(rows.min(u64::from(Count::MOST)) as u32 + 1).unwrap_or(std::num::NonZeroU32::MIN))
+    }
+
+    fn get(self) -> u32 {
+        self.0.get() - 1
+    }
+}
 
 static NO_SHAPES: [crate::native::CompShape; 0] = [];
 static NO_INSTANCES: [crate::native::CompInstance; 0] = [];
@@ -2548,8 +2579,9 @@ fn set_cells(rows: Option<u64>, arity: usize) -> usize {
     rows.map_or(0, |rows| usize::try_from(rows.saturating_mul(arity as u64)).unwrap_or(usize::MAX))
 }
 
-fn count_of(value: &Val) -> u32 {
-    rows_of(value).map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32)
+/// The count of rows of a value, or `None` for a relation that has no value.
+fn count_of(value: &Val) -> Option<Count> {
+    rows_of(value).map(Count::of)
 }
 
 fn gcd(a: u64, b: u64) -> u64 {
@@ -2576,12 +2608,13 @@ fn held_of(value: &Val) -> usize {
     }
 }
 
-/// The value of a root at an instance, from the counts of rows.
-fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> RootNumber {
-    let share = |top: u32, bottom: u32| -> RootNumber {
-        if top == NO_COUNT || bottom == NO_COUNT {
+/// The value of a root at an instance, from the counts of rows, each `None` where its term has no value.
+fn root_value(of: RootOf, rows: Option<Count>, left: Option<Count>, other: Option<Count>, number: u32) -> RootNumber {
+    let share = |top: Option<Count>, bottom: Option<Count>| -> RootNumber {
+        let (Some(top), Some(bottom)) = (top, bottom) else {
             return RootNumber::Unknown;
-        }
+        };
+        let (top, bottom) = (top.get(), bottom.get());
         // A ratio whose denominator counts 0 is undefined, 0 over 0 included. A zero numerator over a denominator that counts rows is 0.
         if bottom == 0 {
             return RootNumber::Undefined;
@@ -2593,15 +2626,19 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Root
         RootNumber::Value(held, WORD_SET | (hash_words([u64::from(held.top as u32), u64::from(held.bottom)]) as u64 & PAYLOAD))
     };
     match of {
-        RootOf::Nonempty if rows == NO_COUNT => RootNumber::Unknown,
-        RootOf::Nonempty => RootNumber::Value(Number::whole(i64::from(rows > 0)), if rows > 0 { WORD_NONEMPTY | 1 } else { 0 }),
-        RootOf::Cardinality if rows == NO_COUNT => RootNumber::Unknown,
-        RootOf::Cardinality => RootNumber::Value(Number::whole(i64::from(rows)), if rows > 0 { WORD_COUNT | u64::from(rows) } else { 0 }),
+        RootOf::Nonempty => rows.map_or(RootNumber::Unknown, |rows| {
+            let rows = rows.get();
+            RootNumber::Value(Number::whole(i64::from(rows > 0)), if rows > 0 { WORD_NONEMPTY | 1 } else { 0 })
+        }),
+        RootOf::Cardinality => rows.map_or(RootNumber::Unknown, |rows| {
+            let rows = rows.get();
+            RootNumber::Value(Number::whole(i64::from(rows)), if rows > 0 { WORD_COUNT | u64::from(rows) } else { 0 })
+        }),
         RootOf::Share => share(rows, left),
         RootOf::Over => share(rows, other),
         RootOf::Under => share(other, rows),
         RootOf::OverExamples => share(rows, other),
-        RootOf::ValueSet if rows == NO_COUNT => RootNumber::Unknown,
+        RootOf::ValueSet if rows.is_none() => RootNumber::Unknown,
         // One member gives a number. A set with no member, or with several, is undefined.
         RootOf::ValueSet if number > 0 => RootNumber::Value(Number::whole(number_of_word(number)), WORD_SET | u64::from(number)),
         RootOf::ValueSet => RootNumber::Undefined,
@@ -2932,11 +2969,11 @@ impl<'a> Walker<'a> {
     }
 
     /// The count of rows that an idle term gives at one instance, as the evaluation gives it: no value where the first relation has none, or the second has none. Any other idle term has no rows. A relation is given as its id and the arity of the term that gives it.
-    fn idle_rows(&self, first: (u32, usize), second: Option<(u32, usize)>) -> u32 {
+    fn idle_rows(&self, first: (u32, usize), second: Option<(u32, usize)>) -> Option<Count> {
         if self.has_no_value(first.0, first.1) || second.is_some_and(|(id, arity)| self.has_no_value(id, arity)) {
-            NO_COUNT
+            None
         } else {
-            0
+            Some(Count::ZERO)
         }
     }
 
@@ -2973,7 +3010,7 @@ impl<'a> Walker<'a> {
     }
 
     /// A term's count of rows and, for a number root, its number, with what can be left unbuilt left so.
-    fn count_only(&mut self, step: &Step, at: usize, id: u32, b: u32, number: bool, steps: &StepIds) -> (u32, u32) {
+    fn count_only(&mut self, step: &Step, at: usize, id: u32, b: u32, number: bool, steps: &StepIds) -> (Option<Count>, u32) {
         if let Some(found) = self.memo.get(&(steps.ids[at], id, b)).copied() {
             crate::bounds::recall((0, steps.ids[at], id, 0, b));
             let value = &self.values[found as usize];
@@ -2990,7 +3027,7 @@ impl<'a> Walker<'a> {
                 let second = (b != NO_TERM).then(|| &self.values[b as usize]);
                 if let Some(found) = joined.count_of(step).or_else(|| joined.count_over(step, second)) {
                     crate::bounds::end(false);
-                    return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
+                    return (found.map(Count::of), 0);
                 }
             }
         }
@@ -3005,7 +3042,7 @@ impl<'a> Walker<'a> {
                 let second = (b != NO_TERM).then(|| &self.values[b as usize]);
                 if let Some(found) = boxes.count_of(step, second) {
                     crate::bounds::end(false);
-                    return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
+                    return (found.map(Count::of), 0);
                 }
             }
         }
@@ -3024,7 +3061,7 @@ impl<'a> Walker<'a> {
             if let Some(table) = table {
                 let (grouping, groups) = *self.groupings.entry((written, keys)).or_insert_with(|| crate::gen_parts::grouping_signature(&table, &steps.keys[keys as usize]));
                 if part == PROJECT {
-                    return (groups, 0);
+                    return (Some(Count::of(u64::from(groups))), 0);
                 }
                 let key = (part, written, grouping, b);
                 if let Some(found) = self.group_counts.get(&key).copied() {
@@ -3053,7 +3090,7 @@ impl<'a> Walker<'a> {
             let second = self.values[second_id as usize].clone();
             if let Some(found) = self.eval.count(step, &[&first, &second]) {
                 crate::bounds::end(id == 0 || b == 0);
-                return (found.map_or(NO_COUNT, |count| count.min(u64::from(NO_COUNT - 1)) as u32), 0);
+                return (found.map(Count::of), 0);
             }
         }
         let value = self.apply(step, id, b);
@@ -3218,7 +3255,7 @@ impl<'a> Walker<'a> {
                             crate::bounds::tally("stopped: first cut by cap", format!("{of:?}"), scope as u64);
                         }
                         let base = table.slots_of(*hash, term.flags, term.size, *of);
-                        table.slots[base..base + scope].iter_mut().for_each(|slot| slot.state = SLOT_NO_VALUE);
+                        table.slots[base..base + scope].iter_mut().for_each(|slot| slot.state = SlotState::NoValue);
                     }
                 }
             } else if wanted && listed != 0 && !term.roots.is_empty() {
@@ -3268,7 +3305,7 @@ impl<'a> Walker<'a> {
                                 found
                             }
                         };
-                        spent = spent.saturating_add(set_cells((counted.0 != NO_COUNT).then_some(u64::from(counted.0)), columns));
+                        spent = spent.saturating_add(set_cells(counted.0.map(|count| u64::from(count.get())), columns));
                         if crate::native::take_passed_output_limit() || spent > walk_cells() {
                             cut_off = true;
                             self.over_budget = true;
@@ -3278,12 +3315,13 @@ impl<'a> Walker<'a> {
                         counted
                     };
                     let left = count_of(&self.values[id as usize]);
-                    let other = if term.b == NO_TERM { NO_COUNT } else { count_of(&self.values[b as usize]) };
+                    // A term with no second relation has no count of one, so a root over two relations reads it as no value.
+                    let other = if term.b == NO_TERM { None } else { count_of(&self.values[b as usize]) };
                     for (place, (hash, of)) in term.roots.iter().enumerate() {
                         if listed & (1 << place) == 0 {
                             continue;
                         }
-                        let value = root_value(*of, rows, left, if *of == RootOf::OverExamples { self.examples } else { other }, number);
+                        let value = root_value(*of, rows, left, if *of == RootOf::OverExamples { Some(Count::of(u64::from(self.examples))) } else { other }, number);
                         // Nothing to add at a default value, which is a slot's own state.
                         if matches!(value, RootNumber::Value(_, 0)) {
                             continue;
@@ -3303,14 +3341,14 @@ impl<'a> Walker<'a> {
                         let base = table.slots_of(*hash, term.flags, term.size, *of);
                         let slot = &mut table.slots[base + pair];
                         match value {
-                            RootNumber::Unknown => slot.state = SLOT_NO_VALUE,
+                            RootNumber::Unknown => slot.state = SlotState::NoValue,
                             RootNumber::Undefined => {
                                 slot.undefined += 1;
                                 left_out = true;
                             }
                             RootNumber::Value(held, word) => {
-                                if slot.state == SLOT_DEFAULT {
-                                    slot.state = SLOT_VALUE;
+                                if slot.state == SlotState::Default {
+                                    slot.state = SlotState::Value;
                                     slot.greatest = held;
                                     slot.second = held;
                                 } else {
@@ -3335,7 +3373,7 @@ impl<'a> Walker<'a> {
                 for (place, (hash, of)) in term.roots.iter().enumerate() {
                     if listed & (1 << place) != 0 {
                         let base = table.slots_of(*hash, term.flags, term.size, *of);
-                        table.slots[base..base + scope].iter_mut().for_each(|slot| slot.state = SLOT_NO_VALUE);
+                        table.slots[base..base + scope].iter_mut().for_each(|slot| slot.state = SlotState::NoValue);
                     }
                 }
             }
@@ -3379,8 +3417,8 @@ impl<'a> Walker<'a> {
         for (at, hash) in hashes.iter().enumerate().filter(|_| left_out) {
             let (full, out) = bindings.get(hash).copied().unwrap_or((0, 0));
             for (pair, slot) in slots[at * *stride..at * *stride + instances].iter_mut().enumerate() {
-                if slot.undefined > 0 && slot.state == SLOT_DEFAULT && slot.undefined == full + if pair < out_scope { out } else { 0 } {
-                    slot.state = SLOT_NO_VALUE;
+                if slot.undefined > 0 && slot.state == SlotState::Default && slot.undefined == full + if pair < out_scope { out } else { 0 } {
+                    slot.state = SlotState::NoValue;
                     if crate::bounds::enabled() {
                         crate::bounds::tally("no value: every binding left out", format!("{:?}", meta[at].2), 1);
                     }

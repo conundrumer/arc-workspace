@@ -483,7 +483,7 @@ pub fn query_vectors(host: &Host, grids: &Grids, families: &Generators, d: usize
                     bucket.put(&at, "type_share", shared as f64 / table.types.len().max(1) as f64);
                     if let Some(own_vector) = &own_vector {
                         let their = vector_of(&other);
-                        let active: Vec<usize> = (0..own_vector.shapes.len()).filter(|shape| own_vector.at(*shape).iter().any(|slot| slot.state != 0)).collect();
+                        let active: Vec<usize> = (0..own_vector.shapes.len()).filter(|shape| own_vector.at(*shape).iter().any(|slot| slot.state != crate::generate::SlotState::Default)).collect();
                         let same = active.iter().filter(|shape| own_vector.same_at_each_example(**shape, &their)).count();
                         bucket.put(&at, "same_entries_share", same as f64 / active.len().max(1) as f64);
                     }

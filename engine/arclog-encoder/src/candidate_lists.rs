@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::catalog_lists::{named_shapes, reads_output};
 use crate::gen_constants::number_of;
-use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, READS_TABLE, SLOT_DEFAULT, SLOT_NO_VALUE};
+use crate::generate::{is_number, Generated, Generators, Walker, READS_INPUT, READS_OUTPUT, READS_TABLE, SlotState};
 use crate::native::{hash_words, FastMap};
 use crate::program_relations::{add_table_columns, program_facts, table_numbers, ProgramFacts};
 use crate::stored::Stored;
@@ -48,10 +48,11 @@ fn stable_of(owner: serde_json::Value, vector: &TableVector) -> Written {
         } else if count == 0 || least != 0.0 || most != 0.0 {
             graded.push((vector.shapes[shape], least as f32, mean as f32, most as f32));
             at_pairs.extend(vector.at(shape).iter().enumerate().map(|(example, slot)| match slot.state {
+                // An example past the shape's scope is written as 0.
                 _ if example >= vector.scope(shape) => 0.0,
-                SLOT_NO_VALUE => f32::NAN,
-                SLOT_DEFAULT => 0.0,
-                _ => slot.greatest.float() as f32,
+                SlotState::NoValue => f32::NAN,
+                SlotState::Default => 0.0,
+                SlotState::Value => slot.greatest.float() as f32,
             }));
         }
     }
@@ -155,7 +156,7 @@ fn wide_of(owner: serde_json::Value, table: &Stored, grids: &Grids, families: &G
         for (at, shape) in wide.shapes.iter().enumerate() {
             let slot = &wide.slots[at];
             ids.push(*shape);
-            values.push(if slot.state == SLOT_NO_VALUE { f32::NAN } else { slot.greatest.float() as f32 });
+            values.push(if slot.state == SlotState::NoValue { f32::NAN } else { slot.greatest.float() as f32 });
         }
     }
     Written { owner, ids, values, graded: Vec::new(), pairs: 0, at_pairs: Vec::new() }
@@ -265,7 +266,8 @@ impl PairValues {
             counted.push(seen != 0);
             if each {
                 let scope = vector.scope(shape);
-                at.extend(vector.at(shape).iter().enumerate().map(|(example, slot)| if example < scope && slot.state != SLOT_NO_VALUE && slot.state != SLOT_DEFAULT { slot.greatest.float() as f32 } else { 0.0 }));
+                // A slot with no value is written as 0 here, as an example past the scope and a default are. The other lists in this file write NaN for it.
+                at.extend(vector.at(shape).iter().enumerate().map(|(example, slot)| if example < scope && slot.state == SlotState::Value { slot.greatest.float() as f32 } else { 0.0 }));
             }
         }
         PairValues { shapes: vector.shapes.clone(), means, counted, at }
