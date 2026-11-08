@@ -38,6 +38,7 @@ mod open_read_refusals;
 mod out_form;
 mod orientation_tables;
 mod panic_isolation;
+mod part_columns;
 mod program_edits;
 mod proposer_column_types;
 mod query_identity;

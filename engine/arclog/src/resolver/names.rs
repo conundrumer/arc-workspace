@@ -387,8 +387,8 @@ impl Names {
     /// `columns` gives: the resolved content of a clause of those conjuncts
     /// and those columns alone, after a mark that no form's content opens
     /// with, and `columns` in the order of the part's columns, the order of
-    /// their labels' canonical positions. `None` where `clause` is the path
-    /// of no clause.
+    /// their labels' canonical positions, which the content ends with, in
+    /// that order. `None` where `clause` is the path of no clause.
     pub(super) fn part_content(&self, program: &Node<Program>, clause: &NodePath, conjuncts: &[u32], columns: &[LabelId]) -> Option<(CanonicalForm, Box<[LabelId]>)> {
         let at = At::of(program, clause)?;
         let NodeRef::Clause(whole) = at.node else { return None };
@@ -412,6 +412,11 @@ impl Names {
         let mut out = CanonicalWriter::default();
         out.write(&[Mark::Part as u8]);
         out.write(&form.bytes);
+        // The positions of the columns, in their order, so that two parts of one form whose columns stand in other orders have two contents.
+        out.len(ordered.len());
+        for label in &ordered {
+            out.write(&position(label).unwrap_or(u32::MAX).to_le_bytes());
+        }
         Some((out.finish(), ordered.into()))
     }
 

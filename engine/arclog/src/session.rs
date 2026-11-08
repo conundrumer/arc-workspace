@@ -20,16 +20,19 @@ use crate::registry::LibName;
 use crate::task::Task;
 use crate::terms::{Example, InternTable, TermId};
 
-/// What a result-cache entry evaluates: a form's resolved content, for a
-/// clause or a part of a body, the compiled clause of a body of a form
-/// over a lib component, or the resolved content of a node of the
-/// dependency graph, for an output of an instance. The variants never
-/// compare equal.
+/// What a result-cache entry evaluates: a form's resolved content, the
+/// resolved content of a clause's body or of a part of one with the types of
+/// its columns, the compiled clause of a body of a form over a lib
+/// component, or the resolved content of a node of the dependency graph, for
+/// an output of an instance. The variants never compare equal.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ResultContent {
     Form(crate::resolver::ResolvedContent),
     Body(crate::eval::ir::ClauseIr),
     Node(crate::resolver::ResolvedContent),
+    /// A clause's body or a part of one: its resolved content and the type
+    /// of each column of its relation, in the order of the cells of its rows.
+    Typed(crate::resolver::ResolvedContent, Box<[crate::types::ValueType]>),
 }
 
 /// The key of a result-cache entry: the content of the conjunction
@@ -924,6 +927,7 @@ fn relation_bytes(relation: &Relation) -> usize {
 fn entry_bytes(key: &ResultKey) -> usize {
     let clause = match &key.clause {
         ResultContent::Form(content) | ResultContent::Node(content) => content.bytes(),
+        ResultContent::Typed(content, types) => content.bytes() + std::mem::size_of_val(&**types),
         ResultContent::Body(ir) => std::mem::size_of_val(&*ir.variables) + std::mem::size_of_val(&*ir.nodes) + std::mem::size_of_val(&*ir.columns),
     };
     std::mem::size_of::<ResultKey>()

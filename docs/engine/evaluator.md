@@ -40,6 +40,7 @@ The step ends when the concept case of each solver, at the stored `param` record
 
 - The result cache is a memo table of evaluated relations, keyed by content. The map finds a key by its hash, and compares two keys whose hashes match by their content. The key of an entry holds:
     - the clause IR after name resolution, in canonical form,
+    - for the entry of a clause's body or of a part of one, the type of each column of its relation, in the order of the cells of its rows, so that a hit gives cells under the types that the reader reads them with,
     - the id of each relation it reads, fact relations such as `input`, `ex_input` and `ex_output` among them, so that cases whose relations hold the same rows on an input share every entry that reads them, as [One program per case](performance.md#one-program-per-case) gives,
     - the parameter values it reads.
 - A relation's id is interned by its rows: the hash combines the hashes of the rows in no order, and two relations whose hashes match are compared by their rows. So two relations share an id only when they hold the same rows.

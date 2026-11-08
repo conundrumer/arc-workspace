@@ -22,7 +22,7 @@ use crate::resolver::ResolvedContent;
 use crate::resolver::{DependencyKind, GraphNodeIndex};
 use crate::terms::Example;
 use crate::trace::{RunRecord, RunTrace};
-use crate::types::GraphRelation;
+use crate::types::{GraphRelation, ValueType};
 
 /// The evaluation of the entries one request reaches, each entry once at
 /// the current model.
@@ -312,7 +312,8 @@ impl<'e, 'a> Driver<'e, 'a> {
         let all: Vec<usize> = (0..body.clause.nodes.len()).collect();
         let reads = self.reads(&body.clause, &all, &inputs);
         let shape = || carry::body_shape(&body);
-        self.cached(form, &reads.request(&content, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example)))
+        let types: Box<[ValueType]> = body.clause.columns.iter().map(|variable| body.clause.variables[usize::from(variable.0)].ty.clone()).collect();
+        self.cached(form, &reads.request(&content, &types, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example)))
     }
 
     /// The relation of the conjuncts at `kept` of the body of the clause at
@@ -386,7 +387,7 @@ impl<'e, 'a> Driver<'e, 'a> {
         example: Option<Example>,
     ) -> RelationValue {
         let evaluation = self.evaluation;
-        let request = entry.reads.request(&entry.content, example);
+        let request = entry.request(example);
         if let Some(found) = cache::lookup(evaluation.session, evaluation.limits, &request, form) {
             return found.value;
         }
@@ -428,11 +429,12 @@ impl<'e, 'a> Driver<'e, 'a> {
         conjuncts.dedup();
         let labels: Vec<crate::program::LabelId> = part.columns(&body.clause).iter().map(|column| body.columns[usize::from(column.0)]).collect();
         let (content, ordered) = self.evaluation.program.part_content(form, &conjuncts, &labels).expect("the content of a part of a clause's body");
-        let columns = ordered
+        let columns: Box<[ColumnIndex]> = ordered
             .iter()
             .map(|label| ColumnIndex(body.columns.iter().position(|found| found == label).expect("a column of the body") as u16))
             .collect();
-        PartEntry { content, reads: self.reads(&body.clause, &part.nodes, inputs), columns }
+        let types = columns.iter().map(|column| body.clause.variables[usize::from(body.clause.columns[usize::from(column.0)].0)].ty.clone()).collect();
+        PartEntry { content, reads: self.reads(&body.clause, &part.nodes, inputs), columns, types }
     }
 
     /// The relations that the nodes `nodes` of `clause` read in `inputs`, a
@@ -760,10 +762,25 @@ impl<'e, 'a> Driver<'e, 'a> {
 /// The entry of a part of a body: its resolved content, the relations it
 /// reads, and the columns of the body's clause that its rows hold, in the
 /// order of the rows' columns.
+///
+/// `columns` is the one list that gives the part's cells their places and
+/// their types: the search of the part projects onto the columns in that
+/// order, the body places the cells of the entry's value at those columns,
+/// and `types`, the type of each of those columns, is part of the entry's
+/// key. So an entry that the cache holds for the key has its cells under the
+/// types of the columns that read them, whichever request made the entry.
 struct PartEntry {
     content: ResolvedContent,
     reads: Reads,
     columns: Box<[ColumnIndex]>,
+    types: Box<[ValueType]>,
+}
+
+impl PartEntry {
+    /// The request for the entry of the part, on `example`.
+    fn request(&self, example: Option<Example>) -> cache::EntryRequest<'_> {
+        self.reads.request(&self.content, &self.types, example)
+    }
 }
 
 /// The relations an entry reads: the relations of its `DET`s, its
@@ -775,10 +792,11 @@ struct Reads {
 }
 
 impl Reads {
-    /// The request of the entry of `content` that reads these relations, on
-    /// `example`.
-    fn request<'r>(&'r self, content: &'r ResolvedContent, example: Option<Example>) -> cache::EntryRequest<'r> {
-        cache::EntryRequest { clause: cache::EntryContent::Form(content), reads: &self.reads, example, parameters: &self.parameters }
+    /// The request of the entry of `content`, whose relation has columns of
+    /// `types` in the order of the cells of its rows, that reads these
+    /// relations, on `example`.
+    fn request<'r>(&'r self, content: &'r ResolvedContent, types: &'r [ValueType], example: Option<Example>) -> cache::EntryRequest<'r> {
+        cache::EntryRequest { clause: cache::EntryContent::Typed(content, types), reads: &self.reads, example, parameters: &self.parameters }
     }
 }
 
