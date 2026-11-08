@@ -620,7 +620,7 @@ impl State {
             }
         }
         crate::stats::tick(crate::stats::Phase::DecodePrefixMiss);
-        // A prefix check is no content: its work counts as effort, and a hit on its verdict charges bytes alone.
+        // A prefix check is no content: its work counts as effort, and a hit on its verdict charges its bytes and its effort alone.
         let (verdict, cost) = match charged {
             Some((work, _)) => {
                 let (verdict, cost) = work.measure(|| crate::eval::uncounted(compute));

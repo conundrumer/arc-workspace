@@ -953,15 +953,16 @@ thread_local! {
     /// The request of the export of a task's evidence tables, begun after [`LATEST`] ([`RequestWork::side`]); none once another request begins.
     static SIDE: RefCell<Option<RequestWork>> = const { RefCell::new(None) };
     /// What this thread charges, for the costs of entries ([`Tally`]).
-    static TALLY: RefCell<Tally> = const { RefCell::new(Tally { frames: Vec::new(), unbilled: 0 }) };
+    static TALLY: RefCell<Tally> = const { RefCell::new(Tally { frames: Vec::new(), unbilled: 0, effort: 0 }) };
 }
 
 /// Runs `run` with the sums that cut results turned off on this thread: a
 /// charge to the request's work ([`RequestWork::charge`]) or to an
-/// observation's count ([`TableWork::charge`]) adds to neither, and adds
-/// nothing to the effort of the request either, which counts the bindings that
-/// searches try ([`RequestWork::charge_effort`]), and no cost fits or misfits
-/// against them. The measurements open still record the charges, so
+/// observation's count ([`TableWork::charge`]) adds to neither. The bindings
+/// that searches try in the scope still count as effort
+/// ([`RequestWork::charge_effort`]), and a hit on an entry that the scope
+/// computed charges that effort. No cost fits or misfits against the sums that
+/// the scope turns off. The measurements open still record the charges, so
 /// the cost of an entry that `run` computes is what it is anywhere, and a
 /// later hit on it, outside, charges that cost.
 ///
@@ -1002,6 +1003,9 @@ struct Tally {
     /// The rows that index builds on this thread walked, for which no call had
     /// a request at hand ([`RequestWork::note_unbilled`]).
     unbilled: u64,
+    /// The effort that this thread has charged to any request, which
+    /// [`RequestWork::thread_effort`] gives.
+    effort: u64,
 }
 
 /// One open measurement.
@@ -1009,6 +1013,9 @@ struct Frame {
     /// The identity of the request that the measurement counts the charges
     /// to.
     request: usize,
+    /// The identity of the effort count that the measurement counts the
+    /// charges to, which the candidates of a call share with their request.
+    effort: usize,
     /// The rows that were unbilled when the measurement began, which belong
     /// to the work around it.
     held: u64,
@@ -1099,18 +1106,22 @@ impl ByteSpan {
 
 /// What the computation of an entry charged, which a hit on the entry charges
 /// again: the units in the request, the bindings in the observation's count,
-/// the bytes it held, and the largest counts that its evaluations noted. A
-/// cost includes the costs of the entries that the computation read, so it is
-/// the cost of the computation with every cache empty. It is a function of the
-/// entry alone. A hit holds the bytes that the entry's value holds ([`ByteSpan::net`]),
-/// after it checks the budgets against the most the computation held
-/// ([`ByteSpan::peak`]).
+/// the effort in the request, the bytes it held, and the largest counts that
+/// its evaluations noted. A cost includes the costs of the entries that the
+/// computation read, so it is the cost of the computation with every cache
+/// empty. It is a function of the entry alone. A hit holds the bytes that the
+/// entry's value holds ([`ByteSpan::net`]), after it checks the budgets
+/// against the most the computation held ([`ByteSpan::peak`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Cost {
     /// The units of work charged to the request.
     pub request: u64,
     /// The bindings charged to the observation's count.
     pub table: u64,
+    /// The effort charged to the request: the bindings that searches tried and
+    /// the other steps that count as effort ([`RequestWork::charge_effort`]),
+    /// the effort of the entries that the computation hit included.
+    pub effort: u64,
     /// The bytes held, under the request's byte budget
     /// ([`RequestWork::charge_bytes`]) and under the byte budget of the
     /// assignment where the computation ran in one ([`TableWork::charge_bytes`]).
@@ -1128,16 +1139,20 @@ pub struct Cost {
 impl Cost {
     /// This cost with no units for the request and none for the observation's
     /// count: the cost of a computation that no count which cuts a result
-    /// holds ([`uncounted`]), whose hit charges its bytes alone.
+    /// holds ([`uncounted`]), whose hit charges its bytes and its effort
+    /// alone.
     pub fn without_counts(self) -> Cost {
         Cost { request: 0, table: 0, ..self }
     }
 
     /// Adds what a computation inside the one this cost counts charged.
-    fn absorb(&mut self, inner: &Cost, same_request: bool) {
+    fn absorb(&mut self, inner: &Cost, same_request: bool, same_effort: bool) {
         if same_request {
             self.request = self.request.saturating_add(inner.request);
             self.bytes.absorb(inner.bytes);
+        }
+        if same_effort {
+            self.effort = self.effort.saturating_add(inner.effort);
         }
         self.table = self.table.saturating_add(inner.table);
         self.bindings = self.bindings.max(inner.bindings);
@@ -1147,21 +1162,23 @@ impl Cost {
     }
 
     /// Whether `request` and `table`, the observation's count where there is
-    /// one, stay within their caps and byte budgets after this cost. A hit
-    /// whose cost does not fit is no hit: the caller computes the entry again,
-    /// and the computation stops at the charge that a computation with empty
-    /// caches stops at. The bytes count against `assignment`, the observation
-    /// whose assignment budget they belong to.
+    /// one, stay within their caps and byte budgets after this cost, and the
+    /// effort of `request` within its guard. A hit whose cost does not fit is
+    /// no hit: the caller computes the entry again, and the computation stops
+    /// at the charge that a computation with empty caches stops at. The bytes
+    /// count against `assignment`, the observation whose assignment budget
+    /// they belong to.
     fn fits(&self, request: &RequestWork, table: Option<&TableWork>, assignment: Option<&TableWork>) -> bool {
         (is_uncounted() || request.count().saturating_add(self.request) <= request.cap())
+            && request.fits_effort(self.effort)
             && request.fits_bytes(self.bytes.peak)
             && table.is_none_or(|table| (is_uncounted() && !table.counts_uncounted()) || table.fits(self.table))
             && assignment.is_none_or(|work| work.fits_bytes(self.bytes.peak))
     }
 
-    /// Charges this cost for a hit: the units and the bytes to `request`, the
-    /// bindings to `table`, the bytes to `assignment`, and the counts to the
-    /// gauges of `request` and to `session`. The rows and the bytes of index
+    /// Charges this cost for a hit: the units, the effort and the bytes to
+    /// `request`, the bindings to `table`, the bytes to `assignment`, and the
+    /// counts to the gauges of `request` and to `session`. The rows and the bytes of index
     /// builds that wait for a charge stay waiting for the next one, as they do
     /// around a computation.
     fn charge(&self, request: &RequestWork, table: Option<&TableWork>, assignment: Option<&TableWork>, session: &TaskSession) -> Result<(), ReachedBound> {
@@ -1169,6 +1186,7 @@ impl Cost {
         tally_table(self.table);
         let charged = request
             .charge(self.request)
+            .and_then(|()| request.charge_effort(self.effort))
             .and_then(|()| request.charge_hit_bytes(self.bytes))
             .and_then(|()| table.map_or(Ok(()), |table| table.charge(self.table)))
             .and_then(|()| assignment.map_or(Ok(()), |work| work.charge_hit_bytes(self.bytes)));
@@ -1388,7 +1406,7 @@ impl RequestWork {
             (units, unbilled)
         });
         self.charge_effort(unbilled)?;
-        // The units are content, or the content that a hit recorded: they try no binding, so they add to no count here, and the effort has only the bindings that searches try ([`RequestWork::charge_effort`]).
+        // The units are content, or the content that a hit recorded: they try no binding, so they add to no effort here. A hit charges the effort that its entry recorded in [`Cost::charge`].
         if is_uncounted() {
             return Ok(());
         }
@@ -1414,8 +1432,9 @@ impl RequestWork {
     /// the effort is past the guard. Each later call gives it too, whatever it
     /// adds. The effort counts the bindings that searches try, and no result
     /// depends on it: the guard stops a runaway, and its stop is a fault of
-    /// the call ([`take_effort_fault`]). A hit in a cache charges no effort,
-    /// since it tries no binding.
+    /// the call ([`take_effort_fault`]). A hit in a cache charges the effort
+    /// that its entry's computation charged ([`Cost`]), so the effort of a
+    /// request does not depend on what the caches held.
     #[inline]
     pub fn charge_effort(&self, bindings: u64) -> Result<(), ReachedBound> {
         let cap = self.effort_cap;
@@ -1424,7 +1443,12 @@ impl RequestWork {
         }
         // Past 2^40 a charge is past the guard, and the clamp keeps the sum from wrapping.
         let bindings = bindings.min(1 << 40);
-        let effort = if bindings == 0 { self.effort.count.load(Ordering::Relaxed) } else { self.effort.count.fetch_add(bindings, Ordering::Relaxed).saturating_add(bindings) };
+        let effort = if bindings == 0 {
+            self.effort.count.load(Ordering::Relaxed)
+        } else {
+            self.tally_effort(bindings);
+            self.effort.count.fetch_add(bindings, Ordering::Relaxed).saturating_add(bindings)
+        };
         if effort > cap {
             if !self.effort.exhausted.swap(true, Ordering::Relaxed) {
                 self.gauges.hit(Gauge::Effort, effort, cap);
@@ -1434,6 +1458,38 @@ impl RequestWork {
         }
         self.gauges.note(Gauge::Effort, effort, cap);
         Ok(())
+    }
+
+    /// Notes in the innermost open measurement the `bindings` charged to the
+    /// effort, where it measures this request's effort.
+    fn tally_effort(&self, bindings: u64) {
+        let key = self.effort_key();
+        tally(|tally| {
+            tally.effort = tally.effort.saturating_add(bindings);
+            if let Some(top) = tally.frames.last_mut()
+                && top.effort == key
+            {
+                top.cost.effort = top.cost.effort.saturating_add(bindings);
+            }
+        });
+    }
+
+    /// The effort that the requests have charged on this thread since it
+    /// began. The difference between two readings is the effort that the
+    /// thread charged between them, the effort of its hits included.
+    pub fn thread_effort() -> u64 {
+        tally(|tally| tally.effort)
+    }
+
+    /// Whether the effort stays within its guard after `effort` more.
+    pub fn fits_effort(&self, effort: u64) -> bool {
+        self.effort.count.load(Ordering::Relaxed).saturating_add(effort) <= self.effort_cap
+    }
+
+    /// The identity of the effort count, which the open measurements name it
+    /// by.
+    fn effort_key(&self) -> usize {
+        Arc::as_ptr(&self.effort) as usize
     }
 
     /// The bindings that the request's searches have tried.
@@ -1577,7 +1633,7 @@ impl RequestWork {
     pub fn measure_holding<T>(&self, run: impl FnOnce() -> T, held_by: impl FnOnce(&T) -> u64) -> (T, Cost) {
         tally(|tally| {
             let held = std::mem::take(&mut tally.unbilled);
-            tally.frames.push(Frame { request: self.key(), held, assignment: None, cost: Cost::default() });
+            tally.frames.push(Frame { request: self.key(), effort: self.effort_key(), held, assignment: None, cost: Cost::default() });
         });
         let mut open = Unwind(true);
         let value = run();
@@ -1592,7 +1648,7 @@ impl RequestWork {
             frame.cost.bytes.net -= freed;
             if let Some(outer) = tally.frames.last_mut() {
                 let same_request = frame.request == outer.request;
-                outer.cost.absorb(&frame.cost, same_request);
+                outer.cost.absorb(&frame.cost, same_request, frame.effort == outer.effort);
                 if let Some(account) = &frame.assignment {
                     outer.assignment.get_or_insert_with(|| Arc::clone(account));
                 }

@@ -820,7 +820,7 @@ impl<'a> Decoder<'a> {
         let work = self.request_work();
         let measured = || {
             let (mut mask, cost) = work.measure(|| self.compute_mask());
-            // The mask's units were effort: a hit on the mask charges its bytes alone.
+            // The mask's units were effort: a hit on the mask charges its bytes and its effort alone.
             mask.cost = cost.without_counts();
             mask
         };
