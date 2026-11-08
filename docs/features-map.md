@@ -30,6 +30,7 @@ Where each thing about features over tables is defined. One document defines eac
 - The named parts: `engine/lib/features.arclog`.
 - The scripts that score features: `model/feature_eval`.
 - The trainer those scripts run: `engine/block-boost`.
+- The writer's fit on `engine/block-boost`'s `softmax`: `model/study/samples/block_store.py` makes the store from points files, `block_model_lgb.py` makes a LightGBM text model of the trees, and `block_model_check.py` checks that model.
 - The first version: `model/contracts/features`, described in [its README](../model/contracts/README.md). It is a baseline, and a feature vector must give what it tells a learned model. It does not define what a feature is.
 - The neural encoder beside a language model, a route the project left: [Feature encoder](feature-encoder.md) is the design that `model/encoder.py` implements. Its tables are parameterized tables at one assignment.
 

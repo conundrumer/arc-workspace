@@ -766,6 +766,10 @@ struct Config {
     num_leaves: usize,
     min_data_in_leaf: f64,
     min_sum_hessian: f64,
+    /// LightGBM's `lambda_l2`: a leaf's output is -G/(H + lambda_l2). 0 asks for none.
+    lambda_l2: f64,
+    /// LightGBM's `max_delta_step`: a leaf's output, before the learning rate, is at most this in size. 0 asks for no limit.
+    max_delta_step: f64,
     fraction: f64,
     truncation: usize,
     max_rounds: usize,
@@ -776,6 +780,23 @@ struct Config {
     /// The least count of tasks on each side of a split, and each row's task. 0 asks for no such test.
     min_tasks: usize,
     row_task: Vec<u32>,
+}
+
+/// A leaf's output before the learning rate: -G/(H + lambda_l2), limited to +-max_delta_step where that is above 0.
+fn leaf_output(g: f64, h: f64, config: &Config) -> f64 {
+    let output = -g / (h + config.lambda_l2);
+    if config.max_delta_step > 0.0 { output.clamp(-config.max_delta_step, config.max_delta_step) } else { output }
+}
+
+/// What a leaf adds to the sum of gains, as LightGBM's `GetLeafGain`: G^2/(H + lambda_l2), and with max_delta_step the gain of the limited output w,
+/// -(2 G w + (H + lambda_l2) w^2).
+fn leaf_gain(g: f64, h: f64, config: &Config) -> f64 {
+    if config.max_delta_step > 0.0 {
+        let w = leaf_output(g, h, config);
+        -(2.0 * g * w + (h + config.lambda_l2) * w * w)
+    } else {
+        g * g / (h + config.lambda_l2)
+    }
 }
 
 /// Which columns a fit starts with, and which columns a split on a column admits.
@@ -1019,7 +1040,7 @@ fn best_in_column(store: &Store, k: usize, hist: &[Bin], total: (f64, f64, f64),
     };
     let mut best: Option<Split> = None;
     let mut consider = |pos: usize, nan_left: bool, left_g: f64, left_h: f64, right_g: f64, right_h: f64| {
-        let gain = left_g * left_g / left_h + right_g * right_g / right_h;
+        let gain = leaf_gain(left_g, left_h, config) + leaf_gain(right_g, right_h, config);
         if gain > parent && best.is_none_or(|b| gain - parent > b.gain) {
             best = Some(Split { column: k as u32, pos: pos as u32, default_left: nan_left, gain: gain - parent, left_g, left_h: left_h - EPSILON });
         }
@@ -1065,7 +1086,7 @@ fn best_split(store: &Store, used: &[u32], hist: &[Bin], total: (f64, f64, f64),
         return (None, Vec::new());
     }
     let most = if config.min_tasks > 0 { 16 } else { 1 };
-    let parent = g * g / (h + EPSILON);
+    let parent = leaf_gain(g, h + EPSILON, config);
     let (tops, open) = used
         .par_chunks(4096)
         .map(|chunk| {
@@ -1260,7 +1281,7 @@ fn grow(work: &mut Work, store: &Store, config: &Config, active: &[u32], grad: &
             work.give(hist, touched);
         }
         places.push((leaf.start, leaf.len));
-        tree.value[at] = if tree.column.is_empty() { 0.0 } else { -leaf.g / leaf.h * config.learning_rate };
+        tree.value[at] = if tree.column.is_empty() { 0.0 } else { leaf_output(leaf.g, leaf.h, config) * config.learning_rate };
     }
     (tree, places)
 }
@@ -1526,6 +1547,8 @@ fn fit(file: &Path) {
         num_leaves: v["num_leaves"].as_u64().unwrap() as usize,
         min_data_in_leaf: v["min_data_in_leaf"].as_f64().unwrap(),
         min_sum_hessian: v["min_sum_hessian"].as_f64().unwrap(),
+        lambda_l2: v["lambda_l2"].as_f64().unwrap_or(0.0),
+        max_delta_step: v["max_delta_step"].as_f64().unwrap_or(0.0),
         fraction: v["fraction"].as_f64().unwrap(),
         truncation: v["truncation"].as_u64().unwrap() as usize,
         max_rounds: v["max_rounds"].as_u64().unwrap() as usize,
@@ -1595,24 +1618,37 @@ fn fit(file: &Path) {
 }
 
 /// The softmax over one group's ids and over its positive ids: the gradient p - q, the Hessian p(1 - p) with a floor, and the loss.
+/// The largest score of a group, over all its ids and over its positive ids.
+fn group_maxima(score: &[f64], label: &[u8]) -> (f64, f64) {
+    let (mut most, mut most_positive) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for (&s, &l) in score.iter().zip(label) {
+        most = most.max(s);
+        if l > 0 {
+            most_positive = most_positive.max(s);
+        }
+    }
+    (most, most_positive)
+}
+
+/// One group's loss, -ln(sum of p over the positive ids), with its gradients p - q and hessians p(1 - p) floored at 1e-6. The sums are taken in log space,
+/// p against the group's largest score and q against its positives' largest, so a group whose positive ids score far below its best id keeps a finite
+/// loss and q is never 0/0.
 fn softmax_group(score: &[f64], label: &[u8], grad: &mut [f32], hess: &mut [f32]) -> f64 {
-    let most = score.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let (most, most_positive) = group_maxima(score, label);
     let (mut all, mut positive) = (0.0, 0.0);
     for (&s, &l) in score.iter().zip(label) {
-        let e = (s - most).exp();
-        all += e;
+        all += (s - most).exp();
         if l > 0 {
-            positive += e;
+            positive += (s - most_positive).exp();
         }
     }
     for i in 0..score.len() {
-        let e = (score[i] - most).exp();
-        let p = e / all;
-        let q = if label[i] > 0 { e / positive } else { 0.0 };
+        let p = (score[i] - most).exp() / all;
+        let q = if label[i] > 0 { (score[i] - most_positive).exp() / positive } else { 0.0 };
         grad[i] = (p - q) as f32;
         hess[i] = (p * (1.0 - p)).max(1e-6) as f32;
     }
-    -(positive / all).ln()
+    (most + all.ln()) - (most_positive + positive.ln())
 }
 
 /// The mean loss over the groups, and how often a group's best id is positive.
@@ -1621,14 +1657,13 @@ fn softmax_read(start: &[u32], label: &[u8], score: &[f64]) -> (f64, f64) {
     let (mut loss, mut top) = (0.0, 0.0);
     for g in 0..groups {
         let (a, b) = (start[g] as usize, start[g + 1] as usize);
-        let most = score[a..b].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let (most, most_positive) = group_maxima(&score[a..b], &label[a..b]);
         let (mut all, mut positive) = (0.0, 0.0);
         let (mut tied, mut tied_positive) = (0.0, 0.0);
         for i in a..b {
-            let e = (score[i] - most).exp();
-            all += e;
+            all += (score[i] - most).exp();
             if label[i] > 0 {
-                positive += e;
+                positive += (score[i] - most_positive).exp();
             }
             if score[i] == most {
                 tied += 1.0;
@@ -1637,56 +1672,132 @@ fn softmax_read(start: &[u32], label: &[u8], score: &[f64]) -> (f64, f64) {
                 }
             }
         }
-        loss += -(positive / all).ln();
+        loss += (most + all.ln()) - (most_positive + positive.ln());
         // Ids tied at the top share the point's credit, as `fit_trees.evaluate` gives.
         top += tied_positive / tied;
     }
     (loss / groups.max(1) as f64, top / groups.max(1) as f64)
 }
 
-/// Fits on the train groups and stops on the dev groups, as `fit_trees.py` does with LightGBM.
+/// Checks one grown tree against its rows. For each leaf it sums the gradients and Hessians of the rows that the partition put in it, and compares the leaf's
+/// value with -G/H x learning rate of those sums; it prints the leaf where they differ by a relative 1e-6, and the leaf with the largest value where that
+/// is above 50. With `full`, it prints every leaf, and it walks every row through the tree (`Store::left`) and counts the rows whose leaf differs from the partition's.
+fn audit_tree(store: &Store, tree: &Tree, places: &[(usize, usize)], indices: &[u32], grad: &[f32], hess: &[f32], config: &Config, round: usize, full: bool, biggest: &mut f64) {
+    if tree.column.is_empty() {
+        return;
+    }
+    let sums: Vec<(f64, f64)> = places
+        .par_iter()
+        .map(|&(start, len)| {
+            let (mut g, mut h) = (0.0f64, 0.0f64);
+            for &row in &indices[start..start + len] {
+                g += grad[row as usize] as f64;
+                h += hess[row as usize] as f64;
+            }
+            (g, h)
+        })
+        .collect();
+    let mut largest = 0usize;
+    for (leaf, &(g, h)) in sums.iter().enumerate() {
+        let implied = leaf_output(g, h + EPSILON, config) * config.learning_rate;
+        let relative = (tree.value[leaf] - implied).abs() / implied.abs().max(1e-12);
+        if relative > 1e-6 {
+            println!("audit round {round} leaf {leaf}: value {:.6e} but -G/H x rate of its {} rows is {implied:.6e} (G {g:.6e} H {h:.6e})", tree.value[leaf], places[leaf].1);
+        }
+        if full {
+            println!("audit round {round} leaf {leaf}: rows {} G {g:.6e} H {h:.6e} value {:.6e} implied {implied:.6e}", places[leaf].1, tree.value[leaf]);
+        }
+        if tree.value[leaf].abs() > tree.value[largest].abs() {
+            largest = leaf;
+        }
+    }
+    *biggest = biggest.max(tree.value[largest].abs());
+    if tree.value[largest].abs() > 50.0 {
+        let (g, h) = sums[largest];
+        println!("big leaf round {round} leaf {largest}: value {:.4e} rows {} G {g:.4e} H {h:.4e}", tree.value[largest], places[largest].1);
+    }
+    if full {
+        let mut leaf_of_row = vec![0u32; store.rows];
+        for (leaf, &(start, len)) in places.iter().enumerate() {
+            for &row in &indices[start..start + len] {
+                leaf_of_row[row as usize] = leaf as u32;
+            }
+        }
+        let wrong: Vec<u32> = (0..store.rows as u32).into_par_iter().filter(|&row| tree.leaf_of(store, row) != leaf_of_row[row as usize] as usize).collect();
+        println!("audit round {round}: {} of {} rows walk to another leaf than the partition put them in; first {:?}", wrong.len(), store.rows, &wrong[..wrong.len().min(5)]);
+    }
+}
+
+/// Fits on the train groups and stops on the dev groups, as `fit_trees.py` does with LightGBM. Where the JSON has no `dev`, it
+/// reads no dev store, runs exactly `max_rounds` rounds, and writes no dev score and no best round.
 fn softmax(file: &Path) {
     let v = read_json(file);
     let count = v["threads"].as_u64().unwrap() as usize;
     threads(count);
+    let has_dev = v.get("dev").is_some_and(|d| !d.is_null());
     let config = Config {
         learning_rate: v["learning_rate"].as_f64().unwrap(),
         num_leaves: v["num_leaves"].as_u64().unwrap() as usize,
         min_data_in_leaf: v["min_data_in_leaf"].as_f64().unwrap(),
         min_sum_hessian: v["min_sum_hessian"].as_f64().unwrap(),
+        lambda_l2: v["lambda_l2"].as_f64().unwrap_or(0.0),
+        max_delta_step: v["max_delta_step"].as_f64().unwrap_or(0.0),
         fraction: v["fraction"].as_f64().unwrap(),
         truncation: 0,
         max_rounds: v["max_rounds"].as_u64().unwrap() as usize,
-        patience: v["patience"].as_u64().unwrap() as usize,
+        patience: if has_dev { v["patience"].as_u64().unwrap() as usize } else { 0 },
         admit: None,
         stream: None,
         min_tasks: 0,
         row_task: Vec::new(),
     };
     let path = |name: &str| PathBuf::from(v[name].as_str().unwrap());
-    let (store, dev) = (Store::open(&path("train")), Store::open(&path("dev")));
+    let store = Store::open(&path("train"));
+    // The dev store with its group starts and labels, where the JSON names a dev store.
+    let dev: Option<(Store, Vec<u32>, Vec<u8>)> = if has_dev {
+        let store = Store::open(&path("dev"));
+        let (start, label): (Vec<u32>, Vec<u8>) = (read_all(&path("dev_groups")), read_all(&path("dev_labels")));
+        assert_eq!(label.len(), store.rows);
+        Some((store, start, label))
+    } else {
+        None
+    };
     let out = path("out");
     fs::create_dir_all(&out).unwrap();
     let (start, label): (Vec<u32>, Vec<u8>) = (read_all(&path("groups")), read_all(&path("labels")));
-    let (dev_start, dev_label): (Vec<u32>, Vec<u8>) = (read_all(&path("dev_groups")), read_all(&path("dev_labels")));
     assert_eq!(label.len(), store.rows);
-    assert_eq!(dev_label.len(), dev.rows);
-    println!("rows {} dev rows {} columns {} bins {} entries {} groups {} dev groups {}", store.rows, dev.rows, store.kept, store.bins, store.col_entries.iter().sum::<u64>(), start.len() - 1, dev_start.len() - 1);
+    if !has_dev {
+        assert_eq!(*start.last().unwrap() as usize, store.rows, "the last group start is the row count");
+    }
+    match &dev {
+        Some((dev_store, dev_start, _)) => println!("rows {} dev rows {} columns {} bins {} entries {} groups {} dev groups {}", store.rows, dev_store.rows, store.kept, store.bins, store.col_entries.iter().sum::<u64>(), start.len() - 1, dev_start.len() - 1),
+        None => println!("rows {} columns {} bins {} entries {} groups {} rounds {}", store.rows, store.kept, store.bins, store.col_entries.iter().sum::<u64>(), start.len() - 1, config.max_rounds),
+    }
     let bounds: Vec<f64> = read_all(&path("train").join("bounds.f64"));
     let bound_start: Vec<u32> = read_all(&path("train").join("bound_start.u32"));
     let mut work = Work::new(&store, count);
-    let (mut score, mut dev_score) = (vec![0.0f64; store.rows], vec![0.0f64; dev.rows]);
+    let mut score = vec![0.0f64; store.rows];
+    let mut dev_score = dev.as_ref().map_or(Vec::new(), |(dev_store, _, _)| vec![0.0f64; dev_store.rows]);
     let (mut grad, mut hess) = (vec![0.0f32; store.rows], vec![0.0f32; store.rows]);
     let mut random = Random(mix(v["seed"].as_u64().unwrap_or(0)));
     let mut columns: Vec<u32> = (0..store.kept as u32).collect();
     let sampled = ((config.fraction * store.kept as f64).round() as usize).clamp(1, store.kept.max(1));
     let active: Vec<u32> = (0..store.rows as u32).collect();
-    let dev_rows: Vec<u32> = (0..dev.rows as u32).collect();
+    let dev_rows: Vec<u32> = dev.as_ref().map_or(Vec::new(), |(dev_store, _, _)| (0..dev_store.rows as u32).collect());
     let (mut gain, mut splits) = (vec![0.0f64; store.kept], vec![0u32; store.kept]);
     let mut model = BufWriter::new(File::create(out.join("model.jsonl")).unwrap());
     let (mut best_loss, mut best_round, mut best_top) = (f64::INFINITY, 0usize, 0.0);
-    let (first_loss, first_top) = softmax_read(&dev_start, &dev_label, &dev_score);
-    println!("uniform dev loss {first_loss:.4} top {first_top:.4}");
+    let (first_loss, first_top) = match &dev {
+        Some((_, dev_start, dev_label)) => softmax_read(dev_start, dev_label, &dev_score),
+        None => (f64::NAN, f64::NAN),
+    };
+    if dev.is_some() {
+        println!("uniform dev loss {first_loss:.4} top {first_top:.4}");
+    }
+    let (mut last_train_loss, mut rounds_run) = (f64::NAN, 0usize);
+    // The rounds (1-based) at which the audit prints each leaf and walks every row through the tree; the sums of every tree are checked in all rounds.
+    let audit_rounds: Vec<usize> = v["audit_rounds"].as_array().map_or(Vec::new(), |a| a.iter().filter_map(|x| x.as_u64()).map(|x| x as usize).collect());
+    let mut biggest_leaf = 0.0f64;
     let started = Instant::now();
     for round in 1..=config.max_rounds {
         let mut train_loss = 0.0;
@@ -1718,25 +1829,39 @@ fn softmax(file: &Path) {
         used.sort_unstable();
         let (tree, places) = grow(&mut work, &store, &config, &active, &grad, &hess, &used);
         let empty = tree.column.is_empty();
+        audit_tree(&store, &tree, &places, &work.indices, &grad, &hess, &config, round, audit_rounds.contains(&round), &mut biggest_leaf);
         for (leaf, &(start_at, len)) in places.iter().enumerate() {
             for &row in &work.indices[start_at..start_at + len] {
                 score[row as usize] += tree.value[leaf];
             }
         }
-        let moves: Vec<f64> = dev_rows.par_iter().with_min_len(256).map(|&row| tree.value[tree.leaf_of(&dev, row)]).collect();
+        rounds_run = round;
+        last_train_loss = train_loss;
+        for (&k, &g) in tree.column.iter().zip(&tree.gain) {
+            gain[k as usize] += g;
+            splits[k as usize] += 1;
+        }
+        let Some((dev_store, dev_start, dev_label)) = &dev else {
+            // No dev set: every round runs, and each tree is on disk once it is made.
+            writeln!(model, "{}", tree_json(&tree, &bounds, &bound_start, &store.has_nan)).unwrap();
+            model.flush().unwrap();
+            if round % 25 == 0 || round == config.max_rounds || empty {
+                let seconds = started.elapsed().as_secs_f64();
+                let rate = round as f64 / seconds;
+                println!("round {round} of {} train loss {train_loss:.4}{} max |leaf| so far {biggest_leaf:.1} {rate:.2} rounds/s eta {:.0}s rss {:.2} GiB", config.max_rounds, if empty { " (no split)" } else { "" }, (config.max_rounds - round) as f64 / rate, resident_gib());
+            }
+            continue;
+        };
+        let moves: Vec<f64> = dev_rows.par_iter().with_min_len(256).map(|&row| tree.value[tree.leaf_of(dev_store, row)]).collect();
         for (held, step) in dev_score.iter_mut().zip(moves) {
             *held += step;
         }
-        let (loss, top) = softmax_read(&dev_start, &dev_label, &dev_score);
+        let (loss, top) = softmax_read(dev_start, dev_label, &dev_score);
         if loss < best_loss {
             best_loss = loss;
             best_round = round;
             best_top = top;
             write_all(&out.join("dev_best.f64"), &dev_score);
-        }
-        for (&k, &g) in tree.column.iter().zip(&tree.gain) {
-            gain[k as usize] += g;
-            splits[k as usize] += 1;
         }
         writeln!(model, "{}", tree_json(&tree, &bounds, &bound_start, &store.has_nan)).unwrap();
         if round % 25 == 0 || empty {
@@ -1749,7 +1874,11 @@ fn softmax(file: &Path) {
     model.flush().unwrap();
     write_all(&out.join("gain.f64"), &gain);
     write_all(&out.join("splits.u32"), &splits);
-    let result = json!({"best_round": best_round, "dev_loss": best_loss, "dev_top": best_top, "uniform_loss": first_loss, "uniform_top": first_top, "seconds": started.elapsed().as_secs_f64(), "rss_gib": resident_gib()});
+    let result = if dev.is_some() {
+        json!({"best_round": best_round, "dev_loss": best_loss, "dev_top": best_top, "uniform_loss": first_loss, "uniform_top": first_top, "seconds": started.elapsed().as_secs_f64(), "rss_gib": resident_gib()})
+    } else {
+        json!({"rounds": rounds_run, "train_loss": last_train_loss, "seconds": started.elapsed().as_secs_f64(), "rss_gib": resident_gib()})
+    };
     fs::write(out.join("result.json"), result.to_string()).unwrap();
     println!("done {result}");
 }
