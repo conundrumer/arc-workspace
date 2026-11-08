@@ -34,19 +34,28 @@ With --vectors a point row is the writer's full writing-point vector of each id 
   A point that fails is counted (`rebuild failures`, `point-scope columns that differ across ids`) and not written.
 - A file with vectors and a file without are never current for each other.
 
-With --draws, the search's draws give each point's `drawn` counts (docs/sample-build/training-instances.md, "Search draws"). GLOB is a glob of draw record files (model/study/sampler/draw_record.py);
-DIR is a folder searched for `draws.jsonl` files. A draw file of a task that is not train by split.py is refused (exit 2) before any file is written.
-- A draw is one line of a file: a record, or {"repeat": d, "draw": n}, which adds 1 to the count of the record of draw d of that file. A draw whose record solves every train example gives nothing.
-- A draw's last step is matched when its state (the set of its `state` QueryHashes) equals the state of a sample of the file (the samples that --samples-per-task keeps, and every sample whose state a draw has); its other steps
-  are not used. A draw that matches several samples is walked, and counted, for each.
+With --draws, the sampled-query records of the search give each point's `drawn` counts and the states off the samples (docs/sample-build/training-instances.md, "Sampled queries of the search").
+GLOB is a glob of record files (`draws.jsonl`, on disk plain or zstd; model/study/sampler/draw_record.py); DIR is a folder searched for `draws.jsonl` files. A record file of a task that is not
+train by split.py is refused (exit 2) before any file is written.
+- A record is one line of a file, or {"repeat": d, "draw": n}, which adds 1 to the count of the record of number d of that file. A record that solves every train example gives no `drawn` count.
+- A record's last step is matched when its state (the set of its `state` QueryHashes) equals the state of a sample of the file (the samples that --samples-per-task keeps, and every skeleton
+  sample whose state a record has); its other steps are used only to add a state. A record that matches several samples is walked, and counted, for each.
+- A last step whose state equals no such sample's state adds the state as a sample (plan_added), once whatever the count of records that reach it. Its targets are the target queries of the skeleton
+  sample whose state is the state's queries that are union queries (the queries of the skeleton), less the targets that the state holds. The state's other queries are written from the steps of a
+  record: each one's text with its pool names as local labels, and its use closure from the names that the text reads (off_path_queries). The scope holds them as it holds the union's queries, so
+  the engine gives their tables with `run.scope`, as it gives the union's. The sample's id is the skeleton's rule over the state's sorted QueryHashes. A state that cannot be added is counted
+  with its reason: a step has no QueryHash, a step does not give a query record, the ground-truth part is no sample's state, no target query is left, or the sample fails (the engine refused
+  the scope, or `error: <exception type>`; an exception of the engine that is no refusal is never counted as one).
 - The drawn query's names are the sample's: the last step's own name (`&fN`, the first name of its text) is `&r<len(scope)>`, as a target's own label is, and each other `&fN` (or a RIGID_DET part's
   `.fN` step) is the global label of the QueryHash of the step whose own name it is. Its token stream is decoded over the sample's scope as a target's is.
 - The path of the drawn query under the plan: `ordered` walks its canonical stream (order.canonical_stream, as the targets are walked); `unordered` walks its stream as written through the
   states of the search (train_rows.points_of_unordered's graph), from the first state, along the edge of each token.
-- At the first point of the path whose positives do not hold the drawn query's next token, that token gets the draw's count added to its `drawn` count, and the walk ends; where the token is not
+- At the first point of the path whose positives do not hold the drawn query's next token, that token gets the record's count added to its `drawn` count, and the walk ends; where the token is not
   an id of the point it is counted (`not admitted`) and nothing is added. A path whose tokens are all positives gives nothing.
-- `point` then also has `drawn`: [[index into ids, count], ...]. The header is written when the file is closed and also has `draws` (the task's draw files, each [path, sha256]) and
-  `draw_counts` (draws counted with their repeats: matched, unmatched, and what became of the matched ones).
+- `point` then also has `drawn`: [[index into ids, count], ...]. The header is written when the file is closed and also has `draws` (the task's record files, each [path, sha256 of the text]) and
+  `draw_counts`, in last steps with their repeats unless stated: `matched` (last steps whose state is a skeleton sample's), `added` (last steps whose state was added and written), `added states`
+  (the distinct states added and written), `not added: <reason>`, `solves` (of those, the records that solve every train example), and what became of the matched ones. The summary also has
+  `samples_added`.
 """
 import argparse
 import base64
@@ -64,7 +73,8 @@ import sys
 import tempfile
 import time
 import zlib
-from collections import Counter, defaultdict
+from collections import ChainMap, Counter, defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -73,6 +83,7 @@ import numpy as np
 
 _path = list(sys.path)
 from split import is_held_out, split_of  # noqa: E402
+import study_zst as Z  # noqa: E402  (split.py puts model/study on sys.path for it)
 sys.path[:] = _path  # split.py puts model/study first on sys.path, where its writer.py would shadow the writer kit's
 del _path
 
@@ -208,7 +219,7 @@ def vector_point_cols(wr: Any, names: tuple[str, ...]) -> list[int]:
 
 # ---------------------------------------------------------------- the scope
 
-def scope_of(members: list[str], queries: dict[str, dict]) -> tuple[list[str], dict[str, str]]:
+def scope_of(members: list[str], queries: Mapping[str, dict]) -> tuple[list[str], dict[str, str]]:
     """(the members' texts in scope order, the global label of each member's QueryHash)."""
     for h in members:
         if h not in queries:
@@ -251,24 +262,28 @@ def rewrite(query: dict, label: dict[str, str], own: str) -> str:
 
 @dataclass
 class Draw:
-    """The last step of a draw record, with the count of the draws that it stands for."""
+    """The last step of a sampled-query record, with the count of the records that it stands for."""
     text: str  # the drawn query as the pool wrote it, with &fN names
     state: frozenset[str | None]  # the QueryHashes of the steps before it
     names: dict[str, str]  # the own name of each step before it -> that step's QueryHash
     solves: bool
+    earlier: tuple[tuple[str, str | None], ...]  # (text, QueryHash) of the steps before the last, in program order
     count: int = 1
 
 
 def draw_files(spec: str) -> list[Path]:
-    """The draw record files of --draws: the `draws.jsonl` files below a folder, or the files of a glob."""
+    """The sampled-query record files of --draws, by their logical names (`draws.jsonl`, on disk plain or zstd): the files below a folder, or those that a glob matches."""
     if os.path.isdir(spec):
-        return sorted(Path(spec).rglob('draws.jsonl'))
-    return sorted(Path(p) for p in glob.glob(spec, recursive=True) if os.path.isfile(p))
+        found = {Z.logical(p) for p in Path(spec).rglob('draws.jsonl*') if p.name in ('draws.jsonl', 'draws.jsonl.zst')}
+    else:
+        pattern = Z.logical(spec)
+        found = {Z.logical(p) for p in glob.glob(pattern, recursive=True) + glob.glob(pattern + '.zst', recursive=True) if os.path.isfile(p)}
+    return sorted(Path(p) for p in found)
 
 
 def draw_file_task(path: Path) -> str | None:
-    """The task of a draw file, from its first record (draw 1 is never a repeat); None for an empty file."""
-    with open(path) as f:
+    """The task of a record file, from its first record (record 1 is never a repeat); None for an empty file."""
+    with Z.open_text(path) as f:
         for text in f:
             rec = json.loads(text)
             if 'task' in rec:
@@ -277,11 +292,12 @@ def draw_file_task(path: Path) -> str | None:
 
 
 def read_draws(paths: list[Path]) -> list[Draw]:
-    """The draws of the files, one for each record, each with its repeats counted."""
+    """The last steps of the files' sampled-query records, one for each record, each with its repeats counted. A line that is neither a record nor a repeat is one of the
+    worker's counts of an expansion that wrote no query (it has `ended`); any other line is an error."""
     draws: list[Draw] = []
     for path in paths:
-        at: dict[int, Draw] = {}  # a draw's number in this file -> its record
-        with open(path) as f:
+        at: dict[int, Draw] = {}  # a record's number in this file -> its record
+        with Z.open_text(path) as f:
             for text in f:
                 rec = json.loads(text)
                 if 'repeat' in rec:
@@ -289,40 +305,154 @@ def read_draws(paths: list[Path]) -> list[Draw]:
                     if first is not None:
                         first.count += 1
                     continue
+                if 'steps' not in rec:
+                    if 'ended' not in rec:
+                        raise ValueError(f'{path}: a line that is no sampled-query record, repeat or count of an ended expansion: {text[:120]}')
+                    continue
                 steps = rec['steps']
                 names = {}
                 for s in steps[:-1]:
                     m = DRAW_HEAD.match(s['text'])
                     if m and s['query_hash'] is not None:
                         names[m[1]] = s['query_hash']
-                d = Draw(steps[-1]['text'], frozenset(steps[-1]['state']), names, bool(rec['solves']))
+                d = Draw(steps[-1]['text'], frozenset(steps[-1]['state']), names, bool(rec['solves']), tuple((s['text'], s['query_hash']) for s in steps[:-1]))
                 at[int(rec['draw'])] = d
                 draws.append(d)
     return draws
 
 
+def renamed(text: str, to: Mapping[str, str]) -> str:
+    """The text with each pool name written as the label that `to` gives it. A RIGID_DET part's `.fN` step is written `.rK`, with &rK the label of &fN.
+    Raises Reject where a name has no label."""
+    def one(m: re.Match[str]) -> str:
+        if m[1] not in to:
+            raise Reject('a name of the query is no query of the sample\'s scope')
+        steps = [to[m[1]]]
+        for st in m[2].split('.')[1:] if m[2] else []:
+            if re.fullmatch(r'f\d+', st):
+                if '&' + st not in to:
+                    raise Reject('a name of the query is no query of the sample\'s scope')
+                steps.append(to['&' + st][1:])
+            else:
+                steps.append(st)
+        return '.'.join(steps)
+    return DRAW_NAME.sub(one, text)
+
+
 def drawn_text(draw: Draw, label: dict[str, str], own: str) -> str:
-    """The drawn query's text with the sample's names: its own name is `own`, and each other pool name is the global label of its step's QueryHash. A RIGID_DET part's `.fN` step is
-    written `.rK`, with &rK the label of &fN."""
+    """The drawn query's text with the sample's names: its own name is `own`, and each other pool name is the global label of its step's QueryHash."""
     to = {n: label[h] for n, h in draw.names.items() if h in label}
     m = DRAW_HEAD.match(draw.text)
     if not m:
         raise Reject('the drawn query has no own name')
     to[m[1]] = own
+    return renamed(draw.text, to)
 
-    def one(m: re.Match[str]) -> str:
-        if m[1] not in to:
-            raise Reject('a name of the drawn query is no query of the sample\'s scope')
-        steps = [to[m[1]]]
-        for st in m[2].split('.')[1:] if m[2] else []:
-            if re.fullmatch(r'f\d+', st):
-                if '&' + st not in to:
-                    raise Reject('a name of the drawn query is no query of the sample\'s scope')
-                steps.append(to['&' + st][1:])
-            else:
-                steps.append(st)
-        return '.'.join(steps)
-    return DRAW_NAME.sub(one, draw.text)
+
+# ---------------------------------------------------------------- the states off the samples
+
+def pool_names(text: str) -> set[str]:
+    """The pool names that a step's text mentions: each `&fN`, and each `.fN` step of a RIGID_DET part or an INIT output."""
+    names = set()
+    for m in DRAW_NAME.finditer(text):
+        names.add(m[1])
+        names.update('&' + st for st in m[2].split('.')[1:] if re.fullmatch(r'f\d+', st))
+    return names
+
+
+def off_path_queries(earlier: tuple[tuple[str, str | None], ...], union: Mapping[str, dict]) -> dict[str, dict]:
+    """The query record of each step, among the steps of a sampled-query record that come before its last, that is no query of the union (`union`: the skeleton's query records by
+    QueryHash). A record has the fields that `scope_of` and `rewrite` read: its use closure (the QueryHashes of the queries that it reads, and those they read, in step order) and its
+    program (the closure's places empty, and its own text with `&r<i>` for the i-th query of the closure and `&r<len(closure)>` for itself). A union query has the closure that the
+    skeleton gives it. Raises Reject where the steps do not give such a record."""
+    steps: list[tuple[str, str, str]] = []  # (text, QueryHash, own pool name) of each step
+    name_of: dict[str, str] = {}  # a pool name -> the QueryHash of the step that it names
+    for text, h in earlier:
+        m = DRAW_HEAD.match(text)
+        if h is None:
+            raise Reject('a step has no QueryHash')
+        if m is None:
+            raise Reject('a step has no own name')
+        if m[1] in name_of:
+            raise Reject('two steps have one name')
+        name_of[m[1]] = h
+        steps.append((text, h, m[1]))
+    if len(set(name_of.values())) != len(name_of):
+        raise Reject('two steps have one QueryHash')
+    below: dict[str, set[str]] = {}  # the QueryHash of a step -> the QueryHashes of its use closure
+    out: dict[str, dict] = {}
+    for text, h, own in steps:
+        reads = pool_names(text) - {own}
+        above: set[str] = set()
+        for n in reads:
+            r = name_of.get(n)
+            if r is None:
+                raise Reject('a step reads a name that no step has')
+            if r not in below:
+                raise Reject('a step reads a step that comes after it')
+            above |= below[r] | {r}
+        if h in union:
+            below[h] = set(union[h]['closure'])
+            continue
+        closure = [x for _, x, _ in steps if x in above]
+        if len(closure) != len(above):
+            raise Reject('the closure of a step holds a query that is no step')
+        local = {n: f'&r{closure.index(name_of[n])}' for n in reads}
+        below[h] = above
+        kind = re.match(r'\((\w+)', text)
+        out[h] = dict(record='query', hash=h, kind=kind[1] if kind else None, closure=closure, program=[''] * len(closure) + [renamed(text, local | {own: f'&r{len(closure)}'})], off_path=True)
+    return out
+
+
+def plan_added(task: str, draws: list[Draw], union: Mapping[str, dict], samples: list[dict], have: set[frozenset[str | None]]) -> tuple[list[dict], dict[str, dict[str, dict]], dict[frozenset[str | None], str]]:
+    """The samples that the last steps' states off the samples add (docs/sample-build/training-instances.md, "States off the samples"): (the added samples, each state once, in the
+    order of its first record; the query records of each added sample's queries that are no union query, by sample id; the reason for each state that cannot be added).
+    `samples` are all the skeleton's samples and `have` the states of those that the extractor writes. A state is added when its ground-truth part (its queries that are union queries)
+    is the state of a skeleton sample, and the sample has a target query that the state has not written. Its targets are those of that sample: no graph query reads a query outside
+    the union. A state with a step that has no QueryHash, with a ground-truth part that is no sample's state, with no target query left, or whose records all fail
+    `off_path_queries` (the first record that gives the queries is used) is not added, and has its reason in the third result."""
+    sample_of = {frozenset(s['state']['queries']): s for s in samples}
+    by_state: dict[frozenset[str | None], list[Draw]] = {}
+    for dr in draws:
+        by_state.setdefault(dr.state, []).append(dr)
+    added: list[dict] = []
+    extra: dict[str, dict[str, dict]] = {}
+    refused: dict[frozenset[str | None], str] = {}
+    for st, group in by_state.items():
+        if st in have:
+            continue
+        if None in st:
+            refused[st] = 'a step has no QueryHash'
+            continue
+        gold = frozenset(h for h in st if h in union)
+        base = sample_of.get(gold)
+        if base is None:
+            refused[st] = 'the ground-truth part is no sample\'s state'
+            continue
+        targets = sorted(t for t in base['target_queries'] if t not in st)
+        if not targets:
+            refused[st] = 'no target query is left'
+            continue
+        got: dict[str, dict] | None = None
+        for dr in group:
+            try:
+                got = off_path_queries(dr.earlier, union)
+                break
+            except Reject as e:
+                refused.setdefault(st, str(e))
+        if got is None:
+            continue
+        refused.pop(st, None)
+        members = sorted(h for h in st if h is not None)
+        sid = hashlib.sha256((task + '\n' + '\n'.join(members)).encode()).hexdigest()[:32]
+        added.append(dict(record='sample', id=sid, task=task, state=dict(id=sid, queries=members), target_queries=targets, off_path=len(st) - len(gold)))
+        extra[sid] = got
+    return added, extra, refused
+
+
+def reason_of(e: BaseException) -> str:
+    """The reason that counts a failed sample in the header: a refusal by its first phrase, any other failure by its type."""
+    return str(e).split(': ')[0] if isinstance(e, Reject) else 'error: ' + type(e).__name__
 
 
 # ---------------------------------------------------------------- stepping a target's stream
@@ -535,13 +665,13 @@ def add_drawn(env: Env, kind: str, scope: tuple[str, ...], points: dict[tuple[in
             env.draw_counts['drawn'] += count
 
 
-def process_sample(env: Env, sample: dict, queries: dict[str, dict]) -> None:
+def process_sample(env: Env, sample: dict, queries: Mapping[str, dict]) -> None:
     tot, wr, live = env.totals, env.wr, env.live
     texts, label = scope_of(sample['state']['queries'], queries)
     scope = tuple(texts)
     try:
         env.run.scope(scope)
-    except Exception as e:
+    except (live.Drop, live.arclog.Refusal) as e:  # a refusal of the engine; any other exception is a failure and ends the sample as an error
         raise Reject('the engine refused the scope: ' + why(e)) from e
     # the targets: text over the scope's labels and the token stream
     targets: dict[str, list[tuple[str, list[int]]]] = {}
@@ -671,10 +801,14 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
     records = [json.loads(x) for x in skeleton.read_text().splitlines()]
     head = records[0]
     queries = {r['hash']: r for r in records if r['record'] == 'query'}
-    samples = [r for r in records if r['record'] == 'sample']
-    drawn_states = {dr.state for dr in read_draws(draw_paths)} if draw_paths else set()
-    kept = {s['id'] for s in chosen(samples, args.samples_per_task, args.seed)}
-    samples = [s for s in samples if s['id'] in kept or frozenset(s['state']['queries']) in drawn_states]  # the K chosen, and each sample that a draw matches
+    skeleton_samples = [r for r in records if r['record'] == 'sample']
+    draws = read_draws(draw_paths) if draw_paths else []
+    drawn_states = {dr.state for dr in draws}
+    kept = {s['id'] for s in chosen(skeleton_samples, args.samples_per_task, args.seed)}
+    samples = [s for s in skeleton_samples if s['id'] in kept or frozenset(s['state']['queries']) in drawn_states]  # the K chosen, and each sample that a last step matches
+    added, off_queries, refused = plan_added(task, draws, queries, skeleton_samples, {frozenset(s['state']['queries']) for s in samples}) if draw_paths is not None else ([], {}, {})
+    samples += added
+    added_ids = {s['id'] for s in added}
     split = head['split']
     folder = out / set_name / ('points_held-out' if is_held_out(split) else 'points') / args.plan
     path = folder / f'{task}.jsonl.zst'
@@ -682,7 +816,7 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
                   wheel=shas['wheel'], code=shas['code'], samples_per_task=args.samples_per_task, seed=args.seed, seconds=args.seconds, max_states=args.max_states,
                   uses=list(env_base['uses']), point_names=list(env_base['point_names']), option_names=[env_base['option_names'][i] for i in env_base['plain']],
                   table_names=[env_base['option_names'][i] for i in env_base['table']],
-                  draws=None if draw_paths is None else [[str(q), file_sha(q)] for q in draw_paths])
+                  draws=None if draw_paths is None else [[str(q), Z.sha256(q)] for q in draw_paths])
     if args.vectors:
         # the vector's columns follow from the wheel and the writer, which the header names, so they are added after the skip check
         header = dict(header, vectors=True, point_names=[], option_names=[], table_names=[])
@@ -707,32 +841,47 @@ def run_task(env_base: dict, set_name: str, task: str, args: argparse.Namespace,
     uses = () if args.vectors else env_base['uses']  # the vector holds the features; the extractor need not make the prefix features too
     env = Env(live, wr, tr, run, uses, env_base['option_names'], env_base['point_names'], env_base['plain'], env_base['table'], sink, tot, args.plan, args.seconds, args.max_states,
               vector_names, point_cols, id_cols)
+    steps_of: Counter[frozenset[str | None]] = Counter()  # an added state -> the last steps that reach it, repeats counted
+    solving_of: Counter[frozenset[str | None]] = Counter()  # the same, of those that solve every train ARC example
     if draw_paths is not None:
-        states = {frozenset(sm['state']['queries']) for sm in samples}
+        added_states = {frozenset(s['state']['queries']) for s in added}
         env.draws = {}
-        for dr in read_draws(draw_paths):
-            if dr.state not in states:
-                env.draw_counts['unmatched'] += dr.count
+        for dr in draws:
+            if dr.state in refused:
+                env.draw_counts['not added: ' + refused[dr.state]] += dr.count
                 continue
-            env.draw_counts['matched'] += dr.count
+            if dr.state in added_states:
+                steps_of[dr.state] += dr.count
+                solving_of[dr.state] += dr.count if dr.solves else 0
+            else:
+                env.draw_counts['matched'] += dr.count
             if dr.solves:
-                env.draw_counts['solves'] += dr.count
+                if dr.state not in added_states:
+                    env.draw_counts['solves'] += dr.count
                 continue
             env.draws.setdefault(dr.state, []).append(dr)
     try:
         for sample in samples:
             tot.counts['samples'] += 1
             before = tot.counts['points']
+            state = frozenset(sample['state']['queries'])
             try:
-                process_sample(env, sample, queries)
+                process_sample(env, sample, ChainMap(off_queries[sample['id']], queries) if sample['id'] in added_ids else queries)
             except Exception as e:
                 tot.fail('sample', str(e) if isinstance(e, Reject) else 'error: ' + why(e), f'{sample["id"]} {task}')
-                if env.draws:
-                    env.draw_counts['the sample failed'] += sum(dr.count for dr in env.draws.get(frozenset(sample['state']['queries']), ()))
+                if sample['id'] in added_ids:
+                    env.draw_counts['not added: ' + reason_of(e)] += steps_of[state]
+                elif env.draws:
+                    env.draw_counts['the sample failed'] += sum(dr.count for dr in env.draws.get(state, ()))
                 continue
             tot.counts['samples written'] += 1
             tot.counts['samples with a point'] += tot.counts['points'] > before
-        sink.close(dict(samples=tot.counts['samples'], points=tot.counts['points'],
+            if sample['id'] in added_ids:
+                tot.counts['samples added'] += 1
+                env.draw_counts['added states'] += 1
+                env.draw_counts['added'] += steps_of[state]
+                env.draw_counts['solves'] += solving_of[state]
+        sink.close(dict(samples=tot.counts['samples'], samples_added=tot.counts['samples added'], points=tot.counts['points'],
                         checks=dict(points_with_no_positive=tot.counts['points with no positive'], left_the_mask=tot.counts['left the mask'],
                                     positive_not_in_ids=tot.counts['points with a positive that is not in ids'], next_token_no_positive=tot.counts['points whose next token is no positive']),
                         failures={k: dict(v) for k, v in tot.failures.items()}, rebuild_failures=tot.counts['rebuild failures'], **({'vector_failures': {k: tot.counts[k] for k in VECTOR_COUNTS}} if args.vectors else {}), search=dict(sorted(tot.search.items()))),
@@ -821,7 +970,7 @@ def main() -> int:
     c = total.counts
     p = max(c['points'], 1)
     print(json.dumps(dict(
-        set=args.set, shard=args.shard, written=done, current=skipped, seconds=round(time.time() - t0, 1), samples=c['samples'], samples_written=c['samples written'], targets=c['targets'],
+        set=args.set, shard=args.shard, written=done, current=skipped, seconds=round(time.time() - t0, 1), samples=c['samples'], samples_written=c['samples written'], samples_added=c['samples added'], targets=c['targets'],
         points_before_dedupe=c['points before dedupe'], points=c['points'], ids_per_point=round(c['ids'] / p, 2), positives_per_point=round(c['positives'] / p, 3),
         live_per_point=round(c['live'] / p, 3), points_with_one_positive=c['points with one positive'], points_with_no_positive=c['points with no positive'],
         records_disagree_on_positives=c['points whose records disagree on the positives'], positive_not_in_ids=c['points with a positive that is not in ids'],

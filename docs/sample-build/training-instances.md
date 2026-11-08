@@ -32,8 +32,8 @@ The queries that the search samples on train tasks give negative training instan
 - **Ids of failed samples.** At each writing point of a matched step, the sample's next token is an id of a failed sample when no live target has that token next. An id's `drawn` count is the number of failed samples that took it at that writing point. A positive id has no `drawn` count.
 - **Loss.** In the fit only, each id's term in the softmax denominator has the weight 1 + α · `drawn`, with α a fit option. The trees' scores do not read the weight.
 - **States off the samples.** A last step whose state equals no sample's state adds that state as a sample. Its targets are the graph queries that are applicable over the state's own queries and that the state has not written. No graph query reads a query outside the union, so these are the targets of the sample whose state is the step state's ground-truth part: the step state's queries that are union queries. The step state's queries outside the union get row-store tables from the engine, as the union's queries do. The ids of failed samples at its writing points are counted as above.
-- **Header.** The header of each task's file counts the last steps that match a sample, and the last steps that add one.
-- **Check.** `model/study/samples/run/draw_targets.py` counts, for files of sampled-query records, the last steps whose ground-truth part is a sample's state, and the distinct states and queries outside the union that the added samples need.
+- **Header.** The header of each task's file counts the last steps that match a sample, the last steps that add a state, the states added, and the last steps that cannot add one, each by its reason. Each state is added once, whatever the count of records that reach it.
+- **Check.** `model/study/samples/run/draw_targets.py` counts, for files of sampled-query records, the last steps whose ground-truth part is a sample's state, and the distinct states and queries outside the union that the added samples need. With `--points` it compares those counts with the headers.
 
 ## Fit noise
 
