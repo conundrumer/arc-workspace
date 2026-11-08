@@ -738,10 +738,8 @@ fn last_can_make_before_uses(earlier: &[Conjunct], last: &Conjunct, label: Label
 pub fn rule_message(rule: &str) -> Option<&'static str> {
     Some(match rule {
         "atom.implied" => "static prune: an earlier atom of the relation matches each site of the completed atom",
-        "not.contradicted" => "static prune: a positive atom matches each site of a `NOT` of its relation",
         "not.implied" => "static prune: an earlier `NOT` of the relation refuses each row the completed `NOT` refuses",
         "comparison.implied" => "static prune: an earlier comparison of the two operands implies the completed one",
-        "comparison.contradicted" => "static prune: an earlier comparison of the two operands contradicts the completed one",
         "atom.implies_earlier" => "static prune: the completed atom matches each site of an earlier atom of its relation that makes no label",
         "not.implies_earlier" => "static prune: the completed `NOT` refuses each row an earlier `NOT` of its relation refuses",
         "comparison.implies_earlier" => "static prune: the completed comparison implies an earlier comparison of its two operands",

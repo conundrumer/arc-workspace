@@ -186,7 +186,7 @@ const PREFIX_BYTES: usize = 16 * 1024 * 1024;
 /// `prefix_key`, for one set of finished forms. A key holds the complete
 /// source of its prefix.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-enum PrefixKind { Check, SingleCheck, DetAdmission, StaticReplacement }
+enum PrefixKind { Check, SingleCheck, DetAdmission }
 
 /// A verdict, and the cost of the computation that gave it ([`crate::eval::Cost`]), which a hit charges again where the verdict is of the written `DET`s' admission.
 type Verdict = (Result<(), super::Refusal>, crate::eval::Cost);
@@ -593,12 +593,6 @@ impl State {
     /// cost to `work`.
     pub(super) fn cached_det_prefix(&self, key: Vec<u8>, keep: &dyn Fn() -> bool, work: &crate::eval::RequestWork, session: &crate::session::TaskSession, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
         self.cached_verdict(PrefixKind::DetAdmission, key, keep, Some((work, session)), compute)
-    }
-
-    /// The verdict of the static prune's replacement check on a clause cut to
-    /// the conjunct it replaces, which every candidate of a mask shares.
-    pub(super) fn cached_replacement(&self, key: Vec<u8>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {
-        self.cached_verdict(PrefixKind::StaticReplacement, key, &|| true, None, compute)
     }
 
     fn cached_verdict(&self, kind: PrefixKind, key: Vec<u8>, keep: &dyn Fn() -> bool, charged: Option<(&crate::eval::RequestWork, &crate::session::TaskSession)>, compute: impl FnOnce() -> Result<(), super::Refusal>) -> Result<(), super::Refusal> {

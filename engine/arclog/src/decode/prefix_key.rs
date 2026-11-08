@@ -95,23 +95,6 @@ impl Source {
     }
 }
 
-/// The key of the clause `form` with its body cut to the first `conjuncts`
-/// conjuncts: with equal forms before it, equal keys give equal programs. A
-/// form that is no clause takes no key.
-pub(super) fn clause_cut_key(form: &Form, conjuncts: usize) -> Option<Vec<u8>> {
-    let Form::Clause(clause) = form else { return None };
-    let c = clause.value();
-    let mut source = Source::default();
-    source.scalar(&std::mem::discriminant(form));
-    source.scalar(&c.keyword); source.scalar(&c.derives); source.scalar(&c.gloss);
-    source.scalar(&c.proposers);
-    let kept = &c.body.value().conjuncts[..conjuncts.min(c.body.value().conjuncts.len())];
-    source.scalar(&kept.len());
-    for conjunct in kept { source.conjunct(conjunct); }
-    source.scalar(&c.ones); source.scalar(&c.set); source.scalar(&c.columns);
-    Some(source.0)
-}
-
 /// The key of the clause `clause` with the body `kept` in place of its own:
 /// with equal finished forms before it, equal keys give equal sub-bodies
 /// ([`super::Decoder::sub_body`]), whose columns `kept` gives.

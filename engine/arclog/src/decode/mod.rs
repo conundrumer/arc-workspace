@@ -1020,7 +1020,6 @@ impl<'a> Decoder<'a> {
 
     /// Check only conjuncts that this grammar step completed. An atom can
     /// close on the next relation token; END can finish the entire form.
-    /// Restrict replacement certificates to flat top-level clauses for now.
     /// The lists of every other form, an `INIT`, `CHOOSE` or `RIGID_DET` form among
     /// them, take only the verdicts of [`Decoder::check_nested_static_prune`].
     fn check_static_prune(
@@ -1061,42 +1060,11 @@ impl<'a> Decoder<'a> {
                 }
                 continue;
             };
-            if let (Some(message), crate::program::static_prune::Class::Unsatisfiable | crate::program::static_prune::Class::Valid) =
-                (crate::program::static_prune::rule_message(found.rule), found.class)
-            {
-                return Err(Refusal::Grammar(message));
-            }
-            match found.class {
-                crate::program::static_prune::Class::Unsatisfiable => return Err(Refusal::Grammar("static prune: no row satisfies the completed atom")),
-                crate::program::static_prune::Class::Valid => return Err(Refusal::Grammar("static prune: the completed atom repeats an existing test")),
-                crate::program::static_prune::Class::Alias | crate::program::static_prune::Class::Constant => {
-                    let Some(replacement) = found.replacement else { continue };
-                    let admitted = || {
-                        // Remove the next, still-open atom through the ordinary
-                        // editor to recover this clause prefix's own declaration.
-                        // The replacement checker then PRESERVES that interface.
-                        let body_path = NodePath::default().child(0);
-                        let absolute = NodePath::top((program.value().forms.len() - 1) as u32).join(&body_path);
-                        let mut truncated = program.clone();
-                        for later in ((index + 1)..body.conjuncts.len()).rev() {
-                            match truncated.apply(&crate::program::edit::Edit::RemoveConjunct { at: absolute.child(later as u32) }) {
-                                Ok(next) => truncated = next,
-                                Err(_) => return Ok(()),
-                            }
-                        }
-                        if crate::check::static_prune::replacement_admitted(
-                            &self.state.resolved(self.context.registry), &truncated, &body_path, replacement, self.context.registry,
-                        ) {
-                            return Err(Refusal::Grammar("static prune: use the admitted equality binding"));
-                        }
-                        Ok(())
-                    };
-                    // The cut clause and the finished forms fix the replacement and its verdict, which each candidate of a mask shares.
-                    match program.value().forms.last().and_then(|form| prefix_key::clause_cut_key(form, index + 1)) {
-                        Some(key) => self.state.cached_replacement(key, admitted)?,
-                        None => admitted()?,
-                    }
-                }
+            // A verdict of another class refuses nothing: whether no row
+            // satisfies a test depends on the inputs, and a constant is a
+            // different program from the binding that replaces it.
+            if found.class == crate::program::static_prune::Class::Valid {
+                return Err(Refusal::Grammar(crate::program::static_prune::rule_message(found.rule).unwrap_or("static prune: the completed atom repeats an existing test")));
             }
         }
         self.check_nested_static_prune(program, open, checks, memo)
@@ -1108,8 +1076,7 @@ impl<'a> Decoder<'a> {
     /// or `RIGID_DET` form. Each such list is a conjunction, of whose rows
     /// the verdicts speak, with the types of the labels that the list's own
     /// atoms make: a conjunct that a verdict finds valid leaves the list's
-    /// rows, and one that leaves the list no row makes its enclosing form
-    /// constant. A list's alias or constant takes no replacement here.
+    /// rows.
     fn check_nested_static_prune(&self, program: &Node<Program>, open: Option<&NodePath>, checks: &PrefixChecks<'_>, memo: &MaskMemo) -> Result<(), Refusal> {
         use crate::program::path::{node_at, NodeRef};
         use crate::program::static_prune::{classify_prefix, makes_earlier_redundant, rule_message, Class};
@@ -1135,9 +1102,8 @@ impl<'a> Decoder<'a> {
                 let prefix = crate::program::Body { conjuncts: body.conjuncts[..=index].into() };
                 let message = match classify_prefix(&prefix, &type_of) {
                     Some(found) => match found.class {
-                        Class::Unsatisfiable => Some(rule_message(found.rule).unwrap_or("static prune: no row satisfies the completed atom")),
                         Class::Valid => Some(rule_message(found.rule).unwrap_or("static prune: the completed atom repeats an existing test")),
-                        Class::Alias | Class::Constant => None,
+                        Class::Unsatisfiable | Class::Alias | Class::Constant => None,
                     },
                     None => makes_earlier_redundant(&prefix)
                         .or_else(|| crate::program::static_prune::reads_an_earlier_row(&prefix, &|relation| relation_keys(self.context.registry, relation)))
