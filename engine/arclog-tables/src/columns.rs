@@ -68,7 +68,7 @@ use arclog::eval::copies::CopyViolation;
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::join::Materializer;
 use arclog::eval::{RelationValue, RunFault, Stop};
-use arclog::hash::{StableHash, StableHashMap, StableHasher};
+use arclog::hash::{StableHash, StableHashMap, StableHashSet, StableHasher};
 use arclog::program::path::NodePath;
 use arclog::program::{column_spelled, ColumnName, FactRelation, LabelId, ProgramRelation, RelationRef};
 use arclog::read::spelling::{spelling, FACT_RELATIONS};
@@ -808,10 +808,14 @@ fn step_columns(materializer:&Materializer<'_>,before:Option<&StreamTables>,evid
     let _timed = arclog::stats::span(arclog::stats::Phase::TablePack);
     let mut runs = Runs::default();
     let mut names = Vec::new();
+    // A table of the step looks up the table of a relation by the relation's spelling, so the names of the earlier tables that no table of the step reads are not kept: the columns and the bytes of the step then depend on the relations its tables read alone, and not on the other tables of the stream.
+    let read = read_names(&tables);
     let first = match before {
         Some(before) => {
             for (place, table) in evidence.iter().chain(before.tables.iter().map(|table| &**table)).enumerate() {
-                note_name(&mut names, u32::try_from(place).expect("fewer than 2^32 tables"), table, None);
+                if table.contents.as_ref().is_ok_and(|contents| read.contains(table_name(contents))) {
+                    note_name(&mut names, u32::try_from(place).expect("fewer than 2^32 tables"), table, None);
+                }
             }
             before.count as usize
         }
@@ -1125,6 +1129,18 @@ fn by_assignment(mut columns:CaseColumns,summaries:&[TableSummary],queries:&[Opt
     columns.assigned = AssignedColumns::default();
     columns.by_assignment = true;
     columns
+}
+
+/// The spellings of the relations that `tables` read: those of the sources of their columns and of their `DET`s. [`locate`] and [`det_table`] look up
+/// the earlier table of a relation by one of these.
+fn read_names(tables: &[(usize, Table)]) -> StableHashSet<String> {
+    let mut read = StableHashSet::default();
+    for (_, table) in tables {
+        let Ok(contents) = &table.contents else { continue };
+        read.extend(contents.dets.iter().map(|det| relation_spelled(&det.relation)));
+        read.extend(contents.flows.iter().flatten().filter_map(|source| source.relation.as_ref()).map(source_spelled));
+    }
+    read
 }
 
 /// The fold of [`case_columns`] and [`cut_case_columns`]: the only state it
