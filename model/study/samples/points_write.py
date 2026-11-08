@@ -421,7 +421,7 @@ def off_path_queries(earlier: tuple[tuple[str, str | None], ...], union: Mapping
 # ---------------------------------------------------------------- the targets of a state
 
 # A table map is {(assignment, TableHash)} of one table: an assignment is written as the union graph writes it (gold_union_tables.py), the sorted pairs (the set of the TableHashes of a DET's values, the TableHash of
-# the DET's table at the value) of the DETs that have more than one value, so that DETs of two programs compare by their values' TableHashes. A table that the engine gives no TableHash has UNHASHED.
+# the DET's table at the value) of the DETs that have more than one value, so that DETs of two programs compare by their values' TableHashes. A table that the engine gives no TableHash has UNHASHED at that assignment, and stands for nothing and gives no progress (`unhashed`).
 type TableMap = frozenset[tuple[tuple[tuple[str, str], ...], str]]
 UNHASHED = 'none'
 # the parts of the rule that decide a union query that is no target (the reason of `Verdict.why`)

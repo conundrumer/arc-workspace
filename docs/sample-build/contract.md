@@ -124,7 +124,7 @@ The tables of each parameterized table at each assignment, for feature developme
 | Field | Meaning | Type | Invariants |
 |---|---|---|---|
 | `key` | the parameterized table at an assignment | (`ParameterizedTable`, `Assignment`) | one record for each of the parameterized table's assignments |
-| `hash` | its TableHash | `TableHash` | |
+| `hash` | its TableHash | `TableHash` or null | null where the engine gives the table no TableHash. No other value stands for it: a table with no TableHash stands for no graph table, gives no progress, and has no `vec` of the tables file |
 | `value` | its tables at that assignment (see "The tables at one assignment") | `types` and `tables` | `tables` is the full set |
 | `counts` | table row counts | the table rows of each table, and the count of tables of each ARC example | |
 

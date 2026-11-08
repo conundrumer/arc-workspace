@@ -34,7 +34,7 @@ class TableAt:
     width: int
     per_example: dict[int, list[Rw]]  # example index (train 0 .. n_train - 1, then the test inputs) -> its distinct Rows, sorted by key
     counts_only: bool
-    hash: str
+    hash: str | None  # None: the table has no TableHash
     n_train: int
     n_test: int
     task_level: bool = False  # the engine evaluated the table once for the task: its example keys have an item of kind 0

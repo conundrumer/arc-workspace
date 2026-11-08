@@ -11,7 +11,7 @@ One file per task, `OUTD/SET/rows/<task>.jsonl.gz`, written to a temp file and r
   alias     one per further (union_key, text) of a function's QueryHash, from a later form: id, union_key, text. `read_store` gives each function
             `aliases`, every (union_key, text) it stands for, its own first
   table     one per distinct TableHash: hash, types, rows (one Rows each: ex, n, cells, boxes). Two entries with one hash share it
-  entry     one per (table, assignment): function, name, o, assignment [[DET id, value hash]], hash, kind (content or counts_only), types,
+  entry     one per (table, assignment): function, name, o, assignment [[DET id, value hash]], hash (null where the engine gives the table no TableHash), kind (content or counts_only), types,
             examples [[kind, index, distinct, rows, hash]] (the example keys), legacy (the reach kit's table_key, for the check of the hash; null
             where the writer has no reach kit)
   given     as entry, for input, ex_input and ex_output
@@ -74,7 +74,7 @@ class StoredTable:
     o: int
     name: str
     assignment: AssignKey
-    hash: str
+    hash: str | None  # None: the engine gives the table no TableHash
     counts_only: bool
     types: list[str]  # with Example
     rows: list[Rows]
@@ -412,8 +412,7 @@ class RowSink:
         ex_at = sum(TH.WIDE.get(x, 1) for x in t.types[:t.types.index('Example')]) if native else -1
         es = at.entries
         if not es or not all(e.complete for e in es) or at.hash is None:
-            counts = sorted((example_code(e.kind, e.index), e.n) for e in es)
-            r.update(kind='counts_only', hash=at.hash or TH.counts_hash(types_full, counts), examples=[list(k) for k in at.keys])
+            r.update(kind='counts_only', hash=at.hash, examples=[list(k) for k in at.keys])  # the engine's TableHash where it gives one, else null: a table with no TableHash has none
             self.put(r)
             self.counts['counts_only'] += 1
             return

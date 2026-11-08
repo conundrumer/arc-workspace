@@ -172,7 +172,7 @@ def _view(t: ExportTable, at: At, n_train: int) -> _View:
                 put(e, rows)
         elif en.index < n_train:
             put(en.index, rows)
-    tab = TR.TableAt(types, cols, first, {e: list(d.values()) for e, d in per.items()}, False, at.hash or '', n_train, 0, native=native)
+    tab = TR.TableAt(types, cols, first, {e: list(d.values()) for e, d in per.items()}, False, at.hash, n_train, 0, native=native)
     tab.empty = TR.Rw(0, np.zeros((0, first), np.int32), None, b'')
     return _View(tab, labels, frozenset(unknown))
 

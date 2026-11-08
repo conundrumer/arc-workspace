@@ -357,16 +357,16 @@ def tables_task(task: str, rows_path: Path, tabs_path: Path) -> dict | None:
     pairs = TV.pairs_of(ctx)
     outfeat, _ = TV.kit()
     lines: list[str] = []
-    cache: dict[str, TR.TableAt] = {}
+    cache: dict[Any, TR.TableAt] = {}
     new_vecs = 0
     compared = Counter()
 
     def table_at(t: RS.StoredTable) -> TR.TableAt:
         nonlocal new_vecs
-        tab = cache.get(t.hash)
+        tab = cache.get(BT.table_key(t))
         if tab is None:
-            tab = cache[t.hash] = TR.table_at(t, n_train, n_test, BT.native_example(store, t))
-            if t.hash not in have_vecs:
+            tab = cache[BT.table_key(t)] = TR.table_at(t, n_train, n_test, BT.native_example(store, t))
+            if t.hash is not None and t.hash not in have_vecs:  # a table with no TableHash has no `vec` record (build_tables.py)
                 have_vecs.add(t.hash)
                 v = TV.table_vec(tab, ctx)
                 lines.append(json.dumps(dict(t='vec', hash=t.hash, kind='counts_only' if t.counts_only else 'content', values=BT.clean(v))) + '\n')
