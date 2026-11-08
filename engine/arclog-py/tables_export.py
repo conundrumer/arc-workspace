@@ -164,7 +164,7 @@ faults (its tables up to the fault are kept) or lies past the cap. It writes no 
 """
 import argparse, collections, contextlib, enum, hashlib, json, os, shutil, signal, subprocess, sys, glob, threading, time, types
 from typing import NamedTuple
-import multiprocessing, traceback
+import multiprocessing, pathlib, traceback
 from multiprocessing.connection import Connection
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, wait, FIRST_COMPLETED
 import numpy as np
@@ -172,6 +172,7 @@ import pandas as pd
 import pyarrow
 import arclog
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src"))
+from arclog_convert.readback import read_checked
 from engine.package_fingerprint import digest_files, package_files as installed_package_files
 import export_checks
 import export_rows
@@ -290,11 +291,13 @@ def checks_digest():
 
 
 def task_key(engine, task, settings, modules):
-    """The sha256 of the task's generated program and data, its files under `gen/cases/<task>/` with their names, its task file, the files `modules` gives, the `engine` digest and the settings text."""
+    """The sha256 of the task's generated program and data, its files under `gen/cases/<task>/` with their names, its task file, the files `modules` gives, the `engine` digest and the settings text. The files of `gen/` are read through `arclog_convert.readback.read_checked`."""
     digest = hashlib.sha256()
     cases = sorted(glob.glob(f"{CORPUS}/cases/{task}/*"))
-    for f in (f"{CORPUS}/{task}.arclog", f"{CORPUS}/{task}.arcdata", *cases, f"{TASKS}/{task}.json", *modules):
-        digest.update((os.path.basename(f).encode() + b"\0" if f in cases else b"") + open(f, "rb").read() + b"\0")
+    gen_files = (f"{CORPUS}/{task}.arclog", f"{CORPUS}/{task}.arcdata", *cases)
+    for f in (*gen_files, f"{TASKS}/{task}.json", *modules):
+        body = read_checked(pathlib.Path(f)).encode() if f in gen_files else open(f, "rb").read()   # a file of `gen/` that is not current raises `Stale`
+        digest.update((os.path.basename(f).encode() + b"\0" if f in cases else b"") + body + b"\0")
     digest.update(engine.encode() + b"\0" + settings.encode())
     return digest.hexdigest()
 
