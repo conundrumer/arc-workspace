@@ -1,7 +1,6 @@
-//! `count-determinism`: checks that the work count of a request, and its stop
-//! at the request work cap, do not depend on what the session's caches held.
-//! The gauge `effort` is left out: a cache hit tries no binding, so the effort
-//! of a request is the effort of its misses, and no result depends on it.
+//! `count-determinism`: checks that the work count of a request, its effort,
+//! and its stop at the request work cap, do not depend on what the session's
+//! caches held.
 //!
 //! For each solver, one request evaluates the entries of the concept case
 //! (the relations the `OUT` form reads, on each example they hold rows on),
@@ -105,8 +104,8 @@ fn check(corpus: &Path, tasks: &Path, id: &str, threads: usize) -> Result<Vec<St
                 Err(fault) => format!("fault at {:?}", fault.form),
             })
             .collect();
-        // The session's bytes depend on the machine's heap, the margin and the labeling nodes are the process's, and a cache hit tries no binding.
-        let gauges = limits.request.gauges().each().into_iter().filter(|(gauge, ..)| !matches!(gauge, Gauge::SessionBytes | Gauge::BoxMargin | Gauge::LabelingNodes | Gauge::Effort)).map(|(gauge, max, cap, hits)| (gauge.name(), max, cap, hits)).collect();
+        // The session's bytes depend on the machine's heap, and the margin and the labeling nodes are the process's.
+        let gauges = limits.request.gauges().each().into_iter().filter(|(gauge, ..)| !matches!(gauge, Gauge::SessionBytes | Gauge::BoxMargin | Gauge::LabelingNodes)).map(|(gauge, max, cap, hits)| (gauge.name(), max, cap, hits)).collect();
         (Seen { count: limits.request.count(), gauges, outcomes }, entries)
     };
     let cold_session = corpus_session();
