@@ -18,6 +18,7 @@
 #   linux    Linux x86_64 wheels and feature-encoder, cross-built with zig for glibc 2.17 into the same target folder, into linux/NAME/.
 #   linux-encoder  the Linux feature-encoder alone, added to the wheels already in linux/NAME/.
 #   tests    the tests of the arclog crate.
+#   clippy   cargo clippy over the workspace's libraries and binaries, with each crate's clippy.toml.
 #
 # A step that fails prints the end of its cargo output and ends the build with status 1.
 # Run it through scripts/run_heavy.py, as any build.
@@ -88,6 +89,10 @@ tests() {
   CARGO_TARGET_DIR=$T cargo test --offline -p arclog --manifest-path "$B/engine/Cargo.toml"
 }
 
+clippy() {
+  CARGO_TARGET_DIR=$T cargo clippy --offline --workspace --lib --bins --manifest-path "$B/engine/Cargo.toml"
+}
+
 step "build $NAME of $SHA: $PARTS"
 for PART in $PARTS; do
   case $PART in
@@ -102,6 +107,7 @@ for PART in $PARTS; do
     linux) locked linux || fail linux; step "$R/linux/$NAME";;
     linux-encoder) locked linux_encoder || fail linux-encoder; step "$R/linux/$NAME/feature-encoder";;
     tests) locked tests || fail tests; step "tests: $(grep -E '^test result' "$LOG" | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')";;
+    clippy) locked clippy || fail clippy; step "clippy: $(grep -c 'disallowed' "$LOG") lines naming a disallowed type or method, $(grep -cE '^warning' "$LOG") warnings";;
     *) step "unknown part $PART"; exit 1;;
   esac
 done
