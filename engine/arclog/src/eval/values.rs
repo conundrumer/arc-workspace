@@ -335,7 +335,7 @@ const UNPOISONED: &str = "a store that no panic poisoned";
 /// The default cap of a request's work, in units of work
 /// ([`RequestWork`]). Provisional: `docs/engine/synthesis.md#decode-settings`
 /// gives how it is to be set from the work of the gold programs' requests.
-pub const REQUEST_WORK_CAP: u64 = 1 << 36;
+pub const REQUEST_WORK_CAP: u64 = 1 << 30;
 
 /// The count of [`Gauge`]s.
 const GAUGES: usize = 15;
