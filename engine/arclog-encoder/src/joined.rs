@@ -1148,6 +1148,8 @@ impl Joined {
             // A count past a number's range has no value, which only a join of more rows than a number holds can reach.
             Step::Part(part) => match part.step() {
                 PartStep::Count { keys } if !keys.is_empty() && self.rows <= i32::MAX as u64 => Some(self.distinct_count(keys)),
+                // A class of each key's rows is one row at the key.
+                PartStep::ClassOf { keys } if !keys.is_empty() => Some(self.distinct_count(keys)),
                 _ => None,
             },
             _ => None,
@@ -1169,10 +1171,32 @@ impl Joined {
         Some(Some(self.rows.saturating_sub(equal)))
     }
 
-    /// The count of rows that `step` gives over the join's rows, where it is a part that gives every row it takes followed by cells that the cells at some of its columns fix. No rows of the join are written: the part runs over the distinct tuples at those columns, written as rows of the join's width with 0 at each other column, and each row it gives counts as many times as the join holds its tuple. `second` is the part's second relation, where it has one. `None` where `step` is not of that form.
+    /// The count of rows that `step` gives over the join's rows, where every row it gives holds a row of the join in the cells it reads, or it keeps whole rows of the join: a part that gives each row it takes followed by cells that the cells at some of its columns fix, a `semijoin` or an `antijoin` or a part that keeps the rows that agree with a test on some of its columns, and a part that keeps the rows whose value is the most frequent of their key. No rows of the join are written: the step runs over the distinct tuples at the columns it reads, written as rows of the join's width with 0 at each other column, and each row it gives counts as many times as the join holds its tuple. `second` is the step's second relation, where it has one. `None` where `step` is not of that form.
     pub fn count_over(&self, step: &Step, second: Option<&Val>) -> Option<Option<u64>> {
-        let Step::Part(part) = step else { return None };
-        let key = part.row_columns()?;
+        let mut key = match step {
+            Step::Part(part) => part.row_columns().or_else(|| part.weighted_columns())?,
+            Step::Semijoin { left, .. } | Step::Antijoin { left, .. } => left.to_vec(),
+            _ => return None,
+        };
+        key.sort_unstable();
+        key.dedup();
+        if key.is_empty() {
+            return None;
+        }
+        // A second relation that stands as the relations it comes from is read at the columns the step reads of it.
+        let replaced;
+        let second = match second {
+            Some(Val::None) => return Some(None),
+            Some(Val::Joined(joined)) => {
+                replaced = joined.read_second(step)?;
+                Some(&replaced)
+            }
+            Some(Val::Boxes(boxes)) => {
+                replaced = boxes.read_second(step)?;
+                Some(&replaced)
+            }
+            other => other,
+        };
         if matches!(second, Some(Val::None)) {
             return Some(None);
         }
@@ -1185,23 +1209,44 @@ impl Joined {
             }
         }
         let wide = Table::new(width, cells);
+        // The count of the rows of the join that hold the tuple of a row of the wide table, found by halving over the sorted tuples.
+        let sorted: Vec<&[Cell]> = tuples.chunks_exact(key.len()).collect();
+        let weight_of = |row: &[Cell]| -> Option<u64> {
+            let at = sorted
+                .binary_search_by(|tuple| {
+                    tuple.iter().zip(&key).map(|(cell, column)| cell.cmp(&row[usize::from(*column)])).find(|order| order.is_ne()).unwrap_or(Ordering::Equal)
+                })
+                .ok()?;
+            Some(weights[at])
+        };
+        let mut total = 0u64;
+        if let Step::Part(part) = step {
+            if part.row_columns().is_none() {
+                let counts: Vec<u64> = wide.rows().map(&weight_of).collect::<Option<_>>()?;
+                let kept = part.step().kept_rows(&wide, &counts)?;
+                for row in kept.chunks_exact(width) {
+                    total = total.saturating_add(weight_of(row)?);
+                }
+                return Some(Some(total));
+            }
+        }
         let first = Val::of_table(wide.clone());
-        let children: Vec<&Val> = std::iter::once(&first).chain(second).collect();
-        let given = match part.step().run(&wide, &children) {
+        let given = match step {
+            Step::Part(part) => {
+                let children: Vec<&Val> = std::iter::once(&first).chain(second).collect();
+                part.step().run(&wide, &children)
+            }
+            Step::Semijoin { left, right } => crate::native::semijoin(&first, second?, left, right),
+            Step::Antijoin { left, right } => crate::native::antijoin(&first, second?, left, right),
+            _ => return None,
+        };
+        let given = match given {
             None | Some(Val::None) => return Some(None),
             Some(Val::Empty) => return Some(Some(0)),
             Some(given) => crate::gen_parts::flat(&given)?,
         };
-        // The tuples stand sorted, so the tuple of a row of the part's rows is found by halving.
-        let sorted: Vec<&[Cell]> = tuples.chunks_exact(key.len()).collect();
-        let mut total = 0u64;
-        let mut probe: Vec<Cell> = vec![0; key.len()];
         for row in given.rows() {
-            for (slot, column) in probe.iter_mut().zip(&key) {
-                *slot = row[usize::from(*column)];
-            }
-            let found = sorted.binary_search_by(|tuple| (*tuple).cmp(&probe[..])).ok()?;
-            total = total.saturating_add(weights[found]);
+            total = total.saturating_add(weight_of(row)?);
         }
         Some(Some(total))
     }
