@@ -60,14 +60,18 @@ fn shared_verdicts() -> &'static std::sync::Mutex<crate::hash::StableHashMap<u12
 /// of the engine, which the bytes name.
 pub fn atom_verdicts() -> Vec<u8> {
     let held = shared_verdicts().lock().expect("the atom verdicts are not poisoned");
-    let mut bytes = Vec::with_capacity(16 + held.len() * 18);
+    let mut bytes = Vec::with_capacity(16 + held.len() * 26);
     bytes.extend_from_slice(SOURCES_HASH.as_bytes());
     for (key, verdict) in held.iter() {
         bytes.extend_from_slice(&key.to_le_bytes());
         match verdict {
-            HeldVerdict::Value(admitted) => bytes.push(u8::from(*admitted)),
+            HeldVerdict::Value { admitted, effort } => {
+                bytes.push(u8::from(*admitted));
+                bytes.extend_from_slice(&effort.to_le_bytes());
+            }
             HeldVerdict::Place(verdict) => {
                 bytes.push(2 + u8::from(verdict.place == AtomPlace::Value) + 2 * u8::from(verdict.closes));
+                bytes.extend_from_slice(&verdict.effort.to_le_bytes());
                 bytes.extend_from_slice(&(verdict.next.len() as u32).to_le_bytes());
                 verdict.next.iter().for_each(|id| bytes.extend_from_slice(&id.to_le_bytes()));
             }
@@ -95,12 +99,13 @@ pub fn add_atom_verdicts(bytes: &[u8]) -> Option<usize> {
         let key = u128::from_le_bytes(take(&mut at, 16)?.try_into().ok()?);
         let tag = take(&mut at, 1)?[0];
         let verdict = match tag {
-            0 | 1 => HeldVerdict::Value(tag == 1),
+            0 | 1 => HeldVerdict::Value { admitted: tag == 1, effort: u64::from_le_bytes(take(&mut at, 8)?.try_into().ok()?) },
             2..=5 => {
+                let effort = u64::from_le_bytes(take(&mut at, 8)?.try_into().ok()?);
                 let len = u32::from_le_bytes(take(&mut at, 4)?.try_into().ok()?) as usize;
                 let next = take(&mut at, len * 4)?.chunks_exact(4).map(|id| u32::from_le_bytes(id.try_into().expect("four bytes"))).collect();
                 let place = if (tag - 2) % 2 == 1 { AtomPlace::Value } else { AtomPlace::Sites };
-                HeldVerdict::Place(Arc::new(AtomVerdict { place, closes: tag >= 4, next }))
+                HeldVerdict::Place(Arc::new(AtomVerdict { place, closes: tag >= 4, next, effort }))
             }
             _ => return None,
         };
@@ -118,6 +123,9 @@ pub(crate) struct AtomVerdict {
     closes: bool,
     /// The ids of the column tokens and the `END` that may come next here.
     next: Box<[u32]>,
+    /// The effort that the checks charged to the request to give this verdict,
+    /// which a read of the verdict charges again.
+    effort: u64,
 }
 
 /// A verdict that the walk keeps for a key.
@@ -125,8 +133,10 @@ pub(crate) struct AtomVerdict {
 pub(crate) enum HeldVerdict {
     /// The verdict at a place.
     Place(Arc<AtomVerdict>),
-    /// Whether a value of a shape may come next at a place.
-    Value(bool),
+    /// Whether a value of a shape may come next at a place, and the effort
+    /// that the checks charged to the request to give that verdict, which a
+    /// read of the verdict charges again.
+    Value { admitted: bool, effort: u64 },
 }
 
 /// The shape of each value token at a state where an atom opens: what the
@@ -360,19 +370,22 @@ impl Decoder<'_> {
     /// A state at the place that `walk` stands at, made from the nearest that it
     /// holds; none where a check refuses a token that an atom of its shape passed.
     fn state_of_walk(&mut self, walk: &mut AtomWalk<'_>) -> Option<State> {
-        let mut from = walk.states.len() - 1;
-        while walk.states[from].is_none() {
-            from -= 1;
-        }
-        let first = walk.path.len() - walk.shape.len();
-        for at in from..walk.shape.len() {
-            let token = self.vocabulary().token(walk.path[first + at]).expect("an id of the vocabulary").clone();
-            let state = walk.states[at].clone().expect("the state before it");
-            let mut next = None;
-            self.at(state, |walker| next = Some(walker.next_state(&token)));
-            walk.states[at + 1] = Some(next.expect("the body ran").ok()?.0);
-        }
-        walk.states[walk.shape.len()].clone()
+        // The effort of a step was charged where the verdict of the place before it was given, or is held in that verdict, so making the state again charges none.
+        crate::eval::unmetered_effort(|| {
+            let mut from = walk.states.len() - 1;
+            while walk.states[from].is_none() {
+                from -= 1;
+            }
+            let first = walk.path.len() - walk.shape.len();
+            for at in from..walk.shape.len() {
+                let token = self.vocabulary().token(walk.path[first + at]).expect("an id of the vocabulary").clone();
+                let state = walk.states[at].clone().expect("the state before it");
+                let mut next = None;
+                self.at(state, |walker| next = Some(walker.next_state(&token)));
+                walk.states[at + 1] = Some(next.expect("the body ran").ok()?.0);
+            }
+            walk.states[walk.shape.len()].clone()
+        })
     }
 
     /// The atoms that hold the tokens of `walk`, at the place it stands at. A site's column stands above `floor`.
@@ -392,14 +405,23 @@ impl Decoder<'_> {
         let shared = !matches!(self.vocabulary().token(relation), Some(Token::Relation(_)));
         let tokens = walk.tokens;
         let mut steps: StableHashMap<u32, State> = StableHashMap::default();
-        let verdict = match self.atom_verdict_held(shared, node) {
-            Some(HeldVerdict::Place(verdict)) => verdict,
+        let work = self.request_work();
+        // A read of a verdict charges the effort that its checks charged, as a hit in a cache does; where that would pass the effort guard, the checks run again and stop where they stop with no verdict held.
+        let held = self.atom_verdict_held(shared, node).filter(|held| match held {
+            HeldVerdict::Place(verdict) => work.fits_effort(verdict.effort),
+            HeldVerdict::Value { .. } => false,
+        });
+        let verdict = match held {
+            Some(HeldVerdict::Place(verdict)) => {
+                let _ = work.charge_effort(verdict.effort);
+                verdict
+            }
             _ => {
                 found.states += 1;
                 let Some(here) = self.state_of_walk(walk) else { return };
                 let place = here.atom_place().expect("a place in an open atom");
                 let mut made = None;
-                self.at(here, |walker| {
+                let ((), effort) = work.effort_of(|| self.at(here, |walker| {
                     made = Some(if place == AtomPlace::Sites {
                         // The token that opens an atom reads no task. A token that closes a `DET` reads the rows of its task.
                         let by_atom = walker.mask_first(tokens.opening.iter().copied());
@@ -410,13 +432,14 @@ impl Decoder<'_> {
                     } else {
                         (false, true, walker.mask_over(tokens.columns.iter().chain(&tokens.end).copied()))
                     });
-                });
+                }));
                 let (closes, reads_no_task, mask) = made.expect("the body ran");
                 let mut next: Vec<u32> = mask.steps.keys().copied().collect();
                 next.sort_unstable();
                 steps.extend(mask.steps.into_iter().map(|(id, (state, _))| (id, state)));
-                let verdict = Arc::new(AtomVerdict { place, closes, next: next.into() });
-                if reads_no_task || !shared {
+                let verdict = Arc::new(AtomVerdict { place, closes, next: next.into(), effort });
+                // A verdict that a stop at the effort guard cut short is the verdict of no place.
+                if (reads_no_task || !shared) && !work.is_effort_exhausted() {
                     self.atom_verdict_keep(shared, node, HeldVerdict::Place(Arc::clone(&verdict)));
                 }
                 verdict
@@ -430,6 +453,8 @@ impl Decoder<'_> {
         if verdict.place == AtomPlace::Value {
             let limit = walk.shapes.labels + walk.shape.iter().filter(|&&shape| shape == FRESH_SHAPE || shape == KEY_SHAPE).count() as u32;
             let mut missing: Vec<(u32, u128)> = Vec::new();
+            // A key is read once, whatever count of tokens share it.
+            let mut read: Vec<u128> = Vec::new();
             for &id in &tokens.values {
                 let token = self.vocabulary().token(id).expect("an id of the vocabulary");
                 if matches!(token, Token::Label(label) if *label >= limit) {
@@ -440,9 +465,20 @@ impl Decoder<'_> {
                 hasher.write_u128(node);
                 hasher.write_u64(shape);
                 let key = hasher.finish128().0;
-                match self.atom_verdict_held(shared, key) {
-                    Some(HeldVerdict::Value(false)) => {}
-                    Some(HeldVerdict::Value(true)) => values.push((id, shape, key)),
+                let held = self.atom_verdict_held(shared, key).filter(|held| match held {
+                    HeldVerdict::Value { effort, .. } => read.contains(&key) || work.fits_effort(*effort),
+                    HeldVerdict::Place(_) => false,
+                });
+                match held {
+                    Some(HeldVerdict::Value { admitted, effort }) => {
+                        if !read.contains(&key) {
+                            read.push(key);
+                            let _ = work.charge_effort(effort);
+                        }
+                        if admitted {
+                            values.push((id, shape, key));
+                        }
+                    }
                     _ => {
                         if !missing.iter().any(|(_, held)| *held == key) {
                             missing.push((id, key));
@@ -454,13 +490,18 @@ impl Decoder<'_> {
             if !missing.is_empty() {
                 found.states += 1;
                 let Some(here) = self.state_of_walk(walk) else { return };
-                let mut mask = None;
-                self.at(here, |walker| mask = Some(walker.mask_over(missing.iter().map(|(id, _)| *id))));
-                let mask = mask.expect("the body ran");
+                // Each key is checked on its own, so the effort it records is that of the key alone, whichever keys are missing with it.
                 for (id, key) in &missing {
-                    self.atom_verdict_keep(shared, *key, HeldVerdict::Value(mask.steps.contains_key(id)));
+                    let (mask, effort) = work.effort_of(|| {
+                        let mut mask = None;
+                        self.at(here.clone(), |walker| mask = Some(walker.mask_over(std::iter::once(*id))));
+                        mask.expect("the body ran")
+                    });
+                    if !work.is_effort_exhausted() {
+                        self.atom_verdict_keep(shared, *key, HeldVerdict::Value { admitted: mask.steps.contains_key(id), effort });
+                    }
+                    steps.extend(mask.steps.into_iter().map(|(id, (state, _))| (id, state)));
                 }
-                steps.extend(mask.steps.into_iter().map(|(id, (state, _))| (id, state)));
                 values.retain(|(_, _, key)| !missing.iter().any(|(id, held)| held == key && !steps.contains_key(id)));
             }
         }

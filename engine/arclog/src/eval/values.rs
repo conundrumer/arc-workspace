@@ -948,6 +948,8 @@ static TOTAL: AtomicU64 = AtomicU64::new(0);
 thread_local! {
     /// The depth of the [`uncounted`] scopes open on this thread.
     static UNCOUNTED: Cell<u32> = const { Cell::new(0) };
+    /// The depth of the [`unmetered_effort`] scopes open on this thread.
+    static UNMETERED: Cell<u32> = const { Cell::new(0) };
     /// The request most recently begun on this thread ([`RequestWork::begin`]).
     static LATEST: RefCell<Option<RequestWork>> = const { RefCell::new(None) };
     /// The request of the export of a task's evidence tables, begun after [`LATEST`] ([`RequestWork::side`]); none once another request begins.
@@ -990,6 +992,32 @@ pub fn is_uncounted() -> bool {
     UNCOUNTED.with(|depth| depth.get() > 0)
 }
 
+/// Runs `run` with the effort of the request turned off on this thread: a
+/// charge to the effort ([`RequestWork::charge_effort`]) adds to neither the
+/// request's effort nor its gauge, and no cost fits or misfits against the
+/// guard. The measurements open still record the charges, as they do in an
+/// [`uncounted`] scope, so the cost of an entry that `run` computes is what it
+/// is anywhere. The work in this scope makes again a value that an earlier
+/// charge of the request has paid for, such as a state that a verdict of the
+/// atoms already charged the step to.
+/// The scope passes to the tasks that [`super::pool::Pool::map`] runs.
+pub fn unmetered_effort<T>(run: impl FnOnce() -> T) -> T {
+    struct Close;
+    impl Drop for Close {
+        fn drop(&mut self) {
+            UNMETERED.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        }
+    }
+    UNMETERED.with(|depth| depth.set(depth.get() + 1));
+    let _close = Close;
+    run()
+}
+
+/// Whether this thread runs in an [`unmetered_effort`] scope.
+pub fn is_effort_unmetered() -> bool {
+    UNMETERED.with(|depth| depth.get() > 0)
+}
+
 /// What a thread has charged, for the cost of an entry ([`Cost`]).
 ///
 /// An entry is computed on one thread, which runs no task of the pool while
@@ -1004,7 +1032,7 @@ struct Tally {
     /// a request at hand ([`RequestWork::note_unbilled`]).
     unbilled: u64,
     /// The effort that this thread has charged to any request, which
-    /// [`RequestWork::thread_effort`] gives.
+    /// [`RequestWork::effort_of`] reads.
     effort: u64,
 }
 
@@ -1443,6 +1471,12 @@ impl RequestWork {
         }
         // Past 2^40 a charge is past the guard, and the clamp keeps the sum from wrapping.
         let bindings = bindings.min(1 << 40);
+        if is_effort_unmetered() {
+            if bindings > 0 {
+                self.tally_effort(bindings);
+            }
+            return Ok(());
+        }
         let effort = if bindings == 0 {
             self.effort.count.load(Ordering::Relaxed)
         } else {
@@ -1474,16 +1508,26 @@ impl RequestWork {
         });
     }
 
-    /// The effort that the requests have charged on this thread since it
-    /// began. The difference between two readings is the effort that the
-    /// thread charged between them, the effort of its hits included.
-    pub fn thread_effort() -> u64 {
-        tally(|tally| tally.effort)
+    /// The value of `run` and the effort that `run` charged on this thread,
+    /// the effort of the hits it read included and the effort of the index
+    /// builds it noted, as [`RequestWork::measure`] counts them in a cost. The
+    /// rows of builds that waited for a charge when `run` began wait for one
+    /// after it, as they do around a measurement.
+    pub fn effort_of<T>(&self, run: impl FnOnce() -> T) -> (T, u64) {
+        let (held, before) = tally(|tally| (std::mem::take(&mut tally.unbilled), tally.effort));
+        let value = run();
+        // The rows of builds that no charge in `run` took are the work of `run`.
+        let _ = self.charge(0);
+        let spent = tally(|tally| {
+            tally.unbilled = tally.unbilled.saturating_add(held);
+            tally.effort.saturating_sub(before)
+        });
+        (value, spent)
     }
 
     /// Whether the effort stays within its guard after `effort` more.
     pub fn fits_effort(&self, effort: u64) -> bool {
-        self.effort.count.load(Ordering::Relaxed).saturating_add(effort) <= self.effort_cap
+        is_effort_unmetered() || self.effort.count.load(Ordering::Relaxed).saturating_add(effort) <= self.effort_cap
     }
 
     /// The identity of the effort count, which the open measurements name it

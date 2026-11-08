@@ -442,10 +442,9 @@ impl<'a> Budget<'a> {
     /// the evaluation.
     fn counted<T>(&mut self, evaluate: impl FnOnce(&mut Self) -> Result<T, ReachedBound>) -> Result<(T, Counted), ReachedBound> {
         let outside = std::mem::take(&mut self.nested_rows);
-        let effort_before = super::RequestWork::thread_effort();
-        let result = self.logged(evaluate);
+        let request = self.limits.request.clone();
         // Every charge to the effort that this thread made while the evaluation ran: its searches, and the hits it read.
-        let effort = super::RequestWork::thread_effort().saturating_sub(effort_before);
+        let (result, effort) = request.effort_of(|| self.logged(evaluate));
         let inside = std::mem::replace(&mut self.nested_rows, outside);
         self.nested_rows = outside.max(inside);
         let (value, bindings) = result?;

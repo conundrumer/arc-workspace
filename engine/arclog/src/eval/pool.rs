@@ -37,10 +37,14 @@ impl Pool {
     /// A call inside an [`super::uncounted`] scope runs its tasks in that scope.
     pub fn map<T: Sync, R: Send>(&self, items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
         let uncounted = super::values::is_uncounted();
+        let unmetered = super::values::is_effort_unmetered();
         // A task notes the quantities that no limits reach in the request of the thread that asked for it.
         let ambient = super::values::ambient_gauges();
         self.threads.install(|| {
-            items.par_iter().map(|item| super::values::with_ambient(ambient.clone(), || if uncounted { super::uncounted(|| f(item)) } else { f(item) })).collect()
+            items.par_iter().map(|item| super::values::with_ambient(ambient.clone(), || {
+                let run = || if uncounted { super::uncounted(|| f(item)) } else { f(item) };
+                if unmetered { super::unmetered_effort(run) } else { run() }
+            })).collect()
         })
     }
 }
