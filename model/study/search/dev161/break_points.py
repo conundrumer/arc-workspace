@@ -1,4 +1,4 @@
-"""break_points.py RUN ARM OUT [--tasks T,T|@FILE] [--seed N] [--shard K/N] [--limit N] [--summary-only]
+"""break_points.py RUN ARM OUT [--tasks T,T|@FILE] [--seed N] [--shard K/N] [--limit N] [--productions union|skeleton] [--cut FILE] [--summary-only]
 
 For each gold table of the union graph that a finished job of RUN and ARM did not reach, the class of where its path broke
 (read-rule.md of the gold-break-points run, "Classes"). The output lines give each class by its code:
@@ -24,14 +24,21 @@ The bits need WRITER_TOKEN_ID_NO_TABLE=1 (and WRITER_NO_AUTHORED=1 where the run
 Definitions that the rule leaves open:
 - Inputs of a gold table: each query of its union tables reads union keys (union-dev.jsonl `reads`); a read of key k is reached where any graph table of k is reached; the table's inputs are reached where some such query has every read reached.
 - Goal table: graph-tables `goal`. The report's kind OUT is the goal table.
-- The state of a sampled query is its steps less that query. The first state that held the inputs of a production is the first sampled query whose state's tables include the production's input tables (read from the skeleton's `inputs`).
+- The state of a sampled query is its steps less that query. The first state that held the inputs of a production is the first sampled query whose state's tables include the production's input tables.
   d is that sampled query's number, and the queries sampled from that state on are D - d + 1.
-- A table can have several productions (skeleton queries that give it). Up to --max-productions of them are scored, in the order of d and then text length; the table takes the class of the most favourable (5 over 4 over 3), and its lowest b.
+- Productions (--productions union, the default): a production of a graph table is a union table among its `members`, one for each QueryHash. Its text is the text of its form of least length.
+  Its inputs are the graph tables of the tables that the form reads: the form is the union's, its `reads` name the union tables, and the identity of the form (content, labels dropped) decides which label of the text
+  names which read (Gold.producers); an output name after a label ("&r1.cell") picks the member "key.name". The labels of the text are then written as the labels of the state's queries, so no label of the union reaches the walk.
+  No row store and no skeleton is read. --productions skeleton takes the queries that give the table from the skeleton, as before.
+- A table can have several productions (union tables, or with --productions skeleton the skeleton's queries, that give it). Up to --max-productions of them are scored, in the order of d and then text length; the table takes the class of the most favourable (5 over 4 over 3), and its lowest b.
 - Chances are writer.options' ids and writer.probabilities, as serving takes them, without the search's repeat filter. A writing point with one id costs 0 bits. A gold token that is no id, or a writing point with no id left, is b = inf.
 - Ident-column tables (--flags) are counted apart: the summary's main tables leave them out.
 """
 import argparse
 import collections
+import dataclasses
+import hashlib
+import itertools
 import json
 import math
 import os
@@ -58,6 +65,8 @@ CLASS_NAMES = {'1': 'inputs not reached', '2': 'OUT not found', '3': 'writer ran
 CLASS_COLUMNS = ('1', '2', '3', '4', '5', 'x')
 NAME = re.compile(r'&f(\d+)')
 OWN = re.compile(r'^\((\w+) &f(\d+)')
+FORM_HEAD = re.compile(r'\((\w+) &([A-Za-z_]\w*)')  # a union form's text: its kind and its own label
+FORM_REF = re.compile(r'&([A-Za-z_]\w*)((?:\.\w+)*)')  # a label in a union form's text, and the output name that follows it
 
 
 def band(d):
@@ -66,21 +75,57 @@ def band(d):
 
 # ---------------------------------------------------------------- gold
 
-class Gold:
-    """The graph tables of each task, with their forms' reads, and the skeleton's queries."""
+def set_files(folder, name, set_name):
+    """The logical names of the files of a union folder that give `name` ('union', 'graph-tables') of the set: NAME-SET.jsonl where it exists, else the shards NAME-SET-K.jsonl
+    (gold_union_graph.py SET K N writes those). Each is plain or zstd."""
+    whole = str(Path(folder) / ('%s-%s.jsonl' % (name, set_name)))
+    return [whole] if Z.exists(whole) else Z.glob(str(Path(folder) / ('%s-%s-[0-9]*.jsonl' % (name, set_name))))
 
-    def __init__(self, union, skeleton):
+
+def form_ident(text, producer):
+    """The content identity of a union form (gold_union.forms_of): its text with each read replaced by the identity of the form that it reads, labels dropped.
+    `producer` is {label: identity}; a label with none is written `&_`."""
+    m = FORM_HEAD.match(text)
+    body = text[m.end():]
+    out = m[1] + FORM_REF.sub(lambda n: '{%s}%s' % (producer[n[1]], n[2]) if producer.get(n[1]) else '&_' + n[2], body)
+    return hashlib.sha256(' '.join(out.split()).encode()).hexdigest()[:16]
+
+
+def assignments(labels, options, need):
+    """The tuples that give each label (in order) one of its options (a union key, or None), with every key of `need` given to some label."""
+    def go(i, used, acc):
+        if len(need - used) > len(labels) - i:
+            return
+        if i == len(labels):
+            yield tuple(acc)
+            return
+        for k in options[i]:
+            acc.append(k)
+            yield from go(i + 1, used | {k} if k is not None else used, acc)
+            acc.pop()
+    yield from go(0, frozenset(), [])
+
+
+class Gold:
+    """The graph tables of each task, with their forms' reads, and the productions of each from the union and its graph or from the skeleton."""
+
+    def __init__(self, union, skeleton, set_name='dev'):
+        union = Path(union)
         self.skeleton = Path(skeleton)
         skip = {json.loads(l)['task'] for l in open(union / 'out-of-scope.jsonl')} if (union / 'out-of-scope.jsonl').exists() else set()
         self.tables = collections.defaultdict(dict)  # task -> graph table -> row
-        for r in map(json.loads, Z.open_text(union / 'graph-tables-dev.jsonl')):
-            if r['table'].startswith('t') and r.get('kind') != 'DEMONSTRATED' and r['task'] not in skip:
-                self.tables[r['task']][r['table']] = dict(depth=r['depth'], kind=r['kind'], goal=bool(r['goal']), members=r['members'], tables=r['tables'])
-        self.union = {}  # task -> key (str) -> dict(query, reads {ident: [key str]})
-        for r in map(json.loads, Z.open_text(union / 'union-dev.jsonl')):
-            if r['task'] in self.tables:
-                self.union[r['task']] = {str(t['key']): dict(query=t.get('query'), reads={i: [str(k) for k in v] for i, v in t['reads'].items()}) for t in r['tables']}
+        for p in set_files(union, 'graph-tables', set_name):
+            for r in map(json.loads, Z.open_text(p)):
+                if r.get('table', '').startswith('t') and r.get('kind') != 'DEMONSTRATED' and r['task'] not in skip:
+                    self.tables[r['task']][r['table']] = dict(depth=r['depth'], kind=r['kind'], goal=bool(r['goal']), members=r['members'], tables=r['tables'])
+        self.union = {}  # task -> key (str) -> dict(query, kind, forms [(ident, text)], reads {ident: [key str]})
+        for p in set_files(union, 'union', set_name) + [x for x in [str(union / ('union-%s-addendum.jsonl' % set_name))] if Z.exists(x)]:  # a later row of a task replaces an earlier
+            for r in map(json.loads, Z.open_text(p)):
+                if r['task'] in self.tables:
+                    self.union[r['task']] = {str(t['key']): dict(query=t.get('query'), kind=t.get('kind'), forms=[(f['ident'], f['text']) for f in t.get('forms', ())],
+                                                                 reads={i: [str(k) for k in v] for i, v in t['reads'].items()}) for t in r['tables']}
         self._sk = {}
+        self._made = {}  # task -> union key -> Production or None
 
     def key2g(self, task):
         out = collections.defaultdict(set)
@@ -114,6 +159,74 @@ class Gold:
                     by_g[g].append(h)
             self._sk = {task: (q, by_g)}
         return self._sk[task]
+
+    def member2g(self, task):
+        """{union name of a table ('key' or 'key.name'): graph table} of the task."""
+        return {m: g for g, r in self.tables[task].items() for m in r['members']}
+
+    def producers(self, task, key, ident, text):
+        """{label: union key of the table that the label names in this form's text, or None} for the form `ident` of union table `key`, or None where no assignment of
+        producers gives the form's content identity back. A label's producer is one of the tables that the form reads (`reads`), and the labels name all of them; a label
+        with an output name after it ("&r1.cell") names an INIT or RIGID_DET table, one with none names another. Among the assignments that keep to that, the identity
+        decides (form_ident): no label is believed on its own, and a label of the text need not be the own label of the form that it names, as the union keeps one text
+        for each identity, and the labels are those of its first program."""
+        u = self.union[task]
+        body = text[FORM_HEAD.match(text).end():]
+        suffixed = {}
+        for n in FORM_REF.finditer(body):
+            suffixed[n[1]] = suffixed.get(n[1], False) or bool(n[2])
+        labels = sorted(suffixed)
+        reads = u[key]['reads'].get(ident, ())
+        evidence = {l: [k for k in reads if any((FORM_HEAD.match(f[1]) or [None, None, None])[2] == l for f in u[k]['forms'])] for l in labels}  # a guess: the own label of a stored form
+        by_kind = {l: [k for k in reads if (u[k]['kind'] in ('INIT', 'RIGID_DET')) == suffixed[l]] for l in labels}
+        stages = []  # (label -> candidate producers): from the cheapest guess to the widest search, and each decides by the identity alone
+        has = sorted(l for l in labels if evidence[l])
+        for released in range(min(len(has), 3) + 1):
+            for rel in itertools.combinations(has, released):
+                stages.append({l: ([k for k in by_kind[l] if k in evidence[l]] or by_kind[l]) if l in has and l not in rel else by_kind[l] for l in labels})
+        stages.append({l: list(reads) + [None] for l in labels})
+        budget = 100000
+        for opts in stages:
+            found = []
+            for combo in assignments(labels, [opts[l] for l in labels], set(reads)):
+                budget -= 1
+                forms = [[f[0] for f in u[k]['forms']] if k is not None else [None] for k in combo]
+                for pick in itertools.islice(itertools.product(*forms), 2000):
+                    if form_ident(text, {l: i for l, i in zip(labels, pick) if i}) == ident:
+                        found.append(dict(zip(labels, combo)))
+                        break
+                if budget <= 0:
+                    return None
+            if found:
+                return found[0] if all(f == found[0] for f in found) else None
+        return None
+
+    def union_production(self, task, key):
+        """The Production of union table `key`, from the form of its least text length (then least identity), or None where the table has no form."""
+        made = self._made.setdefault(task, {})
+        if key not in made:
+            made[key] = self._union_production(task, key)
+        return made[key]
+
+    def _union_production(self, task, key):
+        t = self.union[task].get(key)
+        if not t or not t['forms']:
+            return None
+        ident, text = min(t['forms'], key=lambda f: (len(f[1]), f[0]))
+        by_label = self.producers(task, key, ident, text)
+        if by_label is None:
+            return Production(t['query'], len(text), None, 'no assignment of producers gives the form\'s identity', text=text)
+        m2g, ins = self.member2g(task), []
+        own = FORM_HEAD.match(text)[2]
+        for n in FORM_REF.finditer(text[FORM_HEAD.match(text).end():]):
+            k = by_label[n[1]]
+            if k is None:
+                return Production(t['query'], len(text), None, 'a label has no producer in the union', text=text)
+            gin = m2g.get(k + n[2])
+            if gin is None:  # e.g. an INIT output that the graph makes no table of (gold_union_graph.py: `renamed`): the graph reads the tables of that output's atoms instead
+                return Production(t['query'], len(text), None, 'a read (%s) is in no graph table' % (k + n[2]), text=text)
+            ins.append((gin, n[2][1:], n[1]))
+        return Production(t['query'], len(text), list(dict.fromkeys(ins)), None, text=text, own=own, producers=by_label)
 
 
 def classify_static(gold, task, reached):
@@ -155,11 +268,14 @@ def classify_static(gold, task, reached):
 # ---------------------------------------------------------------- the job
 
 class Job:
-    def __init__(self, folder, gold_names):
+    def __init__(self, folder, gold_names, last=None):
+        """The job's sampled queries, with numbers up to `last` where it is given (the --cut of the job's task)."""
         self.draws = []  # (draw number, step hashes of the state, drawn hash)
         self.text_of, outputs, entries = {}, [], []
         self.total, self.solves = 0, False
         for r in draw_file.draws(folder):
+            if last is not None and r.get('draw', 0) > last:
+                continue
             if 'repeat' in r:
                 self.total = max(self.total, r['draw'])
                 continue
@@ -312,8 +428,44 @@ def scope_of_hashes(hashes, text_of):
 
 # ---------------------------------------------------------------- one job
 
-def productions(gold, task, g, reached_by_held, names_of_input):
-    """Skeleton productions of graph table g: [(rec, [(input QueryHash, output name, input graph table)])], inputs None where one is not in the skeleton."""
+@dataclasses.dataclass
+class Production:
+    """One way to give a graph table: the QueryHash of the query, the length of its text, its inputs as [(graph table, output name, tag)] (None where an input has no
+    graph table; `why` then says so), and its text. Where the text is a skeleton record's, `rec` holds it. The tag is what the text calls the input: a producer's QueryHash
+    in the skeleton's closure, a label in a union form's text."""
+    query: str | None
+    size: int
+    ins: list | None
+    why: str | None = None
+    rec: dict | None = None
+    text: str | None = None
+    own: str | None = None
+    producers: dict | None = None  # a union form: {label: union key of the table that it names}
+
+    def write(self, label, own, eng):
+        """The text with each input's tag written as its label in the scope (label: {tag: '&r<position>'}) and the query's own label written as `own`."""
+        if self.rec is not None:
+            return eng.pw.rewrite(self.rec, label, own)
+
+        def put(m):
+            if m[1] == self.own:
+                return own
+            if m[1] in label:
+                return label[m[1]] + m[2]
+            raise eng.pw.Reject('the label &%s is no input of the production' % m[1])
+        return FORM_REF.sub(put, self.text)
+
+
+def productions(gold, task, g, source):
+    """The Productions of graph table g, from the 'union' (its tables' forms, and their reads) or the 'skeleton' (its queries that give g, and the union tables' queries that it has)."""
+    if source == 'union':
+        got = {}
+        for m in gold.tables[task][g]['members']:
+            k = m.split('.')[0]
+            p = gold.union_production(task, k) if k not in got else None
+            if p is not None:
+                got[k] = p
+        return sorted(got.values(), key=lambda p: p.query or '')  # an order that does not depend on the members' order
     q, by_g = gold.queries(task)
     hs = list(by_g.get(g, ()))
     u = gold.union.get(task, {})
@@ -328,17 +480,18 @@ def productions(gold, task, g, reached_by_held, names_of_input):
             if 'query' not in i:
                 continue
             src = q.get(i['query'])
-            ins.append((i['query'], i['name'], None if src is None else src['graph_tables'].get(i['name'])))
-        out.append((rec, None if any(x[2] is None for x in ins) else ins))
+            ins.append((None if src is None else src['graph_tables'].get(i['name']), i['name'], i['query']))
+        out.append(Production(h, len(rec['program'][-1]), None if any(x[0] is None for x in ins) else ins, None if all(x[0] is not None for x in ins) else 'an input is not in the skeleton', rec=rec))
     return out
 
 
 def classify_job(eng, gold, flags, task, job_dir, result, a):
     t0 = time.time()
     T = gold.tables[task]
-    job = Job(job_dir, set(T))
+    last = a.cut_of.get(task)
+    job = Job(job_dir, set(T), last)
     D = result.get('draws') or job.total
-    D = max(D, job.total)
+    D = max(D, job.total) if last is None else min(max(D, job.total), last)
     reached = set(job.gives) & set(T)
     static = classify_static(gold, task, reached)
     rows = {g: dict(t=g, depth=T[g]['depth'], kind=T[g]['kind'], goal=T[g]['goal'], ident=(flags.get(task, {}).get(g) or {}).get('has_ident'), cls=str(c) if c is not None else None) for g, c in static.items()}
@@ -346,27 +499,27 @@ def classify_job(eng, gold, flags, task, job_dir, result, a):
     notes = collections.Counter()
     if todo and job.draws:
         held = job.held_by_draw()
-        cand = []  # (d, text length, g, rec, inputs)
+        cand = []  # (d, text length, g, production)
         for g in todo:
-            prods = productions(gold, task, g, None, None)
+            prods = productions(gold, task, g, a.productions)
             if not prods:
-                rows[g].update(cls='x', why='no gold text in the skeleton')
+                rows[g].update(cls='x', why='no gold text in the %s' % a.productions)
                 continue
             usable = 0
-            for rec, ins in prods:
-                if ins is None:
+            for p in prods:
+                if p.ins is None:
                     continue
-                need = {x[2] for x in ins}
+                need = {x[0] for x in p.ins}
                 if not need <= reached:
                     continue
                 d = next((d for d, h in held if need <= h), None)
                 if d is None:
                     continue
                 usable += 1
-                cand.append((d, len(rec['program'][-1]), g, rec, ins))
+                cand.append((d, p.size, g, p))
             rows[g]['prods'] = len(prods)
             if not usable:
-                rows[g].update(cls='x', why='no production with its inputs in one state')
+                rows[g].update(cls='x', why='no production with its inputs in one state' if any(p.ins is not None for p in prods) else 'no production has its inputs: %s' % prods[0].why)
         per_g = collections.defaultdict(list)
         for c in sorted(cand, key=lambda c: (c[0], c[1])):
             if len(per_g[c[2]]) < a.max_productions:
@@ -399,14 +552,14 @@ def classify_job(eng, gold, flags, task, job_dir, result, a):
                 continue
             st = dict(scope=scope, kind_point=kp, starts={}, cache={})
             after = D - d + 1
-            for _, _, g, rec, ins in by_d[d]:
+            for _, _, g, prod in by_d[d]:
                 try:
                     label = {}
-                    for qh, name, gin in ins:
+                    for gin, name, tag in prod.ins:
                         idx = min((pos[q] for q, n in job.gives[gin] if q in pos and n == name), default=None)
-                        if idx is None or label.setdefault(qh, '&r%d' % idx) != '&r%d' % idx:
+                        if idx is None or label.setdefault(tag, '&r%d' % idx) != '&r%d' % idx:
                             raise eng.pw.Reject('input %s is not one query of the state' % gin)
-                    text = eng.pw.rewrite(rec, label, '&r%d' % len(scope))
+                    text = prod.write(label, '&r%d' % len(scope), eng)
                     kind, stream = eng.stream_of(run, scope, text)
                     path, order, owhy = eng.order.canonical_stream(eng.tr.order_env(run), dec0, kind, stream[1:], eng.order_seconds)
                     b, why, worst = eng.walk(run, plan, st, kind, path, a.b_limit, a.check_ids)
@@ -418,7 +571,7 @@ def classify_job(eng, gold, flags, task, job_dir, result, a):
                 cur = best.get(g)
                 if cur is None or (cls, -b) > (cur[0], -cur[1]):
                     best[g] = (cls, b, dict(d=d, after=after, order=order, walk=why, tok=worst[2] if worst else None, rank=worst[0] if worst else None, tok_bits=round(worst[1], 2) if worst else None,
-                                            n_ids=worst[5] if worst else None, point_kind=worst[3] if worst else None, phase=worst[4] if worst else None, text=text[:160]))
+                                            n_ids=worst[5] if worst else None, point_kind=worst[3] if worst else None, phase=worst[4] if worst else None, query=prod.query, text=text[:160]))
                 rows[g]['evaluated'] = rows[g].get('evaluated', 0) + 1
         for g, (cls, b, det) in best.items():
             rows[g].update(cls=str(cls), b=None if math.isinf(b) else round(b, 2), b_inf=math.isinf(b), **det)
@@ -517,7 +670,8 @@ def main():
     ap.add_argument('--limit', type=int)
     ap.add_argument('--summary-only', action='store_true')
     ap.add_argument('--union', default=str(R.UNION))
-    ap.add_argument('--skeleton', default=str(SKELETON))
+    ap.add_argument('--productions', choices=('union', 'skeleton'), default='union', help='where the productions of a gold table and their inputs come from: the union and its graph (default), or the skeleton')
+    ap.add_argument('--skeleton', default=str(SKELETON), help='the skeleton folder, read only with --productions skeleton')
     ap.add_argument('--flags', default=str(DEV161 / 'gold-flags-dev.json'))  # gold_flags.py writes it from the dev row stores
     ap.add_argument('--code')
     ap.add_argument('--site')
@@ -528,7 +682,10 @@ def main():
     ap.add_argument('--b-limit', type=float, help='stop a path once its bits pass this; b is then a lower bound (default: the whole path)')
     ap.add_argument('--order-seconds', type=float, default=5.0)
     ap.add_argument('--check-ids', action='store_true', help='count the points where writer.options and writer.point_ids give other ids')
+    ap.add_argument('--cut', help='a JSON file of {task: N}: each job of a listed task is read as if it had ended after its sampled query N, so two runs compare at an equal count of '
+                                  'sampled queries; its tables, its states and the D of the classes come from those queries alone')
     a = ap.parse_args()
+    a.cut_of = json.load(open(a.cut)) if a.cut else {}
     k, n = map(int, a.shard.split('/'))
     out = a.out if n == 1 else '%s-shard%dof%d' % (Z.logical(a.out), k, n)
     if a.summary_only:
