@@ -32,7 +32,7 @@ pub enum Bound {
     CountOutput,
     /// A product of parts that `flat` writes passes 2^18 rows.
     Flat,
-    /// A walk has passed 100,000,000 cells of values.
+    /// A term has passed its budget of cells, `GENERATE_WALK_CELLS`: 100,000,000 by default.
     Walk,
     /// The rows of `inside` that an operator reads, written out or as the tuples at the columns it names, pass `CELL_CAP` cells.
     InsideCells,
@@ -257,6 +257,23 @@ pub fn tally(group: &'static str, label: String, count: u64) {
     }
 }
 
+/// The greatest value seen under a label of a group, and the value last printed for it.
+static MAXES: OnceLock<Mutex<LookupMap<(&'static str, &'static str), (u64, u64)>>> = OnceLock::new();
+
+/// `value` under a label of a group, kept as the greatest seen. It prints a line to the error output when the value is half again the last one printed, so that a run that is stopped leaves its sizes.
+pub fn tally_max(group: &'static str, label: &'static str, value: u64) {
+    if !enabled() {
+        return;
+    }
+    let mut held = MAXES.get_or_init(Default::default).lock().unwrap();
+    let entry = held.entry((group, label)).or_insert((0, 0));
+    entry.0 = entry.0.max(value);
+    if entry.0 > entry.1 + entry.1 / 2 {
+        entry.1 = entry.0;
+        eprintln!("size\t{group}\t{label}\t{value}");
+    }
+}
+
 /// Adds this thread's counts to the totals.
 pub fn flush() {
     if !enabled() {
@@ -290,6 +307,12 @@ pub fn summary() -> String {
         let rows: Vec<_> = tallies.lock().unwrap().sorted_entries().into_iter().map(|((group, label), count)| (*group, label.clone(), *count)).collect();
         for (group, label, count) in rows {
             out.push_str(&format!("bounds\ttally\t{group}\t{label}\t{count}\n"));
+        }
+    }
+    if let Some(maxes) = MAXES.get() {
+        let rows: Vec<_> = maxes.lock().unwrap().sorted_entries().into_iter().map(|((group, label), (most, _))| (*group, *label, *most)).collect();
+        for (group, label, most) in rows {
+            out.push_str(&format!("bounds\tmost\t{group}\t{label}\t{most}\n"));
         }
     }
     out.push_str("bounds\thead\tevaluations\tinput had no value\n");

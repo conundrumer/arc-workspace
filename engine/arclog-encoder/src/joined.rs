@@ -74,6 +74,12 @@ pub struct Joined {
     sketches: Mutex<(usize, FastMap<Box<[u16]>, Option<Arc<Table>>>)>,
 }
 
+impl Drop for Joined {
+    fn drop(&mut self) {
+        crate::native::lazy_dropped(self.written.get());
+    }
+}
+
 impl std::fmt::Debug for Joined {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(out, "Joined {{ nodes: {}, rows: {} }}", self.nodes.len(), self.rows)
@@ -501,7 +507,11 @@ impl Joined {
 
     /// The rows of the join written out, or no value where they pass `CELL_CAP` cells.
     pub fn written(&self) -> Val {
-        let held = self.written.get_or_init(|| self.write());
+        let held = self.written.get_or_init(|| {
+            let value = self.write();
+            crate::native::lazy_wrote(&value);
+            value
+        });
         if matches!(held, Val::None) {
             crate::bounds::mark(Bound::JoinOutput);
         }
