@@ -213,7 +213,7 @@ pub(crate) fn dense_column(t: &TableAt<'_>, column: usize) -> (Vec<u32>, u32) {
         }
         return (ids, next);
     }
-    let mut seen: std::collections::HashMap<Cell, u32> = std::collections::HashMap::with_capacity(t.rows.min(256));
+    let mut seen: crate::lookup::LookupMap<Cell, u32> = crate::lookup::LookupMap::with_capacity(t.rows.min(256));
     for row in 0..t.rows {
         let next = seen.len() as u32;
         ids.push(*seen.entry(t.at(row, column)).or_insert(next));
@@ -227,7 +227,7 @@ pub(crate) fn dense_over(columns: &[&[u32]], rows: usize) -> (Vec<u32>, u32) {
     let mut ids = vec![0u32; rows];
     let mut count = 1u32;
     for column in columns {
-        let mut seen: std::collections::HashMap<u64, u32> = std::collections::HashMap::with_capacity(rows.min(256));
+        let mut seen: crate::lookup::LookupMap<u64, u32> = crate::lookup::LookupMap::with_capacity(rows.min(256));
         for row in 0..rows {
             let key = u64::from(ids[row]) << 32 | u64::from(column[row]);
             let next = seen.len() as u32;
@@ -592,8 +592,8 @@ fn color_and_number(view: &mut View<'_>, x: usize, n: usize) {
     let count = |col: i32| if (0..10).contains(&col) { output.counts[col as usize] as i32 } else { 0 };
     let hits = pairs.iter().filter(|(col, value)| *value == count(*col)).count() as u32;
     view.put("C,C is the output count of the color, proportion", &[x, n], share(hits, pairs.len() as u32));
-    let values: std::collections::HashSet<i32> = pairs.iter().map(|pair| pair.1).collect();
-    let colors: std::collections::HashSet<i32> = pairs.iter().map(|pair| pair.0).collect();
+    let values: crate::lookup::LookupSet<i32> = pairs.iter().map(|pair| pair.1).collect();
+    let colors: crate::lookup::LookupSet<i32> = pairs.iter().map(|pair| pair.0).collect();
     if values.len() > 1 && colors.len() > 1 {
         let mut ordered: Vec<(i32, i32)> = pairs.iter().map(|(col, value)| (*value, count(*col))).collect();
         ordered.sort_unstable();

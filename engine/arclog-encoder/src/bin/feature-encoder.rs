@@ -50,13 +50,13 @@
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use std::collections::HashSet;
 use std::io::{BufRead, Write};
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use arclog_encoder::encoder::{encode, json_string, value_json, Counts, Law, Options, Outcome};
+use arclog_encoder::lookup::{LookupMap, LookupSet};
 use arclog_encoder::run::{cell_text, concept_program, Evaluated, Host, ModelValue, Value};
 use arclog_encoder::vectors::{entries, TABLE_HOLE};
 
@@ -154,9 +154,9 @@ fn host(arguments: &Arguments, solver: &str) -> Result<Host, String> {
 }
 
 /// The expressions that a file of an earlier run holds.
-fn finished(path: &PathBuf) -> HashSet<String> {
-    let Ok(file) = std::fs::File::open(path) else { return HashSet::new() };
-    let mut held = HashSet::new();
+fn finished(path: &PathBuf) -> LookupSet<String> {
+    let Ok(file) = std::fs::File::open(path) else { return LookupSet::new() };
+    let mut held = LookupSet::new();
     for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
         if let Some(rest) = line.strip_prefix("{\"expression\":") {
             if let Some(end) = rest.find(",\"size\":") {
@@ -249,7 +249,7 @@ fn run_grid_values(arguments: &Arguments, grids: &str) -> Result<(), String> {
     let host = Host::of_task("(OUT (input ^P ^Col))", task)?;
     let run = ClosedRun { size: arguments.size, max_inputs: arguments.max_inputs, output_leaf, work_cap: arguments.work_cap };
     let path = arguments.out.clone().ok_or("`grid-values` writes to --out")?;
-    let done: HashSet<String> = arclog_encoder::zio::read_text(&path).unwrap_or_default().lines().filter_map(|line| line.split('\t').next().map(str::to_string)).collect();
+    let done: LookupSet<String> = arclog_encoder::zio::read_text(&path).unwrap_or_default().lines().filter_map(|line| line.split('\t').next().map(str::to_string)).collect();
     let mut out = arclog_encoder::zio::writer(&path, true)?;
     let mut counts = ClosedCounts::default();
     let start = Instant::now();
@@ -394,7 +394,7 @@ fn slot_json(slot: &arclog_encoder::generate::Slot) -> serde_json::Value {
 }
 
 /// Writes a vector's entries, one line per shape.
-fn write_vector(out: &mut dyn Write, key: &serde_json::Value, vector: &arclog_encoder::table_vector::TableVector, names: &std::collections::HashMap<u64, String>) -> Result<(), String> {
+fn write_vector(out: &mut dyn Write, key: &serde_json::Value, vector: &arclog_encoder::table_vector::TableVector, names: &LookupMap<u64, String>) -> Result<(), String> {
     writeln!(out, "{}", serde_json::json!({"table": key, "entries": vector.shapes.len(), "examples": vector.examples, "train": vector.train, "table_rows_mean": vector.table_rows.0, "table_rows_max": vector.table_rows.1})).map_err(|error| error.to_string())?;
     for shape in 0..vector.shapes.len() {
         let at: Vec<serde_json::Value> = vector.at(shape).iter().map(slot_json).collect();
@@ -403,8 +403,8 @@ fn write_vector(out: &mut dyn Write, key: &serde_json::Value, vector: &arclog_en
     Ok(())
 }
 
-fn names_of(store: &arclog_encoder::generate::NameStore) -> std::collections::HashMap<u64, String> {
-    store.all().into_iter().map(|(hash, name)| (hash as u64, name)).collect()
+fn names_of(store: &arclog_encoder::generate::NameStore) -> LookupMap<u64, String> {
+    store.by_vector_hash()
 }
 
 /// The shapes of a file, one per line. A line whose first field, up to a tab, is up to 16 hex digits with or
@@ -1371,9 +1371,9 @@ fn run_atom_lists(arguments: &Arguments, input: &str, out: &str) -> Result<(), S
         Some(path) => serde_json::from_str(&arclog_encoder::zio::read_text(path)?).map_err(|error| error.to_string())?,
         None => Default::default(),
     };
-    let orient: std::collections::HashMap<i64, String> = {
+    let orient: LookupMap<i64, String> = {
         let text = arclog_encoder::zio::read_text(&std::env::var("ATOM_ORIENT").map_err(|_| "`atom-lists` reads ATOM_ORIENT".to_string())?)?;
-        let held: std::collections::HashMap<String, String> = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+        let held: std::collections::BTreeMap<String, String> = serde_json::from_str(&text).map_err(|error| error.to_string())?;
         held.into_iter().filter_map(|(key, value)| Some((key.parse().ok()?, value))).collect()
     };
     let mut families = Generators::default();
@@ -1407,7 +1407,7 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
     use arclog_encoder::native::hash_words;
     use arclog_encoder::stored::Stored;
     use arclog_encoder::table_vector::Grids;
-    use std::collections::{BTreeMap, HashMap, HashSet};
+    use std::collections::BTreeMap;
     let limit: usize = std::env::var("TIME_TABLES").ok().and_then(|text| text.parse().ok()).unwrap_or(12);
     let wanted: Vec<(f64, String, u128)> = match std::env::var("TIME_SHAPES") {
         Ok(path) => arclog_encoder::zio::read_text(&path)?.lines().filter_map(|line| {
@@ -1416,7 +1416,7 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
         }).collect(),
         Err(_) => Vec::new(),
     };
-    let index: HashMap<u128, usize> = wanted.iter().enumerate().map(|(at, held)| (held.2, at)).collect();
+    let index: LookupMap<u128, usize> = wanted.iter().enumerate().map(|(at, held)| (held.2, at)).collect();
     let store = NameStore::default();
     let empty = Vec::new();
     let mut heads: BTreeMap<String, [u64; 4]> = BTreeMap::new();
@@ -1426,7 +1426,7 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
     let mut slowest_terms: Vec<(u64, u32, u32, String)> = Vec::new();
     let mut shape_time: Vec<f64> = vec![0.0; wanted.len()];
     let mut shape_seen: Vec<u64> = vec![0; wanted.len()];
-    let mut families: HashMap<String, Generated> = HashMap::new();
+    let mut families: LookupMap<String, Generated> = LookupMap::new();
     // With TIME_TASK, each file is a rows file of that task (see `shapes-refresh`) in place of a file of items.
     let rows_task = std::env::var("TIME_TASK").ok();
     for file in files {
@@ -1436,7 +1436,7 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
                 let (task, grids) = Grids::of_file(&arguments.tasks, task_name, None)?;
                 let (train, test) = (task.train.len(), task.test.len());
                 let lines: Vec<serde_json::Value> = text.lines().filter(|line| !line.trim().is_empty()).map(|line| serde_json::from_str(line).map_err(|error| error.to_string())).collect::<Result<_, _>>()?;
-                (train, grids, Box::new(lines.into_iter().map(move |line| arclog_encoder::atom_lists::stored_of(&line["table"], train, test, &HashMap::new()).ok().flatten())))
+                (train, grids, Box::new(lines.into_iter().map(move |line| arclog_encoder::atom_lists::stored_of(&line["table"], train, test, &LookupMap::new()).ok().flatten())))
             }
             None => {
                 let data: serde_json::Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
@@ -1451,7 +1451,7 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
                 (train, grids, Box::new(items.into_iter().map(move |item| Stored::of_json(&item, train, 0))))
             }
         };
-        let mut seen: HashSet<u128> = HashSet::new();
+        let mut seen: LookupSet<u128> = LookupSet::new();
         let mut taken = 0;
         for stored in &mut tables {
             if taken >= limit {
@@ -1514,7 +1514,7 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
                 let times = walker.timed_terms(&leaves, train, Some(&needed));
                 let mut total = 0;
                 let mut terms = 0;
-                let mut active: HashSet<usize> = HashSet::new();
+                let mut active: LookupSet<usize> = LookupSet::new();
                 for at in first..count {
                     if needed[at] {
                         terms += 1;
@@ -1528,7 +1528,7 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
                         }
                     }
                 }
-                for shape in active {
+                for shape in active.into_sorted_vec() {
                     shape_seen[shape] += 1;
                 }
                 chosen_times.push((total as f64 / 1000.0, terms, train));
@@ -1574,7 +1574,7 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
     use arclog_encoder::refine::{bit, Claim};
     use arclog_encoder::stored::Stored;
     use arclog_encoder::table_vector::Grids;
-    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    use std::collections::{BTreeMap, BTreeSet};
     let data: serde_json::Value = serde_json::from_str(&arclog_encoder::zio::read_text(file)?).map_err(|error| error.to_string())?;
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
@@ -1591,7 +1591,7 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
         out.extend(item["mutants"].as_array().unwrap_or(&empty).iter().map(|mutant| mutant["table"].clone()));
         out
     }).collect();
-    let mut families: HashMap<String, Generated> = HashMap::new();
+    let mut families: LookupMap<String, Generated> = LookupMap::new();
     // With GENERATE_CHECK_TWO_TABLES, each table with the table before it, over the family of the two.
     let two_tables = std::env::var_os("GENERATE_CHECK_TWO_TABLES").is_some();
     let mut previous: Option<Stored> = None;
@@ -1622,14 +1622,14 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
             leaves.push(other.rows.iter().take(train).map(|models| models.first().cloned().map_or(arclog_encoder::native::Val::None, arclog_encoder::native::Val::of_table)).collect());
         }
         let chosen = |at: usize| at >= first && !family.is_pair_term(at);
-        let mut values: HashMap<usize, Vec<arclog_encoder::native::Val>> = HashMap::new();
+        let mut values: LookupMap<usize, Vec<arclog_encoder::native::Val>> = LookupMap::new();
         for (at, leaf) in leaves.iter().enumerate() {
             values.insert(at, leaf.clone());
         }
         for (at, own) in walker.term_values(&leaves, train, &chosen) {
             values.insert(at, own);
         }
-        let texts: HashMap<String, usize> = (first..count).map(|at| (family.term_info(at).0.to_string(), at)).collect();
+        let texts: LookupMap<String, usize> = (first..count).map(|at| (family.term_info(at).0.to_string(), at)).collect();
         let columns_of = |at: usize| -> Vec<String> { family.term_info(at).1.iter().map(|(name, _)| name.clone()).collect() };
         // Each kept term's type against its rows.
         for at in first..count {
@@ -1994,7 +1994,7 @@ fn run_law(arguments: &Arguments, tasks_file: &str) -> Result<(), String> {
     use arclog_encoder::law::{compare_table, compare_with_program, Sample, Tally};
     let tasks = sampled_tasks(tasks_file, arguments.tasks_count)?;
     let path = arguments.out.clone().ok_or("`law` writes to --out")?;
-    let done: HashSet<String> = arclog_encoder::zio::read_text(&path).unwrap_or_default().lines().filter_map(|line| {
+    let done: LookupSet<String> = arclog_encoder::zio::read_text(&path).unwrap_or_default().lines().filter_map(|line| {
         let start = line.find("\"key\":\"")? + 7;
         let end = line[start..].find('"')? + start;
         Some(line[start..end].to_string())
@@ -2168,8 +2168,8 @@ fn run_cap_hits(arguments: &Arguments, solvers: &[String]) -> Result<(), String>
     let path = arguments.out.clone().ok_or("`cap-hits` writes to --out")?;
     let shapes = arguments.shapes.as_ref().map(|path| read_shape_list(path)).transpose()?;
     let earlier = earlier_lines(&path);
-    let started: HashSet<(String, String)> = earlier.iter().filter(|line| line.get("start").is_some()).map(|line| (line["task"].as_str().unwrap_or("").to_string(), line["table"].as_str().unwrap_or("").to_string())).collect();
-    let task_done: HashSet<String> = earlier.iter().filter(|line| line.get("task_done").is_some()).map(|line| line["task"].as_str().unwrap_or("").to_string()).collect();
+    let started: LookupSet<(String, String)> = earlier.iter().filter(|line| line.get("start").is_some()).map(|line| (line["task"].as_str().unwrap_or("").to_string(), line["table"].as_str().unwrap_or("").to_string())).collect();
+    let task_done: LookupSet<String> = earlier.iter().filter(|line| line.get("task_done").is_some()).map(|line| line["task"].as_str().unwrap_or("").to_string()).collect();
     let mut out = arclog_encoder::zio::writer(&path, true)?;
     let size = arguments.size.max(1);
     let walk_bit = arclog_encoder::bounds::bit_of(arclog_encoder::bounds::Bound::Walk);
@@ -2218,7 +2218,7 @@ fn run_cap_hits(arguments: &Arguments, solvers: &[String]) -> Result<(), String>
                 // With --shapes: each listed shape that the vector holds, with the examples where it has a value, the examples where a bound stopped it, and the distinct values.
                 let mut listed_shapes: Vec<serde_json::Value> = Vec::new();
                 if let Some(list) = &shapes {
-                    let mut names: Option<std::collections::HashMap<u64, String>> = None;
+                    let mut names: Option<LookupMap<u64, String>> = None;
                     for (place, hash) in vector.shapes.iter().enumerate() {
                         if !list.contains(*hash) {
                             continue;
@@ -2229,7 +2229,7 @@ fn run_cap_hits(arguments: &Arguments, solvers: &[String]) -> Result<(), String>
                         if valued == 0 && stopped == 0 {
                             continue;
                         }
-                        let distinct = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SLOT_VALUE).map(|slot| slot.digest).collect::<HashSet<_>>().len();
+                        let distinct = slots.iter().filter(|slot| slot.state == arclog_encoder::generate::SLOT_VALUE).map(|slot| slot.digest).collect::<LookupSet<_>>().len();
                         let names = names.get_or_insert_with(|| names_of(&families.names));
                         listed_shapes.push(serde_json::json!([names.get(hash), valued, stopped, distinct, vector.scope(place)]));
                     }

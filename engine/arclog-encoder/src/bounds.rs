@@ -9,8 +9,9 @@
 //! of the thread to the totals that [`summary`] prints.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+
+use crate::lookup::LookupMap;
 
 /// A bound that makes an evaluation give no value.
 #[derive(Clone, Copy)]
@@ -61,14 +62,14 @@ type Counts = [u64; SLOTS];
 #[derive(Default)]
 struct Totals {
     names: Vec<String>,
-    index: HashMap<String, u32>,
+    index: LookupMap<String, u32>,
     counts: Vec<Counts>,
 }
 
 static TOTALS: OnceLock<Mutex<Totals>> = OnceLock::new();
 
 fn totals() -> &'static Mutex<Totals> {
-    TOTALS.get_or_init(|| Mutex::new(Totals { names: vec!["(no head)".to_string()], index: HashMap::new(), counts: vec![[0; SLOTS]] }))
+    TOTALS.get_or_init(|| Mutex::new(Totals { names: vec!["(no head)".to_string()], index: LookupMap::new(), counts: vec![[0; SLOTS]] }))
 }
 
 thread_local! {
@@ -81,7 +82,7 @@ thread_local! {
     /// The bounds that stopped an evaluation since the term in progress began, one bit each.
     static EVER: Cell<u32> = const { Cell::new(0) };
     /// The bounds that stopped each evaluation that a walk kept a value for, by the key of that value.
-    static KEPT: RefCell<HashMap<(u8, u32, u32, u128, u32), u32>> = RefCell::new(HashMap::new());
+    static KEPT: RefCell<LookupMap<(u8, u32, u32, u128, u32), u32>> = RefCell::new(LookupMap::new());
     /// The terms of walks, by their place in the family, with the bounds that stopped them.
     static TERM_HITS: RefCell<Vec<(u32, u32)>> = const { RefCell::new(Vec::new()) };
     /// The terms of walks, by their place in the family, with the cells that their values add to the walk's count.
@@ -247,7 +248,7 @@ pub fn skipped(bound: Bound, count: u64) {
 }
 
 /// Counts of a walk by group and by label, for the checks of a change.
-static TALLIES: OnceLock<Mutex<HashMap<(&'static str, String), u64>>> = OnceLock::new();
+static TALLIES: OnceLock<Mutex<LookupMap<(&'static str, String), u64>>> = OnceLock::new();
 
 /// `count` more under a label of a group.
 pub fn tally(group: &'static str, label: String, count: u64) {
@@ -286,8 +287,7 @@ pub fn summary() -> String {
     }
     out.push_str("bounds\ttally\tgroup\tlabel\tcount\n");
     if let Some(tallies) = TALLIES.get() {
-        let mut rows: Vec<_> = tallies.lock().unwrap().iter().map(|((group, label), count)| (*group, label.clone(), *count)).collect();
-        rows.sort();
+        let rows: Vec<_> = tallies.lock().unwrap().sorted_entries().into_iter().map(|((group, label), count)| (*group, label.clone(), *count)).collect();
         for (group, label, count) in rows {
             out.push_str(&format!("bounds\ttally\t{group}\t{label}\t{count}\n"));
         }

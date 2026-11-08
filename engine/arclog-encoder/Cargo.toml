@@ -18,6 +18,10 @@ serde_json = "1"
 # Generated data is written and read as streamable zstd.
 zstd = "0.13"
 
+# Under clippy, a std hash map or hash set is an error (see clippy.toml).
+[lints.clippy]
+disallowed_types = "deny"
+
 [[bin]]
 name = "feature-encoder"
 path = "src/bin/feature-encoder.rs"

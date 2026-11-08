@@ -477,13 +477,13 @@ fn patterns(view: &mut View<'_>, pos: &Pos) {
             if held.iter().any(|pattern| pattern.windows(2).any(|pair| pair[0].0 == pair[1].0 && pair[0].1 == pair[1].1)) || held.iter().map(Vec::len).sum::<usize>() > MAX_CELLS * 3 {
                 continue;
             }
-            let mut counts: std::collections::HashMap<Vec<(i32, i32, u8)>, u32> = std::collections::HashMap::new();
+            let mut counts: crate::lookup::LookupMap<Vec<(i32, i32, u8)>, u32> = crate::lookup::LookupMap::new();
             for pattern in &held {
                 *counts.entry(pattern_form(pattern)).or_insert(0) += 1;
             }
             let here = counts.get(&target).copied();
-            let most = counts.values().copied().max().unwrap_or(0);
-            let least = counts.values().copied().min().unwrap_or(0);
+            let most = counts.max_of(|_, count| *count).unwrap_or(0);
+            let least = counts.min_of(|_, count| *count).unwrap_or(0);
             let some = here.is_some();
             let top = here == Some(most) && counts.len() > 1;
             let bottom = here == Some(least) && counts.len() > 1;

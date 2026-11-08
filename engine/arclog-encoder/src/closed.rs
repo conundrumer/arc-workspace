@@ -4,7 +4,6 @@
 //! grids to compare. So each grid is one example, and a root's value at it reads
 //! that grid alone.
 
-use std::collections::HashSet;
 use std::ops::ControlFlow;
 
 use arclog::hash::digest_text;
@@ -17,6 +16,7 @@ use arclog::types::ValueType;
 use crate::enumerate::{Space, Typed};
 use crate::expand::{label_of, Col};
 use crate::expression::{Feature, Leaf, Rel};
+use crate::lookup::LookupSet;
 use crate::run::{cell_text, Host, TermValues};
 
 /// Which roots a run reads, by their `output` leaf.
@@ -102,7 +102,7 @@ fn set_hash(relation: &Relation, positions: &[usize], types: &[ValueType]) -> u6
         if chosen.is_empty() {
             continue;
         }
-        let mut seen: HashSet<Vec<u32>> = HashSet::new();
+        let mut seen: LookupSet<Vec<u32>> = LookupSet::new();
         let mut sum: u128 = 0;
         for row in part.rows.rows() {
             let key: Vec<u32> = chosen.iter().map(|(place, _)| row[*place].encoding()).collect();
@@ -135,7 +135,7 @@ const BATCH: usize = 256;
 /// example, and `done` lists the roots a restart skips. A root reads the rows of
 /// its term once, so each term is evaluated once, and the terms of a batch stand
 /// in one program.
-pub fn closed_values(host: &Host, run: &ClosedRun, done: &HashSet<String>, counts: &mut ClosedCounts, visit: &mut dyn FnMut(&str, usize, &[String]) -> ControlFlow<()>) {
+pub fn closed_values(host: &Host, run: &ClosedRun, done: &LookupSet<String>, counts: &mut ClosedCounts, visit: &mut dyn FnMut(&str, usize, &[String]) -> ControlFlow<()>) {
     host.set_work_cap(run.work_cap);
     let space = Space {
         registry: Registry::get(),
@@ -148,7 +148,7 @@ pub fn closed_values(host: &Host, run: &ClosedRun, done: &HashSet<String>, count
         no_output: run.output_leaf == OutputLeaf::None, quick: false, max_bound_columns: None,
     };
     let mut lower: Vec<Vec<Typed>> = Vec::new();
-    let mut seen: HashSet<u128> = HashSet::new();
+    let mut seen: LookupSet<u128> = LookupSet::new();
     for size in 0..=run.size {
         let keep = size < run.size;
         let mut terms: Vec<Typed> = Vec::new();
@@ -188,7 +188,7 @@ pub fn closed_values(host: &Host, run: &ClosedRun, done: &HashSet<String>, count
 }
 
 #[allow(clippy::too_many_arguments)]
-fn flush(host: &Host, run: &ClosedRun, pending: &mut Vec<Typed>, terms: &mut Vec<Typed>, keep: bool, done: &HashSet<String>, seen: &mut HashSet<u128>, counts: &mut ClosedCounts, visit: &mut dyn FnMut(&str, usize, &[String]) -> ControlFlow<()>) -> ControlFlow<()> {
+fn flush(host: &Host, run: &ClosedRun, pending: &mut Vec<Typed>, terms: &mut Vec<Typed>, keep: bool, done: &LookupSet<String>, seen: &mut LookupSet<u128>, counts: &mut ClosedCounts, visit: &mut dyn FnMut(&str, usize, &[String]) -> ControlFlow<()>) -> ControlFlow<()> {
     let batch = std::mem::take(pending);
     let rels: Vec<&Rel> = batch.iter().map(|term| &term.rel).collect();
     let evaluated = host.evaluate_terms(&rels, false);
@@ -219,7 +219,7 @@ fn flush(host: &Host, run: &ClosedRun, pending: &mut Vec<Typed>, terms: &mut Vec
 }
 
 /// The roots over `term`, whose rows `values` holds, at each example.
-fn term_roots(term: &Typed, values: &TermValues, done: &HashSet<String>, counts: &mut ClosedCounts, visit: &mut dyn FnMut(&str, usize, &[String]) -> ControlFlow<()>) -> ControlFlow<()> {
+fn term_roots(term: &Typed, values: &TermValues, done: &LookupSet<String>, counts: &mut ClosedCounts, visit: &mut dyn FnMut(&str, usize, &[String]) -> ControlFlow<()>) -> ControlFlow<()> {
     let rel = &term.rel;
     let size = term.size;
     let position_of = |column: &Col| values.row_names.iter().position(|name| *name == label_of(&column.name) || *name == column.name);

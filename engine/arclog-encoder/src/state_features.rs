@@ -2,10 +2,11 @@
 //! table's relation to another, and the values of two tables. The contract's `State` holds these as functions of the
 //! state, and none of them depends on the order in which a program writes its queries.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::generate::{Generated, Generators, Walker};
+use crate::lookup::{LookupMap, LookupSet};
 use crate::query_vector::agrees;
 use crate::run::{stored_tables, Host};
 use crate::table_vector::{table_vector, two_tables_vector, Grids, TableVector};
@@ -54,10 +55,10 @@ impl Relation {
 
 /// The nodes earlier than a form, each with its relation to a candidate at that form that reads `parents`.
 pub fn relations<'n>(nodes: &'n [Node], form: u64, parents: &[String]) -> Vec<(&'n Node, Relation)> {
-    let by_name: HashMap<&str, &Node> = nodes.iter().filter(|node| node.form < form).map(|node| (node.name.as_str(), node)).collect();
-    let direct: HashSet<&str> = parents.iter().map(String::as_str).collect();
-    let mut reached: HashSet<&str> = HashSet::new();
-    let mut stack: Vec<&str> = direct.iter().copied().collect();
+    let by_name: LookupMap<&str, &Node> = nodes.iter().filter(|node| node.form < form).map(|node| (node.name.as_str(), node)).collect();
+    let direct: LookupSet<&str> = parents.iter().map(String::as_str).collect();
+    let mut reached: LookupSet<&str> = LookupSet::new();
+    let mut stack: Vec<&str> = parents.iter().map(String::as_str).collect();
     while let Some(name) = stack.pop() {
         if let Some(node) = by_name.get(name) {
             for read in &node.reads {
@@ -84,14 +85,14 @@ pub fn relations<'n>(nodes: &'n [Node], form: u64, parents: &[String]) -> Vec<(&
 pub fn graph_numbers(nodes: &[Node], form: u64, parents: &[String]) -> Vec<(&'static str, f32)> {
     let mut members: Vec<&Node> = nodes.iter().filter(|node| node.form < form).collect();
     members.sort_by_key(|node| node.form);
-    let mut depth: HashMap<&str, i32> = HashMap::new();
+    let mut depth: LookupMap<&str, i32> = LookupMap::new();
     for node in &members {
         let own = node.reads.iter().filter_map(|read| depth.get(read.as_str())).max().map_or(0, |deepest| deepest + 1);
         depth.insert(node.name.as_str(), own);
     }
-    let deepest = depth.values().copied().max().unwrap_or(0);
-    let used: HashSet<&str> = members.iter().flat_map(|node| node.reads.iter().map(String::as_str)).collect();
-    let leaves: HashSet<&str> = members.iter().map(|node| node.name.as_str()).filter(|name| !used.contains(name)).collect();
+    let deepest = depth.max_of(|_, deepest| *deepest).unwrap_or(0);
+    let used: LookupSet<&str> = members.iter().flat_map(|node| node.reads.iter().map(String::as_str)).collect();
+    let leaves: LookupSet<&str> = members.iter().map(|node| node.name.as_str()).filter(|name| !used.contains(name)).collect();
     let read: BTreeSet<&str> = parents.iter().map(String::as_str).filter(|name| depth.contains_key(name)).collect();
     let own_depth = read.iter().map(|name| depth[name]).max().map_or(0, |most| most + 1);
     let gaps: Vec<i32> = read.iter().map(|name| deepest - depth[name]).collect();
@@ -119,7 +120,7 @@ pub fn graph_numbers(nodes: &[Node], form: u64, parents: &[String]) -> Vec<(&'st
 /// A shape over several vectors: the least, the mean and the greatest of its mean over the examples, where a
 /// vector with no value of the shape counts as 0.
 pub fn pool(vectors: &[&TableVector]) -> Vec<(u64, f32, f32, f32)> {
-    let mut held: HashMap<u64, (f32, f32, f32, usize)> = HashMap::new();
+    let mut held: LookupMap<u64, (f32, f32, f32, usize)> = LookupMap::new();
     for vector in vectors {
         for shape in 0..vector.shapes.len() {
             let (_, mean, _, count) = vector.over_examples(shape, false);
@@ -135,18 +136,16 @@ pub fn pool(vectors: &[&TableVector]) -> Vec<(u64, f32, f32, f32)> {
         }
     }
     let total = vectors.len();
-    let mut out: Vec<(u64, f32, f32, f32)> = held.into_iter().map(|(shape, (least, sum, most, seen))| {
+    held.into_sorted_vec().into_iter().map(|(shape, (least, sum, most, seen))| {
         let least = if seen < total { least.min(0.0) } else { least };
         let most = if seen < total { most.max(0.0) } else { most };
         (shape, least, sum / total as f32, most)
-    }).collect();
-    out.sort_unstable_by_key(|entry| entry.0);
-    out
+    }).collect()
 }
 
 /// What a whole state says of each of its nodes: how deep it stands, and how many nodes it reads and read it.
 pub fn member_numbers(nodes: &[Node]) -> BTreeMap<String, Vec<(&'static str, f32)>> {
-    fn depth_of<'n>(name: &'n str, by_name: &HashMap<&'n str, &'n Node>, memo: &mut HashMap<&'n str, i32>) -> i32 {
+    fn depth_of<'n>(name: &'n str, by_name: &LookupMap<&'n str, &'n Node>, memo: &mut LookupMap<&'n str, i32>) -> i32 {
         if let Some(found) = memo.get(name) {
             return *found;
         }
@@ -154,8 +153,8 @@ pub fn member_numbers(nodes: &[Node]) -> BTreeMap<String, Vec<(&'static str, f32
         memo.insert(name, own);
         own
     }
-    let by_name: HashMap<&str, &Node> = nodes.iter().map(|node| (node.name.as_str(), node)).collect();
-    let mut memo = HashMap::new();
+    let by_name: LookupMap<&str, &Node> = nodes.iter().map(|node| (node.name.as_str(), node)).collect();
+    let mut memo = LookupMap::new();
     let depths: Vec<i32> = nodes.iter().map(|node| depth_of(node.name.as_str(), &by_name, &mut memo)).collect();
     let deepest = depths.iter().copied().max().unwrap_or(0);
     let mut out = BTreeMap::new();
@@ -181,7 +180,7 @@ pub fn member_numbers(nodes: &[Node]) -> BTreeMap<String, Vec<(&'static str, f32
 
 /// The nodes that a node reads through any chain, and those that read it through any chain.
 fn closures(nodes: &[Node], name: &str) -> (BTreeSet<String>, BTreeSet<String>) {
-    let by_name: HashMap<&str, &Node> = nodes.iter().map(|node| (node.name.as_str(), node)).collect();
+    let by_name: LookupMap<&str, &Node> = nodes.iter().map(|node| (node.name.as_str(), node)).collect();
     let mut ancestors = BTreeSet::new();
     let mut stack = vec![name.to_string()];
     while let Some(at) = stack.pop() {

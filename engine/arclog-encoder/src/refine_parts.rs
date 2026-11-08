@@ -5,7 +5,7 @@
 //! relations come from the atoms that hold its label, and through the `copies` rows of a component. A
 //! clause whose other atoms keep each row of its first relation has that relation's rows.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use arclog::algebra::algebra;
@@ -15,6 +15,7 @@ use arclog::read::{read_sexprs, SExpr};
 use arclog::registry::{is_key, Column as LibColumn, ColumnType, Component, LibEntry, LibName, Macro, Registry};
 use arclog::types::ValueType;
 
+use crate::lookup::LookupMap;
 use crate::refine::{bit, Mask, Refined};
 use crate::schema::{TableColumn, TableSchema, Tables};
 
@@ -191,7 +192,7 @@ fn apply_relation_items(facts: &mut Facts, name: &str, registry: &Registry) {
 
 /// What a lib relation declares, and what its rows give where its domain is finite.
 fn lib_facts(name: &str) -> Option<Arc<Facts>> {
-    static HELD: OnceLock<Mutex<HashMap<String, Option<Arc<Facts>>>>> = OnceLock::new();
+    static HELD: OnceLock<Mutex<LookupMap<String, Option<Arc<Facts>>>>> = OnceLock::new();
     let held = HELD.get_or_init(Default::default);
     if let Some(found) = held.lock().expect("no panic").get(name) {
         return found.clone();
@@ -292,9 +293,9 @@ struct Instance {
     component: String,
     key_fields: Vec<String>,
     key: Option<Facts>,
-    inputs: HashMap<String, Facts>,
+    inputs: LookupMap<String, Facts>,
     /// Each column of a type parameter that a binding writes as a record: its fields.
-    shapes: HashMap<String, Vec<String>>,
+    shapes: LookupMap<String, Vec<String>>,
 }
 
 /// A site of an atom: the column it stands at, and its label or a zero.
@@ -447,8 +448,8 @@ fn nested_heads(expr: &SExpr, out: &mut Vec<String>) {
 struct Reader<'a> {
     registry: &'static Registry,
     relations: BTreeMap<String, RelationInput>,
-    rules: HashMap<String, Facts>,
-    instances: HashMap<String, Instance>,
+    rules: LookupMap<String, Facts>,
+    instances: LookupMap<String, Instance>,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
@@ -861,7 +862,7 @@ impl Reader<'_> {
 
     /// An `INIT` form's clauses.
     fn instance(&mut self, name: &str, component: &str, clauses: &[SExpr]) {
-        let mut out = Instance { component: component.to_string(), key_fields: Vec::new(), key: None, inputs: HashMap::new(), shapes: HashMap::new() };
+        let mut out = Instance { component: component.to_string(), key_fields: Vec::new(), key: None, inputs: LookupMap::new(), shapes: LookupMap::new() };
         let mut bound_inputs: Vec<&SExpr> = Vec::new();
         for clause in clauses {
             if head(clause) == Some("key") {
@@ -960,7 +961,7 @@ impl Reader<'_> {
                 }
             }
         }
-        for source in instance.inputs.values().chain(instance.key.iter()) {
+        for source in instance.inputs.sorted_values().into_iter().chain(instance.key.iter()) {
             facts.deps.extend(source.deps.iter().cloned());
             facts.reads.extend(source.reads.iter().cloned());
         }
@@ -1186,7 +1187,7 @@ pub struct PartPlan {
     s_columns: Vec<String>,
     /// For each column of the native term, its place in `columns`.
     out: Vec<Option<usize>>,
-    results: Mutex<HashMap<(RelationInput, Option<RelationInput>), Arc<PartResult>>>,
+    results: Mutex<LookupMap<(RelationInput, Option<RelationInput>), Arc<PartResult>>>,
     /// Whether the part reads only the columns its holes name: a column more changes nothing.
     pub reads_only_holes: bool,
 }
@@ -1240,7 +1241,7 @@ fn plan_of_text(call: &str, r_arity: usize, s_columns: &[String]) -> Option<(Vec
 /// `&s` of the columns `s_columns`. `native` gives the term's columns: for each, the name it has in the
 /// expansion where its relation gives it, and the name it has where it is a new column.
 pub fn plan(call: &str, r_arity: usize, s_columns: &[String], native: &[(String, String)]) -> Option<Arc<PartPlan>> {
-    static HELD: OnceLock<Mutex<HashMap<String, Option<Arc<PartPlan>>>>> = OnceLock::new();
+    static HELD: OnceLock<Mutex<LookupMap<String, Option<Arc<PartPlan>>>>> = OnceLock::new();
     let key = format!("{call}|{r_arity}|{s_columns:?}|{native:?}");
     let held = HELD.get_or_init(Default::default);
     if let Some(found) = held.lock().expect("no panic").get(&key) {
@@ -1248,7 +1249,7 @@ pub fn plan(call: &str, r_arity: usize, s_columns: &[String], native: &[(String,
     }
     let built = plan_of_text(call, r_arity, s_columns).map(|(forms, export, columns)| {
         let out = native.iter().map(|(name, other)| columns.iter().position(|own| own == name).or_else(|| columns.iter().position(|own| own == other))).collect();
-        let mut plan = PartPlan { forms, export, columns, r_arity, s_columns: s_columns.to_vec(), out, results: Mutex::new(HashMap::new()), reads_only_holes: false };
+        let mut plan = PartPlan { forms, export, columns, r_arity, s_columns: s_columns.to_vec(), out, results: Mutex::new(LookupMap::new()), reads_only_holes: false };
         // A column more, that no hole names.
         if let Some((forms, export, _)) = plan_of_text(call, r_arity + 1, s_columns) {
             let wider = RelationInput { columns: (0..=r_arity).map(|at| format!("C{at}")).collect(), keys: vec![if r_arity + 1 >= 32 { Mask::MAX } else { (1 << (r_arity + 1)) - 1 }], low: vec![None; r_arity + 1], high: vec![None; r_arity + 1], within: Vec::new() };
@@ -1275,7 +1276,7 @@ fn read_forms(forms: &[SExpr], export: &str, r: &RelationInput, s: Option<&Relat
         RelationInput { columns: s_columns.to_vec(), keys: vec![all], low: vec![None; arity], high: vec![None; arity], within: Vec::new() }
     });
     relations.insert("&s".to_string(), s_input);
-    let mut reader = Reader { registry: Registry::get(), relations, rules: HashMap::new(), instances: HashMap::new(), _marker: std::marker::PhantomData };
+    let mut reader = Reader { registry: Registry::get(), relations, rules: LookupMap::new(), instances: LookupMap::new(), _marker: std::marker::PhantomData };
     for form in forms {
         let Some(list) = items(form) else { continue };
         match list.first().and_then(symbol) {
@@ -1491,7 +1492,7 @@ pub fn explain(call: &str, arity: usize, key: Mask) -> String {
     let r = RelationInput { columns: (0..arity).map(|at| format!("C{at}")).collect(), keys: vec![key], low: vec![None; arity], high: vec![None; arity], within: Vec::new() };
     let mut relations = BTreeMap::new();
     relations.insert("&r".to_string(), r);
-    let mut reader = Reader { registry: Registry::get(), relations, rules: HashMap::new(), instances: HashMap::new(), _marker: std::marker::PhantomData };
+    let mut reader = Reader { registry: Registry::get(), relations, rules: LookupMap::new(), instances: LookupMap::new(), _marker: std::marker::PhantomData };
     let mut out = String::new();
     for form in &forms {
         out.push_str(&format!("{}\n", form_text(form)));
@@ -1513,7 +1514,7 @@ pub fn explain(call: &str, arity: usize, key: Mask) -> String {
                 reader.instance(name, component, &list[3..]);
                 if let Some(instance) = reader.instances.get(name) {
                     out.push_str(&format!("  key {:?}\n", instance.key));
-                    for (input, facts) in &instance.inputs {
+                    for (input, facts) in instance.inputs.sorted_entries() {
                         out.push_str(&format!("  input {input} {facts:?}\n"));
                     }
                 }

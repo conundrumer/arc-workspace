@@ -1,0 +1,9 @@
+# A hash map or hash set iterates in an order that no output may follow. The
+# types of `arclog_encoder::lookup` have no such iteration.
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "use arclog_encoder::lookup::LookupMap, or InsertionMap where the entries are iterated" },
+    { path = "std::collections::HashSet", reason = "use arclog_encoder::lookup::LookupSet" },
+    { path = "std::collections::hash_map::RandomState", reason = "its seed differs from run to run" },
+    { path = "arclog::hash::StableHashMap", reason = "use arclog_encoder::lookup::LookupMap, or InsertionMap where the entries are iterated" },
+    { path = "arclog::hash::StableHashSet", reason = "use arclog_encoder::lookup::LookupSet" },
+]

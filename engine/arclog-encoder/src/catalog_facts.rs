@@ -222,7 +222,7 @@ pub fn walk_in(free: &Bits, h: usize, w: usize) -> Bits {
 
 /// The dense id of each value, by first appearance.
 fn dense<T: std::hash::Hash + Eq + Clone>(values: Vec<T>) -> Vec<u32> {
-    let mut ids = std::collections::HashMap::with_capacity(values.len());
+    let mut ids = crate::lookup::LookupMap::with_capacity(values.len());
     values
         .into_iter()
         .map(|value| {

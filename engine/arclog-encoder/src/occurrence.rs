@@ -3,7 +3,7 @@
 //! A pattern is a sorted list of (row, column, color) with no repeats. A translation takes it into a grid where each
 //! of its cells lands on a cell of the grid of the same color.
 
-use crate::native::FastMap;
+use crate::lookup::InsertionMap;
 use std::hash::Hash;
 
 /// A cell of a pattern: (row, column, color).
@@ -92,7 +92,7 @@ pub fn each_turned_image(pattern: &[PatternCell], extent: (i32, i32), frame_matt
 
 /// The distinct patterns among the patterns of groups, each as sorted cells without repeats, and for each group the place of its pattern among them.
 pub fn distinct_patterns<T: Ord + Hash>(groups: Vec<Vec<T>>) -> (Vec<Vec<T>>, Vec<u32>) {
-    let mut seen: FastMap<Vec<T>, u32> = FastMap::default();
+    let mut seen: InsertionMap<Vec<T>, u32> = InsertionMap::default();
     let mut of_group = Vec::with_capacity(groups.len());
     for mut pattern in groups {
         pattern.sort_unstable();

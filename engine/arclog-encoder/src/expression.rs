@@ -227,12 +227,12 @@ impl Rel {
     /// The count of the term's distinct operators: a subexpression that appears
     /// twice counts once.
     pub fn distinct_size(&self) -> usize {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = crate::lookup::LookupSet::new();
         self.add_distinct(&mut seen)
     }
 
     /// The count of the distinct operators of this term that `seen` does not hold.
-    pub fn add_distinct<'r>(&'r self, seen: &mut std::collections::HashSet<&'r Rel>) -> usize {
+    pub fn add_distinct<'r>(&'r self, seen: &mut crate::lookup::LookupSet<&'r Rel>) -> usize {
         if matches!(self, Rel::Leaf(_)) || !seen.insert(self) {
             return 0;
         }
@@ -263,7 +263,7 @@ impl Feature {
         match self {
             Feature::Call(name, args) => crate::library::call_size(name, args),
             Feature::Ratio(first, second) => {
-                let mut seen = std::collections::HashSet::new();
+                let mut seen = crate::lookup::LookupSet::new();
                 first.add_distinct(&mut seen) + second.add_distinct(&mut seen)
             }
             _ => self.relation().map_or(0, Rel::size),

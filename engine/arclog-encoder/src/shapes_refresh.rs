@@ -9,8 +9,9 @@
 
 use crate::atom_lists::{base64, stored_of, PAST_MAX_COLUMNS};
 use crate::generate::{Generators, ShapeList, ShapeMask, Walker};
+use crate::lookup::LookupMap;
 use crate::table_vector::{table_vector, table_vector_of_shapes, Grids, TableVector};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::io::{BufRead, Read, Write};
 use std::path::Path;
 use std::sync::Mutex;
@@ -49,7 +50,7 @@ struct Walked {
 
 /// The record of one line of a rows file.
 #[allow(clippy::too_many_arguments)]
-fn record_of(text: &str, train: usize, test: usize, grids: &Grids, generators: &Generators, only: Option<&[u64]>, masks: &mut HashMap<String, ShapeMask>) -> Result<Walked, &'static str> {
+fn record_of(text: &str, train: usize, test: usize, grids: &Grids, generators: &Generators, only: Option<&[u64]>, masks: &mut LookupMap<String, ShapeMask>) -> Result<Walked, &'static str> {
     let none = Walked { hash: String::new(), line: None, seconds: 0.0, shapes: 0, stopped: false, too_wide: false };
     if text.trim().is_empty() {
         return Ok(none);
@@ -57,7 +58,7 @@ fn record_of(text: &str, train: usize, test: usize, grids: &Grids, generators: &
     let held: serde_json::Value = serde_json::from_str(text).map_err(|_| "a line that is not JSON")?;
     let hash = held["hash"].as_str().filter(|hash| !hash.is_empty() && hash.bytes().all(|byte| byte.is_ascii_hexdigit())).ok_or("a line with no hash")?;
     let begun = std::time::Instant::now();
-    let (hashes, values, stopped, too_wide) = match stored_of(&held["table"], train, test, &HashMap::new()) {
+    let (hashes, values, stopped, too_wide) = match stored_of(&held["table"], train, test, &LookupMap::new()) {
         Ok(None) => return Ok(none),
         Err(why) if why == PAST_MAX_COLUMNS => match only {
             None => (Vec::new(), Vec::new(), true, true),
@@ -109,7 +110,7 @@ pub fn run(input: &Path, out: &Path, task_dir: &Path, task: &str, only: Option<&
     std::thread::scope(|scope| {
         for _ in 0..threads.max(1) {
             scope.spawn(|| {
-                let mut masks: HashMap<String, ShapeMask> = HashMap::new();
+                let mut masks: LookupMap<String, ShapeMask> = LookupMap::new();
                 loop {
                     let next = {
                         let mut source = source.lock().expect("no panic");

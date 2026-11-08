@@ -14,7 +14,6 @@
 //! shapes, whatever was walked before it and in whatever order. A walk that passes the walker's
 //! bound on cells stops the terms after that point (they have no value), and its `stopped` is set.
 
-use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -22,6 +21,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use arclog::eval::join::each_row;
 use arclog::task::{Grid, Task};
 use arclog_encoder::generate::{Generators, ShapeList, ShapeMask, Walker, MAX_COLUMNS};
+use arclog_encoder::lookup::{LookupMap, LookupSet};
 use arclog_encoder::native::CELL_CAP;
 use arclog_encoder::stored::{stored_json, Model, Placed, Stored};
 use arclog_encoder::table_vector::{table_vector, table_vector_of_shapes, Grids, TableVector};
@@ -47,12 +47,12 @@ static TOO_WIDE: AtomicU64 = AtomicU64::new(0);
 /// What the process shares: the families of shapes, and the masks of lists.
 struct Shared {
     families: Generators,
-    masks: Mutex<HashMap<(String, u64), Arc<ShapeMask>>>,
+    masks: Mutex<LookupMap<(String, u64), Arc<ShapeMask>>>,
 }
 
 fn shared() -> &'static Shared {
     static SHARED: OnceLock<Shared> = OnceLock::new();
-    SHARED.get_or_init(|| Shared { families: Generators::default(), masks: Mutex::new(HashMap::new()) })
+    SHARED.get_or_init(|| Shared { families: Generators::default(), masks: Mutex::new(LookupMap::new()) })
 }
 
 /// The JSON of a task's grids, as `Grids::of` reads it.
@@ -109,7 +109,7 @@ pub(crate) struct ShapeRuntime {
 
 #[derive(Default)]
 struct Vectors {
-    held: HashMap<(u128, u64), Arc<TableVector>>,
+    held: LookupMap<(u128, u64), Arc<TableVector>>,
     slots: usize,
 }
 
@@ -397,7 +397,7 @@ pub(crate) struct PyShapeVector {
 /// The text of the shape with hash `hash`, or `None` where no family that this process built has it.
 #[pyfunction]
 pub(crate) fn shape_text(hash: u64) -> Option<String> {
-    shared().families.names.texts_of(&HashSet::from([hash])).remove(&hash)
+    shared().families.names.texts_of(&LookupSet::from([hash])).remove(&hash)
 }
 
 /// The hash of a shape's text, as a vector names the shape.

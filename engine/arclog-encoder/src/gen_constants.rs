@@ -10,6 +10,7 @@ use arclog::terms::{Color, Constant, Term, TermId};
 use arclog::types::ValueType;
 
 use crate::catalog_facts::*;
+use crate::lookup::InsertionMap;
 use crate::native::{Cell, FastMap, Table};
 
 /// How cells are written: the bits of each color and orientation.
@@ -432,13 +433,13 @@ fn periods_of(g: &GridFacts) -> Periods {
 }
 
 /// How the input's diff stands to the output's: each move, with the input's diff cells that it lands on
-/// output diff cells of their color.
-fn moves_between(from: &[(usize, Cell, [i32; 4])], to: &[(usize, Cell, [i32; 4])]) -> FastMap<Cell, Vec<usize>> {
+/// output diff cells of their color. The moves stand in the order of their first landing.
+fn moves_between(from: &[(usize, Cell, [i32; 4])], to: &[(usize, Cell, [i32; 4])]) -> InsertionMap<Cell, Vec<usize>> {
     let mut by_color: FastMap<Cell, Vec<[i32; 4]>> = FastMap::default();
     for (_, color, margins) in to {
         by_color.entry(*color).or_default().push(*margins);
     }
-    let mut out: FastMap<Cell, Vec<usize>> = FastMap::default();
+    let mut out: InsertionMap<Cell, Vec<usize>> = InsertionMap::default();
     for (at, color, margins) in from {
         for held in by_color.get(color).into_iter().flatten() {
             let v = box_bits(held[0] - margins[0], held[1] - margins[1], held[2] - margins[2], held[3] - margins[3]);
@@ -612,7 +613,7 @@ pub fn input_only_tables(g: &GridFacts) -> Vec<Option<Arc<Table>>> {
 
 /// Whether a term's token names a part of the base tables.
 pub fn is_part_name(name: &str) -> bool {
-    static NAMES: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+    static NAMES: OnceLock<crate::lookup::LookupSet<String>> = OnceLock::new();
     NAMES.get_or_init(|| constant_parts().into_iter().map(|part| part.name).collect()).contains(name)
 }
 

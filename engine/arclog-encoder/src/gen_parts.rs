@@ -1,13 +1,14 @@
 //! The parts with holes, as native operators over relations. Each part's rows follow from its
 //! relation and its columns, so no part is written for one feature.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::cell_sets::{grid_pieces, relation, shape_hash, symmetry_count, Walk, STEPS};
 pub use crate::cell_sets::SetRelation;
 use crate::gen_constants::{box_bits, encoding, margins_of, number_bits, number_of};
 use crate::grid_walks::{enclosed_regions, walk_outward};
+use crate::lookup::{InsertionMap, LookupMap, LookupSet};
 use crate::native::{first_ids, hash_words, row_word, Cell, FastMap, Grouping, Table, Val};
 use crate::occurrence::{distinct_patterns, each_turned_image, for_each_move, Canvas, PatternCell};
 
@@ -323,9 +324,9 @@ impl PartStep {
 fn distinct_over(t: &Table, places: &[usize]) -> usize {
     // Up to four cells of a row pack into one number.
     if places.len() <= 4 {
-        t.rows().map(|row| places.iter().fold(0u128, |packed, at| packed << 32 | u128::from(row[*at]))).collect::<std::collections::HashSet<u128>>().len()
+        t.rows().map(|row| places.iter().fold(0u128, |packed, at| packed << 32 | u128::from(row[*at]))).collect::<LookupSet<u128>>().len()
     } else {
-        t.rows().map(|row| places.iter().map(|at| row[*at]).collect::<Vec<Cell>>()).collect::<std::collections::HashSet<_>>().len()
+        t.rows().map(|row| places.iter().map(|at| row[*at]).collect::<Vec<Cell>>()).collect::<LookupSet<_>>().len()
     }
 }
 
@@ -447,7 +448,7 @@ pub fn flat(value: &Val) -> Option<Arc<Table>> {
 
 thread_local! {
     /// The products that `flat` has written, and their cells.
-    static FLATS: std::cell::RefCell<(HashMap<u128, Arc<Table>>, usize)> = std::cell::RefCell::new((HashMap::new(), 0));
+    static FLATS: std::cell::RefCell<(LookupMap<u128, Arc<Table>>, usize)> = std::cell::RefCell::new((LookupMap::new(), 0));
 }
 
 fn flat_product(value: &Val, parts: &[crate::native::Part], arity: usize) -> Option<Arc<Table>> {
@@ -730,6 +731,8 @@ pub struct GridView {
     pub w: i32,
     pub colors: Vec<Cell>,
     pub at: FastMap<Cell, Cell>,
+    /// The cells of `at` with their colors, in the order of the table's rows.
+    pub pairs: Vec<(Cell, Cell)>,
     /// The places of each color's cells, as (row, column).
     pub of_color: FastMap<Cell, Vec<(i32, i32)>>,
     /// The places of each shape that `placements_on` has searched for on this grid, and the count of cells of those shapes.
@@ -737,21 +740,21 @@ pub struct GridView {
 }
 
 thread_local! {
-    static VIEWS: std::cell::RefCell<HashMap<u128, Arc<GridView>>> = std::cell::RefCell::new(HashMap::new());
+    static VIEWS: std::cell::RefCell<LookupMap<u128, Arc<GridView>>> = std::cell::RefCell::new(LookupMap::new());
 }
 
 thread_local! {
-    static RIGHT_KEYS: std::cell::RefCell<HashMap<(u128, Box<[u16]>), Arc<Vec<u64>>>> = std::cell::RefCell::new(HashMap::new());
+    static RIGHT_KEYS: std::cell::RefCell<LookupMap<(u128, Box<[u16]>), Arc<Vec<u64>>>> = std::cell::RefCell::new(LookupMap::new());
 }
 
 /// The keys of second relations that this thread holds.
 pub fn keys_held() -> usize {
-    RIGHT_KEYS.with(|keys| keys.borrow().values().map(|held| held.len()).sum())
+    RIGHT_KEYS.with(|keys| keys.borrow().sum_of(|_, held| held.len()))
 }
 
 pub fn clear_views() {
     VIEWS.with(|views| views.borrow_mut().clear());
-    FLATS.with(|flats| *flats.borrow_mut() = (HashMap::new(), 0));
+    FLATS.with(|flats| *flats.borrow_mut() = (LookupMap::new(), 0));
     RIGHT_KEYS.with(|keys| keys.borrow_mut().clear());
     OCCURS.with(|held| *held.borrow_mut() = OccurHeld::default());
     GROUPS.with(|groups| *groups.borrow_mut() = Groups::default());
@@ -782,6 +785,7 @@ fn view_of(table: &Arc<Table>) -> Arc<GridView> {
     VIEWS.with(|views| {
         views.borrow_mut().entry(key).or_insert_with(|| {
             let mut at = FastMap::default();
+            let mut pairs = Vec::with_capacity(table.len);
             let (mut h, mut w) = (0, 0);
             let mut colors = Vec::new();
             let mut of_color: FastMap<Cell, Vec<(i32, i32)>> = FastMap::default();
@@ -791,6 +795,7 @@ fn view_of(table: &Arc<Table>) -> Arc<GridView> {
                 h = m[0] + m[1] + 1;
                 w = m[2] + m[3] + 1;
                 at.insert(row[0], row[1]);
+                pairs.push((row[0], row[1]));
             }
             if h > 0 && w > 0 {
                 colors = vec![u32::MAX; (h * w) as usize];
@@ -799,7 +804,7 @@ fn view_of(table: &Arc<Table>) -> Arc<GridView> {
                     colors[(m[0] * w + m[2]) as usize] = row[1];
                 }
             }
-            Arc::new(GridView { h, w, colors, at, of_color, searched: Default::default() })
+            Arc::new(GridView { h, w, colors, at, pairs, of_color, searched: Default::default() })
         }).clone()
     })
 }
@@ -1614,9 +1619,9 @@ impl PartStep {
             PartStep::DiffCells { p, output, on } => {
                 let (input, other) = grids_of(children[1])?;
                 let (one, two) = if *output { (&other, &input) } else { (&input, &other) };
-                let held: std::collections::HashSet<Cell> = t.rows().map(|row| row[usize::from(*p)]).collect();
+                let held: LookupSet<Cell> = t.rows().map(|row| row[usize::from(*p)]).collect();
                 let mut out = Vec::new();
-                for (cell, color) in one.at.iter() {
+                for (cell, color) in &one.pairs {
                     if two.at.get(cell) != Some(color) && held.contains(cell) == *on {
                         out.extend_from_slice(&[*cell, *color]);
                     }
@@ -1629,7 +1634,7 @@ impl PartStep {
                 let mut every: Vec<Cell> = examples.rows().map(|row| row[0]).collect();
                 every.sort_unstable();
                 every.dedup();
-                let mut seen: FastMap<Cell, Vec<Cell>> = FastMap::default();
+                let mut seen: InsertionMap<Cell, Vec<Cell>> = InsertionMap::default();
                 for row in t.rows() {
                     seen.entry(row[usize::from(*n)]).or_default().push(row[usize::from(*e)]);
                 }
@@ -1652,8 +1657,7 @@ impl PartStep {
                     let held = sums.entry(row[column]).or_insert(0);
                     *held = held.wrapping_add(word);
                 }
-                let mut held: Vec<(Cell, u128)> = sums.into_iter().collect();
-                held.sort_unstable();
+                let held: Vec<(Cell, u128)> = sums.into_sorted_vec();
                 let mut out = Vec::with_capacity(held.len() * 2);
                 for (example, sum) in held {
                     out.push(example);
@@ -2334,7 +2338,7 @@ impl PartStep {
                 let (cells, heads) = (&held.0, &held.1);
                 let other_held = cells_by_key(&other, others, *b);
                 let other_cells = &other_held.0;
-                let seen: std::collections::HashSet<u32> = other_cells.iter().filter(|held| !held.is_empty()).map(shape).collect();
+                let seen: LookupSet<u32> = other_cells.iter().filter(|held| !held.is_empty()).map(shape).collect();
                 keys_only(&heads, cells.iter().map(|held| !held.is_empty() && seen.contains(&shape(held))), keys.len())
             }
             PartStep::DeterminesJointly { p, v, w } => {
@@ -2352,7 +2356,7 @@ impl PartStep {
                     let held = second.entry(other).or_insert((*color, false));
                     held.1 |= held.0 != *color;
                 }
-                Val::of_table(Table::unit(first.values().any(|held| held.1) && second.values().any(|held| held.1) && !both.values().any(|held| held.1)))
+                Val::of_table(Table::unit(first.any(|_, held| held.1) && second.any(|_, held| held.1) && !both.any(|_, held| held.1)))
             }
             PartStep::SharedLine { a, b } => {
                 let other = flat(children[1])?;
@@ -2523,7 +2527,7 @@ impl PartStep {
                     crate::bounds::mark(crate::bounds::Bound::ComplementArea);
                     return None;
                 }
-                let held: std::collections::HashSet<Cell> = t.rows().map(|row| row[usize::from(*p)]).collect();
+                let held: LookupSet<Cell> = t.rows().map(|row| row[usize::from(*p)]).collect();
                 let mut out = Vec::new();
                 for r in 0..h {
                     for c in 0..w {
@@ -2653,7 +2657,7 @@ impl PartStep {
             }
             PartStep::SameRows { left, right, key } => {
                 let other = flat(children[1])?;
-                let rows = |table: &Table, places: &[u16]| table.rows().map(|row| places.iter().map(|at| row[usize::from(*at)]).collect::<Vec<Cell>>()).collect::<std::collections::HashSet<_>>();
+                let rows = |table: &Table, places: &[u16]| table.rows().map(|row| places.iter().map(|at| row[usize::from(*at)]).collect::<Vec<Cell>>()).collect::<LookupSet<_>>();
                 let own = rows(t, left);
                 Val::of_table(Table::unit(t.len > 0 && (!key || own.len() == t.len) && own == rows(&other, right)))
             }

@@ -8,11 +8,12 @@
 //! (u8) says which of them read the output, and `places` (u32) index that list. Arrays are little-endian in base64. A shape with no value at any example has NaN for its least, mean and most.
 
 use crate::generate::{Generated, Generators, Walker, READS_OUTPUT};
+use crate::lookup::{LookupMap, LookupSet};
 use crate::schema::type_of_name;
 use crate::stored::{cell_bits, Stored};
 use crate::table_vector::{table_vector, Grids, TableVector};
 use arclog::types::ValueType;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -51,7 +52,7 @@ struct Sink {
     path: PathBuf,
     working: PathBuf,
     file: std::io::BufWriter<std::fs::File>,
-    index: HashMap<u64, u32>,
+    index: LookupMap<u64, u32>,
     fresh: Vec<(u64, u8)>,
 }
 
@@ -59,7 +60,7 @@ impl Sink {
     fn new(path: PathBuf, header: &serde_json::Value) -> Result<Sink, String> {
         let working = path.with_extension("working");
         let file = std::io::BufWriter::new(std::fs::File::create(&working).map_err(|error| error.to_string())?);
-        let mut sink = Sink { path, working, file, index: HashMap::new(), fresh: Vec::new() };
+        let mut sink = Sink { path, working, file, index: LookupMap::new(), fresh: Vec::new() };
         sink.line(header)?;
         Ok(sink)
     }
@@ -118,7 +119,7 @@ impl Sink {
 pub const PAST_MAX_COLUMNS: &str = "past MAX_COLUMNS columns";
 
 /// A file's table as a table of the candidate lists, with each assignment's each model as a model at its example. `Ok(None)` is no table, and `Err` says why a table can't be read.
-pub fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &HashMap<i64, String>) -> Result<Option<Stored>, &'static str> {
+pub fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &LookupMap<i64, String>) -> Result<Option<Stored>, &'static str> {
     use serde_json::Value;
     let Some(parts) = table.as_array() else { return Ok(None) };
     if parts.len() != 1 {
@@ -195,25 +196,21 @@ pub fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &
 
 /// What one file's walks hold. The walkers stand before the families, so they leave memory first. A walker's memos are keyed by content, so one serves real and permuted outputs, and a term that reads no output runs once.
 struct Walkers {
-    real: HashMap<String, Walker<'static>>,
-    families: HashMap<String, Arc<Generated>>,
+    real: LookupMap<String, Walker<'static>>,
+    families: LookupMap<String, Arc<Generated>>,
 }
 
 impl Walkers {
     /// A walker of `stored`'s family. `family` stands in `families` until the walkers have left, which makes the longer lifetime sound.
-    fn walker<'w>(walkers: &'w mut HashMap<String, Walker<'static>>, families: &mut HashMap<String, Arc<Generated>>, generators: &Generators, stored: &Stored, d: usize) -> &'w mut Walker<'static> {
+    fn walker<'w>(walkers: &'w mut LookupMap<String, Walker<'static>>, families: &mut LookupMap<String, Arc<Generated>>, generators: &Generators, stored: &Stored, d: usize) -> &'w mut Walker<'static> {
         let family = families.entry(stored.key.clone()).or_insert_with(|| generators.get(stored, d));
         let family: &'static Generated = unsafe { &*Arc::as_ptr(family) };
         walkers.entry(stored.key.clone()).or_insert_with(|| Walker::with_budget(family, HELD_CELLS, HELD_ENTRIES))
     }
 
-    fn over_budget(walkers: &HashMap<String, Walker<'static>>) -> bool {
-        let (mut entries, mut cells) = (0, 0);
-        for walker in walkers.values() {
-            let (own_entries, own_cells) = walker.held();
-            entries += own_entries;
-            cells += own_cells;
-        }
+    fn over_budget(walkers: &LookupMap<String, Walker<'static>>) -> bool {
+        let entries = walkers.sum_of(|_, walker| walker.held().0);
+        let cells = walkers.sum_of(|_, walker| walker.held().1);
         entries > HELD_ENTRIES || cells > HELD_CELLS
     }
 }
@@ -227,7 +224,7 @@ struct TaskRun<'r> {
     null_grids: Option<Grids>,
     real: Sink,
     null: Sink,
-    table_at: HashMap<u128, i64>,
+    table_at: LookupMap<u128, i64>,
     walkers: Walkers,
     generators: &'r Generators,
     d: usize,
@@ -238,7 +235,7 @@ struct TaskRun<'r> {
 
 impl TaskRun<'_> {
     /// The place of a table in the task, with its lists in the decision's lines where it is new.
-    fn place(&mut self, table: &serde_json::Value, orient: &HashMap<i64, String>, real: &mut Vec<serde_json::Value>, null: &mut Vec<serde_json::Value>) -> i64 {
+    fn place(&mut self, table: &serde_json::Value, orient: &LookupMap<i64, String>, real: &mut Vec<serde_json::Value>, null: &mut Vec<serde_json::Value>) -> i64 {
         let stored = match stored_of(table, self.train, self.test, orient) {
             Ok(Some(stored)) => stored,
             Ok(None) => return -1,
@@ -268,7 +265,7 @@ impl TaskRun<'_> {
 
 /// Writes the lists of one file of tables.
 #[allow(clippy::too_many_arguments)]
-fn lists_of_file(input: &Path, out: &Path, task_dir: &Path, generators: &Generators, d: usize, order_of: &BTreeMap<String, Option<Vec<usize>>>, orient: &HashMap<i64, String>) -> Result<String, String> {
+fn lists_of_file(input: &Path, out: &Path, task_dir: &Path, generators: &Generators, d: usize, order_of: &BTreeMap<String, Option<Vec<usize>>>, orient: &LookupMap<i64, String>) -> Result<String, String> {
     let begun = std::time::Instant::now();
     let raw = std::fs::File::open(input).map_err(|error| error.to_string())?;
     let reader = std::io::BufReader::new(zstd::stream::read::Decoder::new(raw).map_err(|error| error.to_string())?);
@@ -300,8 +297,8 @@ fn lists_of_file(input: &Path, out: &Path, task_dir: &Path, generators: &Generat
                     null_grids,
                     real: Sink::new(out.join(format!("{name}.gen.zst")), &header)?,
                     null: Sink::new(out.join(format!("{name}.null.zst")), &null_header)?,
-                    table_at: HashMap::new(),
-                    walkers: Walkers { real: HashMap::new(), families: HashMap::new() },
+                    table_at: LookupMap::new(),
+                    walkers: Walkers { real: LookupMap::new(), families: LookupMap::new() },
                     generators,
                     d,
                     walks: 0,
@@ -358,8 +355,8 @@ fn files_of(input: &Path) -> Vec<(String, String, PathBuf)> {
 /// Writes the lists of each finished file of tables under `input` into the same folders under `out`, on `threads` threads, with a line of progress per file, and goes on as files come. It ends once no new
 /// file has come for `idle_seconds`, and a restart skips the files whose lists stand.
 #[allow(clippy::too_many_arguments)]
-pub fn run(input: &Path, out: &Path, task_dir: &Path, generators: &Generators, d: usize, order_of: &BTreeMap<String, Option<Vec<usize>>>, orient: &HashMap<i64, String>, threads: usize, idle_seconds: u64) -> Result<(), String> {
-    let claimed: Mutex<HashSet<PathBuf>> = Mutex::new(HashSet::new());
+pub fn run(input: &Path, out: &Path, task_dir: &Path, generators: &Generators, d: usize, order_of: &BTreeMap<String, Option<Vec<usize>>>, orient: &LookupMap<i64, String>, threads: usize, idle_seconds: u64) -> Result<(), String> {
+    let claimed: Mutex<LookupSet<PathBuf>> = Mutex::new(LookupSet::new());
     let finished = std::sync::atomic::AtomicUsize::new(0);
     let begun = std::time::Instant::now();
     let last_new = Mutex::new(std::time::Instant::now());

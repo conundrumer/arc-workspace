@@ -1,6 +1,5 @@
 //! `corpus_tables`: the tables of each case of the corpus's solvers.
 
-use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Mutex;
@@ -9,6 +8,7 @@ use arclog::decode::corpus::{read_task_files, replay_units, ReplayProgress, Unit
 use arclog::eval::determinations::relation_spelled;
 use arclog::harness::corpus_threads;
 use arclog::registry::Registry;
+use arclog_encoder::lookup::LookupMap;
 use arclog::stream::corpus::{fault_line, solver_streams, token_ids, StreamLabels, WantedCases};
 use arclog::stream::{DecodeSettings, Emitter, Vocabulary};
 use arclog::task::{JudgedTask, Task};
@@ -97,7 +97,7 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
     let vocabulary = Vocabulary::new(Registry::get(), &DecodeSettings::default());
     let base = DecodeSettings::default();
     let settings = DecodeSettings { projection_cap: projection_cap.unwrap_or(base.projection_cap), table_work_cap: table_work_cap.unwrap_or(base.table_work_cap), check_copies: copies, caps: arclog::eval::Caps {bindings:binding_cap.unwrap_or(base.caps.bindings),rows:row_cap.unwrap_or(base.caps.rows),..base.caps}, ..base };
-    let reads: Mutex<HashMap<String, (Task, JudgedTask)>> = Mutex::new(HashMap::new());
+    let reads: Mutex<LookupMap<String, (Task, JudgedTask)>> = Mutex::new(LookupMap::new());
     let found = walk_corpus(py, corpus, &task_ids, |id| {
         let (mut cases, mut faults) = (Vec::new(), Vec::new());
         match solver_streams(Path::new(corpus), id, wanted, &vocabulary, prefix) {

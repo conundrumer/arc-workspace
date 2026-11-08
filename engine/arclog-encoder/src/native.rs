@@ -10,8 +10,7 @@
 //!
 //! The rows of `inside` stand as their boxes ([`Val::Boxes`]), and the rows of a `join` as its two sides ([`Val::Joined`]), until an operator needs the rows themselves.
 
-use std::collections::HashMap;
-use std::hash::{BuildHasherDefault, Hasher};
+use std::hash::Hasher;
 use std::sync::Arc;
 
 use arclog::algebra::Algebra;
@@ -26,6 +25,7 @@ use arclog::types::ValueType;
 
 use crate::bounds::Bound;
 use crate::expression::Op;
+use crate::lookup::InsertionMap;
 
 pub type Cell = u32;
 
@@ -36,6 +36,13 @@ pub const CELL_CAP: usize = 1 << 21;
 /// A hasher for keys that are already well mixed or small.
 #[derive(Default, Clone, Copy)]
 pub struct FastHasher(u64);
+
+impl FastHasher {
+    /// A hasher whose state is `start` before any write.
+    pub fn starting_at(start: u64) -> FastHasher {
+        FastHasher(start)
+    }
+}
 
 impl Hasher for FastHasher {
     fn finish(&self) -> u64 {
@@ -69,7 +76,8 @@ impl Hasher for FastHasher {
     }
 }
 
-pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
+/// The map of lookups by the fast hasher. It cannot be iterated; see [`crate::lookup`].
+pub type FastMap<K, V> = crate::lookup::LookupMap<K, V>;
 
 /// A 128-bit hash of a sequence of words.
 pub fn hash_words(words: impl IntoIterator<Item = u64>) -> u128 {
@@ -1217,9 +1225,9 @@ fn one_part<'p>(parts: &'p [Part], positions: &[u16]) -> Option<(&'p Part, Vec<&
 }
 
 /// The rows of an input at each key: a table keyed by its first `key_width`
-/// columns, as a map from a key to its count of rows.
-fn key_counts<'t>(table: &'t Table, key_width: usize) -> FastMap<&'t [Cell], u32> {
-    let mut counts: FastMap<&[Cell], u32> = FastMap::default();
+/// columns, as a map from a key to its count of rows. It iterates its keys in order of first appearance.
+fn key_counts<'t>(table: &'t Table, key_width: usize) -> InsertionMap<&'t [Cell], u32> {
+    let mut counts: InsertionMap<&[Cell], u32> = InsertionMap::default();
     if table.arity == 0 {
         return counts;
     }
@@ -1314,11 +1322,11 @@ fn fast_component(shape: &CompShape, tables: &[Arc<Table>]) -> Option<Outputs> {
                 return Some(Some(vec![Table::new(1, cells)]));
             }
             // A key that either keyed input holds, each input's rows at that key.
-            let counts = |held: &Option<(&Arc<Table>, bool)>| -> Option<(FastMap<Vec<Cell>, u32>, u32)> {
+            let counts = |held: &Option<(&Arc<Table>, bool)>| -> Option<(InsertionMap<Vec<Cell>, u32>, u32)> {
                 match held {
                     Some((table, true)) => Some((key_counts(table, key_width).into_iter().map(|(key, count)| (key.to_vec(), count)).collect(), 0)),
-                    Some((table, false)) => Some((FastMap::default(), table.len as u32)),
-                    None => Some((FastMap::default(), 0)),
+                    Some((table, false)) => Some((InsertionMap::default(), table.len as u32)),
+                    None => Some((InsertionMap::default(), 0)),
                 }
             };
             let (plus_keys, plus_all) = counts(&plus)?;
@@ -1366,7 +1374,7 @@ fn fast_component(shape: &CompShape, tables: &[Arc<Table>]) -> Option<Outputs> {
                     by_member.entry(&row[pattern_id..]).or_default().push(&row[..pattern_id]);
                 }
             }
-            let mut shared: FastMap<(&[Cell], &[Cell]), u32> = FastMap::default();
+            let mut shared: InsertionMap<(&[Cell], &[Cell]), u32> = InsertionMap::default();
             if observed_table.arity > 0 {
                 for row in observed_table.rows() {
                     if let Some(found) = by_member.get(&row[observed_id..]) {
