@@ -2,8 +2,6 @@
 
 The first stage of building the engine: the interfaces and shared parts of [Reader and checker](reader.md), as Rust that compiles, so that the later stages build against fixed signatures and can run in parallel.
 
-The engine docs and `gen/` are untracked, so a worktree does not hold them. Read them in the main checkout: `/Users/davidlu/code/arc-workspace/work/engine/` for the design, `/Users/davidlu/code/arc-workspace/work/arclog/gen/` for the corpus, and `/Users/davidlu/code/arc-workspace/docs/` for `arclog.md`, `arcdata.md`, `lib-spec.md` and the handbook.
-
 ## Output
 
 - A Cargo workspace at `engine/`, with the crates of [Crates](overview.md#crates).
