@@ -90,6 +90,10 @@ del _path
 OUTD = Path('/Users/davidlu/code/arc-workspace/work/lm/data-study/samples')
 REPO = Path(__file__).resolve().parents[3]
 SCHEMA = 'points-1'
+# the reasons that count a state as not added in the header's draw_counts (`not added: <reason>`); run/draw_targets.py reads them from here
+GROUND_TRUTH = 'the ground-truth part is no sample\'s state'
+NO_HASH = 'a step has no QueryHash'
+NO_TARGET = 'no target query is left'
 VECTOR_COUNTS = ('point-scope columns that differ across ids', 'vector shape or names differ from the header')
 LABEL = re.compile(r'&r(\d+)')
 DRAW_NAME = re.compile(r'(&f\d+)((?:\.\w+)*)')  # a pool name of a draw's text, with the steps of a RIGID_DET part or an INIT output
@@ -370,7 +374,7 @@ def off_path_queries(earlier: tuple[tuple[str, str | None], ...], union: Mapping
     for text, h in earlier:
         m = DRAW_HEAD.match(text)
         if h is None:
-            raise Reject('a step has no QueryHash')
+            raise Reject(NO_HASH)
         if m is None:
             raise Reject('a step has no own name')
         if m[1] in name_of:
@@ -422,16 +426,16 @@ def plan_added(task: str, draws: list[Draw], union: Mapping[str, dict], samples:
         if st in have:
             continue
         if None in st:
-            refused[st] = 'a step has no QueryHash'
+            refused[st] = NO_HASH
             continue
         gold = frozenset(h for h in st if h in union)
         base = sample_of.get(gold)
         if base is None:
-            refused[st] = 'the ground-truth part is no sample\'s state'
+            refused[st] = GROUND_TRUTH
             continue
         targets = sorted(t for t in base['target_queries'] if t not in st)
         if not targets:
-            refused[st] = 'no target query is left'
+            refused[st] = NO_TARGET
             continue
         got: dict[str, dict] | None = None
         for dr in group:

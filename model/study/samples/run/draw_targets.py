@@ -7,7 +7,7 @@ state's queries that are queries of the skeleton. It prints one JSON line a task
 - `matched`: the state is a skeleton sample's state;
 - `to add: last steps` and `to add: states`: the state is no sample's state, its ground-truth part is a sample's state, and that sample has a target query that the state has not written;
 - `to add: queries outside the union`: the distinct queries of those states that are no skeleton query (the queries that `points_write.py` writes a query record for);
-- `ground-truth part is no sample's state`, `a step has no QueryHash` and `no target query is left`: the last steps that are not added, each for its reason.
+- the last steps that are not added, each for one reason (`GROUND_TRUTH`, `NO_HASH` and `NO_TARGET` of `points_write.py`, which are also the reasons in the headers).
 
 With --points DIR (the folder of the plan's files that `points_write.py` wrote, `<task>.jsonl.zst`) it also compares the header's `draw_counts` of each task with those counts, and prints
 `OK` or the differences:
@@ -25,9 +25,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # model/study
 import study_zst as Z  # noqa: E402
 
-GROUND_TRUTH = "ground-truth part is no sample's state"
-NO_HASH = 'a step has no QueryHash'
-NO_TARGET = 'no target query is left'
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # model/study/samples
+from points_write import GROUND_TRUTH, NO_HASH, NO_TARGET  # noqa: E402  (the reasons that the headers' draw_counts use)
 
 
 def record_files(paths: list[str]) -> list[str]:
