@@ -10,7 +10,7 @@ rayon = "1"
 # A fit's arrays are mapped from their files.
 libc = "0.2"
 # A plan and a model are JSON.
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 # The entries a build writes are streamable zstd.
 zstd = "0.13"
 
