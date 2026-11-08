@@ -1,7 +1,9 @@
 //! The exceptions of the module and the conversions of the engine's faults
 //! to them.
 
+use arclog::diagnostic::Location;
 use arclog::eval::{Outcome, ReachedBound, RunFault};
+use arclog::study::StudyError;
 use arclog::trace::Stop;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
@@ -9,7 +11,13 @@ use pyo3::prelude::*;
 
 use crate::results::PyStopKind;
 
-create_exception!(arclog, Refusal, PyValueError, "A decode refuses a token outside its mask.");
+create_exception!(arclog, Refusal, PyException, "The engine refuses its input: a decode refuses a token outside its mask, or `CheckRefused` for a program that its checks refuse. It is no `ValueError`: a `ValueError` from the engine is a bug of the caller.");
+create_exception!(
+    arclog,
+    CheckRefused,
+    Refusal,
+    "The engine's checks refuse a program. Attributes: `check`, the name of the first check that refused it (`Picks`, `Types`, `Grammar`, ...); `at`, the path of the node it refused, as the list of the indexes from the top-level form, or None where the refusal stands at a place of the program's text; `line` and `column`, from 1, of that place, or None where it stands at a path. The message holds the text of all of the refusals."
+);
 create_exception!(arclog, Fault, PyRuntimeError, "A run of the engine faults.");
 create_exception!(
     arclog,
@@ -34,6 +42,35 @@ pub fn budget_reached(py: Python<'_>, bound: ReachedBound, left_out: &[String]) 
     let named = Py::new(py, PyStopKind::from(Stop::from(bound))).and_then(|kind| value.setattr("bound", kind)).and_then(|()| value.setattr("cap", bound.cap())).and_then(|()| value.setattr("tables", left_out.to_vec()));
     match named {
         Ok(()) => error,
+        Err(failure) => failure,
+    }
+}
+
+/// The Python error for `error`, which the engine gives for a program or a
+/// stream that it refuses: a `CheckRefused` for a refusal of a check, with the
+/// attributes `check`, `at`, `line` and `column` of the first refusal in it,
+/// and a `Refusal` for any other reason.
+pub fn study_error(py: Python<'_>, error: StudyError) -> PyErr {
+    let message = error.to_string();
+    let Some((check, diagnostic)) = error.first_check_error() else {
+        return Refusal::new_err(message);
+    };
+    let (at, line, column): (Option<Vec<u32>>, Option<u32>, Option<u32>) = match &diagnostic.location {
+        Location::Path(path) => (Some(path.0.iter().map(|step| step.0).collect()), None, None),
+        Location::Places(places) => match places.first() {
+            Some(file_place) => (None, Some(file_place.place.line), Some(file_place.place.column)),
+            None => (None, None, None),
+        },
+    };
+    let refused = CheckRefused::new_err(message);
+    let value = refused.value(py);
+    let named = value
+        .setattr("check", format!("{check:?}"))
+        .and_then(|()| value.setattr("at", at))
+        .and_then(|()| value.setattr("line", line))
+        .and_then(|()| value.setattr("column", column));
+    match named {
+        Ok(()) => refused,
         Err(failure) => failure,
     }
 }

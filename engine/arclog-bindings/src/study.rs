@@ -6,12 +6,14 @@ use arclog::program::{Form, Node, Program};
 use arclog::registry::Registry;
 use arclog::resolver::{resolve, ResolvedContent, SolverScope};
 use arclog::stream::DecodeSettings;
-use arclog::study::StudyProgram;
+use arclog::check::CheckCache;
+use arclog::study::{StudyError, StudyProgram};
 use pyo3::exceptions::PyValueError;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyTuple};
 
+use crate::errors::study_error;
 use crate::mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 use crate::session::PySession;
 use crate::settings::PyDecodeSettings;
@@ -79,6 +81,9 @@ impl PyStudyProgram {
     }
 
     /// Read standalone case sexp, preserving source column/variable names.
+    /// Raises `CheckRefused` for a program that the reader, the resolver or a
+    /// check refuses, and `Refusal` for any other program that the engine
+    /// refuses.
     #[staticmethod]
     #[pyo3(signature = (text, settings=None, *, session=None))]
     fn from_sexp(py: Python<'_>, text: &str, settings: Option<PyDecodeSettings>, session:Option<&PySession>) -> PyResult<Self> {
@@ -93,20 +98,22 @@ impl PyStudyProgram {
             .detach(||match session {
                 Some(session)=> {
                     let mut cached=session.program_replay.lock().expect("a program reader outside a panic");
-                    StudyProgram::from_sexp_cached(text,Registry::get(),&mut cached.checks)
+                    StudyProgram::read_sexp_cached(text,Registry::get(),&mut cached.checks)
                 },
-                None=>StudyProgram::from_sexp(text, Registry::get()),
+                None=>StudyProgram::read_sexp_cached(text, Registry::get(), &mut CheckCache::default()),
             })
-            .map_err(PyValueError::new_err)?;
+            .map_err(|error| study_error(py, error))?;
         program
             .decode_stream(Registry::get(), &settings)
-            .map_err(PyValueError::new_err)?;
+            .map_err(|error| study_error(py, error.into()))?;
         Ok(Self { program, settings })
     }
 
     /// Parse a complete stream with the engine grammar/binder and exact
     /// echoes, then check the entire AST. No prefix completion search or OUT
-    /// evaluation is needed when the complete program is supplied.
+    /// evaluation is needed when the complete program is supplied. Raises
+    /// `CheckRefused` for a program that a check refuses, and `Refusal` for any
+    /// other stream that the engine refuses.
     #[staticmethod]
     fn from_stream(
         py: Python<'_>,
@@ -116,7 +123,7 @@ impl PyStudyProgram {
     ) -> PyResult<Self> {
         let settings = session.program_settings();
         let program = py
-            .detach(|| {
+            .detach(|| -> Result<StudyProgram, StudyError> {
                 let mut cached = session
                     .program_replay
                     .lock()
@@ -125,16 +132,16 @@ impl PyStudyProgram {
                     arclog::decode::program_read::ProgramReader::new(Registry::get(), settings)
                 });
                 let ast = reader.read(&ids, &model)?;
-                let program = StudyProgram::from_decoded_cached(ast, Registry::get(), &mut cached.checks)?;
+                let program = StudyProgram::read_decoded_cached(ast, Registry::get(), &mut cached.checks)?;
                 let written = program.decode_stream(Registry::get(), &settings)?;
                 if written.ids != ids || written.model != model {
                     return Err(
-                        "parsed program does not reproduce its exact input stream".to_owned()
+                        "parsed program does not reproduce its exact input stream".into()
                     );
                 }
                 Ok(program)
             })
-            .map_err(PyValueError::new_err)?;
+            .map_err(|error| study_error(py, error))?;
         Ok(Self { program, settings })
     }
 
@@ -550,16 +557,16 @@ pub(crate) fn empty_gold_json(py: Python<'_>, corpus: &str, tasks: &str, task: &
 /// A part that the canonical form cannot tell from an earlier part, so that
 /// two texts of one QueryHash may list the two in either order, takes the
 /// Name of the earliest such part, whose table holds the same rows.
-/// `ValueError` where `text` does not read, or where `read` reads no output
-/// of a `RIGID_DET` form of `text`. The call runs with the GIL released.
+/// `CheckRefused` where `text` does not read, `Refusal` where `read` reads no
+/// output of a `RIGID_DET` form of `text`. The call runs with the GIL released.
 #[pyfunction]
 pub(crate) fn rigid_slot_name(py: Python<'_>, text: &str, read: &str) -> PyResult<String> {
     py.detach(|| {
-        let read_text = arclog::read::read_arclog(text, arclog::layout::SourceFile::Arclog).map_err(|d| arclog::study::diagnostics_text(&d))?;
+        let read_text = arclog::read::read_arclog(text, arclog::layout::SourceFile::Arclog).map_err(|d| StudyError::of_diagnostics(&d))?;
         if read_text.diagnostics.iter().any(|d| d.severity == arclog::diagnostic::Severity::Error) {
-            return Err(arclog::study::diagnostics_text(&read_text.diagnostics));
+            return Err(StudyError::of_diagnostics(&read_text.diagnostics));
         }
-        arclog::resolver::rigid_read_name(&read_text.value.0, read, Registry::get())
+        Ok(arclog::resolver::rigid_read_name(&read_text.value.0, read, Registry::get())?)
     })
-    .map_err(PyValueError::new_err)
+    .map_err(|error: StudyError| study_error(py, error))
 }

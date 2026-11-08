@@ -20,8 +20,8 @@ pub mod stream_certificate;
 pub mod normalization;
 pub mod empty_gold;
 
-use crate::check::{CheckCache, CheckedProgram, SolverClauses, check_shared_program};
-use crate::diagnostic::{Diagnostic, Severity};
+use crate::check::{CheckCache, CheckId, CheckedProgram, SolverClauses, check_shared_program};
+use crate::diagnostic::{Diagnostic, DiagnosticKind, Severity};
 use crate::layout::{Layout, SourceFile};
 use crate::program::path::NodePath;
 use crate::program::{Form, Node, Program};
@@ -62,6 +62,75 @@ pub fn diagnostics_text(diagnostics: &[Diagnostic]) -> String {
         .join("\n")
 }
 
+/// Why a program or a stream is not made into a [`StudyProgram`].
+#[derive(Clone, Debug)]
+pub enum StudyError {
+    /// The engine's checks refuse the program. Holds the diagnostics of the
+    /// read, of the resolution or of the checks, at least one of them an error
+    /// of a check ([`DiagnosticKind::Check`]).
+    Refused(Vec<Diagnostic>),
+    /// Any other reason the engine refuses the program or the stream, as
+    /// text.
+    Other(String),
+}
+
+impl StudyError {
+    /// The refusal that `diagnostics` make, where one of them is an error of a
+    /// check, and the text of them otherwise.
+    pub fn of_diagnostics(diagnostics: &[Diagnostic]) -> Self {
+        if diagnostics.iter().any(is_check_error) {
+            StudyError::Refused(diagnostics.to_vec())
+        } else {
+            StudyError::Other(diagnostics_text(diagnostics))
+        }
+    }
+
+    /// The first error of a check that the refusal holds: it names the check
+    /// and the place of the refusal. `None` for an error that is no refusal.
+    pub fn first_check_error(&self) -> Option<(CheckId, &Diagnostic)> {
+        match self {
+            StudyError::Refused(diagnostics) => diagnostics.iter().find_map(|d| match d.kind {
+                DiagnosticKind::Check(check) if d.severity == Severity::Error => Some((check, d)),
+                _ => None,
+            }),
+            StudyError::Other(_) => None,
+        }
+    }
+}
+
+fn is_check_error(diagnostic: &Diagnostic) -> bool {
+    matches!(diagnostic.kind, DiagnosticKind::Check(_)) && diagnostic.severity == Severity::Error
+}
+
+impl std::fmt::Display for StudyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StudyError::Refused(diagnostics) => f.write_str(&diagnostics_text(diagnostics)),
+            StudyError::Other(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for StudyError {}
+
+impl From<String> for StudyError {
+    fn from(message: String) -> Self {
+        StudyError::Other(message)
+    }
+}
+
+impl From<&str> for StudyError {
+    fn from(message: &str) -> Self {
+        StudyError::Other(message.to_owned())
+    }
+}
+
+impl From<StudyError> for String {
+    fn from(error: StudyError) -> Self {
+        error.to_string()
+    }
+}
+
 impl StudyProgram {
     /// Reads a standalone case, preserving the engine's column and label names.
     /// Malformed nodes must never disappear silently from study input.
@@ -72,14 +141,21 @@ impl StudyProgram {
     /// Reuse exact canonical check results within one caller-owned case.
     /// Reading, interface validation and name resolution are always performed.
     pub fn from_sexp_cached(text:&str,registry:&Registry,cache:&mut CheckCache)->Result<Self,String> {
+        Self::read_sexp_cached(text,registry,cache).map_err(String::from)
+    }
+
+    /// [`StudyProgram::from_sexp_cached`], with the error typed: a program
+    /// that the reader, the resolver or a check refuses is a
+    /// [`StudyError::Refused`].
+    pub fn read_sexp_cached(text:&str,registry:&Registry,cache:&mut CheckCache)->Result<Self,StudyError> {
         let read =
-            crate::read::read_arclog(text, SourceFile::Arclog).map_err(|d| diagnostics_text(&d))?;
+            crate::read::read_arclog(text, SourceFile::Arclog).map_err(|d| StudyError::of_diagnostics(&d))?;
         if read
             .diagnostics
             .iter()
             .any(|d| d.severity == Severity::Error)
         {
-            return Err(diagnostics_text(&read.diagnostics));
+            return Err(StudyError::of_diagnostics(&read.diagnostics));
         }
         let (program, layout) = read.value;
         Self::from_program_cached(program, Some(layout), registry, cache)
@@ -93,15 +169,21 @@ impl StudyProgram {
             return Err(diagnostics_text(&read.diagnostics));
         }
         let (program, layout) = read.value;
-        Self::from_program_cached(program, Some(layout), registry, cache)
+        Self::from_program_cached(program, Some(layout), registry, cache).map_err(String::from)
     }
 
     /// Takes a decoder's completed AST directly, without printing/reparsing it.
     pub fn from_decoded(program: Node<Program>, registry: &Registry) -> Result<Self, String> {
-        Self::from_program(program, None, registry)
+        Self::from_program(program, None, registry).map_err(String::from)
     }
 
     pub fn from_decoded_cached(program:Node<Program>,registry:&Registry,cache:&mut CheckCache)->Result<Self,String> {
+        Self::read_decoded_cached(program,registry,cache).map_err(String::from)
+    }
+
+    /// [`StudyProgram::from_decoded_cached`], with the error typed as
+    /// [`StudyProgram::read_sexp_cached`] types it.
+    pub fn read_decoded_cached(program:Node<Program>,registry:&Registry,cache:&mut CheckCache)->Result<Self,StudyError> {
         Self::from_program_cached(program,None,registry,cache)
     }
 
@@ -109,7 +191,7 @@ impl StudyProgram {
         program: Node<Program>,
         layout: Option<Layout>,
         registry: &Registry,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, StudyError> {
         Self::from_program_cached(program, layout, registry, &mut CheckCache::default())
     }
 
@@ -118,7 +200,7 @@ impl StudyProgram {
         layout: Option<Layout>,
         registry: &Registry,
         cache: &mut CheckCache,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, StudyError> {
         if program
             .value()
             .forms
@@ -139,7 +221,7 @@ impl StudyProgram {
             if !interfaces_hold(form) {
                 return Err(format!(
                     "derived_interface_mismatch at form {index}: body exports must equal the preserved clause/key/candidate columns"
-                ));
+                ).into());
             }
         }
         let resolved = resolve(&program, None, &SolverScope::default(), registry);
@@ -148,12 +230,12 @@ impl StudyProgram {
             .iter()
             .any(|d| d.severity == Severity::Error)
         {
-            return Err(diagnostics_text(&resolved.diagnostics));
+            return Err(StudyError::of_diagnostics(&resolved.diagnostics));
         }
         let resolved = Arc::new(resolved.value);
         let clauses = SolverClauses::of_shared_program(Arc::clone(&resolved));
         let checked = check_shared_program(resolved, &clauses, registry, cache)
-            .map_err(|d| diagnostics_text(&d))?;
+            .map_err(|d| StudyError::of_diagnostics(&d))?;
         Ok(Self {
             checked: Arc::new(checked),
             layout,
@@ -195,7 +277,7 @@ impl StudyProgram {
     /// If the edit exposes such a spelling, only the ordinary reader/binder can
     /// decide it. Never approximate OR/IF/key scopes by a global name collision.
     pub(crate) fn check_preserved_name_binding(&self, registry: &Registry,
-        settings: &DecodeSettings, cache: &mut CheckCache) -> Result<(), String> {
+        settings: &DecodeSettings, cache: &mut CheckCache) -> Result<(), StudyError> {
         let Some(names) = &self.display_names else { return Ok(()); };
         let ambiguous = self.program().value().forms.iter().enumerate().any(|(i, form)| {
             let mut present = crate::hash::StableHashSet::default();
@@ -209,13 +291,13 @@ impl StudyProgram {
             })
         });
         if !ambiguous { return Ok(()); }
-        let read = Self::from_sexp_cached(&self.sexp(registry), registry, cache)?;
+        let read = Self::read_sexp_cached(&self.sexp(registry), registry, cache)?;
         // The text writes the sites of a read in slot order, which the AST
         // need not hold, so the stream of the AST is not the one to compare.
         // The same writer's text with generated names, which no two labels
         // of a scope share, gives the bindings of the AST.
         let plain = crate::write::write_synthesized_named(self.program(), registry, None);
-        let before = Self::from_sexp_cached(&plain, registry, cache)?.decode_stream(registry, settings)?;
+        let before = Self::read_sexp_cached(&plain, registry, cache)?.decode_stream(registry, settings)?;
         let after = read.decode_source(registry, settings)?.decode_stream(registry, settings)?;
         if before.ids != after.ids || before.model != after.model {
             return Err("gold display names would change native bindings after the edit".into());

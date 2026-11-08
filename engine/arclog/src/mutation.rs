@@ -25,7 +25,7 @@ use crate::registry::Registry;
 use crate::resolver::registry_columns::typed_columns;
 use crate::safety::{bound_labels, conjunct_label_set};
 use crate::stream::DecodeSettings;
-use crate::study::{StudyProgram, StudyStream};
+use crate::study::{StudyError, StudyProgram, StudyStream};
 use crate::types::{FormTypes, ValueType, use_label};
 use edit::AtomEdit;
 use serde_json::{Value, json};
@@ -77,20 +77,30 @@ impl DrawStats {
         *self.counts.entry(reason.into()).or_default() += 1;
     }
 
+    /// Counts a refusal that is no check's, by the text of `message` before
+    /// its first colon.
     fn refusal(&mut self, stage: &str, message: &str) {
-        // Keep engine check names, rather than collapsing all invalid choices.
-        let reason = if let Some(rest) = message.split("Check(").nth(1) {
-            rest.split(')').next().unwrap_or("unknown").to_string()
-        } else {
-            message
-                .lines()
-                .next()
-                .unwrap_or("unknown")
-                .split(':')
-                .next()
-                .unwrap_or("unknown")
-                .to_string()
-        };
+        let reason = message
+            .lines()
+            .next()
+            .unwrap_or("unknown")
+            .split(':')
+            .next()
+            .unwrap_or("unknown")
+            .to_string();
+        self.refused(stage, &reason, message);
+    }
+
+    /// Counts a refusal by the engine check that gave it, rather than
+    /// collapsing all invalid choices.
+    fn check_refusal(&mut self, stage: &str, error: &StudyError) {
+        match error.first_check_error() {
+            Some((check, _)) => self.refused(stage, &format!("{check:?}"), &error.to_string()),
+            None => self.refusal(stage, &error.to_string()),
+        }
+    }
+
+    fn refused(&mut self, stage: &str, reason: &str, message: &str) {
         let key = format!("{stage}:{reason}");
         self.count(&key);
         let examples = self.examples.entry(key).or_default();
@@ -579,7 +589,7 @@ impl CompletionDomain<'_> {
         ) {
             Ok(checked) => checked,
             Err(error) => {
-                self.stats.refusal("domain_check_excluded", &error);
+                self.stats.check_refusal("domain_check_excluded", &error);
                 return Ok(());
             }
         };
@@ -593,7 +603,7 @@ impl CompletionDomain<'_> {
             return Ok(());
         }
         if let Err(error) = checked.check_preserved_name_binding(self.registry, self.settings, &mut self.cache) {
-            self.stats.refusal("domain_written_binding_excluded", &error);
+            self.stats.check_refusal("domain_written_binding_excluded", &error);
             return Ok(());
         }
         // Domain failures do not fill a draw or quota: the existing suffix
