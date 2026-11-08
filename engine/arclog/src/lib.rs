@@ -88,6 +88,7 @@
 
 pub mod algebra;
 pub mod check;
+pub mod clock;
 pub mod study;
 pub mod mutation;
 pub mod constraints;

@@ -306,13 +306,13 @@ impl<'e, 'a> Driver<'e, 'a> {
         let exported = self.evaluation.limits.exported.is_some_and(|(program, node)| program == std::ptr::from_ref(self.program()) as usize && self.program().forms_of(node).contains(form));
         let reserve = self.evaluation.limits.row_reserve.filter(|_| exported).map(|reserve| reserve.bytes_per_row(body.clause.columns.len()));
         let shape = || carry::body_shape(&body);
-        let measured = ir::measures().then(|| (std::time::Instant::now(), super::RequestWork::latest().map_or(0, |request| request.count())));
+        let measured = ir::measures().then(|| (crate::clock::Stopwatch::start(), super::RequestWork::latest().map_or(0, |request| request.count())));
         let value = self.cached(form, &reads.request(&content, example), Some(&shape), || Ok(self.body_relation(form, &body, &inputs, example, reserve)));
         if let Some((start, before)) = measured {
             let work = super::RequestWork::latest().map_or(0, |request| request.count()).saturating_sub(before);
             if work > 0 {
                 let path: Vec<String> = form.0.iter().map(|step| step.0.to_string()).collect();
-                eprintln!("arclog-join-measure form={} nodes={} work={work} ns={}", path.join("."), body.clause.nodes.len(), start.elapsed().as_nanos());
+                eprintln!("arclog-join-measure form={} nodes={} work={work} ns={}", path.join("."), body.clause.nodes.len(), start.elapsed().nanos());
             }
         }
         value

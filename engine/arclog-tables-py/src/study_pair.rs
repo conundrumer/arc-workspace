@@ -202,9 +202,9 @@ impl PyStudyTaskEvaluator {
                 constructions,&self.settings,include_available)?;
             result.report["task"]=self.task_name.clone().into();
             let materializer=Materializer::new(&self.session,&result.limits);
-            let pack_start=std::time::Instant::now();
+            let pack_start=arclog::clock::Stopwatch::start();
             let columns=case_columns_in(&materializer,&self.evidence,&result.tables,self.task.train.len(),None);
-            result.report["timings"]["packing_seconds"]=pack_start.elapsed().as_secs_f64().into();
+            result.report["timings"]["packing_seconds"]=pack_start.elapsed().seconds().into();
             result.report["packed_value_cells"]=columns.values.len().into();
             result.report["packed_entry_count"]=columns.entries.table.len().into();
             packing_status(&mut result.report,[&columns]);
@@ -325,7 +325,7 @@ impl PyStudyTaskEvaluator {
             if let Some(stop)=study_pair::stopped_at_bytes(&tables) {
                 return Err(format!("the tables of the program stopped at {:?}",stop.bound));
             }
-            let started=std::time::Instant::now();
+            let started=arclog::clock::Stopwatch::start();
             let materializer=Materializer::new(&self.session,&limits);
             let columns=if held_rows {
                 case_columns_held_in(&materializer,evidence,&tables,self.task.train.len(),None,self.settings.projection_cap)
@@ -341,7 +341,7 @@ impl PyStudyTaskEvaluator {
             report["packed_correspondence"]=table_binding(&columns,"gold",&report,&self.ident_namespace);
             report["packed_correspondence"]["program_sexp"]=gold.program.sexp(Registry::get()).into();
             report["program_sexp"]=gold.program.sexp(Registry::get()).into();
-            report["native_columns_seconds"]=started.elapsed().as_secs_f64().into();
+            report["native_columns_seconds"]=started.elapsed().seconds().into();
             if let Some(stop)=columns.packing_stop().filter(|stop|matches!(stop.bound,arclog::eval::ReachedBound::SessionBytes(_))) {
                 return Err(format!("the packing of the tables stopped at {:?}",stop.bound));
             }
@@ -522,8 +522,8 @@ fn pack_pair<R:PackingReport+Send+Sync>(
     let mut bindings=Vec::new();
     let mut side=|index:usize|->PyResult<PyCaseTables> {
         let (columns,elapsed)=py.detach(|| {
-            let started=std::time::Instant::now();
-            pack(result,index==0).map(|columns|(columns,started.elapsed().as_secs_f64()))
+            let started=arclog::clock::Stopwatch::start();
+            pack(result,index==0).map(|columns|(columns,started.elapsed().seconds()))
         }).map_err(PyValueError::new_err)?;
         seconds+=elapsed;
         stops.extend(columns.packing_stop().cloned());

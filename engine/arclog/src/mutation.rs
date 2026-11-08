@@ -360,6 +360,9 @@ impl StudyProgram {
             "domain_primitive_values".into(),
             sites.iter().map(|v| v.len() as u64).sum(),
         );
+        // The wall-clock deadline of the search runs from here.
+        #[allow(clippy::disallowed_methods)]
+        let started = std::time::Instant::now();
         let mut domain = CompletionDomain {
             gold: self,
             point,
@@ -374,7 +377,7 @@ impl StudyProgram {
             requested: count,
             deletion_only: operation == "delete",
             expanded,
-            started: std::time::Instant::now(),
+            started,
             stopped: false,
         };
         domain.fair_visit(k, &mut rng)?;
@@ -437,6 +440,8 @@ struct ChoiceFrame {
 }
 
 impl CompletionDomain<'_> {
+    // The search stops at the wall-clock deadline of its settings.
+    #[allow(clippy::disallowed_methods)]
     fn fair_visit(&mut self, k: usize, rng: &mut Rng) -> Result<(), String> {
         // V6 schedules one argument bucket: every distinct variable or zero
         // replacement gets one ticket within it. Giving all variables one

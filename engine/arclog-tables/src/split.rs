@@ -4,7 +4,7 @@
 //! result. A part's time includes the parts called inside it.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use arclog::clock::Stopwatch;
 
 /// A part of the export by assignment.
 #[derive(Clone, Copy)]
@@ -40,12 +40,12 @@ static NS: [AtomicU64; NAMES.len()] = [const { AtomicU64::new(0) }; NAMES.len()]
 #[must_use = "a span times the part until it is dropped"]
 pub struct Span {
     part: Part,
-    start: Instant,
+    start: Stopwatch,
 }
 
 impl Drop for Span {
     fn drop(&mut self) {
-        add(self.part, self.start.elapsed().as_nanos());
+        add(self.part, self.start.elapsed().nanos());
     }
 }
 
@@ -53,7 +53,7 @@ impl Drop for Span {
 /// while the statistics are off.
 #[inline(always)]
 pub fn span(part: Part) -> Option<Span> {
-    arclog::stats::enabled().then(|| Span { part, start: Instant::now() })
+    arclog::stats::enabled().then(|| Span { part, start: Stopwatch::start() })
 }
 
 /// Counts a call of `part` that took `nanos` nanoseconds.

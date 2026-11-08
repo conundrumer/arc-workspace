@@ -12,7 +12,7 @@ use arclog::task::Grid;
 use arclog::task::JudgedTask;
 use serde_json::{Value, json};
 use arclog::hash::{StableHashMap, StableHashSet};
-use std::time::Instant;
+use arclog::clock::Stopwatch;
 use arclog::check::{CheckedProgram};
 
 #[path = "study_continuation.rs"]
@@ -176,10 +176,9 @@ struct GoldRelationMemo {
 }
 /// Export-local native identity shared by immutable snapshots and packed views.
 pub fn table_transport_ref()->String {
-    use std::sync::{OnceLock,atomic::{AtomicU64,Ordering}};
-    static START:OnceLock<std::time::SystemTime>=OnceLock::new();
+    use std::sync::atomic::{AtomicU64,Ordering};
     static NEXT:AtomicU64=AtomicU64::new(0);
-    format!("{}:{:?}:{}",std::process::id(),START.get_or_init(std::time::SystemTime::now),NEXT.fetch_add(1,Ordering::Relaxed))
+    format!("{}:{}:{}",std::process::id(),arclog::clock::process_stamp(),NEXT.fetch_add(1,Ordering::Relaxed))
 }
 impl GoldRelationMemo {
     fn new(tables:Outcome<Vec<(usize,Table)>>)->Self {
@@ -1007,14 +1006,14 @@ fn evaluate_pair_inner(
     // An unused gold clause can read a DET that OUT does not reach. Walk
     // the program's DETs so its FITS records still assign that clause's
     // parameters explicitly; OUT remains the sole FITS criterion.
-    let gold_started=Instant::now();
+    let gold_started=Stopwatch::start();
     let gold_key=Arc::as_ptr(gold.checked()) as usize;
     cache.active_source=gold_key;
     let (memo,gold_hit)=match gold_observation(gold,&output,&judge,&gd,&work,cache) {
         Ok(observation)=>observation,
         Err(error)=>{result.report=faulted(&fault(error.message,&point.body));return result;}
     };
-    let gold_seconds=gold_started.elapsed().as_secs_f64();
+    let gold_seconds=gold_started.elapsed().seconds();
     let include_gold=!cache.compact || !gold_hit;
     result.report["gold_observation_ref"]=json!(memo.sequence);
     result.report["gold_observation_cached"]=json!(gold_hit);
@@ -1048,13 +1047,13 @@ fn evaluate_pair_inner(
                     constructions,
                     limits: &limits,
                 };
-                let out_started=Instant::now();
+                let out_started=Stopwatch::start();
                 let mutant_train = match train(&evaluation, &mutant_output, &judge) {
                     Ok(v) => json!({"status":"complete","train":v}),
                     Err(End::Stop(s)) => stopped(&s),
                     Err(End::Fault(f)) => faulted(&f),
                 };
-                mutant_out_seconds+=out_started.elapsed().as_secs_f64();
+                mutant_out_seconds+=out_started.elapsed().seconds();
                 let mut output=json!({"assignment":index,"mutant":mutant_train});
                 if include_gold {output["gold_train"]=gold_train.clone();}
                 outputs.push(output);
@@ -1078,7 +1077,7 @@ fn evaluate_pair_inner(
     };
     let gold_names;
     let mutant_names;
-    let clause_started=Instant::now();
+    let clause_started=Stopwatch::start();
     let body_key=(gold_key,point.body.clone());
     let gold_body=match cache.gold_bodies.get(&body_key) {
         Some(held)=>{cache.gold_body_hits+=1;held.clone()},
@@ -1096,8 +1095,8 @@ fn evaluate_pair_inner(
             return result;
         }
     }
-    let gold_clause_seconds=clause_started.elapsed().as_secs_f64();
-    let clause_started=Instant::now();
+    let gold_clause_seconds=clause_started.elapsed().seconds();
+    let clause_started=Stopwatch::start();
     match clause_tables(mutant.program(), gold.checked(), &point.body, &mut md, &fixed, cache) {
         Ok(t) => {
             result.mutant_prefix=t.prefix;
@@ -1110,8 +1109,8 @@ fn evaluate_pair_inner(
             return result;
         }
     }
-    let mutant_clause_seconds=clause_started.elapsed().as_secs_f64();
-    let comparison_started=Instant::now();
+    let mutant_clause_seconds=clause_started.elapsed().seconds();
+    let comparison_started=Stopwatch::start();
     let (g, m) = (result.gold.len(), result.mutant.len());
     result.report["table_indices"] = json!({"gold_all":g,"gold_kept":g+1,"mutant_all":m,"mutant_kept":m+1,"note":"indices include the two evidence tables; each kept assignment can have multiple native models per example; use the kept assignment maps"});
     result.report["gold_kept_assignment_map"] = component_tables::assignment_map(&result.gold[g-1..],g+1,task.train.len());
@@ -1135,7 +1134,7 @@ fn evaluate_pair_inner(
     );
     result.report["gold_tables"] = table_status(&result.gold);
     result.report["mutant_tables"] = table_status(&result.mutant);
-    result.report["timings"]=json!({"gold_fits":gold_seconds,"gold_clause":gold_clause_seconds,"mutant_clause":mutant_clause_seconds,"mutant_out":mutant_out_seconds,"comparison":comparison_started.elapsed().as_secs_f64()});
+    result.report["timings"]=json!({"gold_fits":gold_seconds,"gold_clause":gold_clause_seconds,"mutant_clause":mutant_clause_seconds,"mutant_out":mutant_out_seconds,"comparison":comparison_started.elapsed().seconds()});
     result.report["cache"]=cache.stats();
     // Explicitly propagate any partial component to the pair status.
     if result.report["status"] == "complete" {

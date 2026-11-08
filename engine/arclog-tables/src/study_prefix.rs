@@ -75,9 +75,9 @@ pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession
     let assignment_cap=session.caps.assignments;
     if max_assignments!=assignment_cap {return Err("prefix assignment cap must be the native task session cap".into());}
     if assignment_cap==0 {return Err("native session assignment cap must be positive".into());}
-    let start=Instant::now();
+    let start=Stopwatch::start();
     let frontier=Arc::new(features::checked_universe_frontier(source,point,Registry::get())?);
-    let frontier_seconds=start.elapsed().as_secs_f64();
+    let frontier_seconds=start.elapsed().seconds();
     let limits=settings.operation_limits();
     let decoder=Decoder::new(task,session,Registry::get(),constructions,settings).with_operation_limits(limits.clone());
     let dets=arclog::decode::held_dets(&frontier);
@@ -89,9 +89,9 @@ pub fn open(source:&StudyProgram,point:&NodePath,task:&Task,session:&TaskSession
     let allocation=Materializer::new(session,&limits).copy(bytes).map_err(OpenError::Stopped)?;
     let work=decoder.query_work();
     let root=dets.last().map_or(arclog::resolver::GraphNodeIndex(0),|d|d.node);
-    let walk_start=Instant::now();
+    let walk_start=Stopwatch::start();
     let walked=decoder.assigned(&frontier,root,&dets,Some(&work),&mut |_|Ok(()));
-    let walk_seconds=walk_start.elapsed().as_secs_f64();
+    let walk_seconds=walk_start.elapsed().seconds();
     let (parents,terminal)=match walked {
         Ok(rows)=>(rows.at.into_iter().map(|(a,_)|a).collect::<Vec<_>>(),rows.stop.map(|s|stopped(&s))),
         Err(f)=>(Vec::new(),Some(faulted(&f))),
@@ -186,7 +186,7 @@ pub fn acquire(universe:&mut Universe,candidate:Option<&ValidMutant>,task:&Task,
         report["status"]="unavailable".into();report["reason"]="prefix universe incomplete or contains Undefined/missing parameter values".into();
         return Ok(Acquisition {report,tables:Vec::new(),limits});
     }
-    let available_start=Instant::now();
+    let available_start=Stopwatch::start();
     let cached=universe.available.is_some();
     if !cached {
         let work=decoder.query_work();let mut budget=Budget::new(&limits,session);
@@ -202,7 +202,7 @@ pub fn acquire(universe:&mut Universe,candidate:Option<&ValidMutant>,task:&Task,
         universe.available=Some(tables);
         universe.available_exclusions=excluded;
     }
-    let available_seconds=available_start.elapsed().as_secs_f64();
+    let available_seconds=available_start.elapsed().seconds();
     let available=universe.available.as_ref().unwrap();
     if !include_available && !available.tables.is_empty() {
         report["status"]="unavailable".into();
@@ -230,15 +230,15 @@ pub fn acquire(universe:&mut Universe,candidate:Option<&ValidMutant>,task:&Task,
     }
     let work=decoder.query_work();
     let context=AssignmentContext::Held {receipt:&universe.receipt,limits:&limits,work:&work};
-    let body_start=Instant::now();
+    let body_start=Stopwatch::start();
     let examples=super::super::body_tables::examples_with_context(&decoder,&checked,&view,&dets,&work,context);
-    let body_seconds=body_start.elapsed().as_secs_f64();
-    let annotation_start=Instant::now();
+    let body_seconds=body_start.elapsed().seconds();
+    let annotation_start=Stopwatch::start();
     let seen=available.tables.iter().map(|(_,t)|t).collect::<Vec<_>>();
     let slot=arclog::stream::written_stream(&checked,decoder.vocabulary()).map_err(|d|d.message.to_string())?.relations.len() as u32;
     let body=super::super::body_tables::contents_with_context(&decoder,&checked,&view,slot,&dets,examples,&seen,context);
     report["timings"]=json!({"available_materialization_seconds":available_seconds,
-        "body_models_seconds":body_seconds,"body_metadata_extents_seconds":annotation_start.elapsed().as_secs_f64()});
+        "body_models_seconds":body_seconds,"body_metadata_extents_seconds":annotation_start.elapsed().seconds()});
     let mut tables=if include_available {available.tables.clone()} else {Vec::new()};
     report["body_table"]=json!(tables.len()+2);
     report["body_scope"]=json!(format!("{:?}",view.scope));

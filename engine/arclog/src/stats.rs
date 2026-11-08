@@ -25,7 +25,7 @@
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
-use std::time::Instant;
+use crate::clock::Stopwatch;
 
 use crate::hash::{StableHashSet, StableHasher};
 
@@ -156,12 +156,12 @@ static SEEN: Mutex<Option<StableHashSet<(u16, u64)>>> = Mutex::new(None);
 #[must_use = "a span times the phase until it is dropped"]
 pub struct Span {
     phase: Phase,
-    start: Instant,
+    start: Stopwatch,
 }
 
 impl Drop for Span {
     fn drop(&mut self) {
-        let ns = u64::try_from(self.start.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let ns = u64::try_from(self.start.elapsed().nanos()).unwrap_or(u64::MAX);
         NS[self.phase as usize].fetch_add(ns, Ordering::Relaxed);
     }
 }
@@ -174,7 +174,7 @@ pub fn span(phase: Phase) -> Option<Span> {
         return None;
     }
     CALLS[phase as usize].fetch_add(1, Ordering::Relaxed);
-    Some(Span { phase, start: Instant::now() })
+    Some(Span { phase, start: Stopwatch::start() })
 }
 
 /// Counts a call of `phase` that takes no time of its own.

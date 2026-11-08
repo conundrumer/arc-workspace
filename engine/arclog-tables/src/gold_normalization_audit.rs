@@ -13,7 +13,7 @@ use arclog::study::StudyProgram;
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::time::Instant;
+use arclog::clock::Stopwatch;
 
 /// Only the shared Python JsonlWriter owns persistent records. Native stdout
 /// pipes are a transport; acquisition keys and comparison policy stay native.
@@ -366,12 +366,12 @@ fn gold_normalization_audit() {
             if let Some(key)=row.get("acquisition_key") {previous.insert(key.to_string(),row);}
         }
     }
-    let start = Instant::now();
+    let start = Stopwatch::start();
     let mut errors = 0;
     let mut removed = 0;
     let mut changed = 0;
     for (i, item) in items.iter().enumerate() {
-        let now = Instant::now();
+        let now = Stopwatch::start();
         let key=json!({"request":item,"scope":scope,"code":acquisition_code});
         let row=if let Some(row)=previous.get(&key.to_string()) {
             row.clone()
@@ -382,7 +382,7 @@ fn gold_normalization_audit() {
                 Err(e)=>json!({"status":if e.starts_with("stopped comparison"){"unavailable_bound"}else{"unavailable_or_different"},"reason":e}),
             };
             let row=json!({"task":item["task"],"case":item["case"],"program_sha256":item["program_sha256"],
-                "seconds":now.elapsed().as_secs_f64(),"outcome":result,"normalization":normalization,"acquisition_key":key});
+                "seconds":now.elapsed().seconds(),"outcome":result,"normalization":normalization,"acquisition_key":key});
             writer.append(&row).expect("commit framed normalization result");row
         };
         if let Some(n)=row["normalization"]["removed"].as_u64() {removed+=n;changed+=usize::from(n>0);}
@@ -391,8 +391,8 @@ fn gold_normalization_audit() {
             "gold-normalization {}/{} elapsed {:.1}s ETA {:.1}s errors {}",
             i + 1,
             items.len(),
-            start.elapsed().as_secs_f64(),
-            start.elapsed().as_secs_f64() * (items.len() - i - 1) as f64 / (i + 1) as f64,
+            start.elapsed().seconds(),
+            start.elapsed().seconds() * (items.len() - i - 1) as f64 / (i + 1) as f64,
             errors
         );
     }

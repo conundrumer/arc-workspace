@@ -5,7 +5,7 @@
 //! after each step of a token the model emits.
 
 use std::ops::ControlFlow;
-use std::time::Instant;
+use crate::clock::Stopwatch;
 
 use super::{Consistency, Decoder, TokenMask};
 use crate::check::CheckedProgram;
@@ -120,14 +120,14 @@ pub fn replay_from(
                     return Ok(Replayed { forced, end: index });
                 }
                 let mask = masked.then(|| {
-                    let start = Instant::now();
+                    let start = Stopwatch::start();
                     let mask = decoder.admissible();
-                    (mask, start.elapsed().as_secs_f64())
+                    (mask, start.elapsed().seconds())
                 });
                 let admitted = mask.as_ref().is_none_or(|(mask, _)| decoder.vocabulary().id(token).is_some_and(|id| mask.contains(id)));
-                let start = Instant::now();
+                let start = Stopwatch::start();
                 let stepped = if untested == Some(index) { decoder.step_untested(token.clone()) } else { decoder.step(token.clone()) };
-                let step_seconds = start.elapsed().as_secs_f64();
+                let step_seconds = start.elapsed().seconds();
                 let step = match stepped {
                     Ok(step) if admitted => step,
                     Ok(_) => return Err(Refused { index, message: format!("token {index} {token:?}: the mask refuses it and the step takes it") }),

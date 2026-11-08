@@ -154,10 +154,10 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         } else {
             step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, evidence.train.len())
         };
-        (columns.with_copies(&engine.take_copy_violations()), stream, std::time::Instant::now())
+        (columns.with_copies(&engine.take_copy_violations()), stream, arclog::clock::Stopwatch::start())
     });
     if arclog::stats::enabled() {
-        split::add(Part::GilWait, left.elapsed().as_nanos());
+        split::add(Part::GilWait, left.elapsed().nanos());
     }
     complete(&columns)?;
     let base = earlier.map(|step| Base { case: case.clone(), tokens: index.unwrap_or(0), tables: step.stream.count() });

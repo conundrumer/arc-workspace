@@ -8,3 +8,12 @@ disallowed-types = [
     { path = "std::collections::HashSet", reason = "uses a random seed per process; use arclog::hash::StableHashSet" },
     { path = "std::hash::RandomState", reason = "its seed differs from run to run; use arclog::hash::StableState" },
 ]
+
+# A request's rows, stops and counts follow from its inputs alone, so the
+# clock is read in `arclog::clock` only: there a `Stopwatch` times a report.
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "no clock in a request; use arclog::clock::Stopwatch for a report's timings" },
+    { path = "std::time::Instant::elapsed", reason = "no clock in a request; use arclog::clock::Stopwatch for a report's timings" },
+    { path = "std::time::SystemTime::now", reason = "no clock in a request; see arclog::clock" },
+    { path = "std::time::SystemTime::elapsed", reason = "no clock in a request; see arclog::clock" },
+]

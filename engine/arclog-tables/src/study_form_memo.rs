@@ -361,11 +361,11 @@ impl FormMemo {
         let before=too_large.0.borrow().len();
         let evictions=session.results.evictions();
         let counted=work.count();
-        let started=std::time::Instant::now();
+        let started=Stopwatch::start();
         let capture=session.results.begin_capture_limited(EVENT_LIMIT);
         let examples=run();
         let captured=session.results.end_capture_limited(capture);
-        let walked=started.elapsed().as_secs_f64();
+        let walked=started.elapsed().seconds();
         self.stats.walk_seconds+=walked;
         let Some((events,counts))=captured else {
             self.stats.overflow+=1;
@@ -381,9 +381,9 @@ impl FormMemo {
         let delta:Vec<(Vec<Assignment>,Stop)>=too_large.0.borrow()[before..].to_vec();
         let in_room=self.request.as_ref().is_none_or(|request|!request.is_past_cap());
         if in_room && session.results.evictions()==evictions {
-            let began=std::time::Instant::now();
+            let began=Stopwatch::start();
             self.keep(key,probe,&examples,delta,events,counts,charged,walked);
-            self.stats.keep_seconds+=began.elapsed().as_secs_f64();
+            self.stats.keep_seconds+=began.elapsed().seconds();
         } else {
             self.stats.declined+=1;
         }
@@ -391,7 +391,7 @@ impl FormMemo {
     }
 
     fn replayed(&mut self,key:StableHash,probe:&Probe<'_>,session:&TaskSession,too_large:&TooLarge)->Option<Vec<ExampleRows>> {
-        let began=std::time::Instant::now();
+        let began=Stopwatch::start();
         let entry=self.entries.get(&key)?;
         if entry.names.len()!=probe.dets.len() {return None;}
         if session.results.bytes().saturating_add(entry.grows)>arclog::eval::cache::cache_bytes_bound(session) {
@@ -451,7 +451,7 @@ impl FormMemo {
         too_large.0.borrow_mut().extend(delta);
         self.stats.hits+=1;
         self.stats.saved_seconds+=walked;
-        self.stats.replay_seconds+=began.elapsed().as_secs_f64();
+        self.stats.replay_seconds+=began.elapsed().seconds();
         self.touch(key);
         Some(examples)
     }
