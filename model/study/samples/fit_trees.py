@@ -12,6 +12,7 @@ With --points-per-task N a task keeps at most N of its points, chosen by a hash 
 A row is one (point, id): the id's option values, the id's table vector and the point's values. The columns are in the order of the header's `uses` (the writer's feature names, which
 serving takes as the model's columns). A header without `uses` gives option names, then table names, then point names. A header with `vector_names` (points_write.py --vectors) gives
 rows that are the writer's writing-point vector of the id, rebuilt from the point's `vp` and the id's row of `vo`, with the columns in the order of `vector_names`; NaN is kept as a value.
+The writer's token class and token id (CATEGORICAL_COLUMNS) split as categories, with LightGBM's categorical splits and its default categorical parameters; every other column splits as a number.
 A point is a group. The score of an id is a sum of the trees'
 leaf values. In a group with scores s, p = softmax(s) over the group's ids, and q = softmax over the positive ids only. The loss of a group is -log(sum of p over the positive ids), its
 gradient in s is p - q and its Hessian is p(1 - p), floored at 1e-6. --check compares that gradient with a finite difference of the loss on a real group.
@@ -61,6 +62,14 @@ from split import OUT_OF_SCOPE, is_held_out, out_of_scope
 HELD_FOLDERS = ('points_held-out', 'points_held')  # the folder name, and the one that earlier runs wrote
 FEATURE_FIELDS = ('schema', 'extractor_sha', 'writer_sha', 'wheel', 'point_names', 'option_names', 'table_names', 'uses', 'vector_names', 'vector_point_cols')
 HESSIAN_FLOOR = 1e-6
+CATEGORICAL_COLUMNS = ('token:class', 'token:id')  # the columns that split as categories, not as numbers: a split on them groups tokens by value, never by the order of their ids
+
+
+def categorical_of(names: list[str]) -> list[str]:
+    """The columns of `names` that split as categories, in the order of CATEGORICAL_COLUMNS."""
+    return [n for n in CATEGORICAL_COLUMNS if n in names]
+
+
 SPECIAL = re.compile(r'[\s",:\[\]{}]')  # the characters that LightGBM refuses in a feature name
 type Floats = np.ndarray
 type Ints = np.ndarray
@@ -896,7 +905,9 @@ def fit(args: argparse.Namespace) -> int:
     if args.alpha and (train.drawn is None or not train.drawn.any()):
         print(f'--alpha {args.alpha}: the train points have no drawn count, so the loss has no weight', flush=True)
     train_objective = objective_of(train, args.alpha, args.task_weights)
-    train_set = SequenceDataset(train_rows, label=train.positive, feature_name=safe, params=dict(params, max_bin=255), free_raw_data=True)
+    categorical = booster_names(categorical_of(names))
+    print(f'categorical columns: {categorical}', flush=True)
+    train_set = SequenceDataset(train_rows, label=train.positive, feature_name=safe, categorical_feature=categorical, params=dict(params, max_bin=255), free_raw_data=True)
     train_set.construct()
     reader.release()
     t1 = time.time()
@@ -911,7 +922,7 @@ def fit(args: argparse.Namespace) -> int:
         def dev_loss(scores: Floats, _data: Any) -> tuple[str, float, bool]:
             return 'dev_loss', float(group_terms(np.asarray(scores, np.float64), dev_positive, dev_starts, dev_sizes).loss.mean()), False
 
-        dev_set = lgb.Dataset(dev.matrix, label=dev.positive, reference=train_set, feature_name=safe, free_raw_data=False)
+        dev_set = lgb.Dataset(dev.matrix, label=dev.positive, reference=train_set, feature_name=safe, categorical_feature=categorical, free_raw_data=False)
         reporter = Reporter(args.log_every)
         booster = lgb.train(dict(params, objective=train_objective), train_set, num_boost_round=rounds, valid_sets=[dev_set], valid_names=['dev'], feval=dev_loss,
                             callbacks=[reporter, lgb.early_stopping(args.early_stopping, first_metric_only=True, verbose=False)])
@@ -935,7 +946,7 @@ def fit(args: argparse.Namespace) -> int:
         early_stopping_rounds=None if dev is None else args.early_stopping, max_rounds=rounds, dev_loss_by_round=curve, dev=got, dev_uniform=base,
         points_per_task=args.points_per_task, seed=args.seed, dev_tasks_override=sorted(dev_tasks), points_dir=[str(f) for f in args.points], matrix=sizes,
         points_left_out=dict(train=dict(train_count), dev=dict(dev_count)), train_tasks=sorted(set(train.tasks)), dev_tasks=[] if dev is None else sorted(set(dev.tasks)),
-        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, header=fields), wheels_alike=alike, out_of_scope=dict(file=str(OUT_OF_SCOPE), tasks=out_of_scope()), shapes=shapes_report, peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
+        features=dict(uses_from_header=fields.get('uses') is not None, uses=names, booster_names=safe, categorical=categorical, header=fields), wheels_alike=alike, out_of_scope=dict(file=str(OUT_OF_SCOPE), tasks=out_of_scope()), shapes=shapes_report, peak_rss_mib=round(peak_rss_mib(), 1), seconds=round(time.time() - t0, 1), code_commit=commit)
     Path(str(out) + '.json').write_text(json.dumps(report, indent=1))
     print(f'wrote {out} and {out}.json; peak RSS {peak_rss_mib():.0f} MiB')
     return 0
