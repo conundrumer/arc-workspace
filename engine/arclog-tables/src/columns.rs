@@ -1480,11 +1480,49 @@ pub(crate) fn sorted_rows_at(materializer:&Materializer<'_>,rows: &Relation, pla
             written[at] = table.export_cell(ident);
         }
     }
-    let row_cells = |at: usize| &written[at * width..(at + 1) * width];
-    let mut order: Vec<usize> = (0..visited).collect();
-    order.sort_by(|&a, &b| row_cells(a).cmp(row_cells(b)));
+    let order = row_order(&written, width, visited);
     materializer.check()?;
     Ok((written, order))
+}
+
+/// The places of the `count` rows of `cells` (`width` cells each) in the order of their cells, rows of
+/// equal cells in the order of their places.
+///
+/// The cells that every row holds equally decide no order, so a sort key holds the first cell that a row
+/// holds otherwise, with the row's place in its low 32 bits. Where that cell is the row's last, the keys
+/// are the whole order. Otherwise a key compares first by the cell, and a tie by the rest of the row, so a
+/// compare reads the row's cells only for rows with an equal cell. The sort is stable, so ties stand in
+/// the order of the places.
+fn row_order(cells: &[i32], width: usize, count: usize) -> Vec<usize> {
+    let row = |at: usize| &cells[at * width..(at + 1) * width];
+    let mut lead = width;
+    if count > 1 {
+        let first = row(0);
+        for at in 1..count {
+            let this = row(at);
+            lead = this[..lead].iter().zip(first).position(|(a, b)| a != b).unwrap_or(lead);
+            if lead == 0 {
+                break;
+            }
+        }
+    }
+    if lead == width || count < 2 {
+        return (0..count).collect();
+    }
+    if u32::try_from(count).is_err() {
+        let mut order: Vec<usize> = (0..count).collect();
+        order.sort_by(|&a, &b| row(a).cmp(row(b)));
+        return order;
+    }
+    // A cell in the order of its signed value, as an unsigned number.
+    let mut keys: Vec<u64> = (0..count).map(|at| u64::from(cells[at * width + lead] as u32 ^ 0x8000_0000) << 32 | at as u64).collect();
+    if lead + 1 == width {
+        keys.sort();
+    } else {
+        let rest = |key: u64| &cells[(key as u32 as usize) * width + lead + 1..(key as u32 as usize + 1) * width];
+        keys.sort_by(|&a, &b| (a >> 32).cmp(&(b >> 32)).then_with(|| rest(a).cmp(rest(b))));
+    }
+    keys.into_iter().map(|key| key as u32 as usize).collect()
 }
 
 /// The offset of the run of `count` rows with the cells `cells`: where
