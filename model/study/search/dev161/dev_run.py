@@ -48,7 +48,7 @@ POPPED = ('WRITER_TREE', 'WRITER_PLAN', 'SEARCH_STATE_SCORE')
 ARMS = {'tree': {'WRITER_TREE': None}, 'tok': {'WRITER_TREE': None}, 'fast': {'WRITER_TREE': None}, 'base': {'WRITER_TREE': None}}  # WRITER_TREE None: --tree; tok and fast: tree under other names, so that two runs of different kits or sites pair by reach.py's --arms
 RSS_LIMIT_MIB = 2888
 STOP_AFTER = 4  # the run stops where its first STOP_AFTER jobs all die with no draw
-WORK_GUARD = 4  # with --budget work, a worker's CPU seconds past this times --seconds end it, whatever its work
+GUARD = 4  # with --budget draws, a worker's CPU seconds past this times --seconds end its job, whatever its sampled queries
 LOCK = threading.Lock()
 RUNNING = [0]  # the jobs running now
 CPU_MODE = [False]  # --budget cpu, where a worker's clock is its CPU time
@@ -127,16 +127,17 @@ def job(a, out, task, arm, seed):
 
 
 def cpu_job(a, w, task, seed, env, samp, sup):
-    """One worker of the task on a budget of a.seconds of its own CPU time (cpu_clock/sitecustomize.py), with no supervisor, so a death
+    """One worker of the task on a budget of a.seconds of its own CPU time (cpu_clock/sitecustomize.py), or with --budget draws of a.draws sampled queries under a guard of
+    GUARD times a.seconds of its CPU time, with no supervisor, so a death
     ends the job. The submission is the supervisor's: its candidates best first, two attempts per test input. Gives (rc, log text, submission)."""
     work = w / 'work'
     work.mkdir()
-    clock = dict(ARC_WORK_CLOCK=str(a.work_rate), ARC_WORK_GUARD=str(WORK_GUARD * a.seconds)) if a.budget == 'work' else dict(ARC_CPU_CLOCK='1')
-    env = dict(env, **clock, PYTHONPATH='%s:%s' % (Path(__file__).resolve().parent / 'cpu_clock', env['PYTHONPATH']))
+    env = dict(env, ARC_CPU_CLOCK='1', PYTHONPATH='%s:%s' % (Path(__file__).resolve().parent / 'cpu_clock', env['PYTHONPATH']))
     out = work / (task + '.out.jsonl')
     (work / (task + '.beat')).touch()
+    budget = ['--seconds', str(GUARD * a.seconds), '--draws', str(a.draws)] if a.budget == 'draws' else ['--seconds', str(a.seconds)]
     cmd = [str(PY), '-u', str(samp / 'kaggle_worker.py'), '--task', str(MAIN_ROOT / 'data/tasks' / (task + '.json')), '--out', str(out),
-           '--beat', str(work / (task + '.beat')), '--seconds', str(a.seconds), '--seed', str(1000 * seed), '--rss-limit-mib', str(RSS_LIMIT_MIB)]
+           '--beat', str(work / (task + '.beat')), *budget, '--seed', str(1000 * seed), '--rss-limit-mib', str(RSS_LIMIT_MIB)]
     with open(work / (task + '.log'), 'w') as log:
         try:
             rc = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=a.wall_cap).returncode
@@ -181,7 +182,7 @@ def parity_gate(a, out, arm, tasks):
     if stamp.exists():
         return
     folder = out / ('parity' if arm != 'base' else 'parity-base')  # each tree's check has its own folder
-    short = argparse.Namespace(**{**vars(a), 'seconds': 25})
+    short = argparse.Namespace(**{**vars(a), 'seconds': 25, 'draws': 15})
     for task in tasks[:3]:
         w = folder / task
         w.mkdir(parents=True)
@@ -234,7 +235,7 @@ def run_job(a, out, task, arm, seed):
     sup = Path(a.code) / 'supervisor.py'
     sup = sup if sup.exists() else DATASET / 'supervisor.py'
     t0 = time.time()
-    if a.budget in ('cpu', 'work'):
+    if a.budget in ('cpu', 'draws'):
         rc, text, sub = cpu_job(a, w, task, seed, env, samp, sup)
     else:
         cmd = [str(PY), '-u', str(sup), '--challenges', str(w / 'challenges.json'),
@@ -318,16 +319,14 @@ def main():
     ap.add_argument('--split', default='dev')
     ap.add_argument('--record', action='store_true', help='each worker writes its draw records')
     ap.add_argument('--no-parity', action='store_true', help='runs with no check that a worker gives the model the rows it was fit on (parity_gate)')
-    ap.add_argument('--budget', choices=('cpu', 'wall', 'work'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor; '
-                    'work: --seconds of the engine\'s work at --work-rate units a second (arclog.work_total), the same on any machine, with WORK_GUARD times --seconds of CPU as the outer guard')
-    ap.add_argument('--work-rate', type=float, help='with --budget work: the engine work units that one second of the budget is')
-    ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu, the wall-clock seconds after which a job is killed')
+    ap.add_argument('--budget', choices=('cpu', 'wall', 'draws'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor; '
+                    'draws: --draws sampled queries, the same on any machine, with GUARD times --seconds of CPU as the outer guard (a code version whose worker takes --draws)')
+    ap.add_argument('--draws', type=int, default=80, help='with --budget draws, the sampled queries of a job')
+    ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu or draws, the wall-clock seconds after which a job is killed')
     a = ap.parse_args()
-    if a.budget == 'work' and not a.work_rate:
-        ap.error('--budget work needs --work-rate')
     a.plan = run_plan(a)
     check_priors(a)
-    CPU_MODE[0] = a.budget == 'cpu'
+    CPU_MODE[0] = a.budget in ('cpu', 'draws')
     out = DATA_ROOT / 'search' / OUT_DIRS.get(a.split, 'none') / a.run
     out.mkdir(parents=True, exist_ok=True)
     with open(out / 'runs.jsonl', 'a') as f:  # each start's arguments and the kit's manifest
@@ -341,7 +340,7 @@ def main():
         random.Random(a.shuffle).shuffle(tasks)
     tasks = tasks[:a.tasks or None]
     todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
-    if not a.no_parity and a.budget in ('cpu', 'work'):
+    if not a.no_parity and a.budget in ('cpu', 'draws'):
         for arm in a.arms.split(','):
             parity_gate(a, out, arm, tasks)
     print('%d %s tasks, %d jobs to run, %d done' % (len(tasks), a.split, len(todo), len(done)), flush=True)
