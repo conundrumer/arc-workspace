@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The `shapes` records of a task's tables, from a store of walked values, with a walk of only the values that the store lacks.
 
-Usage: scripts/shape_store.py refresh ENCODER ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--tasks DIR] [--store DIR] [--header]
+Usage: scripts/shape_store.py refresh ENCODER ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--tasks DIR] [--store DIR] [--header] [--families DIR]
        scripts/shape_store.py same-values NEW BASE [--threads N] [--jobs N] [--tasks DIR] [--store DIR]
        scripts/shape_store.py version ENCODER [--store DIR]
 
@@ -11,7 +11,8 @@ did not stop, under the build's value version, and a refresh walks only the tabl
 nothing of a walk that stopped at the cell budget, and of a table that has too many columns: the encoder walks such a table with the
 whole request, and its record goes to OUT as the encoder writes it. A refresh with an environment variable set that changes the
 encoder's values (see VALUE_VARIABLES) is refused. With `--header`, OUT's first line is
-`{"record":"header","value_version":V,"binary":SHA256}`: the build's value version and the hash of its binary.
+`{"record":"header","value_version":V,"binary":SHA256}`: the build's value version and the hash of its binary. With `--families DIR`,
+the encoder saves each family it builds under DIR and reads it there in a later run of the same binary (`shapes-refresh --families`).
 
 A value version names the values that a build gives. A build has a version of its own, from the hash of its binary, unless an entry of
 `value-versions.jsonl` in the store gives its binary another. `same-values NEW BASE` writes such an entry: it runs both builds on each
@@ -194,12 +195,14 @@ def needs_of(held: Held | None, only: list[int] | None) -> list[int] | None:
     return missing or None
 
 
-def walk(encoder: Path, task: str, lines: list[str], shapes: list[int] | None, threads: int, tasks: Path, work: Path, name: str) -> list[str]:
+def walk(encoder: Path, task: str, lines: list[str], shapes: list[int] | None, threads: int, tasks: Path, work: Path, name: str, families: str | None = None) -> list[str]:
     """The encoder's records for the rows lines, with the listed shapes or with each shape."""
     rows = work / f'{name}.rows.jsonl'
     out = work / f'{name}.out.jsonl'
     write_lines(rows, lines)
     command = [str(encoder), 'shapes-refresh', str(rows), task, str(out), '--tasks', str(tasks), '--threads', str(threads)]
+    if families:
+        command += ['--families', families]
     if shapes is not None:
         listed = work / f'{name}.shapes.txt'
         listed.write_text(''.join(f'{shape:016x}\n' for shape in shapes))
@@ -245,7 +248,7 @@ def refresh(args) -> str:
         for number, (key, ats) in enumerate(groups.items()):
             shapes = None if key == ('every',) else list(key)
             whole = shapes is None or shapes == only
-            by_table = {json.loads(line)['table']: line for line in walk(encoder, args.task, [tables[at][1] for at in ats], shapes, args.threads, tasks, Path(work), f'g{number}')}
+            by_table = {json.loads(line)['table']: line for line in walk(encoder, args.task, [tables[at][1] for at in ats], shapes, args.threads, tasks, Path(work), f'g{number}', args.families)}
             for at in ats:
                 table = tables[at][0]
                 line = by_table.get(table)
@@ -262,7 +265,7 @@ def refresh(args) -> str:
                 if whole:
                     direct[at] = line
         if again:
-            by_table = {json.loads(line)['table']: line for line in walk(encoder, args.task, [tables[at][1] for at in sorted(again)], only, args.threads, tasks, Path(work), 'again')}
+            by_table = {json.loads(line)['table']: line for line in walk(encoder, args.task, [tables[at][1] for at in sorted(again)], only, args.threads, tasks, Path(work), 'again', args.families)}
             for at in again:
                 line = by_table.get(tables[at][0])
                 if line is not None:
@@ -379,6 +382,7 @@ def main():
     one.add_argument('--tasks', default=str(TASKS))
     one.add_argument('--store', default=str(STORE))
     one.add_argument('--header', action='store_true', help='write the build\'s value version and binary hash as the first line of OUT')
+    one.add_argument('--families', help='a folder where the encoder saves the families it builds and reads them in a later run of the same binary')
     two = commands.add_parser('same-values')
     two.add_argument('new')
     two.add_argument('base')
