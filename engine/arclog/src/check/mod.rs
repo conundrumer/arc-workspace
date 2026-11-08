@@ -555,7 +555,6 @@ impl CheckedProgram {
     /// that `program` has. What the evaluator derives from the program is
     /// made again.
     pub(crate) fn over_narrowed(&self, program: Arc<ResolvedProgram>, nodes: &[GraphNodeIndex]) -> CheckedProgram {
-        let _timed = stats::span(Phase::CheckNarrowed);
         let mut types = types::narrowed_types(&program, &self.types, nodes);
         types.set_example_nodes(reads::example_relations(&program));
         CheckedProgram { program, types, derived: Arc::default() }
