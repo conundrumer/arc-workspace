@@ -22,28 +22,6 @@ How the engine gives the learned model a parameterized table's features. The rea
 
 A test input has no output. So a kind that reads no output runs on `GridFacts` of the input alone, and a kind that reads the output has no record there.
 
-## From records to a vector
-
-`pass` gives a record per binding of a kind's holes. A kind's value type decides the numbers.
-
-| `Value` | Number | At an ARC example |
-|---|---|---|
-| `Bool` | 0 or 1 | greatest and sum |
-| `Num(n)` | n | greatest and sum |
-| `Share(hits, of)` | the fraction, reduced before it becomes a float, so equal fractions give equal floats | greatest and least |
-| `Word(w)` | one categorical column per kind, whose categories are the kind's words | the multiset's words, as one value |
-| `Null`, or no record | none | no value |
-
-- **Over constraint models:** the mean within an ARC example, as [Levels](../sample-build/contract.md#levels) gives.
-- **Across ARC examples:** `least`, `mean` and `most`, over the train ARC examples for a kind that reads the output, and over every ARC example for any other.
-- **ARC examples with a value:** a kind with no value at some ARC example also gives the count of ARC examples that have one. So a kind has one value at every ARC example where its `least` equals its `most` and it has no such count, and a consumer reads stability from the vector.
-
-So a kind gives 6 numbers, and at most one more. These are the `TableVector`'s entries, under names that hold the kind's template, with its holes typed by value type, and the number's name.
-
-## Layout
-
-A vector is sparse, since most entries are at their default on most parameterized tables. It is stored as compressed records: an offset per vector, then for each entry its index into `names()` and its value as `float32`. `names()` lists every entry of one schema version once. `version()` is a hash of that list.
-
 ## What a learned model reads
 
 A learned model reads feature vectors, as [Structure of the search](structure.md#maps) gives them. Offline ranking keeps one feature vector for each candidate query and ARC example, and a learned function has a value at each of a candidate's feature vectors. Those values stay apart, since a rule has to hold at every ARC example. The feature vectors have fixed columns, so a column means one thing on every feature vector of every task. The count of ARC examples differs between tasks, so a feature vector holds one ARC example's values and no column stands for an ARC example. `model/feature_eval/gate_lists.py` builds these feature vectors.
@@ -76,9 +54,7 @@ A fit's feature vectors are a normalized store. Each fact stands once, at the gr
 
 ## Cost
 
-- The catalog takes 80 to 115 microseconds per table at one pair, on tables of a mean of 292 table rows.
-- A parameterized table at one assignment on a task of 4 train pairs takes under half a millisecond.
-- The search computes each `TableVector` once, when that parameterized table is first made.
+- The search computes each `TableVector` once.
 
 ## Checks
 

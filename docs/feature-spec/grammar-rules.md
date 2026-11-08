@@ -14,7 +14,7 @@ Each rule is a reason the encoder gives no derivation to a term. Code is in `eng
 - Facts: the `Refined` fields (`refine.rs:34`) are keys, low/high, within, outside, complete and count_follows. `Form` records how a term was built.
 - Key sources: T has all its columns as a key. `input` and `output` have key P. A lib relation has its `(refines R (key ..))` forms, or the keys of its rows where it has no modes. A component output has its `refines` forms. A part has the keys that follow from its fragment's atoms by closure over labels.
 - Arclog map: project is a column with no site. select is a constraint atom. semijoin is a positive atom that joins labels. antijoin is `(NOT atom)`. all is `(ALL ..)`. join is a positive atom with a fresh `*X` site. A part is a read of a lib relation, a component output or a derived relation.
-- A body is an unordered conjunction (`docs/arclog/arclog.md:26`). So a rule about the order of steps has a reading only as the order in which atoms are written.
+- A body is an unordered conjunction (`docs/arclog/arclog.md`). So a rule about the order of steps has a reading only as the order in which atoms are written.
 
 ## Batch 1
 
@@ -33,7 +33,7 @@ Each rule is a reason the encoder gives no derivation to a term. Code is in `eng
    - Reads: `Form.last_filter`, the order key of the last filter, against the order key of the new filter. A filter that drops a column that an earlier filter reads is not refused.
    - Order keys: a select hashes its pair and op. A semijoin or antijoin hashes its right relation and pairs. A part hashes its call and second relation. The top bits rank the classes: select 0, semijoin or antijoin 1, part 2. So one order of filters is generated.
    - Refuses (O): `(select (select T T1 != 0) T0 != 0)` stands in one order only.
-   - Arclog: atoms commute. Accept a filter atom (constraint, `NOT` atom, positive atom whose labels are all bound, `ALL`) only if its key is not below the key of the filter atom before it. Do not refuse where one atom binds a label that the other needs: a lib relation's `needs` (`docs/arclog/lib.md:6`), a label that `=` makes (`arclog.md:37`), or a fresh `*X`. The engine needs the modes and `needs` of lib relations (`engine/lib/registry.sexpr`) and the labels that each atom binds. The key can be any fixed total order. If a query is mapped back to this encoder's term text, use the hashes above.
+   - Arclog: atoms commute. Accept a filter atom (constraint, `NOT` atom, positive atom whose labels are all bound, `ALL`) only if its key is not below the key of the filter atom before it. Do not refuse where one atom binds a label that the other needs: a lib relation's `needs` (`docs/arclog/lib.md`), a label that `=` makes (`arclog.md`), or a fresh `*X`. The engine needs the modes and `needs` of lib relations (`engine/lib/registry.sexpr`) and the labels that each atom binds. The key can be any fixed total order. If a query is mapped back to this encoder's term text, use the hashes above.
 
 4. project-keeps-key, `refine.rs:147`
    - Reads: the keys of the first relation. The kept columns hold a key, and there are fewer kept columns than columns.
@@ -44,7 +44,7 @@ Each rule is a reason the encoder gives no derivation to a term. Code is in `eng
    - Reads: low and high of the column, the op, and whether the column is a number (Int or Nat).
    - Sources: low is 0 for a Nat column. A lib `(at-least C n)` form sets low. An earlier select sets a range (`refine.rs:283-292`). A semijoin intersects ranges (`refine.rs:350`).
    - Refuses (E): the op kept is the first of `= != < <= > >=` (`expression.rs:31`) with the same outcomes. On a Nat column, `<= 0` equals `= 0`, and `> 0` equals `!= 0`: `(select T N <= 0)` equals `(select T N = 0)`.
-   - Arclog: refuse the constraint atom `(<= K 0)` or `(> K 0)` where K has low 0, and write `(= K 0)` or `(!= K 0)`. The engine needs the label's type (a `Nat` column, `docs/arclog/lib.md:11`, narrowed by the types at its sites) and the ranges from lib `at-least` forms and from other constraints in the body. Ranges do not depend on atom order.
+   - Arclog: refuse the constraint atom `(<= K 0)` or `(> K 0)` where K has low 0, and write `(= K 0)` or `(!= K 0)`. The engine needs the label's type (a `Nat` column, `docs/arclog/lib.md`, narrowed by the types at its sites) and the ranges from lib `at-least` forms and from other constraints in the body. Ranges do not depend on atom order.
 
 6. select-zero-no-op, `refine.rs:274`
    - Reads: as rule 5. The op keeps every outcome that the range allows.
@@ -69,7 +69,7 @@ Each rule is a reason the encoder gives no derivation to a term. Code is in `eng
    - Sources of within: T is within itself. A semijoin adds one (`refine.rs:347`), and a join adds one (`refine.rs:429`). A project or select keeps them. A part gives its fragment's origins, which come from atoms and from the `copies` rows of a component output. `input` and `output` give theirs through `relation_input`.
    - Sources of complete: a lib relation column whose rows cover every value of an orientation type, as `dir_elem(D)` does (`lib_leaf`). It needs one column pair, and the left column's type must be at or under the right's (`is_complete`). A select, semijoin or antijoin clears it.
    - Refuses (E, same rows as the left relation): `(semijoin (select T T1 != 0) T (T0 T0))`, and `(semijoin X dir_elem (D D))` where X's D is a Dir.
-   - Arclog: refuse a positive atom that joins labels which earlier atoms already bind from that same source column, or from a column that is a copy of it. Also refuse `(dir_elem D)`-style atoms on a label whose type is at or under the column's type. `arclog.md:43` already treats such labels as bound. The engine needs the origin of each label (a `copies` row of a component output, a grid, a fragment's origin), the `each` facts of lib relations (`registry.sexpr`, `(refines R (each ..))`), and label types.
+   - Arclog: refuse a positive atom that joins labels which earlier atoms already bind from that same source column, or from a column that is a copy of it. Also refuse `(dir_elem D)`-style atoms on a label whose type is at or under the column's type. `arclog.md` already treats such labels as bound. The engine needs the origin of each label (a `copies` row of a component output, a grid, a fragment's origin), the `each` facts of lib relations (`registry.sexpr`, `(refines R (each ..))`), and label types.
 
 10. antijoin-within, `refine.rs:365`
     - Reads: the same facts as rule 9.
@@ -112,7 +112,7 @@ Each rule is a reason the encoder gives no derivation to a term. Code is in `eng
     - Reads: `outside` of the first relation (`is_outside`, `refine.rs:136`). It holds where an `outside` entry has the same second term, and each of its column pairs is among the pairs read now.
     - Sources: an antijoin adds an entry (`refine.rs:373`). A select, a semijoin and a join keep them. A project keeps an entry only if it keeps all its columns (`refine.rs:170`). A part gives none.
     - Refuses (C, no rows): `(semijoin (antijoin T U (T0 U0)) U (T0 U0))`.
-    - Arclog: refuse a positive atom of relation S whose joined sites include those of an earlier `(NOT (S ..))` in the body. The body has no row. The engine needs the relation name and the (column, label) pairs of each `NOT` atom. It compares the relation by name. Every site of a `NOT` atom joins (`arclog.md:35`), so the pairs are all its sites.
+    - Arclog: refuse a positive atom of relation S whose joined sites include those of an earlier `(NOT (S ..))` in the body. The body has no row. The engine needs the relation name and the (column, label) pairs of each `NOT` atom. It compares the relation by name. Every site of a `NOT` atom joins (`arclog.md`), so the pairs are all its sites.
 
 18. antijoin-outside, `refine.rs:368`
     - Reads: the same facts as rule 17.
@@ -165,7 +165,7 @@ Each rule is a reason the encoder gives no derivation to a term. Code is in `eng
 27. all-outer-key, `refine.rs:446`
     - Reads: `outer` is not empty, and its columns hold a key of the domain relation.
     - Refuses (E, claim `Follows`): `(all (count T (T0)) U (T0) (N U0))`. Each outer value has one domain row, so `all` is a semijoin there.
-    - Arclog: refuse an `ALL` whose outer labels, at their columns in the domain's atoms, hold a key of the domain's relation. Write a positive atom or a `NOT` atom. The engine needs the keys of the domain's relation, found by closure over the keys of its atoms. An outer label is one that `ALL` joins from outside (`arclog.md:57`).
+    - Arclog: refuse an `ALL` whose outer labels, at their columns in the domain's atoms, hold a key of the domain's relation. Write a positive atom or a `NOT` atom. The engine needs the keys of the domain's relation, found by closure over the keys of its atoms. An outer label is one that `ALL` joins from outside (`arclog.md`).
 
 28. flag-over-key
     - Reads: the key columns of the part hold a key of the first relation (`is_key`).
@@ -235,7 +235,7 @@ The five items below are refusals that stand outside `judge`. `rejected_by_rule`
 39. no-pair and type-meets (`meets`, `pair_sets`, `unary_operators`)
     - Reads: column types. A pair of columns joins only where their types meet. Two Ident columns meet only at one source. A pair set holds one or two pairs. A relation order other than `=` and `!=` needs two number columns. A compare with `0` needs a type with a zero (Int, Nat, Box and the types under it).
     - Refuses (C, count follows): a join, semijoin, antijoin or `all` with no column pair has no term. Its count follows from its parts' counts.
-    - Arclog: the checker already refuses Ident joins of two sources (`lib.md:17`) and type meets. A positive atom that shares no label with the rest of the body, and no constraint relates it, is the product. Refuse it. Needs only the labels of each atom.
+    - Arclog: the checker already refuses Ident joins of two sources (`lib.md`) and type meets. A positive atom that shares no label with the rest of the body, and no constraint relates it, is the product. Refuse it. Needs only the labels of each atom.
 
 40. ratio-one-row
     - Reads: `Refined::one_row` (the empty key holds) of a grid part used as the second relation of a ratio.

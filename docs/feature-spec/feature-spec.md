@@ -110,7 +110,7 @@ Enumeration leaves out a `join`, `semijoin`, `antijoin`, `all` or `lib-join` wit
 
 A term is **entailed** where its value follows from smaller terms on every table its type admits. Enumeration is typed, so an entailed term has no derivation and is never constructed. The typing rules are the preconditions and postconditions of [Structure of the search](structure.md#conditions), held in a relation's type.
 
-- **Refinements:** a relation's type holds, beside its column types and frames, what is known of its values: the keys of its columns, each number's range, the relations a column is a subset of, the columns that are complete over an orientation type, and its row count where that is known.
+- **Refinements:** a relation's type holds, beside its column types and frames, what is known of its values: the keys of its columns, each number's range, the relations a column is a subset of, and the columns that are complete over an orientation type.
 - **Sources:** a base relation and a lib relation declare their refinements, and so does each component output, in the registry. A part's refinements follow from its fragment's body. A table's measured rows give no refinement, since a fact of its rows is contingent.
 - **Rules:** each operator gives its output's refinements, its postcondition, from its inputs' refinements, its precondition, as an abstract transformer.
 - **Ill-typed terms:** an operator application has no derivation where its refinements prove that it changes nothing, that its output is empty, or that its value is constant or follows from its input's row count. For example:

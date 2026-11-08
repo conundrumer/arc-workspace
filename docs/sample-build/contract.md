@@ -149,7 +149,6 @@ The engine computes a vector by these steps (`engine/arclog-encoder/src/table_ve
 | `schema_version` | the definition of every feature | string | two vectors compare only under one schema version |
 | `entries` | the feature values | sparse map from name to value | an entry at its default is absent; an entry with no value is stored as that, since it differs from the default |
 
-[Feature export](../feature-spec/export-design.md#layout) gives how a vector is stored.
 
 Invariants an implementation must hold:
 
