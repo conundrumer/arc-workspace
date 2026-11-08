@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use arclog::eval::join::each_row;
 use arclog::hash::StableHashMap;
 use arclog::task::{Grid, Task};
-use arclog_encoder::generate::{Generators, ShapeList, ShapeMask, Walker, MAX_COLUMNS};
+use arclog_encoder::generate::{Generators, ShapeList, ShapeMask, Walker, MAX_TABLE_COLUMNS};
 use arclog_encoder::lookup::LookupSet;
 use arclog_encoder::native::CELL_CAP;
 use arclog_encoder::stored::{stored_json, Model, Placed, Stored};
@@ -162,14 +162,14 @@ impl ShapeRuntime {
         stored_json(&rows.types, &placed)
     }
 
-    /// The vector of the table with TableHash `hash` and rows `rows`, for the shapes of `only` or all of them. None where the table has more columns than the generator's `MAX_COLUMNS`.
+    /// The vector of the table with TableHash `hash` and rows `rows`, for the shapes of `only` or all of them. None where the table has more columns than the generator's `MAX_TABLE_COLUMNS`, the width of its column mask.
     fn vector(&self, hash: u128, rows: &ShapeRows, only: Option<&PySelection>) -> Option<Arc<TableVector>> {
         let key = (hash, only.map_or(0, |only| only.id));
         if let Some(found) = self.vectors.lock().expect("the vectors are not poisoned").held.get(&key) {
             HITS.fetch_add(1, Ordering::Relaxed);
             return Some(Arc::clone(found));
         }
-        if rows.types.len() > MAX_COLUMNS {
+        if rows.types.len() > MAX_TABLE_COLUMNS {
             TOO_WIDE.fetch_add(1, Ordering::Relaxed);
             return None;
         }
@@ -370,7 +370,7 @@ impl ShapeValues {
 /// - `present`: `uint8`. 0 for a listed shape that the vector lacks, which is at its default at each
 ///   example (`values` 0, `have` 0, `scope` 0).
 /// - `stopped`: whether the walk passed the walker's bound on cells, so that the terms after that
-///   point have no value there (NaN), or the table has more columns than the generator's `MAX_COLUMNS`, so that
+///   point have no value there (NaN), or the table has more columns than the generator's `MAX_TABLE_COLUMNS`, so that
 ///   it gives no vector, and each listed shape is NaN.
 /// - `examples`, `train`: the count of examples and of train examples; 0 for a table with no vector.
 #[pyclass(name = "ShapeVector", frozen, module = "arclog")]
@@ -416,7 +416,7 @@ pub(crate) fn shape_texts(hashes: Vec<u64>) -> Vec<Option<String>> {
 
 /// The counters of this process's shape reads: `walks` (vectors walked), `hits` (vectors a session
 /// kept and gave again), `stopped` (walks that passed the bound on cells) and `too_wide` (tables with
-/// more columns than the generator's `MAX_COLUMNS`).
+/// more columns than the generator's `MAX_TABLE_COLUMNS`).
 #[pyfunction]
 pub(crate) fn table_shape_counts<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
     let counts = PyDict::new(py);
