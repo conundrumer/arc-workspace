@@ -9,7 +9,7 @@ use crate::cell_sets::{grid_pieces, relation, shape_hash, symmetry_count, Walk, 
 pub use crate::cell_sets::SetRelation;
 use crate::gen_constants::{box_bits, encoding, margins_of, number_bits, number_of};
 use crate::grid_walks::{enclosed_regions, walk_outward};
-use crate::lookup::{InsertionMap, LookupMap, LookupSet};
+use crate::lookup::{LookupMap, LookupSet};
 use crate::native::{first_ids, hash_words, row_word, Cell, FastMap, Grouping, Table, Val};
 use crate::occurrence::{distinct_patterns, each_turned_image, for_each_move, Canvas, PatternCell};
 
@@ -1705,19 +1705,18 @@ impl PartStep {
                 let mut every: Vec<Cell> = examples.rows().map(|row| row[0]).collect();
                 every.sort_unstable();
                 every.dedup();
-                let mut seen: InsertionMap<Cell, Vec<Cell>> = InsertionMap::default();
+                let mut seen: LookupMap<Cell, Vec<Cell>> = LookupMap::default();
                 for row in t.rows() {
                     seen.entry(row[usize::from(*n)]).or_default().push(row[usize::from(*e)]);
                 }
                 let mut out = Vec::new();
-                for (value, mut held) in seen {
+                for (value, mut held) in seen.into_sorted_vec() {
                     held.sort_unstable();
                     held.dedup();
                     if held == every {
                         out.push(value);
                     }
                 }
-                out.sort_unstable();
                 Val::of_table(Table::new(1, out))
             }
             PartStep::ExampleClasses { e } => {

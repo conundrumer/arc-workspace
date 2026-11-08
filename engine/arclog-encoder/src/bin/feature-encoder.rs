@@ -1297,13 +1297,12 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
                 let started = Instant::now();
                 let found = walker.walk(&leaves, train, false);
                 let (mut active, mut check) = (0usize, 0u64);
-                for (hash, at) in &found.index {
-                    let at = *at as usize * found.stride;
+                for (hash, at) in found.sorted_roots() {
+                    let at = at * found.stride;
                     let live = &found.slots[at..at + found.stride];
                     active += usize::from(live.iter().any(|slot| slot.state != 0));
-                    // A sum over the entries, so the order of the index does not matter.
                     for (instance, slot) in live.iter().enumerate().filter(|(_, slot)| slot.state != 0) {
-                        check = check.wrapping_add(((*hash as u64) ^ slot.digest.rotate_left(instance as u32)).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (u64::from(slot.state) << 56) ^ u64::from(slot.undefined));
+                        check = check.wrapping_add(((hash as u64) ^ slot.digest.rotate_left(instance as u32)).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (u64::from(slot.state) << 56) ^ u64::from(slot.undefined));
                     }
                 }
                 println!("walk\t{name}\tseconds {:.1}\tactive entries {active}\tdigest {check:016x}\tpast the bound {}", started.elapsed().as_secs_f64(), walker.over_budget);
@@ -1791,13 +1790,13 @@ fn run_shape_count(arguments: &Arguments, files: &[String]) -> Result<(), String
             let leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
             let found = walker.walk(&leaves, train, false);
             tables += 1;
-            for (hash, at) in &found.index {
-                let at = *at as usize * found.stride;
+            for (hash, at) in found.sorted_roots() {
+                let at = at * found.stride;
                 let live = found.slots[at..at + found.stride].iter().filter(|slot| slot.state != 0).count() as u64;
                 if live > 0 {
                     entries += 1;
                     values += live;
-                    shapes.insert(*hash as u64);
+                    shapes.insert(hash as u64);
                 }
             }
         }

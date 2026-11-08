@@ -14,7 +14,7 @@ use crate::columns::Columns;
 use crate::expression::Op;
 use crate::gen_constants::{constant_parts, constant_tables, number_of};
 use crate::gen_parts::{clear_views, flat, PartStep, PartTerm};
-use crate::lookup::{InsertionMap, LookupMap, LookupSet};
+use crate::lookup::{LookupMap, LookupSet};
 use crate::native::{hash_words, Evaluator, FastMap, Step, Table, Val, WORD_COUNT, WORD_NONEMPTY, WORD_SET};
 use crate::refine::{self, bit, Claim, Refined, Rejected, Within};
 use crate::refine_parts::{self, PartPlan, RelationInput};
@@ -2365,8 +2365,10 @@ pub const SLOT_NO_VALUE: u8 = 2;
 /// Each root's numbers at each instance of a table.
 #[derive(Default)]
 pub struct RootTable {
-    /// The place of each root, in the order the roots came in, which is also the order of their places.
-    pub index: InsertionMap<u128, u32>,
+    /// The place of each root, by its hash.
+    index: LookupMap<u128, u32>,
+    /// The hash of the root at each place.
+    hashes: Vec<u128>,
     pub slots: Vec<Slot>,
     pub stride: usize,
     /// What each root reads, its size, and which kind of root it is.
@@ -2381,10 +2383,18 @@ impl RootTable {
         let stride = self.stride;
         let at = *self.index.entry(hash).or_insert(next);
         if at == next {
+            self.hashes.push(hash);
             self.meta.push((flags, size, of));
             self.slots.resize(self.slots.len() + stride, Slot::default());
         }
         at as usize * stride
+    }
+
+    /// Each root's hash and place, in the order of the low 64 bits of the hash, which is how a vector names a shape, and then of the whole hash.
+    pub fn sorted_roots(&self) -> Vec<(u128, usize)> {
+        let mut order: Vec<(u128, usize)> = self.hashes.iter().enumerate().map(|(at, hash)| (*hash, at)).collect();
+        order.sort_unstable_by_key(|(hash, _)| (*hash as u64, *hash));
+        order
     }
 }
 
@@ -3020,14 +3030,15 @@ impl<'a> Walker<'a> {
         }
         // A root that every one of its bindings leaves out at an instance has no value there.
         let out_scope = train.min(instances);
-        let RootTable { index, slots, bindings, stride, meta } = &mut table;
-        for (hash, at) in index.iter().filter(|_| left_out) {
+        let RootTable { hashes, slots, bindings, stride, meta, .. } = &mut table;
+        // Each root is settled on its own places and tallies, so the order of the roots changes nothing.
+        for (at, hash) in hashes.iter().enumerate().filter(|_| left_out) {
             let (full, out) = bindings.get(hash).copied().unwrap_or((0, 0));
-            for (pair, slot) in slots[*at as usize * *stride..*at as usize * *stride + instances].iter_mut().enumerate() {
+            for (pair, slot) in slots[at * *stride..at * *stride + instances].iter_mut().enumerate() {
                 if slot.undefined > 0 && slot.state == SLOT_DEFAULT && slot.undefined == full + if pair < out_scope { out } else { 0 } {
                     slot.state = SLOT_NO_VALUE;
                     if crate::bounds::enabled() {
-                        crate::bounds::tally("no value: every binding left out", format!("{:?}", meta[*at as usize].2), 1);
+                        crate::bounds::tally("no value: every binding left out", format!("{:?}", meta[at].2), 1);
                     }
                 }
             }

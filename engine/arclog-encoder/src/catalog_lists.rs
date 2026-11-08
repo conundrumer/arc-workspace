@@ -8,7 +8,7 @@ use arclog::types::ValueType;
 use crate::catalog::{orientation, pass, pass_input, Cell, Kind, Record, TableAt, Value};
 use crate::catalog_facts::PairFacts;
 use crate::catalog_vector::shape_name;
-use crate::lookup::InsertionMap;
+use crate::lookup::{LookupMap, LookupSet};
 use crate::gen_constants::{margins_of, number_of};
 use crate::stored::Stored;
 
@@ -57,7 +57,7 @@ fn number(value: Value) -> Option<f64> {
     }
 }
 
-fn greatest_of(records: &[Record], kinds: &[Kind], per: &mut InsertionMap<String, f64>) {
+fn greatest_of(records: &[Record], kinds: &[Kind], per: &mut LookupMap<String, f64>) {
     for record in records {
         let name = shape_name(record, kinds);
         if let Value::Word(word) = record.value {
@@ -86,12 +86,12 @@ pub struct NamedShape {
 pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts], inputs: &[PairFacts]) -> Vec<NamedShape> {
     let kinds: Vec<Kind> = table.types.iter().map(kind_of).collect();
     let pairs = facts.len() + tests.len();
-    let mut shapes: InsertionMap<String, Vec<Option<f64>>> = InsertionMap::new();
+    let mut shapes: LookupMap<String, Vec<Option<f64>>> = LookupMap::new();
     let mut records = Vec::with_capacity(256);
     let mut cells: Vec<Cell> = Vec::new();
     for (pair, fact) in facts.iter().chain(tests).enumerate() {
         let models = table.rows.get(pair).map_or(&[][..], Vec::as_slice);
-        let mut sums: InsertionMap<String, (f64, usize)> = InsertionMap::new();
+        let mut sums: LookupMap<String, (f64, usize)> = LookupMap::new();
         for model in models {
             cells.clear();
             for row in model.rows() {
@@ -99,32 +99,37 @@ pub fn named_shapes(table: &Stored, facts: &[PairFacts], tests: &[PairFacts], in
             }
             records.clear();
             pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, fact, &mut records);
-            let mut per = InsertionMap::new();
+            let mut per = LookupMap::new();
             greatest_of(&records, &kinds, &mut per);
             // A kind that reads the output alone also stands for the input, read as its own output.
             records.clear();
             let own = if pair < inputs.len() { &inputs[pair] } else { fact };
             pass(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, own, &mut records);
             records.retain(|record| record.kind.contains("output") && !record.kind.contains("input") && !record.kind.contains("change"));
-            let mut mirrored = InsertionMap::new();
+            let mut mirrored = LookupMap::new();
             greatest_of(&records, &kinds, &mut mirrored);
-            per.extend(mirrored.into_iter().map(|(name, value)| (name.replace("output", "input"), value)));
+            // A mirrored shape replaces the shape of the same name that the input gave. Two mirrored shapes of one name keep the one with the least name before the renaming.
+            let mut renamed = LookupSet::new();
+            for (name, value) in mirrored.into_sorted_vec() {
+                let name = name.replace("output", "input");
+                if renamed.insert(name.clone()) {
+                    per.insert(name, value);
+                }
+            }
             records.clear();
             pass_input(&TableAt { kinds: &kinds, keys: &table.keys, rows: model.len, cells: &cells }, own, &mut records);
             greatest_of(&records, &kinds, &mut per);
-            for (name, value) in per {
+            for (name, value) in per.into_sorted_vec() {
                 let held = sums.entry(name).or_insert((0.0, 0));
                 held.0 += value;
                 held.1 += 1;
             }
         }
-        for (name, (sum, count)) in sums {
+        for (name, (sum, count)) in sums.into_sorted_vec() {
             if pair < facts.len() || !reads_output(&name) {
                 shapes.entry(name).or_insert_with(|| vec![None; pairs])[pair] = Some(sum / count as f64);
             }
         }
     }
-    let mut out: Vec<NamedShape> = shapes.into_iter().map(|(name, at)| NamedShape { name, at }).collect();
-    out.sort_by(|a, b| a.name.cmp(&b.name));
-    out
+    shapes.into_sorted_vec().into_iter().map(|(name, at)| NamedShape { name, at }).collect()
 }
