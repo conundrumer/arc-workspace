@@ -581,10 +581,25 @@ impl<'a> Decoder<'a> {
         }
         let checked = self.checked(Arc::new(resolved.value), &form);
         checked.map(|program| {
+            let program = self.over_closure(program, finished.len());
             let relation = derived_at(&program, &form);
             let scope = scope_of(&program, &relation);
             SubBody { program, form, kept: (0..count).collect(), scope }
         })
+    }
+
+    /// `checked`, a checked program whose last form, at the top-level
+    /// `position`, a query is to evaluate, over the columns of each `DET` that
+    /// the reads in the use closure of that form name
+    /// ([`ResolvedProgram::narrowed_to_closure`]), so that a read in a form
+    /// outside the closure leaves the evaluation as it is. `checked` itself
+    /// where the reads of the closure name every column that its resolution
+    /// keeps.
+    fn over_closure(&self, checked: CheckedProgram, position: usize) -> CheckedProgram {
+        match checked.program.narrowed_to_closure(position, self.context.registry) {
+            Some((program, narrowed)) => checked.over_narrowed(program, &narrowed),
+            None => checked,
+        }
     }
 
     /// The program that `resolved` resolves, checked, or a fault at `form`
@@ -638,6 +653,18 @@ impl<'a> Decoder<'a> {
             }
             let resolved = Arc::new(resolved.value);
             after.checks().with(|cache| self.checked_with(before, resolved, &form, cache))
+        })
+    }
+
+    /// [`Decoder::finished_checked`] over the columns of the use closure of
+    /// the last form of `after`, which the tables of that form and a request
+    /// that evaluates it read: a `DET` has the columns that the reads in that
+    /// closure name, whatever later forms read, so that the evaluation is the
+    /// same in each decode that holds the form's QueryHash.
+    pub fn finished_evaluated<'s>(&self, before: &State, after: &'s State) -> &'s Outcome<CheckedProgram> {
+        after.evaluated_last().get_or_init(|| match self.finished_checked(before, after) {
+            Ok(checked) => Ok(self.over_closure(checked.clone(), after.program().value().forms.len() - 1)),
+            Err(fault) => Err(fault.clone()),
         })
     }
 
