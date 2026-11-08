@@ -209,24 +209,34 @@ pub enum ListsOf {
 }
 
 /// A shape over several tables of a state: the least, the mean and the greatest of its mean over the examples,
-/// where a table with no value of the shape counts as 0.
+/// where a table that lacks the shape counts as 0 and a table with no value of it takes no part.
 fn pooled(owner: String, pairs: &[&PairValues]) -> Written {
     Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded: pool_values(pairs), pairs: 0, at_pairs: Vec::new() }
 }
 
-/// A shape over several tables of a state, at each example: its greatest value over the tables that have a value there. A table with no value at an example, with the example past the
-/// shape's scope, or without the shape, takes no part, and an example where no table has a value has none, which is NaN. The shape is listed where some example has a value other than 0.
-/// Its least, mean and greatest are over the examples that have a value.
+/// A shape over several tables of a state, at each example: its greatest value over the tables that have a value there, and over 0 where some table lacks the shape, since a shape
+/// that a table lacks is at its default. A table with no value at an example, or with the example past the shape's scope, takes no part. An example where that leaves no number has
+/// none, which is NaN. The shape is listed where some example has a number other than 0. Its least, mean and greatest are over the examples that have a number.
 fn pooled_each(owner: String, pairs: &[&PairValues], examples: usize) -> Written {
-    let mut held: BTreeMap<u64, Vec<f32>> = BTreeMap::new();
+    // The shapes that some table gives a number other than 0 at some example. No other shape is listed.
+    let mut active: FastMap<u64, ()> = FastMap::default();
     for pair in pairs {
         for (place, shape) in pair.shapes.iter().enumerate() {
-            let at = &pair.at[place * examples..(place + 1) * examples];
-            if at.iter().all(|value| value.is_nan()) {
+            if pair.at[place * examples..(place + 1) * examples].iter().any(|value| !value.is_nan() && *value != 0.0) {
+                active.insert(*shape, ());
+            }
+        }
+    }
+    // Per listed shape: its greatest value at each example over the tables that have a value there (NaN where none does), and how many tables list the shape.
+    let mut held: BTreeMap<u64, (Vec<f32>, usize)> = BTreeMap::new();
+    for pair in pairs {
+        for (place, shape) in pair.shapes.iter().enumerate() {
+            if !active.contains_key(shape) {
                 continue;
             }
-            let entry = held.entry(*shape).or_insert_with(|| vec![f32::NAN; examples]);
-            for (pooled, value) in entry.iter_mut().zip(at) {
+            let (entry, listing) = held.entry(*shape).or_insert_with(|| (vec![f32::NAN; examples], 0));
+            *listing += 1;
+            for (pooled, value) in entry.iter_mut().zip(&pair.at[place * examples..(place + 1) * examples]) {
                 if !value.is_nan() && (pooled.is_nan() || *value > *pooled) {
                     *pooled = *value;
                 }
@@ -235,7 +245,15 @@ fn pooled_each(owner: String, pairs: &[&PairValues], examples: usize) -> Written
     }
     let mut graded = Vec::with_capacity(held.len());
     let mut at_pairs = Vec::with_capacity(held.len() * examples);
-    for (shape, values) in held {
+    for (shape, (mut values, listing)) in held {
+        // A table that lacks the shape gives 0 at each example.
+        if listing < pairs.len() {
+            for value in &mut values {
+                if value.is_nan() || *value < 0.0 {
+                    *value = 0.0;
+                }
+            }
+        }
         if !values.iter().any(|value| !value.is_nan() && *value != 0.0) {
             continue;
         }
@@ -292,13 +310,16 @@ impl PairValues {
     }
 }
 
-/// A shape over several tables of a state: the least, the mean and the greatest of its mean over the examples, where a table with no value of the shape counts as 0.
+/// A shape over several tables of a state: the least, the mean and the greatest of its mean over the examples, taken over the tables. A table that lacks the shape is at its default,
+/// which counts as 0. A table with no value of the shape at any example takes no part.
 fn pool_values(pairs: &[&PairValues]) -> Vec<(u64, f32, f32, f32)> {
-    let mut held: FastMap<u64, (f32, f32, f32, usize)> = FastMap::default();
+    // Per shape: the least, the sum and the greatest of the means of the tables that have a value of it, how many those are, and how many tables list the shape.
+    let mut held: FastMap<u64, (f32, f32, f32, usize, usize)> = FastMap::default();
     for pair in pairs {
         for ((shape, mean), counted) in pair.shapes.iter().zip(&pair.means).zip(&pair.counted) {
+            let entry = held.entry(*shape).or_insert((f32::INFINITY, 0.0, f32::NEG_INFINITY, 0, 0));
+            entry.4 += 1;
             if *counted {
-                let entry = held.entry(*shape).or_insert((f32::INFINITY, 0.0, f32::NEG_INFINITY, 0));
                 entry.0 = entry.0.min(*mean);
                 entry.1 += *mean;
                 entry.2 = entry.2.max(*mean);
@@ -307,10 +328,10 @@ fn pool_values(pairs: &[&PairValues]) -> Vec<(u64, f32, f32, f32)> {
         }
     }
     let total = pairs.len();
-    held.into_sorted_vec().into_iter().map(|(shape, (least, sum, most, seen))| {
-        let least = if seen < total { least.min(0.0) } else { least };
-        let most = if seen < total { most.max(0.0) } else { most };
-        (shape, least, sum / total as f32, most)
+    held.into_sorted_vec().into_iter().filter(|(_, (_, _, _, seen, _))| *seen > 0).map(|(shape, (least, sum, most, seen, listing))| {
+        let lacking = total - listing;
+        let (least, most) = if lacking > 0 { (least.min(0.0), most.max(0.0)) } else { (least, most) };
+        (shape, least, sum / (seen + lacking) as f32, most)
     }).collect()
 }
 
