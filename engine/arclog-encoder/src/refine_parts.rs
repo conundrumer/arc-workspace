@@ -414,13 +414,23 @@ fn key_labels(expr: &SExpr, out: &mut Vec<String>) {
     }
 }
 
+/// Adds `by` to the count of `name`.
+fn add_count(counts: &mut BTreeMap<String, u32>, name: &str, by: u32) {
+    match counts.get_mut(name) {
+        Some(held) => *held += by,
+        None => {
+            counts.insert(name.to_string(), by);
+        }
+    }
+}
+
 /// Counts each label that `expr` writes.
 fn count_labels(expr: &SExpr, skip_columns: bool, counts: &mut BTreeMap<String, u32>) {
     match expr {
         SExpr::Symbol { text, .. } => {
             let (_, name) = split_mark(text);
             if !name.starts_with(':') && !name.starts_with('&') && name != "0" {
-                *counts.entry(name.to_string()).or_insert(0) += 1;
+                add_count(counts, name, 1);
             }
         }
         SExpr::List { items: list, .. } => {
@@ -431,6 +441,18 @@ fn count_labels(expr: &SExpr, skip_columns: bool, counts: &mut BTreeMap<String, 
         }
         SExpr::String { .. } => {}
     }
+}
+
+/// How often each label stands in a clause's atoms, with two more for each label of its head. A label that stands twice or more is read.
+fn label_counts(atoms: &[SExpr], head_columns: &[(String, String)]) -> BTreeMap<String, u32> {
+    let mut counts: BTreeMap<String, u32> = BTreeMap::new();
+    for atom in atoms {
+        count_labels(atom, true, &mut counts);
+    }
+    for (_, label) in head_columns {
+        add_count(&mut counts, label, 2);
+    }
+    counts
 }
 
 /// Each relation head that the atoms under `expr` read.
@@ -450,31 +472,56 @@ fn nested_heads(expr: &SExpr, out: &mut Vec<String>) {
 /// One read of the state of a fragment's forms.
 struct Reader<'a> {
     registry: &'static Registry,
-    relations: BTreeMap<String, RelationInput>,
+    /// What each relation hole holds, as facts.
+    relations: BTreeMap<String, Facts>,
     rules: LookupMap<String, Facts>,
     instances: LookupMap<String, Instance>,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
+/// What a reader knows of a relation, held where it is.
+enum Held<'a> {
+    Borrowed(&'a Facts),
+    Shared(Arc<Facts>),
+    Built(Box<Facts>),
+}
+
+impl std::ops::Deref for Held<'_> {
+    type Target = Facts;
+
+    fn deref(&self) -> &Facts {
+        match self {
+            Held::Borrowed(found) => *found,
+            Held::Shared(found) => found.as_ref(),
+            Held::Built(found) => found.as_ref(),
+        }
+    }
+}
+
 impl Reader<'_> {
-    fn facts_of(&self, name: &str) -> Option<Facts> {
-        if let Some(input) = self.relations.get(name) {
-            return Some(input.facts(name));
+    fn facts_of(&self, name: &str) -> Option<Held<'_>> {
+        if let Some(found) = self.relations.get(name) {
+            return Some(Held::Borrowed(found));
         }
         if matches!(name, "input" | "output") {
-            return Some(grid_facts(name));
+            return Some(Held::Built(Box::new(grid_facts(name))));
         }
         if let Some(found) = self.rules.get(name) {
-            return Some(found.clone());
+            return Some(Held::Borrowed(found));
         }
         if let Some((owner, port)) = name.split_once('.') {
-            return self.port_facts(owner, port);
+            return self.port_facts(owner, port).map(|found| Held::Built(Box::new(found)));
         }
-        lib_facts(name).map(|found| (*found).clone())
+        lib_facts(name).map(Held::Shared)
     }
 
     /// The clause of `atoms`, with the head `head`: each column and the label at it.
     fn body(&self, atoms: &[SExpr], head_columns: &[(String, String)]) -> Facts {
+        self.body_counted(atoms, head_columns, &label_counts(atoms, head_columns))
+    }
+
+    /// The clause of `atoms` with the head `head`, where `counts` is [`label_counts`] of them.
+    fn body_counted(&self, atoms: &[SExpr], head_columns: &[(String, String)], counts: &BTreeMap<String, u32>) -> Facts {
         // Each label's place in the masks of the clause.
         let mut labels: Vec<String> = head_columns.iter().map(|(_, label)| label.clone()).collect();
         labels.dedup();
@@ -494,7 +541,7 @@ impl Reader<'_> {
         let mut empty = false;
         let mut holds_on_domain = false;
         let mut deps: BTreeSet<String> = BTreeSet::new();
-        let mut positive: Vec<(Facts, Vec<(usize, Value)>)> = Vec::new();
+        let mut positive: Vec<(Held<'_>, Vec<(usize, Value)>)> = Vec::new();
         let mut nested_reads: BTreeSet<String> = BTreeSet::new();
         let mut nested_deps: BTreeSet<String> = BTreeSet::new();
         for atom in atoms {
@@ -510,14 +557,13 @@ impl Reader<'_> {
                             nested_deps.extend(facts.deps.iter().cloned());
                             nested_reads.extend(facts.reads.iter().cloned());
                             if facts.alias {
-                                let mut counts = BTreeMap::new();
-                                count_labels(atom, false, &mut counts);
                                 if let Some(like) = &facts.like {
                                     // A nested read of a base relation reads each column it labels.
-                                    let at_columns: BTreeSet<&String> = like.at.iter().map(|(_, column)| column).collect();
-                                    for column in at_columns {
-                                        if like.base == "&r" {
-                                            nested_reads.insert(column.clone());
+                                    if like.base == "&r" {
+                                        for (_, column) in &like.at {
+                                            if !nested_reads.contains(column.as_str()) {
+                                                nested_reads.insert(column.clone());
+                                            }
                                         }
                                     }
                                 }
@@ -812,13 +858,6 @@ impl Reader<'_> {
             }
         }
         // What the value depends on of `&r`.
-        let mut counts: BTreeMap<String, u32> = BTreeMap::new();
-        for atom in atoms {
-            count_labels(atom, true, &mut counts);
-        }
-        for (_, label) in head_columns {
-            *counts.entry(label.clone()).or_insert(0) += 2;
-        }
         let used = |label: &str| counts.get(label).is_some_and(|count| *count >= 2);
         let mut reads = nested_reads;
         for (facts, sites) in &positive {
@@ -1192,6 +1231,46 @@ struct Expansion {
     reads_only_holes: OnceLock<bool>,
     /// What the forms give where the native term's places are `out` and the relation holes hold `r` and `s`. Given the forms, the result follows from those three alone.
     results: Mutex<LookupMap<ResultKey, Arc<PartResult>>>,
+    /// The names of the relation's columns in the expansion: `C0..`.
+    r_names: Vec<String>,
+    /// What each form gives of itself alone, read at the first read of the forms.
+    clauses: OnceLock<Vec<Option<Clause>>>,
+}
+
+/// What a `RULE` or `DET` form gives of itself alone: it follows from the form, the registry and the lib, and not from what the relation holes hold.
+struct Clause {
+    /// Each column of its head and the label at it: the labels marked `*`.
+    columns: Vec<(String, String)>,
+    /// [`label_counts`] of its atoms and head.
+    counts: BTreeMap<String, u32>,
+    /// What [`finite_clause`] gives of it.
+    finite: Option<Facts>,
+}
+
+impl Expansion {
+    /// The clause of each form, where the form is a `RULE` or a `DET` with a name.
+    fn clauses(&self) -> &[Option<Clause>] {
+        self.clauses.get_or_init(|| {
+            self.forms
+                .iter()
+                .map(|form| {
+                    let list = items(form)?;
+                    if !matches!(list.first().and_then(symbol), Some("RULE" | "DET")) {
+                        return None;
+                    }
+                    list.get(1).and_then(symbol)?;
+                    let mut kept = Vec::new();
+                    for atom in &list[2..] {
+                        crate::library::keep(atom, &mut kept);
+                    }
+                    let columns: Vec<(String, String)> = kept.into_iter().map(|label| (label.clone(), label)).collect();
+                    let counts = label_counts(&list[2..], &columns);
+                    let finite = finite_clause(&list[2..], &columns, Registry::get());
+                    Some(Clause { columns, counts, finite })
+                })
+                .collect()
+        })
+    }
 }
 
 /// The three things that a part's result follows from, given its expansion: the native term's places, and what the relation holes hold.
@@ -1343,7 +1422,17 @@ fn expansion(call: &str, r_arity: usize, s_columns: &[String]) -> Option<Arc<Exp
         return found.clone();
     }
     let built = plan_of_text(call, r_arity, s_columns).map(|(forms, export, columns)| {
-        Arc::new(Expansion { forms, export, columns, r_arity, s_columns: s_columns.to_vec(), reads_only_holes: OnceLock::new(), results: Mutex::new(LookupMap::new()) })
+        Arc::new(Expansion {
+            forms,
+            export,
+            columns,
+            r_arity,
+            s_columns: s_columns.to_vec(),
+            reads_only_holes: OnceLock::new(),
+            results: Mutex::new(LookupMap::new()),
+            r_names: (0..r_arity).map(|at| format!("C{at}")).collect(),
+            clauses: OnceLock::new(),
+        })
     });
     let mut expansions = held.lock().expect("no panic");
     // A long run meets many schemas, and this is a cache.
@@ -1370,7 +1459,7 @@ pub fn plan(call: &str, r_arity: usize, s_columns: &[String], native: &[(String,
         let reads_only_holes = *read.reads_only_holes.get_or_init(|| {
             let Some(more) = expansion(call, r_arity + 1, s_columns) else { return false };
             let wider = RelationInput { columns: (0..=r_arity).map(|at| format!("C{at}")).collect(), keys: vec![if r_arity + 1 >= Mask::BITS as usize { Mask::MAX } else { (1 << (r_arity + 1)) - 1 }], low: vec![None; r_arity + 1], high: vec![None; r_arity + 1], within: Vec::new() };
-            let facts = read_forms(&more.forms, &more.export, &wider, None, s_columns);
+            let facts = read_forms(&more, &wider, None);
             !facts.reads.contains(&format!("C{r_arity}")) && !facts.columns.iter().any(|column| *column == format!("C{r_arity}"))
         });
         Arc::new(PartPlan { expansion: read, out, reads_only_holes })
@@ -1384,27 +1473,29 @@ pub fn plan(call: &str, r_arity: usize, s_columns: &[String], native: &[(String,
     built
 }
 
-fn read_forms(forms: &[SExpr], export: &str, r: &RelationInput, s: Option<&RelationInput>, s_columns: &[String]) -> Facts {
+fn read_forms(expansion: &Expansion, r: &RelationInput, s: Option<&RelationInput>) -> Facts {
     let mut relations = BTreeMap::new();
-    relations.insert("&r".to_string(), r.clone());
-    let s_input = s.cloned().unwrap_or_else(|| {
-        let arity = s_columns.len();
-        let all: Mask = if arity >= Mask::BITS as usize { Mask::MAX } else { (1 << arity) - 1 };
-        RelationInput { columns: s_columns.to_vec(), keys: vec![all], low: vec![None; arity], high: vec![None; arity], within: Vec::new() }
-    });
-    relations.insert("&s".to_string(), s_input);
+    relations.insert("&r".to_string(), r.facts("&r"));
+    let s_facts = match s {
+        Some(s) => s.facts("&s"),
+        None => {
+            let s_columns = &expansion.s_columns;
+            let arity = s_columns.len();
+            let all: Mask = if arity >= Mask::BITS as usize { Mask::MAX } else { (1 << arity) - 1 };
+            RelationInput { columns: s_columns.clone(), keys: vec![all], low: vec![None; arity], high: vec![None; arity], within: Vec::new() }.facts("&s")
+        }
+    };
+    relations.insert("&s".to_string(), s_facts);
     let mut reader = Reader { registry: Registry::get(), relations, rules: LookupMap::new(), instances: LookupMap::new(), _marker: std::marker::PhantomData };
-    for form in forms {
+    for (form, clause) in expansion.forms.iter().zip(expansion.clauses()) {
         let Some(list) = items(form) else { continue };
         match list.first().and_then(symbol) {
             Some("RULE" | "DET") => {
-                let Some(name) = list.get(1).and_then(symbol) else { continue };
-                let mut kept = Vec::new();
-                for atom in &list[2..] {
-                    crate::library::keep(atom, &mut kept);
-                }
-                let columns: Vec<(String, String)> = kept.into_iter().map(|label| (label.clone(), label)).collect();
-                let facts = finite_clause(&list[2..], &columns, reader.registry).unwrap_or_else(|| reader.body(&list[2..], &columns));
+                let (Some(name), Some(clause)) = (list.get(1).and_then(symbol), clause) else { continue };
+                let facts = match &clause.finite {
+                    Some(found) => found.clone(),
+                    None => reader.body_counted(&list[2..], &clause.columns, &clause.counts),
+                };
                 reader.rules.insert(name.to_string(), facts);
             }
             Some("INIT") => {
@@ -1414,7 +1505,7 @@ fn read_forms(forms: &[SExpr], export: &str, r: &RelationInput, s: Option<&Relat
             _ => {}
         }
     }
-    reader.rules.remove(export).unwrap_or_default()
+    reader.rules.remove(&expansion.export).unwrap_or_default()
 }
 
 /// A clause that reads only lib relations over finite domains, by its rows.
@@ -1472,7 +1563,7 @@ impl PartPlan {
         if let Some(found) = self.expansion.results.lock().expect("no panic").get(&probe as &dyn ResultInputs) {
             return found.clone();
         }
-        let facts = read_forms(&self.expansion.forms, &self.expansion.export, r, s, &self.expansion.s_columns);
+        let facts = read_forms(&self.expansion, r, s);
         let result = Arc::new(self.judge(&facts));
         let key = ResultKey { out: self.out.clone(), r: r.clone(), s: s.cloned() };
         let mut held = self.expansion.results.lock().expect("no panic");
@@ -1491,11 +1582,13 @@ impl PartPlan {
         // The native term's place of each of the expansion's columns.
         let place_of = |column: usize| -> Option<u16> { self.out.iter().position(|held| *held == Some(column)).map(|at| at as u16) };
         let name_place = |name: &str| -> Option<usize> { self.expansion.columns.iter().position(|own| own == name) };
+        // The native term's place of each of the facts' columns.
+        let placed: Vec<Option<u16>> = facts.columns.iter().map(|name| name_place(name).and_then(place_of)).collect();
         for key in &facts.keys {
             let mut mapped = Some(0);
-            for (column, name) in facts.columns.iter().enumerate() {
+            for (column, place) in placed.iter().enumerate() {
                 if key & bit(column as u16) != 0 {
-                    mapped = match (mapped, name_place(name).and_then(place_of)) {
+                    mapped = match (mapped, *place) {
                         (Some(held), Some(at)) => Some(held | bit(at)),
                         _ => None,
                     };
@@ -1506,8 +1599,8 @@ impl PartPlan {
             }
         }
         out.refined.add_key(out.refined.all_columns());
-        for (column, name) in facts.columns.iter().enumerate() {
-            if let Some(at) = name_place(name).and_then(place_of) {
+        for (column, place) in placed.iter().enumerate() {
+            if let Some(at) = *place {
                 out.refined.low[usize::from(at)] = facts.low[column];
                 out.refined.high[usize::from(at)] = facts.high[column];
             }
@@ -1516,7 +1609,7 @@ impl PartPlan {
             let mut columns = Vec::new();
             let mut at = Vec::new();
             for (column, target) in origin.columns.iter().zip(&origin.at) {
-                if let Some(place) = name_place(&facts.columns[usize::from(*column)]).and_then(place_of) {
+                if let Some(place) = placed[usize::from(*column)] {
                     columns.push(place);
                     at.push(target.clone());
                 }
@@ -1527,7 +1620,7 @@ impl PartPlan {
         }
         // How the output stands to its relation.
         let r_arity = self.expansion.r_arity;
-        let r_names: Vec<String> = (0..r_arity).map(|at| format!("C{at}")).collect();
+        let r_names = &self.expansion.r_names;
         let own_columns = facts.columns.iter().filter(|column| r_names.contains(column)).count();
         let extra_constant = facts.columns.iter().enumerate().filter(|(_, column)| !r_names.contains(column)).all(|(at, _)| facts.constant & bit(at as u16) != 0);
         out.adds_columns = own_columns < facts.columns.len();
@@ -1610,7 +1703,7 @@ pub fn explain(call: &str, arity: usize, key: Mask) -> String {
     let Some((forms, export, columns)) = plan_of_text(call, arity, &[]) else { return format!("no expansion of {call}") };
     let r = RelationInput { columns: (0..arity).map(|at| format!("C{at}")).collect(), keys: vec![key], low: vec![None; arity], high: vec![None; arity], within: Vec::new() };
     let mut relations = BTreeMap::new();
-    relations.insert("&r".to_string(), r);
+    relations.insert("&r".to_string(), r.facts("&r"));
     let mut reader = Reader { registry: Registry::get(), relations, rules: LookupMap::new(), instances: LookupMap::new(), _marker: std::marker::PhantomData };
     let mut out = String::new();
     for form in &forms {
