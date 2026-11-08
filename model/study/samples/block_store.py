@@ -10,7 +10,8 @@ A task has two kinds of block. A point block is the kept point columns of a poin
 block once, and a row points to one block of each kind. A block holds only its entries that are not 0: a NaN stays an entry, and -0.0 is 0. Two tasks never share a block.
 
 STORE holds, as block-boost reads them:
-  plan.json                       what `block-boost scan STORE` and `compile STORE` read: two maps (point blocks, id blocks) and two uses (the streams of the blocks)
+  plan.json                       what `block-boost scan STORE` and `compile STORE` read: two maps (point blocks, id blocks), two uses (the streams of the blocks), and `categorical`,
+                                  the numbers of the columns that split as categories (fit_trees.CATEGORICAL_COLUMNS; block-boost refuses a plan with no such list)
   rowmap_point.u32, rowmap_id.u32 each row's point block and id block (raw u32, memory-mapped by block-boost)
   point_blocks.zst, id_blocks.zst the blocks, as streamable zstd frames of block-boost's `Records`
   colmap_point.i32, colmap_id.i32 each stream's column to the store's column
@@ -18,7 +19,7 @@ STORE holds, as block-boost reads them:
   groups.u32, labels.u8           for `softmax`: the start of each writing point's rows, then the row count; 1 for a positive id
 and for the readers of the model:
   names.json                      the column names, in the store's order
-  features.json                   the names as LightGBM takes them, the header fields that define the features, the plan, the tasks
+  features.json                   the names as LightGBM takes them, `categorical` (the names of the columns that split as categories), the header fields that define the features, the plan, the tasks
   assembled.json                  each task's place in the store
 
 The work is by task and resumable. A task's blocks and rows stand in `shards/<task>.*`, and `shards/<task>.json` is written last; a run skips the tasks that have it. The
@@ -233,7 +234,7 @@ def assemble(out: Path, shard_dir: Path, records: list[dict[str, Any]], names: l
         os.replace(out / (n + '.partial'), out / n)
     for name, values in (('colmap_point.i32', cols['point_j']), ('colmap_id.i32', cols['id_j']), ('keep.i32', list(range(len(names))))):
         write_raw(out / name, [np.array(values, '<i4').tobytes()])
-    plan = dict(rows=rows, columns=len(names), max_bin=max_bin, sample_cap=1 << 32, threads=threads,
+    plan = dict(rows=rows, columns=len(names), max_bin=max_bin, sample_cap=1 << 32, threads=threads, categorical=[names.index(n) for n in features['categorical']],
                 maps=[dict(file='rowmap_point.u32', domain=point_total), dict(file='rowmap_id.u32', domain=id_total)],
                 uses=[dict(file='point_blocks.zst', map=0, col_map='colmap_point.i32'), dict(file='id_blocks.zst', map=1, col_map='colmap_id.i32')])
     (out / 'plan.json').write_text(json.dumps(plan, indent=1))
@@ -241,7 +242,7 @@ def assemble(out: Path, shard_dir: Path, records: list[dict[str, Any]], names: l
     totals = dict(tasks=len(live), groups=groups, rows=rows, columns=len(names), point_columns=len(cols['point_j']), id_columns=len(cols['id_j']), point_blocks=point_total, id_blocks=id_total,
                   point_entries=sum(r['point_entries'] for r in live), id_entries=sum(r['id_entries'] for r in live))
     (out / 'features.json').write_text(json.dumps(dict(features, matrix=totals), indent=1))
-    (out / 'assembled.json').write_text(json.dumps(dict(totals=totals, places=places, signature=records[0]['signature'] if records else None)))
+    (out / 'assembled.json').write_text(json.dumps(dict(totals=totals, places=places, categorical=features['categorical'], signature=records[0]['signature'] if records else None)))
     return totals
 
 
@@ -354,10 +355,11 @@ def main() -> int:
         return 0
     ordered = [records[unit_of(p)] for p in files]
     marker = out / 'assembled.json'
-    if marker.exists() and not todo and json.loads(marker.read_text()).get('signature') == sig and [pl['task'] for pl in json.loads(marker.read_text())['places']] == [r['task'] for r in ordered if r['rows'] > 0]:
+    held = json.loads(marker.read_text()) if marker.exists() else {}
+    if held and not todo and held.get('signature') == sig and held.get('categorical') == FT.categorical_of(names) and [pl['task'] for pl in held['places']] == [r['task'] for r in ordered if r['rows'] > 0]:
         print('the store is assembled already', flush=True)
         return 0
-    features = dict(uses=names, booster_names=FT.booster_names(names), header=fields, plan=plan, points_dir=[str(f) for f in args.points], splits=sorted(wanted),
+    features = dict(uses=names, booster_names=FT.booster_names(names), categorical=FT.categorical_of(names), header=fields, plan=plan, points_dir=[str(f) for f in args.points], splits=sorted(wanted),
                     train_tasks=[r['task'] for r in ordered if r['rows'] > 0], drop_prefixes=list(drop_prefixes), drop_names=list(drop_names),
                     out_of_scope=dict(file=str(FT.OUT_OF_SCOPE), tasks=dict(FT.out_of_scope())),
                     points_left_out={r['task']: r['left_out'] for r in ordered})

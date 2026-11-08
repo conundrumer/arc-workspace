@@ -124,7 +124,7 @@ class Plan:
             uses.append(dict(file=str(self.source(source)), map=self.maps[map_name][0], col_map=f'use{place}.i32'))
         maps = sorted(self.maps.values(), key=lambda held: held[0])
         (self.directory / 'plan.json').write_text(json.dumps(dict(
-            rows=self.rows, columns=len(self.labels), max_bin=MAX_BIN, sample_cap=SAMPLE_CAP, threads=threads,
+            rows=self.rows, columns=len(self.labels), max_bin=MAX_BIN, sample_cap=SAMPLE_CAP, threads=threads, categorical=[],
             reference=str(reference) if reference else None,
             maps=[dict(file=f'map{place}.u32', domain=domain) for place, _, domain in maps], uses=uses)))
 

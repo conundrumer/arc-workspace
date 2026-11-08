@@ -7,7 +7,7 @@ Tree i of A is compared with tree i of B, for i from S (0-based, default 0), for
 A line counts only once it ends in a newline, so a file that a running fit still writes can be read. With --wait, a file that has no next whole
 line is polled for that many seconds before the comparison stops there.
 
-A tree is the same where the split columns, thresholds, default directions, nan flags and child links are equal. Gains and leaf values are equal
+A tree is the same where the split columns, thresholds, category sets, default directions, nan flags and child links are equal. Gains and leaf values are equal
 where |a - b| <= T * max(|a|, |b|); the default T is 0, which asks for the same f64.
 
 It exits 0 where every compared tree is the same, 1 at the first tree that differs, 2 where it compared fewer trees than --count asked for.
@@ -17,7 +17,7 @@ import json
 import sys
 import time
 
-STRUCTURE = ["column", "threshold", "default_left", "nan_seen", "left", "right"]
+STRUCTURE = ["column", "threshold", "categories", "default_left", "nan_seen", "left", "right"]
 
 
 def tree_lines(path, wait):
@@ -49,7 +49,7 @@ def close(a, b, tol):
 
 def describe(tree, n):
     return (
-        f"column {tree['column'][n]} threshold {tree['threshold'][n]} default_left {tree['default_left'][n]} "
+        f"column {tree['column'][n]} threshold {tree['threshold'][n]} categories {tree['categories'][n]} default_left {tree['default_left'][n]} "
         f"left {tree['left'][n]} right {tree['right'][n]} gain {tree['gain'][n]!r}"
     )
 

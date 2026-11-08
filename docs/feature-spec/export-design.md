@@ -71,7 +71,7 @@ A fit's feature vectors are a normalized store. Each fact stands once, at the gr
 - A value that every ARC example of a candidate has stands in the candidate's record. It is that shape's `stable` number and, at each ARC example of its scope, its `each` number.
 - What a task holds stands in the task's record, or in the record of the task at one ARC example.
 
-`model/feature_eval/gate_lists.py` writes these records as streamable zstd. `engine/block-boost`, whose code calls a record a block, trains on them by factorized learning, with the objective, tree growth and parameters of LightGBM's lambdarank. It keeps each entry as its bin number, in a memory-mapped file. A leaf's feature vectors add their gradients to each record, and each record's entries then add those sums to the histogram once.
+`model/feature_eval/gate_lists.py` writes these records as streamable zstd. `engine/block-boost`, whose code calls a record a block, trains on them by factorized learning, with the objective, tree growth and parameters of LightGBM's lambdarank. It keeps each entry as its bin number, in a memory-mapped file. A column that the store marks as categorical (the writer's token class and token id) keeps one bin for each value, and a split on it sends a set of values left, as LightGBM splits a categorical feature. A leaf's feature vectors add their gradients to each record, and each record's entries then add those sums to the histogram once.
 
 ## Cost
 

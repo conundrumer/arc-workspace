@@ -5,8 +5,9 @@
 
 For a sample of rows of the store, it rebuilds each row's values from the blocks the row points to (the raw float32 values in point_blocks.zst and id_blocks.zst), and then scores the
 row twice:
-  walk     the trees of model.jsonl, walked in Python: a value goes left where it is at most the threshold (a null threshold sends every number left); a NaN goes the way default_left
-           says where nan_seen, and reads as 0 elsewhere
+  walk     the trees of model.jsonl, walked in Python: on a numeric column a value goes left where it is at most the threshold (a null threshold sends every number left); a NaN goes the
+           way default_left says where nan_seen, and reads as 0 elsewhere. On a categorical column (threshold "categorical") a value goes left where it is one of the split's `categories`,
+           and right otherwise, as a NaN does
   predict  `lightgbm.Booster(model_file=MODEL.txt).predict(rows, raw_score=True)`
 It prints the largest difference of the two scores, and exits 1 where it is above --tolerance.
 
@@ -127,7 +128,9 @@ def walk(trees: list[dict[str, Any]], x: np.ndarray) -> np.ndarray:
             score += t['value'][0]
             continue
         column = np.array(t['column'])
-        threshold = np.array([np.inf if v is None else v for v in t['threshold']], np.float64)
+        threshold = np.array([np.inf if v is None or v == 'categorical' else v for v in t['threshold']], np.float64)
+        categories = t['categories']
+        categorical = [n for n, c in enumerate(categories) if c is not None]
         default_left = np.array(t['default_left'], bool)
         nan_seen = np.array(t['nan_seen'], bool)
         left, right = np.array(t['left']), np.array(t['right'])
@@ -141,6 +144,14 @@ def walk(trees: list[dict[str, Any]], x: np.ndarray) -> np.ndarray:
             v = x[live, column[n]]
             nan = np.isnan(v)
             go_left = np.where(nan, np.where(nan_seen[n], default_left[n], 0.0 <= threshold[n]), v <= threshold[n])
+            for split in categorical:
+                at = n == split
+                if at.any():
+                    seen = v[at]
+                    known = ~np.isnan(seen)
+                    member = np.zeros(len(seen), bool)
+                    member[known] = np.isin(np.trunc(seen[known]).astype(np.int64), categories[split])
+                    go_left[at] = member
             node[live] = np.where(go_left, left[n], right[n])
         score += value[~node]
     return score
@@ -202,7 +213,11 @@ def main() -> int:
     rng = np.random.default_rng(args.seed)
     n = min(args.rows, store.rows)
     rows = np.unique(np.concatenate([[0, store.rows - 1], rng.choice(store.rows, n, replace=False)]))
-    print(f'store {store.rows} rows, {len(store.names)} columns; model {len(trees)} trees; {len(rows)} rows sampled', flush=True)
+    if any('categories' not in t for t in trees):
+        print(f'error: {args.model_jsonl} has trees with no `categories`: it is of a block-boost that does not split categories', file=sys.stderr)
+        return 2
+    categorical_splits = sum(c is not None for t in trees for c in t['categories'])
+    print(f'store {store.rows} rows, {len(store.names)} columns; model {len(trees)} trees, {categorical_splits} categorical splits; {len(rows)} rows sampled', flush=True)
     x = store.kept(store.rows_of(rows))
     print(f'rows rebuilt in {time.time() - started:.1f} s; {int(np.isnan(x).any(axis=1).sum())} of them hold a NaN; {int((x != 0).sum())} nonzero cells', flush=True)
     walked = walk(trees, x.astype(np.float64))
