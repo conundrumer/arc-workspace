@@ -478,6 +478,67 @@ fn the_gauges_of_a_request_are_the_same_with_cold_caches_and_with_caches_another
     }
 }
 
+/// A request on the clause in progress.
+#[derive(Clone, Copy, Debug)]
+enum Ask {
+    Rows,
+    Projections,
+}
+
+/// What a decode of the session did before the request.
+#[derive(Clone, Copy, Debug)]
+enum Before {
+    Nothing,
+    /// A fork of the decode made the request: it shares the caches of the decode's state and those of the session.
+    AFork,
+    /// Another decode of the session, which stepped the same tokens, made the request.
+    AnotherDecoder,
+}
+
+/// The largest value, the cap and the hits of each gauge of the request that
+/// `ask` begins at the state after all tokens but the last of `arclog`, but
+/// for the session's own ledger. The caches stand as `before` leaves them.
+fn gauges_of(arclog: &str, ask: Ask, before: Before) -> Vec<(&'static str, u64, u64, u64)> {
+    let inputs = inputs(INPUT, Caps::CORPUS);
+    let tokens = model_tokens(arclog);
+    let (end, prefix) = tokens.split_last().expect("a stream");
+    assert_eq!(*end, Token::Control(Control::End));
+    let mut main = decoder(&inputs);
+    walk(&mut main, prefix);
+    let request = |asked: &Decoder<'_>| match ask {
+        Ask::Rows => {
+            let _ = asked.rows(Some(Example::at(0))).expect("a clause in progress");
+        }
+        Ask::Projections => {
+            let _ = asked.projections().expect("a clause in progress");
+        }
+    };
+    match before {
+        Before::Nothing => {}
+        Before::AFork => request(&main.fork()),
+        Before::AnotherDecoder => {
+            let mut other = decoder(&inputs);
+            walk(&mut other, prefix);
+            request(&other);
+        }
+    }
+    request(&main);
+    let request = RequestWork::latest().expect("the request of the call");
+    request.all_gauges().into_iter().filter(|(gauge, ..)| *gauge != Gauge::SessionBytes).map(|(gauge, max, cap, hits)| (gauge.name(), max, cap, hits)).collect()
+}
+
+#[test]
+fn the_gauges_of_rows_and_projections_are_the_same_with_cold_caches_and_with_caches_another_decoder_filled() {
+    for arclog in [COPIES, "(RULE &twin (input *P (:Col *C)) (input *Q (:Col *E)))\n"] {
+        for ask in [Ask::Rows, Ask::Projections] {
+            let cold = gauges_of(arclog, ask, Before::Nothing);
+            for before in [Before::AFork, Before::AnotherDecoder] {
+                assert_eq!(cold, gauges_of(arclog, ask, before), "the gauges of {ask:?} on {arclog} after {before:?}");
+            }
+        }
+    }
+}
+
 /// The count of the rows of the sub-body at each assignment, or the message of
 /// the fault, for the clause in progress asked on `example`.
 fn row_counts(decoder: &Decoder<'_>, example: Option<Example>) -> Option<Result<Vec<Option<u64>>, String>> {

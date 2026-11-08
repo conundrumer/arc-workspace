@@ -634,20 +634,7 @@ impl<'a> Decoder<'a> {
     /// are made once for each sub-body of the finished forms, whichever
     /// request asks for it.
     fn body_over_closure(&self, checked: CheckedProgram, position: usize, key: Vec<u8>) -> CheckedProgram {
-        let memo = self.state.narrowed_bodies();
-        let held = memo.lock().expect("the narrowed bodies are not poisoned").get(&key).cloned();
-        let narrowed = match held {
-            Some(narrowed) => narrowed,
-            None => {
-                let narrowed = self.narrowed(&checked, position);
-                let mut memo = memo.lock().expect("the narrowed bodies are not poisoned");
-                if memo.len() >= NARROWED_BODIES {
-                    memo.clear();
-                }
-                memo.insert(key, narrowed.clone());
-                narrowed
-            }
-        };
+        let narrowed = self.state.narrowed_bodies().get_or_make_within(key, NARROWED_BODIES, || self.narrowed(&checked, position));
         narrowed.unwrap_or(checked)
     }
 
@@ -692,7 +679,7 @@ impl<'a> Decoder<'a> {
     /// the first ask, with the check cache of `after`'s finished forms, then
     /// shared by each clone of `after`.
     pub fn finished_checked<'s>(&self, before: &State, after: &'s State) -> &'s Outcome<CheckedProgram> {
-        after.checked_last().get_or_init(|| {
+        crate::eval::once_noted(after.checked_last(), || {
             let program = after.program();
             let form = NodePath::top(program.value().forms.len() as u32 - 1);
             let registry = self.context.registry;
@@ -711,7 +698,7 @@ impl<'a> Decoder<'a> {
     /// closure name, whatever later forms read, so that the evaluation is the
     /// same in each decode that holds the form's QueryHash.
     pub fn finished_evaluated<'s>(&self, before: &State, after: &'s State) -> &'s Outcome<CheckedProgram> {
-        after.evaluated_last().get_or_init(|| match self.finished_checked(before, after) {
+        crate::eval::once_noted(after.evaluated_last(), || match self.finished_checked(before, after) {
             Ok(checked) => Ok(self.over_closure(checked.clone(), after.program().value().forms.len() - 1)),
             Err(fault) => Err(fault.clone()),
         })

@@ -1287,6 +1287,55 @@ pub(crate) fn once_noted<T>(cell: &std::sync::OnceLock<(T, NoteId)>, make: impl 
     &held.0
 }
 
+/// The values that computations made, by key, each kept with the notes its
+/// computation made in the gauges a cost carries ([`noting`]). A read of a
+/// kept value notes them again, as [`once_noted`] does for one cell, so the
+/// gauges of the request that reads a value are those of one that made it,
+/// whichever request made it first. A memo of values whose computation can
+/// note in those gauges (the search for a canonical labeling, the packing of a
+/// Box) is a `NotedMap`, so that its read cannot leave the notes out.
+///
+/// The lock is held while a value is made, as a memo under `entry` holds it.
+pub(crate) struct NotedMap<K, V> {
+    held: Mutex<StableHashMap<K, (V, NoteId)>>,
+}
+
+impl<K, V> Default for NotedMap<K, V> {
+    fn default() -> Self {
+        NotedMap { held: Mutex::new(StableHashMap::default()) }
+    }
+}
+
+impl<K, V> std::fmt::Debug for NotedMap<K, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NotedMap").finish_non_exhaustive()
+    }
+}
+
+impl<K: Eq + std::hash::Hash, V: Clone> NotedMap<K, V> {
+    /// The value kept for `key`, or the value of `make`, which is kept with
+    /// its notes. Either way the notes stand in the request that asks.
+    pub(crate) fn get_or_make(&self, key: K, make: impl FnOnce() -> V) -> V {
+        self.get_or_make_within(key, usize::MAX, make)
+    }
+
+    /// [`NotedMap::get_or_make`], where a map that holds `most` values drops
+    /// them all before it keeps another.
+    pub(crate) fn get_or_make_within(&self, key: K, most: usize, make: impl FnOnce() -> V) -> V {
+        let mut held = self.held.lock().expect("a memo that no panic poisoned");
+        if let Some((value, notes)) = held.get(&key) {
+            replay_notes(*notes);
+            return value.clone();
+        }
+        let (value, notes) = noting(make);
+        if held.len() >= most {
+            held.clear();
+        }
+        held.insert(key, (value.clone(), notes));
+        value
+    }
+}
+
 /// Notes in the innermost open measurement that `gauge` reached `value` under
 /// `cap`, with `hits` more hits.
 fn tally_note(gauge: Gauge, value: u64, cap: u64, hits: u32) {

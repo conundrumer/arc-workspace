@@ -464,7 +464,7 @@ pub struct ResolvedProgram {
     node_index: std::sync::OnceLock<crate::hash::StableHashMap<DependencyNode, GraphNodeIndex>>,
 }
 
-type Widened = Arc<std::sync::Mutex<crate::hash::StableHashMap<Vec<(ProgramRelation, Vec<ColumnName>)>, Arc<ResolvedProgram>>>>;
+type Widened = Arc<std::sync::Mutex<crate::hash::StableHashMap<Vec<(ProgramRelation, Vec<ColumnName>)>, (Arc<ResolvedProgram>, crate::eval::NoteId)>>>;
 
 /// The concept program of a case, and the path there of each `DET` form
 /// that the case takes from it, by the form's path in the case.
@@ -503,13 +503,15 @@ impl ResolvedProgram {
     /// where that cannot be shown for the program, the call resolves it whole.
     fn widened(&self, widening: Vec<(ProgramRelation, Vec<ColumnName>)>, registry: &Registry) -> Arc<ResolvedProgram> {
         let mut held = self.widened.lock().expect("no thread panics while it holds the cache");
-        if let Some(found) = held.get(&widening) {
+        if let Some((found, notes)) = held.get(&widening) {
+            // The notes of the build, in the gauges a cost carries, stand in the request that asks: the build writes the content of each node through the search for a canonical labeling.
+            crate::eval::replay_notes(*notes);
             return Arc::clone(found);
         }
         let scope = SolverScope { derived: Default::default(), read_columns: widening.iter().cloned().collect() };
-        let resolved = build::resolve_reusing(self, &scope, registry).unwrap_or_else(|| resolve(&self.program, None, &scope, registry).value);
+        let (resolved, notes) = crate::eval::noting(|| build::resolve_reusing(self, &scope, registry).unwrap_or_else(|| resolve(&self.program, None, &scope, registry).value));
         let resolved = Arc::new(resolved);
-        held.insert(widening, Arc::clone(&resolved));
+        held.insert(widening, (Arc::clone(&resolved), notes));
         resolved
     }
 
@@ -955,7 +957,7 @@ impl ResolvedProgram {
         let slot = node.checked_sub(self.names.first_node())?;
         match self.names.contents.get(slot)? {
             Some(form) => Some(Some(form)),
-            None => Some(self.names.unwritten.get(slot)?.as_ref().map(|cell| cell.get_or_init(|| self.unwritten_content(slot)))),
+            None => Some(self.names.unwritten.get(slot)?.as_ref().map(|cell| crate::eval::once_noted(cell, || self.unwritten_content(slot)))),
         }
     }
 

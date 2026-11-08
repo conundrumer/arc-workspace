@@ -198,8 +198,10 @@ pub(super) struct Names {
     /// For each node of these names that no pass of its resolution reads,
     /// the slot of its content, written on its first read by
     /// [`super::ResolvedProgram::node_content`]; its entry of `contents`
-    /// is then empty.
-    pub(super) unwritten: Vec<Option<std::sync::OnceLock<CanonicalForm>>>,
+    /// is then empty. The slot holds the notes of the write in the gauges a
+    /// cost carries ([`crate::eval::once_noted`]), which each read notes
+    /// again.
+    pub(super) unwritten: Vec<Option<std::sync::OnceLock<(CanonicalForm, crate::eval::NoteId)>>>,
     /// For each `INIT` form with a key clause, by the scope that declares it
     /// and its name, the rank of each field of its `key` record: the position
     /// of the field's label in the canonical labeling of the form, so that

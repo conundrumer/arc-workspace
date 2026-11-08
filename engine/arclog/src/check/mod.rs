@@ -38,8 +38,9 @@ pub mod types;
 pub mod unfold_reads;
 pub mod zero;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use crate::eval::NotedMap;
 use crate::eval::ir::{compile_body_in, ClauseIr, CompileFault, CompiledBody, IrPaths, NodeOrder};
 use crate::diagnostic::{Diagnostic, DiagnosticKind, Location, Severity};
 use crate::hash::StableHashMap;
@@ -524,25 +525,28 @@ pub type InstanceClause = (Arc<ClauseIr>, Arc<IrPaths>, usize);
 pub type AssemblyClause = (Arc<ClauseIr>, Arc<IrPaths>);
 
 /// What a function of a checked program, a path and its arguments alone
-/// gives, kept per argument on the first ask.
+/// gives, kept per argument on the first ask, with the notes its computation
+/// made in the gauges a cost carries ([`NotedMap`]): a clause's content is
+/// written through the search for a canonical labeling, whose nodes the
+/// request that asks counts, whichever request asked first.
 #[derive(Debug, Default)]
 struct Derived {
     /// The result of [`crate::eval::ir::compile_body_in`] for each clause
     /// path, kept conjuncts and order of the nodes.
-    bodies: Mutex<StableHashMap<(NodePath, Box<[u32]>, NodeOrder), Result<Arc<CompiledBody>, CompileFault>>>,
+    bodies: NotedMap<(NodePath, Box<[u32]>, NodeOrder), Result<Arc<CompiledBody>, CompileFault>>,
     /// The clause of an `INIT` form's input, or of its key where the name
     /// is `None`, with the paths of its nodes and the count of its key
     /// columns, as the evaluator compiles it.
-    instance_clauses: Mutex<StableHashMap<(NodePath, Option<PortName>), Result<InstanceClause, CompileFault>>>,
+    instance_clauses: NotedMap<(NodePath, Option<PortName>), Result<InstanceClause, CompileFault>>,
     /// The clause of a `RIGID_DET` form's key and instance bodies, joined
     /// with the atom at the path of a part where it is given, with the
     /// paths of its nodes, as the evaluator compiles it.
-    assembly_clauses: Mutex<StableHashMap<(NodePath, Option<NodePath>), Result<AssemblyClause, CompileFault>>>,
+    assembly_clauses: NotedMap<(NodePath, Option<NodePath>), Result<AssemblyClause, CompileFault>>,
     /// The resolved content of the clause at each path.
-    contents: Mutex<StableHashMap<NodePath, Option<ResolvedContent>>>,
+    contents: NotedMap<NodePath, Option<ResolvedContent>>,
     /// The resolved content of the part of the clause at a path that its
     /// conjuncts and columns make, with its columns in order.
-    parts: Mutex<StableHashMap<(NodePath, Box<[u32]>, Box<[LabelId]>), Option<(ResolvedContent, Box<[LabelId]>)>>>,
+    parts: NotedMap<(NodePath, Box<[u32]>, Box<[LabelId]>), Option<(ResolvedContent, Box<[LabelId]>)>>,
 }
 
 impl CheckedProgram {
@@ -578,8 +582,7 @@ impl CheckedProgram {
 
     fn compiled_body_in(&self, clause: &NodePath, kept: &[u32], order: NodeOrder) -> Result<Arc<CompiledBody>, CompileFault> {
         let key = (clause.clone(), Box::<[u32]>::from(kept), order);
-        let mut memo = self.derived.bodies.lock().expect("a memo that no panic poisoned");
-        memo.entry(key).or_insert_with(|| compile_body_in(self, clause, kept, order).map(Arc::new)).clone()
+        self.derived.bodies.get_or_make(key, || compile_body_in(self, clause, kept, order).map(Arc::new))
     }
 
     /// The clause of the input `input` of the `INIT` form at `form`, or of
@@ -592,8 +595,7 @@ impl CheckedProgram {
         compile: impl FnOnce() -> Result<(ClauseIr, IrPaths, usize), CompileFault>,
     ) -> Result<InstanceClause, CompileFault> {
         let key = (form.clone(), input.cloned());
-        let mut memo = self.derived.instance_clauses.lock().expect("a memo that no panic poisoned");
-        memo.entry(key).or_insert_with(|| compile().map(|(clause, paths, key)| (Arc::new(clause), Arc::new(paths), key))).clone()
+        self.derived.instance_clauses.get_or_make(key, || compile().map(|(clause, paths, key)| (Arc::new(clause), Arc::new(paths), key)))
     }
 
     /// The clause of the `RIGID_DET` form at `form`: its key and instance
@@ -606,23 +608,20 @@ impl CheckedProgram {
         compile: impl FnOnce() -> Result<(ClauseIr, IrPaths), CompileFault>,
     ) -> Result<AssemblyClause, CompileFault> {
         let key = (form.clone(), part.cloned());
-        let mut memo = self.derived.assembly_clauses.lock().expect("a memo that no panic poisoned");
-        memo.entry(key).or_insert_with(|| compile().map(|(clause, paths)| (Arc::new(clause), Arc::new(paths)))).clone()
+        self.derived.assembly_clauses.get_or_make(key, || compile().map(|(clause, paths)| (Arc::new(clause), Arc::new(paths))))
     }
 
     /// The resolved content of the clause at `path`, as
     /// [`ResolvedProgram::content`] gives it.
     pub fn content(&self, path: &NodePath) -> Option<ResolvedContent> {
-        let mut memo = self.derived.contents.lock().expect("a memo that no panic poisoned");
-        memo.entry(path.clone()).or_insert_with(|| self.program.content(path)).clone()
+        self.derived.contents.get_or_make(path.clone(), || self.program.content(path))
     }
 
     /// The content of a part of the clause at `clause`, as
     /// [`ResolvedProgram::part_content`] gives it.
     pub fn part_content(&self, clause: &NodePath, conjuncts: &[u32], columns: &[LabelId]) -> Option<(ResolvedContent, Box<[LabelId]>)> {
         let key = (clause.clone(), Box::<[u32]>::from(conjuncts), Box::<[LabelId]>::from(columns));
-        let mut memo = self.derived.parts.lock().expect("a memo that no panic poisoned");
-        memo.entry(key).or_insert_with(|| self.program.part_content(clause, conjuncts, columns)).clone()
+        self.derived.parts.get_or_make(key, || self.program.part_content(clause, conjuncts, columns))
     }
 }
 

@@ -94,18 +94,18 @@ pub struct State {
     /// resolution of the state before the last form finished, made on its
     /// first read and shared by every clone of the state until a form
     /// finishes.
-    checked_last: Arc<std::sync::OnceLock<Outcome<CheckedProgram>>>,
+    checked_last: Arc<std::sync::OnceLock<(Outcome<CheckedProgram>, crate::eval::NoteId)>>,
     /// The checked program of the finished forms over the columns of the use
     /// closure of the last form, as [`State::checked_last`] holds the checked
     /// program, made on its first read and shared by every clone of the state
     /// until a form finishes.
-    evaluated_last: Arc<std::sync::OnceLock<Outcome<CheckedProgram>>>,
+    evaluated_last: Arc<std::sync::OnceLock<(Outcome<CheckedProgram>, crate::eval::NoteId)>>,
     /// The sub-bodies over the columns of their use closures, by the key of
     /// the sub-body ([`super::prefix_key::evaluated_key`]), where the closure
     /// narrows a `DET` ([`State::narrowed_bodies`]); none for a sub-body that
     /// it leaves as it is. Shared by the states and forks with the same
     /// finished forms.
-    narrowed_bodies: Arc<std::sync::Mutex<crate::hash::StableHashMap<Vec<u8>, Option<CheckedProgram>>>>,
+    narrowed_bodies: Arc<crate::eval::NotedMap<Vec<u8>, Option<CheckedProgram>>>,
     /// The check cache of the whole-program checks of programs that hold
     /// the finished forms, shared by the states and forks with the same
     /// finished forms.
@@ -146,7 +146,8 @@ pub(super) enum AtomPlace {
 /// [`resolve`].
 #[derive(Debug)]
 struct FinishedResolution {
-    resolved: std::sync::OnceLock<Arc<ResolvedProgram>>,
+    /// The resolution, with the notes of its making in the gauges a cost carries, which each read notes again ([`crate::eval::once_noted`]).
+    resolved: std::sync::OnceLock<(Arc<ResolvedProgram>, crate::eval::NoteId)>,
     /// The resolution of the forms before the last, until this one is made.
     before: std::sync::Mutex<Option<Arc<FinishedResolution>>>,
 }
@@ -166,7 +167,7 @@ impl FinishedResolution {
     /// The resolution of `program`, the finished forms this resolution is of.
     /// A resolution that `before` holds is of `program` less its last form.
     fn get(&self, program: &Node<Program>, registry: &Registry) -> Arc<ResolvedProgram> {
-        let resolved = self.resolved.get_or_init(|| {
+        let resolved = crate::eval::once_noted(&self.resolved, || {
             let before = self.before.lock().expect("the resolution chain is not poisoned").take();
             let resolution = match (before, program.value().forms.split_last()) {
                 (Some(before), Some((_, complete))) => {
@@ -673,19 +674,19 @@ impl State {
 
     /// The checked program of the finished forms, as [`State::checked_last`]
     /// holds it.
-    pub(super) fn checked_last(&self) -> &std::sync::OnceLock<Outcome<CheckedProgram>> {
+    pub(super) fn checked_last(&self) -> &std::sync::OnceLock<(Outcome<CheckedProgram>, crate::eval::NoteId)> {
         &self.checked_last
     }
 
     /// The checked program of the finished forms over the columns of the use
     /// closure of the last form, as [`State::evaluated_last`] holds it.
-    pub(super) fn evaluated_last(&self) -> &std::sync::OnceLock<Outcome<CheckedProgram>> {
+    pub(super) fn evaluated_last(&self) -> &std::sync::OnceLock<(Outcome<CheckedProgram>, crate::eval::NoteId)> {
         &self.evaluated_last
     }
 
     /// The sub-bodies over the columns of their use closures, as
     /// [`State::narrowed_bodies`] holds them.
-    pub(super) fn narrowed_bodies(&self) -> &std::sync::Mutex<crate::hash::StableHashMap<Vec<u8>, Option<CheckedProgram>>> {
+    pub(super) fn narrowed_bodies(&self) -> &crate::eval::NotedMap<Vec<u8>, Option<CheckedProgram>> {
         &self.narrowed_bodies
     }
 
