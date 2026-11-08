@@ -20,6 +20,8 @@
 #   tests    the tests of the arclog crate.
 #   clippy   cargo clippy over the workspace's libraries and binaries, with each crate's clippy.toml.
 #
+# After the tests and clippy parts, target/debug is cut to DEBUG_TARGET_GIB GiB (default 6), oldest files first.
+#
 # A step that fails prints the end of its cargo output and ends the build with status 1.
 # Run it through scripts/run_heavy.py, as any build.
 set -u
@@ -87,10 +89,28 @@ linux_encoder() {
 
 tests() {
   CARGO_TARGET_DIR=$T cargo test --offline -p arclog --manifest-path "$B/engine/Cargo.toml"
+  local status=$?; prune_debug; return $status
 }
 
 clippy() {
   CARGO_TARGET_DIR=$T cargo clippy --offline --workspace --lib --bins --manifest-path "$B/engine/Cargo.toml"
+  local status=$?; prune_debug; return $status
+}
+
+# Holds target/debug, which only the tests and clippy parts write, under DEBUG_TARGET_GIB GiB (default 6):
+# its oldest files by modification time are deleted until it holds less. Cargo builds a deleted artifact
+# again when a later build needs it.
+prune_debug() {
+  local D=$T/debug cap used mtime size path
+  [ -d "$D" ] || return 0
+  cap=$(( ${DEBUG_TARGET_GIB:-6} * 1024 * 1024 ))
+  used=$(du -sk "$D" | cut -f1)
+  [ "$used" -le "$cap" ] && return 0
+  while read -r mtime size path; do
+    [ "$used" -le "$cap" ] && break
+    rm -f -- "$path" && used=$(( used - size / 1024 ))
+  done < <(find "$D" -type f -exec stat -f '%m %z %N' {} + | sort -n)
+  echo "target/debug pruned to $(( used / 1024 )) MiB"
 }
 
 step "build $NAME of $SHA: $PARTS"
