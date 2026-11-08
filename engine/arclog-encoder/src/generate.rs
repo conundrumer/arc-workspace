@@ -2477,6 +2477,8 @@ pub struct Walker<'a> {
     budget: (usize, usize),
     /// Whether the last walk stopped a term that passed [`walk_cells`] cells of its own, so that the term, and every term that reads it, have no value.
     pub over_budget: bool,
+    /// The next id that stands for the charge of the rows an evaluation reads from a lazy value, counting down from the greatest id, which no value has.
+    read_charge: u32,
 }
 
 /// What a walker's copies on disk have cost: the values and cells written and read back, and the time of each.
@@ -2508,7 +2510,7 @@ const HELD_MEMO: usize = 250_000;
 const WALK_CELLS: usize = 100_000_000;
 
 /// The cells that one term's evaluation can give in a walk: `GENERATE_WALK_CELLS` where it is set, else [`WALK_CELLS`].
-fn walk_cells() -> usize {
+pub(crate) fn walk_cells() -> usize {
     static LIMIT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *LIMIT.get_or_init(|| std::env::var("GENERATE_WALK_CELLS").ok().and_then(|text| text.parse().ok()).unwrap_or(WALK_CELLS))
 }
@@ -2602,6 +2604,8 @@ fn root_value(of: RootOf, rows: u32, left: u32, other: u32, number: u32) -> Root
 struct Spent {
     results: usize,
     written: usize,
+    /// Whether an evaluation charges the cells of the rows it reads from a lazy value, which a term that keeps no results does not otherwise count.
+    charge_reads: bool,
     /// The lazy values charged so far, by id.
     charged: LookupSet<u32>,
     /// The lazy values, with the cells of their written rows, that the evaluations in progress have forced, in order.
@@ -2674,7 +2678,7 @@ impl Drop for SpillDir {
 
 impl<'a> Walker<'a> {
     pub fn new(family: &'a Generated) -> Self {
-        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_of: FastMap::default(), spilled: FastMap::default(), spill_dir: None, spill_serial: 0, spill_cost: SpillCost::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false }
+        Walker { family, eval: Evaluator::new(&NO_SHAPES, &NO_INSTANCES, &NO_LIBS, arclog::decode::corpus::corpus_session()), values: vec![Val::None, Val::Empty], value_index: FastMap::default(), memo: FastMap::default(), counts: FastMap::default(), groupings: FastMap::default(), group_counts: FastMap::default(), held_cells: 0, written_of: FastMap::default(), spilled: FastMap::default(), spill_dir: None, spill_serial: 0, spill_cost: SpillCost::default(), examples: 0, budget: (HELD_CELLS, HELD_MEMO), over_budget: false, read_charge: u32::MAX }
     }
 
     /// A walker that holds more between walks than [`Walker::new`], for many related tables.
@@ -2956,7 +2960,7 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// The id of the value at `id` with the rows of `inside` or of a `join` written out, unless `step` takes what it needs from the relations they come from, as its first relation or, where `first` is false, its second: the id of no value where they pass `CELL_CAP` cells. A term charges the cells of a lazy value's written rows once, however many evaluations of it force the value.
+    /// The id of the value at `id` with the rows of `inside` or of a `join` written out, unless `step` takes what it needs from the relations they come from, as its first relation or, where `first` is false, its second: the id of no value where they pass their bound (`CELL_CAP` cells for a `join`, one term's budget of cells for `inside`). A term charges the cells of a lazy value's written rows once, however many evaluations of it force the value.
     fn written_id(&mut self, spent: &mut Spent, step: &Step, id: u32, first: bool) -> u32 {
         let held = &self.values[id as usize];
         if !held.is_lazy() || held.lazy_reads(step, first) {
@@ -2980,18 +2984,18 @@ impl<'a> Walker<'a> {
         written
     }
 
-    /// Whether the value at `id` is a lazy value that `step` cannot read as its first relation and that passes `CELL_CAP` cells written out: a bound cuts it off.
+    /// Whether the value at `id` is a lazy value that `step` cannot read as its first relation and that passes its bound written out: a bound cuts it off.
     fn cut_by_cap(&self, step: &Step, id: u32) -> bool {
         let held = &self.values[id as usize];
         held.is_lazy() && !held.lazy_takes(step, true) && !held.lazy_fits()
     }
 
-    /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` or of a `join` that `step` would write out past `CELL_CAP` cells.
+    /// Whether the value at `id` gives `step` no value as its first relation: no value, or the rows of `inside` or of a `join` that `step` would write out past its bound.
     fn has_no_value(&self, step: &Step, id: u32) -> bool {
         matches!(self.values[id as usize], Val::None) || self.cut_by_cap(step, id)
     }
 
-    /// Whether the value at `id` gives `step` no value as its second relation: no value, or the rows of `inside` or of a `join` that `step` would write out past `CELL_CAP` cells.
+    /// Whether the value at `id` gives `step` no value as its second relation: no value, or the rows of `inside` or of a `join` that `step` would write out past its bound.
     fn second_has_no_value(&self, step: &Step, id: u32) -> bool {
         let held = &self.values[id as usize];
         matches!(held, Val::None) || (held.is_lazy() && !held.lazy_takes(step, false) && !held.lazy_fits())
@@ -3035,6 +3039,15 @@ impl<'a> Walker<'a> {
             self.eval.apply(step, &[&first, &second])
         };
         crate::bounds::end(a == 0 || (b != NO_TERM && b == 0));
+        // The rows that an evaluation takes from a lazy value as they are count against the term, as the rows written out do.
+        if spent.charge_reads && (first.is_lazy() || (b != NO_TERM && self.values[b as usize].is_lazy())) {
+            let cells = crate::native::cells_of(&value);
+            if cells > 0 {
+                self.read_charge -= 1;
+                let id = self.read_charge;
+                spent.force(id, cells);
+            }
+        }
         value
     }
 
@@ -3191,6 +3204,7 @@ impl<'a> Walker<'a> {
             let scope = if reads_output { train.min(instances) } else { instances };
             let wanted = (term.flags & READS_TABLE != 0 || family.over_grids) && (reads_output || !only_output);
             let extended = term.used;
+            spent.charge_reads = !extended;
             let mut own = Vec::new();
             let on_no_rows = matches!(step, Step::Part(part) if part.gives_rows_on_no_rows());
             // A term whose first relation is empty, or whose second relation of a `join` or a `semijoin` is, has no rows. One whose first relation has no value, or is the rows of `inside` or of a `join` that `step` cannot write, has no value.
@@ -3205,7 +3219,7 @@ impl<'a> Walker<'a> {
                 for id in &first[..scope] {
                     let held = &self.values[*id as usize];
                     if held.is_lazy() && !held.lazy_takes(step, true) && !held.lazy_fits() {
-                        crate::bounds::mark_term(if matches!(held, Val::Joined(_)) { crate::bounds::Bound::JoinOutput } else { crate::bounds::Bound::InsideCells });
+                        crate::bounds::mark_term(if matches!(held, Val::Joined(_)) { crate::bounds::Bound::JoinOutput } else { crate::bounds::Bound::Walk });
                     }
                 }
             }

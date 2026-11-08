@@ -6,15 +6,19 @@
 //! some columns reads those tuples from the boxes: from the relation's rows whose box has a cell
 //! in the grid where the columns are the relation's, and otherwise from a union of boxes per
 //! tuple of the relation's columns. An operator that keeps rows whole, over the relation's
-//! columns, keeps the relation's rows, and gives boxes again. Any other operator reads the rows
-//! written out, once, up to `CELL_CAP` cells.
+//! columns, keeps the relation's rows, and gives boxes again. A `select` that compares the cell
+//! column or the color column writes only the pairs of a row and a cell that pass. Any other
+//! operator reads the rows written out, once. A write that passes the walker's budget of cells for
+//! one term ([`walk_cells`]) gives no value.
 
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::columns::Columns;
 use crate::gen_constants::{box_bits, margins_of};
 use crate::gen_parts::GridView;
-use crate::native::{all, antijoin, hash_words, project, select, semijoin, Cell, FastMap, Step, Table, Val, CELL_CAP};
+use crate::expression::Op;
+use crate::generate::walk_cells;
+use crate::native::{all, antijoin, hash_words, holds, project, select, semijoin, Cell, FastMap, Step, Table, Val};
 
 /// Marks the hash of a [`Boxes`], which no other value's hash has.
 const BOXES_WORD: u64 = 0x426f_7865_7352_6f77;
@@ -34,7 +38,7 @@ pub struct Boxes {
     rows: u64,
     /// The rows of the relation whose box has a cell in the grid.
     support: OnceLock<Arc<Table>>,
-    /// The rows of `inside`, once written: no value where they pass `CELL_CAP` cells.
+    /// The rows of `inside`, once written: no value where they pass one term's budget of cells.
     written: OnceLock<Val>,
     /// The tables of `sketch`, by their columns, and the cells that they hold.
     sketches: Mutex<(usize, FastMap<Box<[u16]>, Option<Arc<Table>>>)>,
@@ -112,20 +116,22 @@ impl Boxes {
         }).clone()
     }
 
-    /// Whether the rows of `inside` can be written out, in at most `CELL_CAP` cells.
+    /// Whether the rows of `inside` can be written out, in at most one term's budget of cells.
     pub fn fits(&self) -> bool {
-        self.rows.saturating_mul(self.table.arity as u64 + 2) <= CELL_CAP as u64
+        self.rows.saturating_mul(self.table.arity as u64 + 2) <= walk_cells() as u64
     }
 
-    /// The rows of `inside` written out, or no value where they pass `CELL_CAP` cells.
+    /// The rows of `inside` written out, or no value where they pass one term's budget of cells.
     pub fn written(&self) -> Val {
         let held = self.written.get_or_init(|| {
+            let started = crate::bounds::started();
             let value = self.write();
             crate::native::lazy_wrote(&value);
+            crate::bounds::wrote("rows", crate::native::cells_of(&value), started);
             value
         });
         if matches!(held, Val::None) {
-            crate::bounds::mark(crate::bounds::Bound::InsideCells);
+            crate::bounds::mark(crate::bounds::Bound::Walk);
         }
         held.clone()
     }
@@ -185,7 +191,7 @@ impl Boxes {
         self.sketch(columns)
     }
 
-    /// The distinct tuples of the rows of `inside` at `columns`, as rows of the arity of `inside` with 0 at each other column: no value where they pass `CELL_CAP` cells. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
+    /// The distinct tuples of the rows of `inside` at `columns`, as rows of the arity of `inside` with 0 at each other column: no value where they pass one term's budget of cells. An operator whose value depends on those tuples alone has the same value on this table as on the rows written out.
     fn sketch(&self, columns: &Columns) -> Option<Arc<Table>> {
         let mut key: Vec<u16> = columns.to_vec();
         key.sort_unstable();
@@ -194,7 +200,9 @@ impl Boxes {
         let built = match held {
             Some(built) => built,
             None => {
+                let started = crate::bounds::started();
                 let built = self.build_sketch(&key);
+                crate::bounds::wrote("tuples", built.as_ref().map_or(0, |table| table.cells.len()), started);
                 let mut kept = self.sketches.lock().expect("a sketch lock");
                 let cells = built.as_ref().map_or(0, |table| table.cells.len());
                 if kept.0 + cells <= SKETCH_KEPT {
@@ -205,7 +213,7 @@ impl Boxes {
             }
         };
         if built.is_none() {
-            crate::bounds::mark(crate::bounds::Bound::InsideCells);
+            crate::bounds::mark(crate::bounds::Bound::Walk);
         }
         built
     }
@@ -274,7 +282,7 @@ impl Boxes {
             };
             let held = cells_of(&union);
             if want_p {
-                if (out.len() / arity + held.len()).saturating_mul(arity) > CELL_CAP {
+                if (out.len() / arity + held.len()).saturating_mul(arity) > walk_cells() {
                     return None;
                 }
                 for place in held {
@@ -290,7 +298,7 @@ impl Boxes {
                 colors.extend(held.iter().map(|place| grid.colors[*place]));
                 colors.sort_unstable();
                 colors.dedup();
-                if (out.len() / arity + colors.len()).saturating_mul(arity) > CELL_CAP {
+                if (out.len() / arity + colors.len()).saturating_mul(arity) > walk_cells() {
                     return None;
                 }
                 for color in &colors {
@@ -307,7 +315,7 @@ impl Boxes {
         let width = self.width();
         match step {
             Step::Project { .. } | Step::All { .. } => true,
-            Step::Select { at, other, drop, .. } => *at < width && other.is_none_or(|other| other < width) && *drop != Some(self.at),
+            Step::Select { .. } => true,
             Step::Semijoin { left, .. } | Step::Antijoin { left, .. } => left.iter().all(|column| *column < width),
             Step::Part(part) => part.reads_boxes(width),
             _ => false,
@@ -319,7 +327,7 @@ impl Boxes {
         second_columns(step).is_some()
     }
 
-    /// The relation that `step` reads in place of these boxes as its second relation, where `reads_second` holds of it: no value where the rows pass `CELL_CAP` cells.
+    /// The relation that `step` reads in place of these boxes as its second relation, where `reads_second` holds of it: no value where the rows pass one term's budget of cells.
     pub fn read_second(&self, step: &Step) -> Option<Val> {
         let columns = second_columns(step)?;
         Some(self.rows_at(columns).map_or(Val::None, Val::of_table))
@@ -338,6 +346,113 @@ impl Boxes {
         Some(self.with_rows(&table))
     }
 
+    /// What a `select` gives over these rows. A comparison of columns of the relation keeps rows of the relation, as boxes. Where it drops the box column by equating it with another column of the relation, the boxes stand at that column. Any other comparison writes the pairs of a row and a cell that pass.
+    fn select(&self, at: u16, op: Op, other: Option<u16>, drop: Option<u16>) -> Val {
+        let width = self.width();
+        let on_relation = at < width && other.is_none_or(|other| other < width);
+        // The box column's place in the rows that stay, where the rows that stay are rows of the relation.
+        let moved = if drop != Some(self.at) {
+            Some(if drop.is_some_and(|dropped| dropped < self.at) { self.at - 1 } else { self.at })
+        } else if op == Op::Eq && other == drop {
+            Some(at)
+        } else {
+            None
+        };
+        let (true, Some(moved)) = (on_relation, moved) else { return self.select_pairs(at, op, other, drop) };
+        let Some(kept) = select(&Val::of_table(self.support()), at, op, other, drop) else { return Val::None };
+        let table = match &kept {
+            Val::Empty => return Val::Empty,
+            Val::Rows(parts) => match parts.as_slice() {
+                [one] if one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) => one.table.clone(),
+                _ => return self.select_pairs(at, op, other, drop),
+            },
+            _ => return self.select_pairs(at, op, other, drop),
+        };
+        Boxes::of(&table, moved, self.grid.clone(), self.grid_hash)
+    }
+
+    /// The rows of `inside` that pass a `select`, written out: no value where they pass one term's budget of cells. A row of the relation passes with the cells of its box that the comparison keeps. A comparison of the cell column with a column of the relation keeps one cell at most, which is found from the box's extent.
+    fn select_pairs(&self, at: u16, op: Op, other: Option<u16>, drop: Option<u16>) -> Val {
+        let grid = &self.grid;
+        let width = usize::from(self.width());
+        let arity = width + 2;
+        let side = |column: u16| match usize::from(column) {
+            place if place == width => Side::Cell,
+            place if place == width + 1 => Side::Color,
+            place => Side::Column(place),
+        };
+        let (left, right) = (side(at), other.map_or(Side::Zero, side));
+        let on_cells = left.is_cell() || right.is_cell();
+        let drop = drop.map(usize::from);
+        let box_at = usize::from(self.at);
+        let started = crate::bounds::started();
+        let mut out: Vec<Cell> = Vec::new();
+        let mut line: Vec<Cell> = vec![0; arity];
+        for row in self.support().rows() {
+            line[..width].copy_from_slice(row);
+            let value = |side: Side| match side {
+                Side::Column(place) => row[place],
+                _ => 0,
+            };
+            let (r0, r1, c0, c1) = span(row[box_at], grid.h, grid.w);
+            let mut push = |place: Cell, color: Cell| {
+                line[width] = place;
+                line[width + 1] = color;
+                match drop {
+                    None => out.extend_from_slice(&line),
+                    Some(dropped) => {
+                        out.extend_from_slice(&line[..dropped]);
+                        out.extend_from_slice(&line[dropped + 1..]);
+                    }
+                }
+            };
+            let single = match (left, right, op) {
+                (Side::Cell, Side::Column(_) | Side::Zero, Op::Eq) => Some(value(right)),
+                (Side::Column(_) | Side::Zero, Side::Cell, Op::Eq) => Some(value(left)),
+                _ => None,
+            };
+            if let Some(wanted) = single {
+                // The one cell that is the box `wanted`, if it lies in this row's box.
+                let m = margins_of(wanted);
+                let (r, c) = (m[0], m[2]);
+                if (r0..=r1).contains(&r) && (c0..=c1).contains(&c) && box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c) == wanted {
+                    push(wanted, grid.colors[(r * grid.w + c) as usize]);
+                }
+            } else if !on_cells {
+                if holds(op, value(left), value(right)) {
+                    for c in (c0..=c1).rev() {
+                        for r in (r0..=r1).rev() {
+                            push(box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c), grid.colors[(r * grid.w + c) as usize]);
+                        }
+                    }
+                }
+            } else {
+                for c in (c0..=c1).rev() {
+                    for r in (r0..=r1).rev() {
+                        let (place, color) = (box_bits(r, grid.h - 1 - r, c, grid.w - 1 - c), grid.colors[(r * grid.w + c) as usize]);
+                        let of = |side: Side| match side {
+                            Side::Cell => place,
+                            Side::Color => color,
+                            plain => value(plain),
+                        };
+                        if holds(op, of(left), of(right)) {
+                            push(place, color);
+                        }
+                    }
+                }
+            }
+            if out.len() > walk_cells() {
+                crate::bounds::mark(crate::bounds::Bound::Walk);
+                crate::bounds::wrote("pairs", out.len(), started);
+                return Val::None;
+            }
+        }
+        crate::bounds::wrote("pairs", out.len(), started);
+        let arity = arity - usize::from(drop.is_some());
+        let sorted = out.chunks_exact(arity).is_sorted_by(|a, b| a < b);
+        Val::of_table(if sorted { Table::new(arity, out) } else { Table::distinct(arity, out) })
+    }
+
     /// What `step` gives over these rows, where `reads` holds of it.
     pub fn read(&self, step: &Step, children: &[&Val]) -> Option<Val> {
         if !self.reads(step) {
@@ -348,20 +463,7 @@ impl Boxes {
                 Some(table) => project(&Val::of_table(table), columns),
                 None => Val::None,
             }),
-            Step::Select { at, op, other, drop } => {
-                // The rows that stay are those of the relation, which keep the box column's place unless a column before it goes.
-                let Some(kept) = select(&Val::of_table(self.support()), *at, *op, *other, *drop) else { return Some(Val::None) };
-                let table = match &kept {
-                    Val::Empty => return Some(Val::Empty),
-                    Val::Rows(parts) => match parts.as_slice() {
-                        [one] if one.columns.iter().enumerate().all(|(place, column)| usize::from(*column) == place) => one.table.clone(),
-                        _ => return None,
-                    },
-                    _ => return None,
-                };
-                let moved = if drop.is_some_and(|dropped| dropped < self.at) { self.at - 1 } else { self.at };
-                Some(Boxes::of(&table, moved, self.grid.clone(), self.grid_hash))
-            }
+            Step::Select { at, op, other, drop } => Some(self.select(*at, *op, *other, *drop)),
             Step::Semijoin { left, right } => {
                 let kept = semijoin(&Val::of_table(self.support()), children[1], left, right);
                 self.kept(kept.unwrap_or(Val::None))
@@ -380,6 +482,21 @@ impl Boxes {
             Step::Part(part) => part.read_boxes(self, children),
             _ => None,
         }
+    }
+}
+
+/// A side of a comparison over the rows of `inside`: a column of the relation, the cell, its color, or 0.
+#[derive(Clone, Copy)]
+enum Side {
+    Column(usize),
+    Cell,
+    Color,
+    Zero,
+}
+
+impl Side {
+    fn is_cell(self) -> bool {
+        matches!(self, Side::Cell | Side::Color)
     }
 }
 

@@ -6,7 +6,7 @@
 //! A walker calls [`begin`] before an evaluation and [`end`] after it. A bound that stops the
 //! evaluation calls [`mark`] in between, and the evaluation then counts once for that bound, however
 //! many times the bound is met inside it. A walk calls [`flush`] when it ends, which adds the counts
-//! of the thread to the totals that [`summary`] prints.
+//! of the thread to the totals that [`summary`] prints. A write of the cells of `inside` calls [`wrote`], and the summary lists the cells and the seconds of the writes per head.
 
 use std::cell::{Cell, RefCell};
 use std::sync::{Mutex, OnceLock};
@@ -32,10 +32,8 @@ pub enum Bound {
     CountOutput,
     /// A product of parts that `flat` writes passes 2^18 rows.
     Flat,
-    /// A term has passed its budget of cells, `GENERATE_WALK_CELLS`: 100,000,000 by default.
+    /// A term has passed its budget of cells of values, which includes the rows of `inside` that it writes out, or one write of such rows passes that budget.
     Walk,
-    /// The rows of `inside` that an operator reads, written out or as the tuples at the columns it names, pass `CELL_CAP` cells.
-    InsideCells,
     /// `complement` reads a box of more than 4096 cells.
     ComplementArea,
     /// A lib join passes `CELL_CAP` cells, on a side or as its output.
@@ -47,8 +45,8 @@ pub enum Bound {
 }
 
 /// The name of each bound, in the order of [`Bound`].
-const NAMES: [&str; 14] = [
-    "boxes-guard", "cap-join-side", "cap-join-output", "cap-antijoin-side", "cap-select-side", "cap-union", "cap-count-output", "flat", "walk", "inside-cells", "complement-area", "cap-lib-join", "cap-projected", "cap-component-output",
+const NAMES: [&str; 13] = [
+    "boxes-guard", "cap-join-side", "cap-join-output", "cap-antijoin-side", "cap-select-side", "cap-union", "cap-count-output", "flat", "walk", "complement-area", "cap-lib-join", "cap-projected", "cap-component-output",
 ];
 
 /// The slot of the evaluations in a head's counts, and of those whose input already had no value.
@@ -64,12 +62,14 @@ struct Totals {
     names: Vec<String>,
     index: LookupMap<String, u32>,
     counts: Vec<Counts>,
+    /// For each head and kind of write of the cells of `inside`: the cells written, the seconds, and the writes.
+    writes: LookupMap<(u32, &'static str), (u64, f64, u64)>,
 }
 
 static TOTALS: OnceLock<Mutex<Totals>> = OnceLock::new();
 
 fn totals() -> &'static Mutex<Totals> {
-    TOTALS.get_or_init(|| Mutex::new(Totals { names: vec!["(no head)".to_string()], index: LookupMap::new(), counts: vec![[0; SLOTS]] }))
+    TOTALS.get_or_init(|| Mutex::new(Totals { names: vec!["(no head)".to_string()], index: LookupMap::new(), counts: vec![[0; SLOTS]], writes: LookupMap::new() }))
 }
 
 thread_local! {
@@ -79,6 +79,8 @@ thread_local! {
     static HEAD: Cell<u32> = const { Cell::new(0) };
     /// This thread's counts by head, not yet added to the totals.
     static LOCAL: RefCell<Vec<Counts>> = const { RefCell::new(Vec::new()) };
+    /// This thread's writes of the cells of `inside`, by head and kind, not yet added to the totals.
+    static WRITES: RefCell<LookupMap<(u32, &'static str), (u64, f64, u64)>> = RefCell::new(LookupMap::new());
     /// The bounds that stopped an evaluation since the term in progress began, one bit each.
     static EVER: Cell<u32> = const { Cell::new(0) };
     /// The bounds that stopped each evaluation that a walk kept a value for, by the key of that value.
@@ -247,6 +249,25 @@ pub fn skipped(bound: Bound, count: u64) {
     }
 }
 
+/// The time now, where the counts run, for [`wrote`].
+pub fn started() -> Option<std::time::Instant> {
+    enabled().then(std::time::Instant::now)
+}
+
+/// A write of `cells` cells of `inside` of a `kind` (the rows written out, a table of tuples, the pairs a `select` keeps) that began at `started`, for the head of the term in progress.
+pub fn wrote(kind: &'static str, cells: usize, started: Option<std::time::Instant>) {
+    let Some(started) = started else { return };
+    let seconds = started.elapsed().as_secs_f64();
+    let head = HEAD.with(Cell::get);
+    WRITES.with(|writes| {
+        let mut writes = writes.borrow_mut();
+        let entry = writes.entry((head, kind)).or_insert((0, 0.0, 0));
+        entry.0 += cells as u64;
+        entry.1 += seconds;
+        entry.2 += 1;
+    });
+}
+
 /// Counts of a walk by group and by label, for the checks of a change.
 static TALLIES: OnceLock<Mutex<LookupMap<(&'static str, String), u64>>> = OnceLock::new();
 
@@ -280,7 +301,14 @@ pub fn flush() {
         return;
     }
     let local = LOCAL.with(|local| std::mem::take(&mut *local.borrow_mut()));
+    let writes = WRITES.with(|writes| std::mem::take(&mut *writes.borrow_mut()));
     let mut held = totals().lock().unwrap();
+    for (key, (cells, seconds, count)) in writes.into_sorted_vec() {
+        let entry = held.writes.entry(key).or_insert((0, 0.0, 0));
+        entry.0 += cells;
+        entry.1 += seconds;
+        entry.2 += count;
+    }
     for (head, counts) in local.iter().enumerate() {
         for (slot, count) in counts.iter().enumerate() {
             held.counts[head][slot] += count;
@@ -314,6 +342,12 @@ pub fn summary() -> String {
         for (group, label, most) in rows {
             out.push_str(&format!("bounds\tmost\t{group}\t{label}\t{most}\n"));
         }
+    }
+    out.push_str("bounds\twrote\thead\tkind\tcells\tseconds\twrites\n");
+    let mut written: Vec<(&str, &str, u64, f64, u64)> = held.writes.sorted_entries().into_iter().map(|((head, kind), (cells, seconds, count))| (held.names[*head as usize].as_str(), *kind, *cells, *seconds, *count)).collect();
+    written.sort_by(|a, b| b.3.total_cmp(&a.3).then(a.0.cmp(b.0)).then(a.1.cmp(b.1)));
+    for (head, kind, cells, seconds, count) in written {
+        out.push_str(&format!("bounds\twrote\t{head}\t{kind}\t{cells}\t{seconds:.3}\t{count}\n"));
     }
     out.push_str("bounds\thead\tevaluations\tinput had no value\n");
     let mut heads: Vec<(&str, u64, u64)> = held.names.iter().zip(&held.counts).filter(|(_, counts)| counts[EVALUATIONS] > 0).map(|(head, counts)| (head.as_str(), counts[EVALUATIONS], counts[INHERITED])).collect();

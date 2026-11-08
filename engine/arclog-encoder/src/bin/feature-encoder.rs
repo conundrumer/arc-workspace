@@ -2248,6 +2248,8 @@ fn run_cap_hits(arguments: &Arguments, solvers: &[String]) -> Result<(), String>
         writeln!(out, "{}", serde_json::json!({"task": solver, "task_done": true, "skipped_tables": skipped})).map_err(|error| error.to_string())?;
         out.flush().map_err(|error| error.to_string())?;
     }
+    // The summary lists, per head, the cells and the seconds of the writes of `inside` cells.
+    eprint!("{}", arclog_encoder::bounds::summary());
     Ok(())
 }
 

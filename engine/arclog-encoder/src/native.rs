@@ -622,7 +622,7 @@ pub fn lazy_written_cells() -> usize {
 }
 
 /// The cells of the tables of `value`, which a lazy value's written rows hold.
-fn cells_of(value: &Val) -> usize {
+pub(crate) fn cells_of(value: &Val) -> usize {
     match value {
         Val::Rows(parts) => parts.iter().map(|part| part.table.cells.len()).sum::<usize>(),
         _ => 0,
