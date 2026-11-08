@@ -87,9 +87,10 @@ The step ends when each of these holds, or the difference is reported as a fault
     - Check copies: a diagnosis that reports the rows that a construction does not copy. It changes no token.
 - Environment variables that remain:
     - `ARCLOG_THREADS`: the thread count of a corpus run.
-    - `ARCLOG_STATS`: the switch of the per-phase timing, which costs time.
+    - `ARCLOG_STATS`: the switch of the per-phase timing and counters that `engine_stats` gives. It costs time and changes no result and no work count of the engine.
     - `GENERATE_SPILL_DIR` and `GENERATE_RESIDENT_CELLS`: the folder of the `feature-encoder` tool's copies on disk and the cells that its walks keep in memory. Neither changes what the tool builds or prints.
-    - `ARCLOG_MAP_SEED`: a check of the `feature-encoder` tool that no output follows the bucket order of a map.
+    - `ARCLOG_MAP_SEED`: seeds the hashers of the engine's maps and sets, so that a run iterates them in another order. Equal outputs with and without it show that no output follows the bucket order of a map. The `feature-encoder` check runs it.
+    - `ARC_ROOT`: the default of the `--repo` option of the shape check scripts in `engine/arclog-py/`, the folder that holds `data/tasks`.
 - Cargo features that remain: `extension-module` links the Python extension as maturin needs, and `admissible-reference` builds the exhaustive oracle that the admissible workload check compares with.
 - Keyword arguments of the Python bindings that remain:
     - `step_cap`, `max_work`, `limit`: bounds.
