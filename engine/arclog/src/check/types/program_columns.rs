@@ -123,6 +123,24 @@ pub(in crate::check) fn program_types(
     types
 }
 
+/// `types` with the column types of the relation of each of `nodes` typed
+/// again over `program`, a resolution of the program of `types` that keeps
+/// fewer columns of those nodes: a `DET` parameter or a chosen relation that
+/// clauses give, whose columns are decided by the reads that `program`
+/// counts. The types of the labels are those of `types`.
+pub(in crate::check) fn narrowed_types(program: &ResolvedProgram, types: &ProgramTypes, nodes: &[GraphNodeIndex]) -> ProgramTypes {
+    let fixed: StableHashMap<(NodePath, Arc<[OutputStep]>), &[ValueType]> = StableHashMap::default();
+    let mut narrowed = types.clone();
+    for &node in nodes {
+        let relation = GraphRelation { node, output: None };
+        match given_columns(program, types, &fixed, node) {
+            Some(columns) => narrowed.insert_columns(relation, columns),
+            None => narrowed.remove_columns(&relation),
+        }
+    }
+    narrowed
+}
+
 /// The types of the columns of `node`, a relation that clauses or a
 /// `CHOOSE` form give, from the [`ProgramTypes::form`] of `types` and the
 /// relations `fixed` holds, as [`program_types`] gives them, or `None`
