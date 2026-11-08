@@ -1,4 +1,4 @@
-"""The text-level union gold of one task set: every non-excluded case of each task's solver and the pinned program, with forms merged by identity only (text with each read replaced by its ancestry, labels dropped), so equal tables made by different text stay apart and the table count is an upper bound. Writes union-identity-<set>.jsonl and its sha256 in GOLD_UNION_DIR (default work/lm/data-study/gold/gold-union). design.md gives the cases and the table fields.
+"""The text-level union gold of one task set: every case of each task's solver and the pinned program, with forms merged by identity only (text with each read replaced by its ancestry, labels dropped), so equal tables made by different text stay apart and the table count is an upper bound. Writes union-identity-<set>.jsonl and its sha256 in GOLD_UNION_DIR (default work/lm/data-study/gold/gold-union). design.md gives the cases and the table fields.
 
   .venv/bin/python gold_union_identity.py SET      SET: train, dev or held-out
 """
@@ -32,7 +32,7 @@ def program(text):
 
 def main():
     want = sys.argv[1]
-    pubs, ex = K.publications(), K.excluded()
+    pubs = K.publications()
     path = OUT + '/union-identity-%s.jsonl' % want
     with Z.open_text(path, 'w', atomic=True) as out:
         for t in K.union_tasks(pubs):
@@ -41,8 +41,7 @@ def main():
             progs = [('pinned', K.pinned(t))] if K.pinned(t) is not None else []
             if t in pubs:
                 for c in pubs[t][1]['cases']:
-                    if c['case'].replace('$', '').replace(' ', '+') not in ex[t]:
-                        progs.append((c['case'], c.get('filtered_program') or c.get('original_program') or ''))
+                    progs.append((c['case'], c.get('filtered_program') or c.get('original_program') or ''))
             tables, order = {}, []
             for name, text in progs:
                 for key, kind, line, reads, d in program(text):

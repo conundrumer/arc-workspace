@@ -3,9 +3,9 @@
   PYTHONPATH=<site> ARCLOG_IDENT_SOURCE=value GOLD_UNION_DIR=<folder> python gold_union_grammar_check.py run OUT [SET ...] [--shard K N]
   python gold_union_grammar_check.py summary OUT [--expect TASK,TASK,...]
 
-`run` writes OUT/grammar-SET[-K].jsonl (a zstd stream, study_zst.py), one line per task, as each task is checked: task, set, engine, and programs, a list of {text_sha, cases, excluded, decode}. `decode` is 'ok', 'refused: <reason> at token <i>', 'does not parse: <reason>', or 'error: <reason>'. SET is train, dev or held-out (default: all three). `--shard K N` takes the tasks at positions K, K + N, ... of the set and writes grammar-SET-K.jsonl. A restart skips the tasks that the file has (a Python with zstandard runs this file). With GRAMMAR_TASKS set (tasks separated by spaces), `run` takes only those tasks. It prints a progress line every 20 tasks with the rate in programs per second and the time left.
+`run` writes OUT/grammar-SET[-K].jsonl (a zstd stream, study_zst.py), one line per task, as each task is checked: task, set, engine, and programs, a list of {text_sha, cases, decode}. `decode` is 'ok', 'refused: <reason> at token <i>', 'does not parse: <reason>', or 'error: <reason>'. SET is train, dev or held-out (default: all three). `--shard K N` takes the tasks at positions K, K + N, ... of the set and writes grammar-SET-K.jsonl. A restart skips the tasks that the file has (a Python with zstandard runs this file). With GRAMMAR_TASKS set (tasks separated by spaces), `run` takes only those tasks. It prints a progress line every 20 tasks with the rate in programs per second and the time left.
 SAMPLER_LIVE_TRY names the live_try.py whose SETTINGS the check takes, as for gold_union_fits.py (default: gen-r69's live_try-08013c6cc.py, whose SETTINGS is a constant dict).
-`summary` reads every OUT/grammar-*.jsonl.zst or .jsonl and prints, for the cases that are not excluded, the tasks and cases refused with each reason; with --expect, the tasks of that list that no refusal names and the refused tasks that the list lacks.
+`summary` reads every OUT/grammar-*.jsonl.zst or .jsonl and prints the tasks and cases refused with each reason; with --expect, the tasks of that list that no refusal names and the refused tasks that the list lacks.
 """
 import json, os, re, sys, time
 from pathlib import Path
@@ -20,12 +20,11 @@ EVERY = 20  # tasks between progress lines
 
 
 def programs_by_task(set_name):
-    """{task: {text: ([case], excluded)}} of cases-SET.jsonl, in the order of the file."""
+    """{task: {text: [case]}} of cases-SET.jsonl, in the order of the file."""
     got = {}
     for l in Z.open_text(F.OUT + 'cases-%s.jsonl' % set_name):
         r = json.loads(l)
-        cases, excl = got.setdefault(r['task'], {}).get(r['gold_sexp'], ([], True))
-        got[r['task']][r['gold_sexp']] = (cases + [r['case']], excl and r['excluded'] in (True, 'True'))
+        got.setdefault(r['task'], {}).setdefault(r['gold_sexp'], []).append(r['case'])
     return got
 
 
@@ -64,7 +63,7 @@ def run(out, sets, shard):
         with Z.open_text(path, 'a', line_buffering=True) as f:
             for i, t in enumerate(left, 1):
                 task_json = json.load(open(tasks_dir / (t + '.json')))
-                progs = [dict(text_sha=F.sha16(text), cases=cases, excluded=excl, decode=decode_of(env, task_json, text)) for text, (cases, excl) in by[t].items()]
+                progs = [dict(text_sha=F.sha16(text), cases=cases, decode=decode_of(env, task_json, text)) for text, cases in by[t].items()]
                 f.write(json.dumps(dict(task=t, set=s, engine=engine, programs=progs)) + '\n')
                 seen += len(progs)
                 refused += sum(p['decode'] != 'ok' for p in progs)
@@ -81,10 +80,10 @@ def summary(out, expect):
     rows = [json.loads(l) for p in Z.glob(out + '/grammar-*.jsonl') for l in Z.open_text(p) if l.endswith('\n')]
     by_task = {}
     for r in rows:
-        bad = [p for p in r['programs'] if p['decode'] != 'ok' and not p['excluded']]
+        bad = [p for p in r['programs'] if p['decode'] != 'ok']
         if bad:
             by_task[r['task']] = (r['set'], bad)
-    print('%d tasks read, %d programs; %d tasks have a refused program (excluded cases not counted)' % (len(rows), sum(len(r['programs']) for r in rows), len(by_task)))
+    print('%d tasks read, %d programs; %d tasks have a refused program' % (len(rows), sum(len(r['programs']) for r in rows), len(by_task)))
     reasons = {}
     for t, (s, bad) in sorted(by_task.items()):
         ncases = sum(len(p['cases']) for p in bad)

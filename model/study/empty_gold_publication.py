@@ -434,6 +434,7 @@ def publish(args):
     chosen = args.task or sorted(p.stem for p in corpus.glob('*.arcdata'))
     implementation = file_ref(__file__)
     started = time.monotonic(); done = reused = failures = 0
+    failed: list[str] = []
     with JsonlWriter(args.output) as out, JsonlWriter(args.lint_output) as lint_out:
         prior = {}; seen_lint = set()
         with JsonlReader(args.lint_output) as source:
@@ -463,15 +464,15 @@ def publish(args):
                 result = validate_report(json.loads(native(
                     str(corpus), str(tasks), task, request_work_cap=args.request_work_cap)), request)
             except Exception as error:
-                # A transport/native failure keeps the entire original task;
-                # no incomplete candidate can enter a downstream consumer.
-                result = dict(schema=NATIVE_SCHEMA, task=task, selection='original',
-                              reason=f'{type(error).__name__}: {error}',
-                              cases=[], skipped_cases=[],
-                              singleton_double_read_lint=dict(status='unavailable',
-                                  reason='native call or result transport failed'),
-                              transport_error=dict(traceback=traceback.format_exc()),
-                              original_source=request['source'])
+                # A native call or a report that fails commits no line: the task is set apart in
+                # <output>.failed.jsonl with its error, and the run exits nonzero at its end.
+                failed.append(task)
+                with open(str(args.output) + '.failed.jsonl', 'a') as f:
+                    f.write(json.dumps(dict(task=task, error=f'{type(error).__name__}: {error}',
+                                            traceback=traceback.format_exc())) + '\n')
+                print(json.dumps(dict(error='native call failed; no line committed', task=task,
+                                      reason=f'{type(error).__name__}: {error}')), flush=True)
+                continue
             if source_ref(corpus, tasks, task) != request['source']:
                 raise ValueError('task source changed during native operation; no result committed')
             # A case whose selected program has no text gives no gold: it is
@@ -499,6 +500,11 @@ def publish(args):
                                   seconds=round(time.monotonic()-started, 3))), flush=True)
     if args.check_set:
         audit_check_set(args.output, args.check_set, args.audit_output)
+    if failed:
+        print(json.dumps(dict(error='tasks set apart: their native call failed', tasks=failed,
+                              file=str(args.output) + '.failed.jsonl')), flush=True)
+        return 1
+    return 0
 
 
 def main():
@@ -542,7 +548,7 @@ def main():
         if args.lint_output.resolve() == args.output.resolve(): parser.error('lint and gold outputs must differ')
         args.lint_output.parent.mkdir(parents=True, exist_ok=True)
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        publish(args)
+        return publish(args)
 
 
 if __name__ == '__main__':

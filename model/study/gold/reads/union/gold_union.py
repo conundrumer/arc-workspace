@@ -11,7 +11,6 @@ A program is kept when its text has a row in fits-SET.jsonl (gold_union_fits.py,
 """
 import glob, hashlib, json, os, re, sys, time
 from pathlib import Path
-sys.path.insert(0, '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-v3-combined-cut/dedup-final')
 sys.path.append(str(Path(__file__).resolve().parents[3]))  # model/study
 import study_zst as Z  # the large files of OUT are zstd streams or plain files, whichever is on disk
 SAMPLES = '/Users/davidlu/code/arc-workspace/model/study/samples'  # query_hash.py
@@ -162,7 +161,7 @@ def record(row, ids, progs, hashes):
     return dict(row, tables=tables, merged='query_hash', query_hash_version=Q.VERSION, unhashed=sorted(g[0] for g in group.values() if hashes[ids[g[0]]['form']['ident']][0] is None))
 
 
-def one(t, pubs, ex):
+def one(t, pubs):
     print('stem', t, flush=True)
     bar = Bar(t)
     row = dict(stem=t, taken=None, task=t, set=set_of(t))
@@ -186,8 +185,6 @@ def one(t, pubs, ex):
         else:
             kept = {sha(pin): dict(test_differs=not x['test_ok'])}
     for c in (pubs[t][1]['cases'] if t in pubs else []):
-        if c['case'].replace('$', '').replace(' ', '+') in ex[t]:
-            continue
         text = c.get('filtered_program') or c.get('original_program') or ''
         if text not in texts:
             try:
@@ -225,9 +222,9 @@ def one(t, pubs, ex):
 
 
 def child(stems):
-    pubs, ex = G.publications(), G.excluded()
+    pubs = G.publications()
     for t in stems:
-        print(json.dumps(one(t, pubs, ex)), flush=True)
+        print(json.dumps(one(t, pubs)), flush=True)
 
 
 class Rows:

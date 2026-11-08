@@ -50,12 +50,10 @@ def engine():
 
 
 def programs_of(set_name):
-    """{task: {text: [case]}} of the lines of cases-SET.jsonl that are not excluded, in the order of the file."""
+    """{task: {text: [case]}} of the lines of cases-SET.jsonl in the order of the file."""
     got = {}
     for l in Z.open_text(OUT + 'cases-%s.jsonl' % set_name):
         r = json.loads(l)
-        if r['excluded'] in (True, 'True'):
-            continue
         got.setdefault(r['task'], {}).setdefault(r['gold_sexp'], []).append(r['case'])
     return got
 

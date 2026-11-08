@@ -1,17 +1,16 @@
-"""The enabled queries of the states of state sequences over a set's union graph, against the task's cheapest and minimax paths. Prints the counts and writes walks-SET.json in GOLD_UNION_DIR (default work/lm/data-study/gold/gold-union).
+"""The enabled queries of the states of state sequences over a set's union graph, over the task's goal. Prints the counts and writes walks-SET.json in GOLD_UNION_DIR (default work/lm/data-study/gold/gold-union).
 
   .venv/bin/python gold_union_walks.py SET [SET ...]
 
 - A state sequence starts at the empty state, a set of built graph tables. At each step it records the state and its enabled queries (each table the query uses is built, and some head is not), then adds the heads of one enabled query, chosen at random by the sequence's seed. It stops when every table of some goal option is built, or when nothing is enabled. Base tables aren't graph tables, so a query that uses none is enabled in the empty state.
-- State sequence types: `union` picks among all enabled queries, and `path` picks among the enabled queries of the cheapest path. 8 state sequences a task per type, seeds 0 to 7.
-- Per step, each enabled query is on the cheapest path, on the minimax path, on both, or on neither (`path` and `minimax_path` of graph-tasks-SET.jsonl). A task without a minimax path counts its queries against the cheapest path alone.
+- State sequence type: `union` picks among all enabled queries. 8 state sequences a task, seeds 0 to 7. A task is taken when its graph-tasks-SET.jsonl line has goals and no `error`.
 - The frontier depth of a step is the least depth among its enabled queries (graph-prods-SET.jsonl).
 - A state is the set of queries the state sequence has added (their Python identities in graph-prods-SET.jsonl), closed under use; two states with equal tables but different queries are different states. The built tables are a measurement of the state.
 - A state sequence adds only a query that computes a table not yet built. A query not in the state whose heads are all built is not a step; per state, `redundant_forms` counts the applicable queries of that kind, as a measurement.
 - For union state sequences, per distinct state (task, set of queries), counted at its first step, and again summed over every step (`over_steps`, where `distinct_states` is the step count): applicable queries (every table a query uses is built), the distinct tables they compute, enabled queries, and the distinct unbuilt tables they compute. The distinct states go to walk-states-SET.jsonl (task, forms, queries, built, depth, redundant_forms; `forms` holds the Python identities of the state's queries and `queries` their QueryHashes, or the Python identity where the row store lacks it), and walks-SET.json gives `distinct_table_sets`, the count of distinct (task, built set) pairs.
 - Each union state sequence goes to walk-seqs-SET.jsonl: task, seed, reached_goal, and `states`, the line numbers (from 0) of its states in walk-states-SET.jsonl, in step order.
 - Some output field names keep older terms: `*_forms` fields count queries, and `walks` in walks-SET.json counts state sequences.
-- WALK_KINDS (default `union path`) picks the state sequence types.
+- WALK_KINDS (default `union`) picks the state sequence types; `union` is the only one.
 """
 import collections, json, os, random, sys
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../..'))  # model/study
@@ -19,7 +18,7 @@ import study_zst as Z  # the graph files are zstd streams or plain files, whiche
 
 OUT = os.environ.get('GOLD_UNION_DIR', '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union') + '/'  # GOLD_UNION_DIR: the folder of the inputs and outputs
 PER_TASK = 8
-KINDS = os.environ.get('WALK_KINDS', 'union path').split()
+KINDS = os.environ.get('WALK_KINDS', 'union').split()
 
 
 def quart(xs):
@@ -30,7 +29,7 @@ def quart(xs):
     return dict(n=len(xs), p25=q(.25), median=q(.5), p75=q(.75), p90=q(.9), max=xs[-1], mean=round(sum(xs) / len(xs), 2))
 
 
-def state_sequence(queries, goals, pick_from, seed):
+def state_sequence(queries, goals, seed):
     """(steps, reached): each step is (built tables, queries added so far, enabled queries)."""
     rng = random.Random(seed)
     built, added, steps = set(), set(), []
@@ -39,10 +38,7 @@ def state_sequence(queries, goals, pick_from, seed):
         if not enabled:
             return steps, False
         steps.append((frozenset(built), frozenset(added), enabled))
-        pool = [p for p in enabled if pick_from is None or p['ident'] in pick_from] or None
-        if pool is None:
-            return steps, False
-        pick = rng.choice(pool)
+        pick = rng.choice(enabled)
         built |= set(pick['heads'])
         added.add(pick['ident'])
     return steps, True
@@ -58,12 +54,10 @@ def main():
         for kind in KINDS:
             rows, reached, count = [], 0, 0
             for t in map(json.loads, Z.open_text(OUT + 'graph-tasks-%s.jsonl' % s)):
-                if not t.get('goals') or not t.get('path'):
+                if not t.get('goals') or t.get('error'):
                     continue
-                cheap = set(t['path']['idents'])
-                mini = set((t.get('minimax_path') or {}).get('idents', []))
                 for seed in range(PER_TASK):
-                    steps, ok = state_sequence(queries[t['task']], t['goals'], cheap if kind == 'path' else None, seed)
+                    steps, ok = state_sequence(queries[t['task']], t['goals'], seed)
                     count += 1
                     reached += ok
                     if kind == 'union':
@@ -80,13 +74,11 @@ def main():
                                                    enabled_forms=len(e), enabled_tables=len({h for p in e for h in p['heads'] if h not in state}))
                             step_depth = min((p['depth'] for p in e if p['depth'] is not None), default=None)
                             steps_of[step_depth].append(states[key])
-                        on = collections.Counter('both' if p['ident'] in cheap and p['ident'] in mini else 'cheapest' if p['ident'] in cheap else 'minimax' if p['ident'] in mini else 'neither' for p in e)
-                        rows.append(dict(task=t['task'], enabled=len(e), frontier=min(p['depth'] for p in e if p['depth'] is not None) if any(p['depth'] is not None for p in e) else None, **on))
+                        rows.append(dict(task=t['task'], enabled=len(e), frontier=min(p['depth'] for p in e if p['depth'] is not None) if any(p['depth'] is not None for p in e) else None))
             per = collections.defaultdict(list)
             for r in rows:
                 per[r['frontier']].append(r)
-            summary = lambda rs: dict(steps=len(rs), **{k: quart([r.get(k, 0) for r in rs]) for k in ('enabled', 'cheapest', 'minimax', 'both', 'neither')},
-                                      on_cheapest_any=round(sum(r.get('cheapest', 0) + r.get('both', 0) > 0 for r in rs) / max(1, len(rs)), 3))
+            summary = lambda rs: dict(steps=len(rs), **{k: quart([r.get(k, 0) for r in rs]) for k in ('enabled',)})
             out[kind] = dict(walks=count, reached_goal=reached, all=summary(rows),
                              per_frontier_depth={str(d): summary(rs) for d, rs in sorted(per.items(), key=lambda x: (x[0] is None, x[0] or 0))})
             print(s, kind, 'walks', count, 'reached', reached, json.dumps(out[kind]['all']))

@@ -5,20 +5,14 @@
 - Productions: the lines of graph-prods-SET.jsonl, in all and per form kind.
 - Patterns: distinct (kind, read kinds), where a read kind is the kind of a graph table the production reads (an INIT table with its component output, from its `members`). Base relations such as `input` are not graph tables, so they are not among the read kinds.
 - OR tables: tables of graph-tables-SET.jsonl with more than one production, and the mean productions per table, in all and per depth.
-- Kit-unreachable tables: tables with `kit_unreachable` (the kit's `left` in maps-SET.jsonl), per depth, and split by `kit_unreachable_reason`: not collected (the program doesn't replay in the kit), not finished at the work cap (`TableWork`), or not finished with no cap.
 - Cases per task: `cases` of case-counts.jsonl, for the set's tasks.
-- Per task: the productions on the cheapest path, and the goal depth, from graph-tasks-SET.jsonl. A task without a path, and a task whose goal depth is infinite (no goal option has all its tables made), are counted apart.
+- Per task: the goal depth, from graph-tasks-SET.jsonl. A task whose goal depth is infinite (no goal option has all its tables made) is counted apart, and the task errors.
 """
 import collections, json, statistics, sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../..'))  # model/study
 import study_zst as Z  # the union files are zstd streams or plain files, whichever is on disk
 OUT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
-
-
-def reason(t):
-    why = t.get('kit_unreachable_reason') or ''
-    return 'reason not recorded' if not why else 'not collected' if why.startswith('not collected') else 'not finished, work cap' if any(kind in why for kind in ('TableWork', 'RequestWork', 'RequestBytes', 'AssignmentBytes')) else 'not finished, no cap'
 
 
 def dist(xs):
@@ -50,7 +44,6 @@ def main():
         by_depth[t['depth'] if isinstance(t['depth'], int) else None].append(t)
     ours = {t['task'] for t in tasks}
     cases = [c['cases'] for c in map(json.loads, open(OUT + 'case-counts.jsonl')) if c.get('task') in ours and 'cases' in c]
-    with_path = [t for t in tasks if t.get('path')]
     out = dict(
         set=s, tasks=len(tasks), tables=len(tables), productions=len(prods),
         productions_per_kind=dict(collections.Counter(p['kind'] for p in prods).most_common()),
@@ -58,12 +51,9 @@ def main():
         patterns_used_once=sum(n == 1 for n in patterns.values()),
         or_tables=sum(n > 1 for n in per_table), productions_per_table_mean=round(statistics.mean(per_table), 3),
         productions_per_table=dict(sorted(collections.Counter(per_table).items())),
-        per_depth={str(d): dict(tables=len(ts), or_tables=sum(t['productions'] > 1 for t in ts), productions_per_table_mean=round(statistics.mean(t['productions'] for t in ts), 3), kit_unreachable=sum(bool(t.get('kit_unreachable')) for t in ts), **{'kit_unreachable_' + k.replace(' ', '_').replace(',', ''): n for k, n in collections.Counter(reason(t) for t in ts if t.get('kit_unreachable')).items()})
+        per_depth={str(d): dict(tables=len(ts), or_tables=sum(t['productions'] > 1 for t in ts), productions_per_table_mean=round(statistics.mean(t['productions'] for t in ts), 3))
                    for d, ts in sorted(by_depth.items(), key=lambda x: (x[0] is None, x[0] or 0))},
-        kit_unreachable=sum(bool(t.get('kit_unreachable')) for t in tables.values()),
-        kit_unreachable_by_reason=dict(collections.Counter(reason(t) for t in tables.values() if t.get('kit_unreachable'))),
         cases_per_task=dist(cases),
-        path_productions=dist([len(t['path']['idents']) for t in with_path]), tasks_without_path=len(tasks) - len(with_path),
         goal_depth=dist([t['goal_depth'] for t in tasks if t.get('goal_depth') is not None and t['goal_depth'] != float('inf')]),
         goal_depth_infinite=sum(t.get('goal_depth') == float('inf') for t in tasks),
         task_errors=dict(collections.Counter(t['error'].split(':')[0] for t in tasks if t.get('error'))))
