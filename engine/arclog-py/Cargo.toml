@@ -22,7 +22,9 @@ arclog-bindings = { path = "../arclog-bindings" }
 arclog-tables-py = { path = "../arclog-tables-py" }
 # The allocator of the extension: the engine allocates many small blocks that
 # live for a short time, which this allocator serves faster than the system's.
-mimalloc = { version = "0.1", default-features = false }
+# Its thread-local state uses the local-dynamic model, so the library holds no
+# static TLS, and a Linux Python opens it whatever static TLS its glibc keeps.
+mimalloc ={ version = "0.1", default-features = false, features = ["local_dynamic_tls"] }
 # The count of the heap's live bytes around that allocator, which a task
 # session's byte bound reads.
 arclog = { path = "../arclog" }
