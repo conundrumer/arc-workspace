@@ -25,13 +25,19 @@ create_exception!(
     Refusal,
     "A query has no hash: the search for the canonical labeling of a form that it reads passed its cap of search nodes, so the hash would depend on the written order. The same query is refused again. Attributes: `bound`, the name of the bound (`LabelingNodes`); `cap`, the bound's cap as an int."
 );
-create_exception!(arclog, EngineFault, PyRuntimeError, "The base of the faults of the engine: a call that raises one has no result, and the same call, run again, may raise it again. `Fault` and `EffortExhausted` are its subclasses.");
+create_exception!(arclog, EngineFault, PyRuntimeError, "The base of the faults of the engine: a call that raises one has no result, and the same call, run again, may raise it again. `Fault`, `EffortExhausted` and `CallGuardExhausted` are its subclasses.");
 create_exception!(arclog, Fault, EngineFault, "A run of the engine faults.");
 create_exception!(
     arclog,
     EffortExhausted,
     EngineFault,
     "A request passed its effort guard: the searches of the call tried more bindings than the guard allows (the gauge `effort` of `request_stats()`). It stops a runaway and is a fault of the call, never a result: no table, mask or count is given. Attributes: `gauge`, the name of the gauge that passed its cap (`effort`); `cap`, its cap as an int."
+);
+create_exception!(
+    arclog,
+    CallGuardExhausted,
+    EngineFault,
+    "A call that evaluates several candidates (`successor_tables`) passed a bound over the whole call: the work cap or the byte budget of the call's own request, which holds the work shared by the candidates and the work of no candidate. It is a fault of the call and never a result: no table of any candidate is given, and none is cut. A bound of one candidate's own request cuts that candidate alone and is no such fault. Attributes: `bound`, the `StopKind` of the bound (`RequestWork` or `RequestBytes`); `cap`, the bound's cap as an int."
 );
 create_exception!(
     arclog,
@@ -54,6 +60,18 @@ pub fn budget_reached(py: Python<'_>, bound: ReachedBound, left_out: &[String]) 
     let error = BudgetReached::new_err(format!("the export of the tables stopped at {bound:?} and left out the table of {}", left_out.join(", ")));
     let value = error.value(py);
     let named = Py::new(py, PyStopKind::from(Stop::from(bound))).and_then(|kind| value.setattr("bound", kind)).and_then(|()| value.setattr("cap", bound.cap())).and_then(|()| value.setattr("tables", left_out.to_vec()));
+    match named {
+        Ok(()) => error,
+        Err(failure) => failure,
+    }
+}
+
+/// The `CallGuardExhausted` for a call that passed `bound`, a bound of its
+/// own request: the error carries the bound as `bound` and its cap as `cap`.
+pub fn call_guard_exhausted(py: Python<'_>, bound: ReachedBound) -> PyErr {
+    let error = CallGuardExhausted::new_err(format!("the call passed its guard, {bound:?}, and gives no table of any candidate"));
+    let value = error.value(py);
+    let named = Py::new(py, PyStopKind::from(Stop::from(bound))).and_then(|kind| value.setattr("bound", kind)).and_then(|()| value.setattr("cap", bound.cap()));
     match named {
         Ok(()) => error,
         Err(failure) => failure,

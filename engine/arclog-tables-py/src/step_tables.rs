@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use arclog_bindings::{budget_reached, check_effort, labeling_bound_reached, PyDecoder};
+use arclog_bindings::{budget_reached, call_guard_exhausted, check_effort, labeling_bound_reached, PyDecoder};
 use arclog_tables::columns::{step_case_columns_by_assignment_hashed, step_case_columns_by_assignment_in, step_case_columns_by_assignment_with, step_case_columns_in};
 use arclog_tables::split::{self, Part};
 use arclog_tables::summary::{train_pairs, Assemblies, DetFulls, SummaryCache};
@@ -207,8 +207,30 @@ enum Packed {
     /// The place of that earlier id among the ids.
     Same(usize),
     Unchanged,
-    /// The evaluation or the export of the id passed the budget of its own request.
+    /// The evaluation or the export of the id passed the budget of its own request, or the export left out a table at a bound of the id's own evaluation.
     Exhausted,
+}
+
+/// Why the closure of `successor_tables` that runs with the GIL released gives no result.
+enum Stopped {
+    /// A query of the call has no hash.
+    Labeling(LabelingBound),
+    /// The call's own request passed its work cap or its byte budget, a bound over the whole call.
+    Guard(ReachedBound),
+}
+
+impl From<LabelingBound> for Stopped {
+    fn from(bound: LabelingBound) -> Self {
+        Stopped::Labeling(bound)
+    }
+}
+
+/// The bound at which the export of `columns` left out a table, where that bound is not a cancellation by the caller.
+fn left_out_bound(columns: &CaseColumns) -> Option<ReachedBound> {
+    if columns.left_out().is_empty() {
+        return None;
+    }
+    columns.packing_stop().map(|stop| stop.bound).filter(|bound| !matches!(bound, ReachedBound::Cancelled))
 }
 
 /// The bytes that the cells of `columns` take in memory.
@@ -276,12 +298,17 @@ fn spill_cells(columns: &mut CaseColumns, folder: &mut Option<Arc<SpillFolder>>,
 ///   and no form finished, and `tables` holds no table;
 /// - `"refused"`: the decode refuses the id, `note` gives the refusal, and
 ///   `tables` is `None`;
-/// - `"exhausted"`: the evaluation or the export of the id's tables passed the
-///   request work cap or the request byte budget of the id's own request, which
-///   each id has, `note` gives the bound, and `tables` is `None`. The request
-///   byte budget of an id is the setting `candidate_byte_cap`, the same for
-///   every id whatever their order and count. The other ids go on with budgets
-///   of their own.
+/// - `"exhausted"`: the step of the id, its evaluation or the export of its tables
+///   passed the request work cap or the request byte budget of the id's own
+///   request, which each id has, or the export left out a table at another bound
+///   of the id's own evaluation; `note` gives the bound, and `tables` is `None`.
+///   The request byte budget of an id is the setting `candidate_byte_cap`, the
+///   same for every id whatever their order and count. The work of an id
+///   counts in its own request alone, so no id passes a cap for the size of
+///   another. The other ids go on with budgets of their own, and their tables
+///   are as they are where no id is exhausted. The ids of `"unchanged"` share
+///   one export, which each would make alone, so they are all exhausted where
+///   it passes a bound.
 ///
 /// The call keeps the cells of the ids' exports in memory up to the setting
 /// `spill_resident_bytes`; the cells of an id past it wait on disk, compressed,
@@ -304,10 +331,15 @@ fn spill_cells(columns: &mut CaseColumns, folder: &mut Option<Arc<SpillFolder>>,
 ///
 /// `IndexError` is raised for an id outside the vocabulary, `ValueError`
 /// where `before` cannot stand before the step, and `BudgetReached` where the
-/// export of a successor's tables leaves out a table at a bound that is no
-/// budget of the successor's own request, as `step_tables` raises it. A
-/// budget of the successor's own request gives the successor the kind
-/// `"exhausted"` and not the error.
+/// export of the table of the body in progress (`current`) leaves out a table
+/// at a bound, as `step_tables` raises it. A bound of the successor's own
+/// evaluation gives the successor the kind `"exhausted"` and not the error.
+/// The work and the bytes of the call's own request, which holds the
+/// evaluation and the export of `current` and nothing of any id, are a bound
+/// over the whole call: a call that passes the work cap or the byte budget of
+/// that request raises `CallGuardExhausted`, a subclass of `EngineFault`, and
+/// gives no table of any id. A request past the effort guard raises
+/// `EffortExhausted` first.
 #[pyfunction]
 #[pyo3(signature = (decoder, ids, task, case, before=None, rows=false, spill_dir=None))]
 #[allow(clippy::type_complexity)]
@@ -323,7 +355,7 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
     let earlier = check_before(before.as_deref(), &task, &case, true, written + 1, Some(index))?;
     let train = decoder.derived(|| train_pairs(evidence));
     let shapes = decoder.derived(|| ShapeRuntime::new(evidence));
-    let (current, each, unchanged) = py.detach(|| -> Result<_, LabelingBound> {
+    let stopped = py.detach(|| -> Result<_, Stopped> {
         let limits = engine.limits();
         let stream = earlier.map(|step| &*step.stream);
         let before_tables = stream.map_or_else(Vec::new, StreamTables::tables);
@@ -335,6 +367,10 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             let _timed = split::span(Part::SuccessorTables);
             successors_of(engine, &limits, tokens, &before_tables, held)
         };
+        // The evaluations before the tokens passed a bound of the call's own request: a fault of the call, and no id has tables.
+        if let Some(bound) = found.guard {
+            return Err(Stopped::Guard(bound));
+        }
         // The export of a successor's tables counts in the request of the successor's own, as its evaluation does.
         let columns_of = |tables: Vec<(usize, Table)>, queries: Vec<Option<arclog::hash::StableHash>>, program: &Decoder<'_>, own: &Limits| -> Result<(CaseColumns, StreamTables), LabelingBound> {
             let _timed = split::span(Part::SuccessorColumns);
@@ -342,7 +378,13 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             Ok(step_case_columns_by_assignment_with(&materializer, stream, &evidence_tables, tables, &train, queries, rows, &summaries, assemblies(program)?))
         };
         let current = found.current.as_ref().map(|table| columns_of(vec![(now.unwrap_or(0), table.clone())], vec![None], engine, &limits).map(|made| made.0)).transpose()?;
+        // The export of the body in progress counts in the call's own request, which bounds the whole call.
+        if let Some(bound) = exhaustion(&limits) {
+            return Err(Stopped::Guard(bound));
+        }
         let mut unchanged: Option<(CaseColumns, StreamTables)> = None;
+        // Where the export of that table passed a bound of the first such id's request: every such id exports the same table, so each would pass it alone, and each is exhausted.
+        let mut unchanged_stop: Option<String> = None;
         // The copy violations of each id's successor, empty for a refused id.
         let mut copies: Vec<Vec<CopyViolation>> = Vec::with_capacity(found.each.len());
         let mut each: Vec<Result<(&'static str, String, Packed), String>> = Vec::with_capacity(found.each.len());
@@ -386,14 +428,22 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             let own_limits = next.limits();
             let violations = next.take_copy_violations();
             if successor.kind == SuccessorKind::Unchanged {
-                if unchanged.is_none() {
+                if unchanged.is_none() && unchanged_stop.is_none() {
                     let (columns, _) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), vec![None], next, &own_limits)?;
                     let (_, stream) = columns_of(Vec::new(), Vec::new(), next, &own_limits)?;
-                    resident = resident.saturating_add(cells_bytes(&columns));
-                    unchanged = Some((columns, stream));
+                    match exhaustion(&own_limits).or_else(|| left_out_bound(&columns)) {
+                        Some(bound) => unchanged_stop = Some(format!("the export passed {bound:?}")),
+                        None => {
+                            resident = resident.saturating_add(cells_bytes(&columns));
+                            unchanged = Some((columns, stream));
+                        }
+                    }
                 }
                 copies.push(violations);
-                each.push(Ok((kind, note, Packed::Unchanged)));
+                each.push(Ok(match &unchanged_stop {
+                    Some(stop) => ("exhausted", stop.clone(), Packed::Exhausted),
+                    None => (kind, note, Packed::Unchanged),
+                }));
                 continue;
             }
             if let Some(first) = successor.same_as.filter(|&first| copies[first] == violations) {
@@ -404,8 +454,8 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             let queries = successor.tables.iter().map(|table| query_of_table(next, table)).collect::<Result<Vec<_>, _>>()?;
             let own = u32::try_from(successor.tables.len()).expect("fewer than 2^32 tables");
             let (columns, stream) = columns_of(successor.tables.into_iter().map(|table| (index, table)).collect(), queries, next, &own_limits)?;
-            // The export that passed a budget of the id's request leaves the id with no tables.
-            if let Some(bound) = exhaustion(&own_limits) {
+            // The export that passed a budget of the id's request, or left out a table at a bound of the id's own evaluation, leaves the id with no tables.
+            if let Some(bound) = exhaustion(&own_limits).or_else(|| left_out_bound(&columns)) {
                 copies.push(violations);
                 each.push(Ok(("exhausted", format!("the export passed {bound:?}"), Packed::Exhausted)));
                 continue;
@@ -429,7 +479,13 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             each.push(Ok((kind, note, Packed::Own(columns, stream, own, spilled))));
         }
         Ok((current, each, unchanged))
-    }).map_err(|bound| labeling_bound_reached(py, bound))?;
+    });
+    // A request past its effort guard is a fault, whatever else stopped the call, and the check clears the fault.
+    check_effort(py)?;
+    let (current, each, unchanged) = stopped.map_err(|stopped| match stopped {
+        Stopped::Labeling(bound) => labeling_bound_reached(py, bound),
+        Stopped::Guard(bound) => call_guard_exhausted(py, bound),
+    })?;
     for columns in current.iter().chain(unchanged.as_ref().map(|(columns, _)| columns)).chain(each.iter().filter_map(|result| match result {
         Ok((_, _, Packed::Own(columns, _, _, _))) => Some(columns),
         _ => None,

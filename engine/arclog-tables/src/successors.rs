@@ -52,7 +52,8 @@ pub enum SuccessorKind {
     /// form finished: no table.
     NoBody,
     /// The evaluation of the successor passed the work cap or the byte budget
-    /// that each successor has of its own: the successor has no tables, and the
+    /// that each successor has of its own, or its export left out a table at
+    /// a bound of its own evaluation: the successor has no tables, and the
     /// other successors went on ([`Successor::exhausted`]).
     Exhausted,
 }
@@ -72,8 +73,9 @@ pub struct Successor<'a> {
     pub same_as: Option<usize>,
     /// The budget that the evaluation of this successor passed, where it
     /// passed one: the request work cap or the request byte budget of the
-    /// successor's own request. Then `kind` is [`SuccessorKind::Exhausted`] and
-    /// `tables` is empty.
+    /// successor's own request, which counts the successor's step, its
+    /// consistency test included. Then `kind` is [`SuccessorKind::Exhausted`]
+    /// and `tables` is empty.
     pub exhausted: Option<arclog::eval::ReachedBound>,
 }
 
@@ -83,8 +85,13 @@ pub struct Successors<'a> {
     /// progress or its body is empty.
     pub current: Option<Table>,
     /// For each token, its successor, or the refusal that [`Decoder::step`]
-    /// gives for it.
+    /// gives for it. Empty where `guard` is set.
     pub each: Vec<Result<Successor<'a>, Refusal>>,
+    /// The work cap or the byte budget of the call's own request that the
+    /// evaluations before the tokens passed, where they passed one. The call's
+    /// request is a bound over the whole call: its stop is a fault of the call
+    /// and cuts no successor's tables, so no successor is evaluated.
+    pub guard: Option<arclog::eval::ReachedBound>,
 }
 
 /// The point of a body with no conjunct and no site, which has no table.
@@ -92,11 +99,15 @@ const EMPTY: Point = Point::Body { conjuncts: 0, sites: 0 };
 
 /// The successor of each of `tokens` at the state of `decoder`, and the
 /// table of the body in progress. Each successor's decode is
-/// [`Decoder::successor`]'s. The evaluation of its tables runs under a request
-/// of its own, with the work cap and the byte budget of `limits`
+/// [`Decoder::successor`]'s. The step of each successor, its consistency test
+/// included, and the evaluation of its tables run under a request of its own,
+/// with the work cap and the byte budget of `limits`
 /// ([`Limits::for_candidate`]), so that a successor that passes one gets no
-/// tables ([`SuccessorKind::Exhausted`]) and the other successors go on; the
-/// evaluations before the tokens share `limits`. Its tables are those that [`step_tables`] gives at that decode
+/// tables ([`SuccessorKind::Exhausted`]) and the other successors go on, and
+/// no successor counts in the work of another. The evaluations before the
+/// tokens run in `limits`, the request of the call; where they pass its work
+/// cap or its byte budget, the call gives `guard` and no successor, since that
+/// bound is over the whole call and cuts no successor's tables. Its tables are those that [`step_tables`] gives at that decode
 /// with [`Points::All`], but for a token that leaves the point of the body as
 /// it was, where they are the table of the successor body
 /// ([`SuccessorKind::Body`]), or of the body in progress where the body is as
@@ -126,6 +137,10 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
         Some(table) => Some(table),
         None => body_table_at(&operation, point, earlier, &names),
     });
+    // A successor whose body is the body in progress takes its table, so the table must not be one that the call's own bound cut.
+    if let Some(guard) = exhaustion(limits) {
+        return Successors { current, each: Vec::new(), guard: Some(guard) };
+    }
     // The contents of each successor body evaluated so far, by its key; the body in progress first.
     let mut evaluated: StableHashMap<Vec<u8>, Outcome<Contents>> = StableHashMap::default();
     let own = decoder.sub_body_key().map(|key| key.source);
@@ -138,11 +153,10 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
     // For each successor body and point, the place in `each` of the successor that a later one of that body and point names. Both hold the contents of one evaluation, which `same_tables` takes as different where they hold extents.
     let mut held_at: StableHashMap<(Vec<u8>, Point), usize> = StableHashMap::default();
     for token in tokens {
-        // The operation's decode, so that the successor's consistency test counts in the call's request.
-        // The tables of the successor count in a request of the successor's own.
+        // The successor's step, its consistency test included, and its tables count in a request of the successor's own.
         let candidate = limits.for_candidate();
-        let next = match operation.successor(token) {
-            Ok(next) => next.with_operation_limits(candidate.clone()),
+        let next = match decoder.clone().with_operation_limits(candidate.clone()).successor(token) {
+            Ok(next) => next,
             Err(refusal) => {
                 each.push(Err(refusal));
                 continue;
@@ -172,7 +186,7 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
                             let table = body_table_at(&next, after, earlier, &names);
                             // The contents of an evaluation that passed a budget are the successor's alone.
                             if let (Some(key), Some(table)) = (key, &table)
-                                && !candidate.request.is_past_cap()
+                                && exhaustion(&candidate).is_none()
                             {
                                 evaluated.insert(key.source, table.contents.clone());
                             }
@@ -202,7 +216,7 @@ pub fn successor_tables<'a>(decoder: &Decoder<'a>, limits: &Limits, tokens: Vec<
         };
         each.push(Ok(Successor { decoder: next, kind, tables, same_as, exhausted }));
     }
-    Successors { current, each }
+    Successors { current, each, guard: None }
 }
 
 /// The budget that `limits` passed: the request work cap, or the request byte
