@@ -23,8 +23,11 @@ use crate::terms::ReachedMarginBound;
 /// work cap does ([`RequestWork`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Caps {
-    /// The bindings the join of one part of a body, a native construction,
-    /// or a read's walk of a product of parts may try.
+    /// The content one evaluation may count: the rows that the join of one
+    /// part of a body or a native construction reads and writes, or that a
+    /// read's walk of a product of parts visits ([`super::join::Budget::charge_content`]).
+    /// The bindings a search tries are no part of it: the effort guard of the
+    /// request counts them ([`RequestWork::charge_effort`]).
     pub bindings: u64,
     /// The rows one part of a body, or a native construction, may hold.
     pub rows: u64,

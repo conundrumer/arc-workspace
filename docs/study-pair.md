@@ -88,7 +88,7 @@ loses only its own rows and later assignments remain available, and the
 status of the table, its form and the result stays as the other assignments
 give it. A stop of that kind is listed in `assignment_stops`, with its table,
 example and assignment, and its entry stays stopped. The search for
-projections reads each value's rows under the binding cap, and extents have an
+projections reads each value's rows as effort, and extents have an
 observation budget of their own. Row comparison charges row
 visits to its own bounded budget before materialization. Native run, assignment,
 request work, request byte and cancellation bounds still apply. A panic becomes an explicit pair
