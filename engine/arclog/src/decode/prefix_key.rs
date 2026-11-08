@@ -107,6 +107,15 @@ pub(super) fn sub_body_key(clause: &Clause, kept: &[Conjunct]) -> Vec<u8> {
     source.0
 }
 
+/// The key of `clause`, a sub-body ([`sub_body_key`]) with its columns: with
+/// equal finished forms before it, equal keys give equal sub-bodies, whatever
+/// gives their columns.
+pub(super) fn evaluated_key(clause: &Clause) -> Vec<u8> {
+    let mut source = Source(sub_body_key(clause, &clause.body.value().conjuncts), None);
+    source.scalar(&clause.columns);
+    source.0
+}
+
 /// The key of the prefix whose last form is `form`, with its open node at
 /// `open`: each field of the form that the form's kind holds, in source
 /// order, and the path. Equal keys give the checks equal input: they read

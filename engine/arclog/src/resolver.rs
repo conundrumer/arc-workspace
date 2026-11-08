@@ -529,6 +529,7 @@ impl ResolvedProgram {
         if self.concept().is_some() {
             return None;
         }
+        let _timed = crate::stats::span(crate::stats::Phase::ResolveNarrowed);
         let keep = self.use_closure(position)?;
         let (exact, narrowed) = build::closure_columns(self, &keep)?;
         Some((Arc::new(build::resolve_narrowed(self, &exact, registry)), narrowed))
