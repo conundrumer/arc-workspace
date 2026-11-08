@@ -48,6 +48,7 @@ mod replay_panic;
 mod resolver;
 mod scope_checks;
 mod scope_types;
+mod session_dead;
 mod shared_form_content;
 mod site_column_once;
 mod tile_size;

@@ -8,6 +8,7 @@ use arclog::eval::pool::Pool;
 use arclog::judge::attempts::Attempts;
 use arclog::judge::candidates::{PairCandidates, Section};
 use arclog::registry::Registry;
+use arclog::session::SessionEntry;
 use arclog::stats::{self, Phase};
 use arclog::stream::Token;
 use arclog::task::Task;
@@ -19,7 +20,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use crate::constructions;
-use crate::errors::{check_effort, effort_exhausted, labeling_bound_reached, settled, Fault, Refusal};
+use crate::errors::{check_effort, effort_exhausted, labeling_bound_reached, session_dead, settled, Fault, Refusal};
 use crate::results::{assigned, grid_rows, rows_view, PyAssigned, PyConsistency, PyProjection, PyProjections};
 use crate::session::SessionData;
 use crate::study::{written_query_hash, finished_query};
@@ -100,6 +101,14 @@ impl PyDecoder {
         self.data.derived(make)
     }
 
+    /// The start of a call on the decode's session: raises `SessionDead` where
+    /// an earlier call on the session panicked, and else gives the entry that
+    /// marks the session dead where this call panics. A method that reads the
+    /// decode or its session starts with it and holds the entry to its end.
+    pub fn enter(&self) -> PyResult<SessionEntry> {
+        self.data.session.enter().map_err(session_dead)
+    }
+
     fn decoder_mut(&mut self) -> &mut Decoder<'static> {
         self.decoder.as_mut().expect("a decode outside a batch step")
     }
@@ -159,19 +168,22 @@ pub(crate) fn mask_bytes(mask: &TokenMask, len: usize) -> Vec<u8> {
 #[pymethods]
 impl PyDecoder {
     #[getter]
-    fn vocabulary(&self) -> PyVocabulary {
-        PyVocabulary::of(self.decoder().vocabulary())
+    fn vocabulary(&self) -> PyResult<PyVocabulary> {
+        let _entry = self.enter()?;
+        Ok(PyVocabulary::of(self.decoder().vocabulary()))
     }
 
     /// Whether the decode has ended at a consistent `OUT` form.
     #[getter]
-    fn ended(&self) -> bool {
-        self.decoder().output().is_some()
+    fn ended(&self) -> PyResult<bool> {
+        let _entry = self.enter()?;
+        Ok(self.decoder().output().is_some())
     }
 
     /// The tokens that may come next: bit `id % 8` of byte `id // 8` is set
     /// where the token with that id is admissible.
     fn admissible<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        let _entry = self.enter()?;
         let _timed = stats::span(Phase::PyAdmissible);
         let decoder = self.decoder();
         let mask = decoder.admissible();
@@ -185,6 +197,7 @@ impl PyDecoder {
     /// (`arclog::decode::Decoder::candidate_atoms`).
     #[pyo3(signature = (limit=1<<20, reference=false))]
     fn atoms(&self, py: Python<'_>, limit: usize, reference: bool) -> PyResult<(Vec<Vec<u32>>, usize, bool)> {
+        let _entry = self.enter()?;
         let decoder = self.decoder();
         let found = py.detach(|| if reference { decoder.candidate_atoms_reference(limit) } else { decoder.candidate_atoms(limit) });
         check_effort(py)?;
@@ -197,6 +210,7 @@ impl PyDecoder {
     /// `RULE` clause that it ends under the rule tests, or `None`. Raises
     /// `Refusal` for a token outside the mask, and leaves the decode as it was.
     fn step(&mut self, py: Python<'_>, id: u32) -> PyResult<StepResult> {
+        let _entry = self.enter()?;
         let _timed = stats::span(Phase::PyStep);
         let token = self.token(id)?;
         let result = self.decoder_mut().step(token);
@@ -211,6 +225,7 @@ impl PyDecoder {
     /// check of the token runs again. Raises `Refusal` for a token outside the
     /// mask, and leaves the decode as it was.
     fn fork_step(&self, py: Python<'_>, id: u32) -> PyResult<(PyDecoder, StepResult)> {
+        let _entry = self.enter()?;
         let _timed = stats::span(Phase::PyStep);
         let token = self.token(id)?;
         let (decoder, result) = self.decoder().fork_step(token);
@@ -226,6 +241,7 @@ impl PyDecoder {
     /// it reads them from the mask. Raises `Refusal` for a token outside the
     /// mask, as `step` does.
     fn forced(&self, py: Python<'_>, id: u32) -> PyResult<Vec<u32>> {
+        let _entry = self.enter()?;
         let _timed = stats::span(Phase::PyForced);
         let token = self.token(id)?;
         let forced = self.decoder().forced(&token);
@@ -239,6 +255,7 @@ impl PyDecoder {
     /// those tokens together, as the checks of `admissible` run over the
     /// vocabulary, and leave the decode as it was.
     fn admits(&self, py: Python<'_>, ids: Vec<u32>) -> PyResult<Vec<bool>> {
+        let _entry = self.enter()?;
         let _timed = stats::span(Phase::PyAdmits);
         let vocabulary = self.decoder().vocabulary();
         if let Some(&id) = ids.iter().find(|&&id| vocabulary.token(id).is_none()) {
@@ -250,16 +267,20 @@ impl PyDecoder {
     }
 
     /// A second decode from the same state, which shares this one's caches.
-    pub(crate) fn fork(&self) -> PyDecoder {
+    pub(crate) fn fork(&self) -> PyResult<PyDecoder> {
+        let _entry = self.enter()?;
         let _timed = stats::span(Phase::PyFork);
-        PyDecoder { decoder: Some(self.decoder().fork()), data: Arc::clone(&self.data) }
+        Ok(PyDecoder { decoder: Some(self.decoder().fork()), data: Arc::clone(&self.data) })
     }
 
     /// The rows of the sub-body of the clause in progress on `example`, or
-    /// `None` where no clause is in progress. Raises `Fault` where the
-    /// sub-body does not check or compile.
+    /// `None` where no clause is in progress. A task-wide clause is evaluated
+    /// once, whatever `example` is. Raises `Fault` where the sub-body does not
+    /// check or compile, and where a clause per example is asked with no
+    /// example or with an example that the task does not hold.
     #[pyo3(signature = (example=None))]
     fn rows(&mut self, py: Python<'_>, example: Option<u16>) -> PyResult<Option<PyAssigned>> {
+        let _entry = self.enter()?;
         let observed = self.decoder_mut().observe_rows(example.map(Example::at));
         check_effort(py)?;
         observed
@@ -270,6 +291,7 @@ impl PyDecoder {
     /// The count of the rows of the sub-body on each example, or once for a
     /// task-wide clause; `None` where no clause is in progress.
     fn counts(&mut self, py: Python<'_>) -> PyResult<Option<Vec<PyAssigned>>> {
+        let _entry = self.enter()?;
         let observed = self.decoder_mut().observe_counts();
         check_effort(py)?;
         observed
@@ -289,6 +311,7 @@ impl PyDecoder {
     /// where a bound ended the body or the search. The projections give no rows.
     /// Raises `Fault` where the sub-body does not check or compile.
     fn projections(&self, py: Python<'_>) -> PyResult<Option<PyProjections>> {
+        let _entry = self.enter()?;
         let projected = self.decoder().projections();
         check_effort(py)?;
         let Some(outcome) = projected else { return Ok(None) };
@@ -312,6 +335,7 @@ impl PyDecoder {
     /// The attempts on each test input, as lists of at most two grids, or
     /// `None` until the decode ends at a consistent relation.
     fn attempts(&self, py: Python<'_>) -> PyResult<Option<Vec<Vec<Vec<Vec<u32>>>>>> {
+        let _entry = self.enter()?;
         let attempted = self.decoder().attempts();
         check_effort(py)?;
         let Some(outcome) = attempted else { return Ok(None) };
@@ -322,14 +346,16 @@ impl PyDecoder {
     /// The output sets of the consistency tests of the decode's steps that
     /// ended at the model cap with the grids found so far.
     #[getter]
-    fn capped_sets(&self) -> u64 {
-        self.decoder().capped_sets()
+    fn capped_sets(&self) -> PyResult<u64> {
+        let _entry = self.enter()?;
+        Ok(self.decoder().capped_sets())
     }
 
     /// The attempts, as `attempts` gives them, and the count of the output
     /// sets on the test inputs that ended at the model cap with the grids
     /// found so far; `None` until the decode ends at a consistent relation.
     fn attempts_counted(&self, py: Python<'_>) -> PyResult<Option<(Vec<Vec<Vec<Vec<u32>>>>, u64)>> {
+        let _entry = self.enter()?;
         let attempted = self.decoder().attempts_counted();
         check_effort(py)?;
         let Some(outcome) = attempted else { return Ok(None) };
@@ -341,15 +367,17 @@ impl PyDecoder {
     /// trace, as pairs of an id and a probability. Gives `False` where the
     /// trace has no such record.
     fn attach_top_k(&mut self, step: usize, top_k: Vec<(u32, f32)>) -> PyResult<bool> {
+        let _entry = self.enter()?;
         let tokens = top_k.into_iter().map(|(id, probability)| Ok((self.token(id)?, probability))).collect::<PyResult<Vec<_>>>()?;
         Ok(self.decoder_mut().attach_top_k(step, TopK(tokens)))
     }
 
     /// The trace form of the decode.
     #[pyo3(signature = (top_k=false))]
-    fn trace_form(&self, top_k: bool) -> String {
+    fn trace_form(&self, top_k: bool) -> PyResult<String> {
+        let _entry = self.enter()?;
         let decoder = self.decoder();
-        trace_form(decoder.trace(), decoder.vocabulary(), &TraceFormOptions { top_k, ..TraceFormOptions::default() })
+        Ok(trace_form(decoder.trace(), decoder.vocabulary(), &TraceFormOptions { top_k, ..TraceFormOptions::default() }))
     }
 
     /// The hash of the resolver's content of the finished query at
@@ -357,6 +385,7 @@ impl PyDecoder {
     /// is the last finished query.
     #[pyo3(signature = (index=-1))]
     fn query_hash(&self, py: Python<'_>, index: isize) -> PyResult<u128> {
+        let _entry = self.enter()?;
         let decoder = self.decoder();
         let (position, _) = finished_query(decoder.program(), index)?;
         let hash = decoder.query_hash_or_bound(position).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
@@ -366,6 +395,7 @@ impl PyDecoder {
     /// The bytes that `query_hash` hashes, for the finished query at `index`.
     #[pyo3(signature = (index=-1))]
     fn query_bytes<'py>(&self, py: Python<'py>, index: isize) -> PyResult<Bound<'py, PyBytes>> {
+        let _entry = self.enter()?;
         let decoder = self.decoder();
         let (position, _) = finished_query(decoder.program(), index)?;
         let content = decoder.query_content_or_bound(position).ok_or_else(|| PyIndexError::new_err(format!("no content for the query at index {index}")))?;
@@ -377,6 +407,7 @@ impl PyDecoder {
     /// names as written. Index -1 is the last finished query.
     #[pyo3(signature = (index=-1))]
     fn written_query_hash(&self, py: Python<'_>, index: isize) -> PyResult<u128> {
+        let _entry = self.enter()?;
         let (_, query) = finished_query(self.decoder().program(), index)?;
         written_query_hash(query).map(|hash| hash.0).map_err(|bound| labeling_bound_reached(py, bound))
     }
@@ -394,14 +425,16 @@ impl PyDecoder {
     /// form.
     #[pyo3(signature = (index=-1))]
     fn rigid_parts(&self, index: isize) -> PyResult<Vec<(String, u32)>> {
+        let _entry = self.enter()?;
         let decoder = self.decoder();
         let (position, _) = finished_query(decoder.program(), index)?;
         arclog::resolver::rigid_parts(decoder.program(), position, Registry::get()).map_err(PyValueError::new_err)
     }
 
     /// The program so far, as an arclog file.
-    fn program_form(&self) -> String {
-        arclog::write::write_synthesized(self.decoder().program(), Registry::get())
+    fn program_form(&self) -> PyResult<String> {
+        let _entry = self.enter()?;
+        Ok(arclog::write::write_synthesized(self.decoder().program(), Registry::get()))
     }
 }
 
@@ -422,6 +455,8 @@ pub(crate) fn step_batch_py(py: Python<'_>, decoders: Vec<Bound<'_, PyDecoder>>,
         // A second hold of one decoder fails here, as the borrow of a `PyRefMut` does.
         held.push(decoder.try_borrow_mut()?);
     }
+    // A decode of a dead session refuses the batch; a step that panics marks its decode's session dead.
+    let entries = held.iter().map(|decoder| decoder.enter()).collect::<PyResult<Vec<_>>>()?;
     let mut tokens = Vec::with_capacity(ids.len());
     for (decoder, id) in held.iter().zip(&ids) {
         tokens.push(decoder.token(*id)?);
@@ -431,6 +466,7 @@ pub(crate) fn step_batch_py(py: Python<'_>, decoders: Vec<Bound<'_, PyDecoder>>,
     for (decoder, stepped) in held.iter_mut().zip(taken) {
         decoder.decoder = Some(stepped);
     }
+    drop(entries);
     held.iter()
         .zip(results.into_vec())
         .map(|(decoder, result)| match result {

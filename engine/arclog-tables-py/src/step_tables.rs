@@ -110,6 +110,7 @@ use crate::shapes::ShapeRuntime;
 #[pyo3(signature = (decoder, task, case, bodies=false, before=None, by_assignment=true, rows=false, summaries=true))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, bodies: bool, before: Option<PyRef<'_, PyCaseTables>>, by_assignment: bool, rows: bool, summaries: bool) -> PyResult<PyCaseTables> {
+    let _entry = decoder.enter()?;
     let _timed = arclog::stats::span(arclog::stats::Phase::PyStepTables);
     let points = if bodies { Points::All } else { Points::Relations };
     let (engine, evidence) = (decoder.decoder(), decoder.task());
@@ -181,6 +182,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
 #[pyfunction]
 #[pyo3(signature = (decoder, task, case, rows=false, summaries=true))]
 pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: String, case: String, rows: bool, summaries: bool) -> PyResult<PyCaseTables> {
+    let _entry = decoder.enter()?;
     let (engine, evidence) = (decoder.decoder(), decoder.task());
     let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
     let train = decoder.derived(|| train_pairs(evidence));
@@ -355,6 +357,7 @@ fn spill_cells(columns: &mut CaseColumns, folder: &mut Option<Arc<SpillFolder>>,
 #[pyo3(signature = (decoder, ids, task, case, before=None, rows=false, spill_dir=None))]
 #[allow(clippy::type_complexity)]
 pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, ids: Vec<u32>, task: String, case: String, before: Option<PyRef<'_, PyCaseTables>>, rows: bool, spill_dir: Option<std::path::PathBuf>) -> PyResult<(Option<Py<PyCaseTables>>, Vec<(&'static str, String, Option<Py<PyCaseTables>>)>)> {
+    let _entry = decoder.enter()?;
     let (engine, evidence) = (decoder.decoder(), decoder.task());
     let vocabulary = engine.vocabulary();
     let tokens = ids.iter().map(|&id| vocabulary.token(id).cloned().ok_or_else(|| PyIndexError::new_err(format!("no token with id {id}")))).collect::<PyResult<Vec<_>>>()?;
@@ -586,6 +589,7 @@ fn check_before<'b>(before: Option<&'b PyCaseTables>, task: &str, case: &str, bo
 #[pyo3(signature = (decoder, atoms, task, case, before=None, by_program=false))]
 #[allow(clippy::type_complexity)]
 pub(crate) fn atom_tables<'py>(py: Python<'py>, decoder: PyRef<'py, PyDecoder>, atoms: Vec<Vec<u32>>, task: String, case: String, before: Option<PyRef<'py, PyCaseTables>>, by_program: bool) -> PyResult<(Vec<Option<u32>>, Vec<(bool, Bound<'py, PyBytes>, Bound<'py, PyBytes>)>, usize, Vec<u32>)> {
+    let _entry = decoder.enter()?;
     let (engine, evidence) = (decoder.decoder(), decoder.task());
     let train = decoder.derived(|| train_pairs(evidence));
     let _ = (&task, &case);
@@ -648,9 +652,10 @@ pub(crate) fn add_atom_verdicts(bytes: &[u8]) -> PyResult<usize> {
 /// relation's table in `stream_tables` of the same stream. The list is empty
 /// where the decode has not ended at an `OUT` form whose check holds.
 #[pyfunction]
-pub(crate) fn output_columns(py: Python<'_>, decoder: PyRef<'_, PyDecoder>) -> Vec<(u32, i32, i32)> {
+pub(crate) fn output_columns(py: Python<'_>, decoder: PyRef<'_, PyDecoder>) -> PyResult<Vec<(u32, i32, i32)>> {
+    let _entry = decoder.enter()?;
     let engine = decoder.decoder();
-    py.detach(|| selected_columns(engine).into_iter().map(|(slot, selected)| (slot, selected.position.map_or(-1, i32::from), selected.color.map_or(-1, i32::from))).collect())
+    Ok(py.detach(|| selected_columns(engine).into_iter().map(|(slot, selected)| (slot, selected.position.map_or(-1, i32::from), selected.color.map_or(-1, i32::from))).collect()))
 }
 
 /// The time spent in the parts of the export by assignment that `engine_stats` has no phase for, as `(part, calls, seconds)`: the QueryHash of the step's tables, the look-up of a `DET`'s QueryHash, the summary look-ups that found a summary and those that built one, the columns of the step's tables, their regrouping by assignment, and the wait to hold the GIL again after a call's work. A part's time includes the parts inside it. The counters are zero unless the environment variable `ARCLOG_STATS` is set; with `reset` they start again from zero after they are read.

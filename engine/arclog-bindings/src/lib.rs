@@ -37,7 +37,7 @@ pub use names::Names;
 pub use results::PyConsistencyKind;
 pub use settings::PyDecodeSettings;
 pub use study::PyStudyProgram;
-pub use errors::{budget_reached, call_guard_exhausted, check_effort, faulted, labeling_bound_reached, refused, study_error, BudgetReached, CallGuardExhausted, CheckRefused, EffortExhausted, EngineFault, LabelingBoundReached, RecordedIdentityError};
+pub use errors::{budget_reached, call_guard_exhausted, check_effort, faulted, labeling_bound_reached, refused, study_error, BudgetReached, CallGuardExhausted, CheckRefused, EffortExhausted, EngineFault, LabelingBoundReached, RecordedIdentityError, SessionDead};
 pub use mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 
 use arclog::eval::instance::Constructions;
@@ -81,6 +81,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.value("EffortExhausted", module.py().get_type::<errors::EffortExhausted>().into_any())?;
     names.value("BudgetReached", module.py().get_type::<errors::BudgetReached>().into_any())?;
     names.value("CallGuardExhausted", module.py().get_type::<errors::CallGuardExhausted>().into_any())?;
+    names.value("SessionDead", module.py().get_type::<errors::SessionDead>().into_any())?;
     names.function(wrap_pyfunction!(decoder::step_batch_py, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::engine_stats, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::request_stats, module)?)?;

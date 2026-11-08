@@ -61,7 +61,7 @@ use std::sync::{Arc, Mutex};
 
 use arclog::eval::determinations::relation_spelled;
 use arclog::eval::join::Materializer;
-use arclog::eval::{Gauge, ReachedBound, RelationValue};
+use arclog::eval::{Charged, Cost, Gauge, Hit, ReachedBound, RelationValue};
 use arclog::hash::{StableHash, StableHashMap, StableHasher};
 use arclog::judge::determination::Assignment;
 use arclog::read::spelling::{spelling, FACT_RELATIONS};
@@ -230,7 +230,7 @@ pub fn train_pairs(task: &Task) -> Vec<Pair> {
 /// same assignments.
 pub fn summarize(materializer: &Materializer<'_>, table: &Table, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
     let Ok(contents) = &table.contents else { return Ok(TableSummary::faulted()) };
-    let mut summary = summarize_rows(materializer, contents, train, fulls)?;
+    let mut summary = summarize_assignments(materializer, contents, train, fulls, false, None)?.summary;
     spell_dets(contents, &mut summary);
     Ok(summary)
 }
@@ -266,7 +266,10 @@ pub fn evidence_key(at: usize) -> SummaryKey {
 /// QueryHash fixes the content of its tables within a task, and the order of
 /// its `DET`s fixes the place of each `DET`'s value in the summary, so a summary
 /// holds for every later table of that query with its `DET`s in that order. A summary does not depend on whether
-/// the export packs rows. A summary of [`summarize_hashes_cached`] is flagged, and serves no export that gives full summaries. The cache keeps two generations, each with at most
+/// the export packs rows. A summary of [`summarize_hashes_cached`] is flagged, and serves no export that gives full summaries, nor does a full summary serve
+/// an export that gives hashes. Each assignment's summary is held with the [`Cost`] that its computation charged, and a summary that the cache gives charges
+/// that cost again to the request that takes it ([`Hit::charge`]), so the counts and the gauges of a request are those of one that computed the summaries,
+/// whatever the cache held. The cache keeps two generations, each with at most
 /// [`SUMMARY_CACHE_ENTRIES`] summaries and a bounded count of assignments:
 /// when the young generation is full it becomes the old one and the old one is
 /// dropped, and a summary found in the old generation moves to the young one.
@@ -278,18 +281,24 @@ pub struct SummaryCache {
     held: Mutex<Generations>,
 }
 
+/// A table's summary, with what the computation of each of its assignments charged, in the order of the assignments.
+struct Held {
+    summary: TableSummary,
+    costs: Box<[Cost]>,
+}
+
 #[derive(Default)]
 struct Generations {
-    young: StableHashMap<SummaryKey, Arc<TableSummary>>,
+    young: StableHashMap<SummaryKey, Arc<Held>>,
     /// The assignments of the summaries in `young`.
     assignments: usize,
     /// The cells of the shape rows of the summaries in `young`.
     cells: usize,
-    old: StableHashMap<SummaryKey, Arc<TableSummary>>,
+    old: StableHashMap<SummaryKey, Arc<Held>>,
 }
 
 impl SummaryCache {
-    fn get(&self, key: &SummaryKey) -> Option<Arc<TableSummary>> {
+    fn get(&self, key: &SummaryKey) -> Option<Arc<Held>> {
         let mut held = self.held.lock().expect("the summaries are not poisoned");
         if let Some(found) = held.young.get(key) {
             return Some(Arc::clone(found));
@@ -299,8 +308,8 @@ impl SummaryCache {
         Some(found)
     }
 
-    fn put(&self, key: SummaryKey, summary: Arc<TableSummary>) {
-        self.held.lock().expect("the summaries are not poisoned").insert(key, summary);
+    fn put(&self, key: SummaryKey, held: Arc<Held>) {
+        self.held.lock().expect("the summaries are not poisoned").insert(key, held);
     }
 }
 
@@ -310,9 +319,9 @@ fn shape_cells(summary: &TableSummary) -> usize {
 }
 
 impl Generations {
-    fn insert(&mut self, key: SummaryKey, summary: Arc<TableSummary>) {
-        let size = summary.assignments.len();
-        let cells = shape_cells(&summary);
+    fn insert(&mut self, key: SummaryKey, held: Arc<Held>) {
+        let size = held.summary.assignments.len();
+        let cells = shape_cells(&held.summary);
         if !self.young.contains_key(&key) && (self.young.len() >= SUMMARY_CACHE_ENTRIES || self.assignments.saturating_add(size) > SUMMARY_CACHE_ASSIGNMENTS || self.cells.saturating_add(cells) > SUMMARY_CACHE_SHAPE_CELLS) {
             self.old = std::mem::take(&mut self.young);
             self.assignments = 0;
@@ -320,9 +329,9 @@ impl Generations {
         }
         self.assignments += size;
         self.cells += cells;
-        if let Some(replaced) = self.young.insert(key, summary) {
-            self.assignments = self.assignments.saturating_sub(replaced.assignments.len());
-            self.cells = self.cells.saturating_sub(shape_cells(&replaced));
+        if let Some(replaced) = self.young.insert(key, held) {
+            self.assignments = self.assignments.saturating_sub(replaced.summary.assignments.len());
+            self.cells = self.cells.saturating_sub(shape_cells(&replaced.summary));
         }
     }
 }
@@ -332,23 +341,21 @@ impl Generations {
 /// the table's name and whether it is capped are read from `table` again.
 pub fn summarize_cached(materializer: &Materializer<'_>, table: &Table, train: &[Pair], fulls: &DetFulls<'_>, cache: &SummaryCache, key: Option<SummaryKey>) -> Result<TableSummary, ReachedBound> {
     let (Ok(contents), Some(key)) = (&table.contents, key) else { return summarize(materializer, table, train, fulls) };
-    {
+    let held = {
         let _timed = split::span(Part::SummaryHit);
-        if let Some(held) = cache.get(&key) {
-            let fits = !held.hashes_only && held.assignments.len() == assignment_count(contents) && held.assignments.iter().enumerate().all(|(at, held)| held.dets.len() == det_count(contents, at));
-            if fits {
-                let mut summary = TableSummary::clone(&held);
-                summary.capped = capped(contents);
-                summary.name = name_of(contents);
-                spell_dets(contents, &mut summary);
-                return Ok(summary);
-            }
-        }
+        cache.get(&key).filter(|held| {
+            let summary = &held.summary;
+            !summary.hashes_only && summary.assignments.len() == assignment_count(contents) && summary.assignments.iter().enumerate().all(|(at, held)| held.dets.len() == det_count(contents, at))
+        })
+    };
+    // A summary from the cache charges what its computation charged, assignment by assignment, and an assignment whose cost does not fit under the caps is computed.
+    let _timed = split::span(if held.is_some() { Part::SummaryHit } else { Part::SummaryMiss });
+    let computed = summarize_assignments(materializer, contents, train, fulls, false, held.as_deref())?;
+    let mut summary = computed.summary.clone();
+    if held.is_none() {
+        // The cached summary holds the value hashes of the `DET`s in the order of `contents.dets`, with no spelling.
+        cache.put(key, Arc::new(computed));
     }
-    let _timed = split::span(Part::SummaryMiss);
-    let mut summary = summarize_rows(materializer, contents, train, fulls)?;
-    // The cached summary holds the value hashes of the `DET`s in the order of `contents.dets`, with no spelling.
-    cache.put(key, Arc::new(summary.clone()));
     spell_dets(contents, &mut summary);
     Ok(summary)
 }
@@ -360,67 +367,82 @@ pub fn summarize_cached(materializer: &Materializer<'_>, table: &Table, train: &
 pub fn summarize_body(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
     let bodies = DetFulls::none().with_assemblies(fulls.assemblies.clone());
-    let assignments = (0..assignment_count(contents)).map(|at| alone(materializer, |own| at_assignment_with(own, contents, &types, at, train, &bodies, false, false))).collect::<Result<_, _>>()?;
+    let assignments = (0..assignment_count(contents)).map(|at| alone(materializer, None, |own| at_assignment_with(own, contents, &types, at, train, &bodies, false, false)).map(|(assignment, _)| assignment)).collect::<Result<_, _>>()?;
     Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: false })
 }
 
-fn summarize_rows(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
+/// The summary of `contents` at each of its assignments with its `DET`s unspelled, with what each assignment's computation charged: the full summary
+/// ([`at_assignment`]), or, where `hashes` holds, the TableHash alone ([`summarize_hashes_cached`]'s). An assignment that `held`, a summary of the same table
+/// and kind, holds with its cost is not computed again: it charges that cost, as [`alone`] says, and is computed where the cost does not fit.
+fn summarize_assignments(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>, hashes: bool, held: Option<&Held>) -> Result<Held, ReachedBound> {
     let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
-    let assignments = (0..assignment_count(contents)).map(|at| alone(materializer, |own| at_assignment(own, contents, &types, at, train, fulls))).collect::<Result<_, _>>()?;
-    Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: false })
-}
-
-/// The summary of `contents` at each of its assignments with the TableHash alone: each assignment holds the TableHash and the reason that it has none, and
-/// nothing that the other parts of a summary hold. The TableHash is the one that [`summarize_rows`] gives, and so is the walk of the rows that it takes,
-/// but the value hashes of the `DET`s, the keys of the examples, the value hash of each model's TableRows and the TableVector are left out.
-fn summarize_hash_rows(materializer: &Materializer<'_>, contents: &Contents, train: &[Pair], fulls: &DetFulls<'_>) -> Result<TableSummary, ReachedBound> {
-    let types: Vec<ValueType> = contents.columns.iter().map(|column| column.ty.clone()).collect();
-    let assignments = (0..assignment_count(contents)).map(|at| alone(materializer, |own| at_assignment_with(own, contents, &types, at, train, fulls, true, true))).collect::<Result<_, _>>()?;
-    Ok(TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: true })
+    let count = assignment_count(contents);
+    let mut assignments = Vec::with_capacity(count);
+    let mut costs = Vec::with_capacity(count);
+    for at in 0..count {
+        let kept = held.and_then(|held| held.summary.assignments.get(at).zip(held.costs.get(at).copied()));
+        let (assignment, cost) = alone(materializer, kept, |own| if hashes { at_assignment_with(own, contents, &types, at, train, fulls, true, true) } else { at_assignment(own, contents, &types, at, train, fulls) })?;
+        assignments.push(assignment);
+        costs.push(cost);
+    }
+    Ok(Held { summary: TableSummary { assignments, capped: capped(contents), name: name_of(contents), hashes_only: hashes }, costs: costs.into() })
 }
 
 /// The summary of `table` for the export that gives the TableHash of a table and nothing else of its summary: a table of a finished query and an evidence table
 /// have the TableHash at each assignment, as [`summarize_cached`] gives it, and the rest of each assignment is empty. A body table has no TableHash
 /// and one assignment, for the reason `NotComputed`, and no walk of its rows. A table that faulted has the summary that [`summarize`] gives it.
 ///
-/// The cache holds the result under `key`, flagged [`TableSummary::hashes_only`], where `key` is given; a summary that [`summarize_cached`] put under the
-/// key gives its TableHash here, with the rest dropped, and a summary of this function does not stand for the full summary there.
+/// The cache holds the result under `key`, flagged [`TableSummary::hashes_only`], where `key` is given; a summary of this function does not stand for the full
+/// summary there, and a full summary under the key does not stand for this one, since the two cost different work.
+/// An assignment's summary here has the TableHash and the reason that it has none, and nothing that the other parts of a summary hold: the TableHash is the
+/// one that [`summarize_cached`] gives, and so is the walk of the rows that it takes, but the value hashes of the `DET`s, the keys of the examples, the value
+/// hash of each model's TableRows and the TableVector are left out.
 pub fn summarize_hashes_cached(materializer: &Materializer<'_>, table: &Table, train: &[Pair], fulls: &DetFulls<'_>, cache: &SummaryCache, key: Option<SummaryKey>) -> Result<TableSummary, ReachedBound> {
     let Ok(contents) = &table.contents else { return Ok(TableSummary::faulted()) };
     if matches!(table.point, Point::Body { .. }) {
         return Ok(TableSummary::not_computed(contents));
     }
-    let Some(key) = key else { return summarize_hash_rows(materializer, contents, train, fulls) };
-    {
+    let Some(key) = key else { return Ok(summarize_assignments(materializer, contents, train, fulls, true, None)?.summary) };
+    let held = {
         let _timed = split::span(Part::SummaryHit);
-        if let Some(held) = cache.get(&key) {
-            if held.assignments.len() == assignment_count(contents) {
-                let mut summary = TableSummary::clone(&held);
-                for assignment in &mut summary.assignments {
-                    *assignment = AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: assignment.hash, reason: std::mem::take(&mut assignment.reason), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default() };
-                }
-                summary.capped = capped(contents);
-                summary.name = name_of(contents);
-                summary.hashes_only = true;
-                return Ok(summary);
-            }
-        }
+        cache.get(&key).filter(|held| held.summary.hashes_only && held.summary.assignments.len() == assignment_count(contents))
+    };
+    let _timed = split::span(if held.is_some() { Part::SummaryHit } else { Part::SummaryMiss });
+    let computed = summarize_assignments(materializer, contents, train, fulls, true, held.as_deref())?;
+    let summary = computed.summary.clone();
+    if held.is_none() {
+        cache.put(key, Arc::new(computed));
     }
-    let _timed = split::span(Part::SummaryMiss);
-    let summary = summarize_hash_rows(materializer, contents, train, fulls)?;
-    cache.put(key, Arc::new(summary.clone()));
     Ok(summary)
 }
 
 /// The summary of one assignment, which `summary` makes under the byte budget of an assignment of its own
 /// ([`arclog::eval::Limits::for_assignment`]): an assignment that holds more than that budget has no TableHash, for the reason
 /// that names the bound, and the table's other assignments go on. A stop at a budget of the request ends the summary of the table.
-fn alone(materializer: &Materializer<'_>, summary: impl FnOnce(&Materializer<'_>) -> Result<AssignmentSummary, ReachedBound>) -> Result<AssignmentSummary, ReachedBound> {
+///
+/// The result is the assignment's summary with the [`Cost`] that its computation charged. Where `kept` holds the summary of an earlier computation of the
+/// assignment with the cost it charged, the call charges that cost again to the request and the assignment ([`Hit::charge`]) and gives the kept summary,
+/// whose stop, if the charge takes a count past its cap, is the call's. It computes the assignment where the cost does not fit under the caps, so that the
+/// computation stops where it stops with an empty cache.
+fn alone(
+    materializer: &Materializer<'_>,
+    kept: Option<(&AssignmentSummary, Cost)>,
+    summary: impl FnOnce(&Materializer<'_>) -> Result<AssignmentSummary, ReachedBound>,
+) -> Result<(AssignmentSummary, Cost), ReachedBound> {
     let scope = materializer.limits().for_assignment();
     let own = Materializer::new(materializer.session(), &scope);
-    match summary(&own) {
-        Err(bound) if bound.is_assignment() => Ok(AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: bound_name(bound).to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default() }),
-        found => found,
+    let charged = kept.and_then(|(kept, cost)| match Hit::new(kept, cost).charge(&scope.request, scope.table_work.as_ref(), materializer.session()) {
+        Charged::Value(kept) => Some((Ok(kept.clone()), cost)),
+        Charged::Stopped(_, bound) => Some((Err(bound), cost)),
+        Charged::Misfit => None,
+    });
+    let (found, cost) = match charged {
+        Some(charged) => charged,
+        None => scope.request.measure_holding(|| summary(&own), |_| 0),
+    };
+    match found {
+        Err(bound) if bound.is_assignment() => Ok((AssignmentSummary { dets: Vec::new(), more: Vec::new(), hash: None, reason: bound_name(bound).to_owned(), examples: Arc::default(), models: Arc::default(), features: Arc::default(), shape_rows: None, columns: Arc::default() }, cost)),
+        found => found.map(|found| (found, cost)),
     }
 }
 

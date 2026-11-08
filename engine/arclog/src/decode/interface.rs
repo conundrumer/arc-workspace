@@ -258,8 +258,11 @@ impl<'a> Decoder<'a> {
     /// where no clause is in progress. Where the sub-body does not check or
     /// does not compile, this gives a [`RunFault`] at the clause.
     ///
-    /// Asking a per-example clause with `None`, or a task-wide clause on an
-    /// example, is a fault of the caller, so this panics on one.
+    /// The sub-body is evaluated on the example that its own scope fixes
+    /// ([`Decoder::rows_scope`]): a task-wide clause is evaluated once, whatever
+    /// `example` is, and a per-example clause on `example`. A per-example
+    /// clause asked with `None`, or on an example that the task does not hold,
+    /// gives a [`RunFault`] at the clause.
     pub fn rows(&self, example: Option<Example>) -> Option<Outcome<Assigned<BodyValue>>> {
         let _request = self.begin_request();
         Some(self.sub_body()?.and_then(|sub| self.assigned_rows(&sub, example, None)))
@@ -343,8 +346,24 @@ impl<'a> Decoder<'a> {
     }
 
     fn assigned_rows(&self, sub: &SubBody, example: Option<Example>, work: Option<&TableWork>) -> Outcome<Assigned<BodyValue>> {
+        let example = self.example_of(sub, example)?;
         let root = derived_at(&sub.program, &sub.form).node;
         self.assigned(&sub.program, root, &walked_dets(&sub.program, root), work, &mut |evaluation| evaluation.body(&sub.form, &sub.kept, example).map_err(End::Fault))
+    }
+
+    /// The example that the evaluation of `sub` takes when a caller asks for
+    /// `asked`. A clause evaluated on an example reads a relation per example
+    /// as that example's rows, and one evaluated task-wide reads it lifted, with
+    /// an Example column, so the scope of the clause fixes the example, and the
+    /// evaluation never meets a pair of scope and example that its readers
+    /// do not hold. A task-wide clause takes none, and a per-example clause
+    /// takes `asked`, which must be an example of the task.
+    fn example_of(&self, sub: &SubBody, asked: Option<Example>) -> Outcome<Option<Example>> {
+        match (sub.scope, asked) {
+            (ExampleScope::TaskWide, _) => Ok(None),
+            (ExampleScope::PerExample, Some(example)) if self.task.examples().any(|held| held == example) => Ok(Some(example)),
+            (ExampleScope::PerExample, _) => Err(RunFault { message: "a clause per example is evaluated on an example of the task".into(), form: sub.form.clone() }),
+        }
     }
 
     /// What `at` gives at each joint assignment of `dets`, in the order of

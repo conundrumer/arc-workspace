@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use arclog::check::{check_program, CheckCache, CheckedProgram, SolverClauses};
 use arclog::decode::{step_batch, Consistency, Decoder, Refusal, Projections};
+use arclog::eval::examples::ExampleScope;
 use arclog::eval::instance::Constructions;
 use arclog::eval::pool::Pool;
 use arclog::eval::{Caps, Gauge, ReachedBound, RelationValue, RequestWork};
@@ -474,5 +475,72 @@ fn the_gauges_of_a_request_are_the_same_with_cold_caches_and_with_caches_another
         let cold = gauges_of_admits(arclog, false);
         let warm = gauges_of_admits(arclog, true);
         assert_eq!(cold, warm, "the gauges of a request on {arclog}");
+    }
+}
+
+/// The count of the rows of the sub-body at each assignment, or the message of
+/// the fault, for the clause in progress asked on `example`.
+fn row_counts(decoder: &Decoder<'_>, example: Option<Example>) -> Option<Result<Vec<Option<u64>>, String>> {
+    let rows = decoder.rows(example)?;
+    Some(
+        rows.map(|rows| {
+            rows.at
+                .iter()
+                .map(|(_, value)| match &value.0 {
+                    RelationValue::Rows(relation) => Some(relation.len()),
+                    _ => None,
+                })
+                .collect()
+        })
+        .map_err(|fault| fault.message.to_string()),
+    )
+}
+
+#[test]
+fn a_task_wide_clause_in_progress_gives_the_same_rows_whatever_example_is_asked() {
+    let inputs = inputs(&[3, 3], Caps::CORPUS);
+    let tokens = model_tokens("(RULE &c (input *P *Col))\n(DET &cells (ex_output *E) (&c E *P *Col))\n(RULE &output (input (:P *Q)) (&cells (:Col *Col)))\n");
+    let mut decoder = decoder(&inputs);
+    let mut task_wide = 0;
+    for token in &tokens {
+        decoder.step(token.clone()).unwrap_or_else(|refusal| panic!("{token:?}: {refusal:?}"));
+        if !matches!(decoder.rows_scope(), Some(Ok(ExampleScope::TaskWide))) {
+            continue;
+        }
+        let once = row_counts(&decoder, None);
+        assert_eq!(row_counts(&decoder, Some(Example::at(0))), once, "after {token:?}");
+        assert_eq!(row_counts(&decoder, Some(Example::at(7))), once, "after {token:?}, on an example that the task does not hold");
+        task_wide += 1;
+    }
+    assert!(task_wide > 0, "a task-wide clause was in progress at some token");
+}
+
+#[test]
+fn a_clause_per_example_asked_with_no_example_or_a_missing_one_gives_a_fault() {
+    let inputs = inputs(INPUT, Caps::CORPUS);
+    let mut decoder = decoder(&inputs);
+    let tokens = model_tokens(COPIES);
+    let (_, prefix) = tokens.split_last().expect("a stream");
+    walk(&mut decoder, prefix);
+    assert!(matches!(decoder.rows_scope(), Some(Ok(ExampleScope::PerExample))));
+    assert!(decoder.rows(None).expect("a clause in progress").is_err());
+    assert!(decoder.rows(Some(Example::at(7))).expect("a clause in progress").is_err());
+    assert!(decoder.rows(Some(Example::at(0))).expect("a clause in progress").is_ok());
+}
+
+#[test]
+fn the_decoders_and_forks_of_a_session_that_a_call_panicked_in_see_it_dead() {
+    let inputs = inputs(INPUT, Caps::CORPUS);
+    let decoder = decoder(&inputs);
+    let fork = decoder.fork();
+    assert!(!decoder.evaluation_inputs().1.is_dead());
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _entry = decoder.evaluation_inputs().1.enter().expect("a live session");
+        panic!("a call on the session panics");
+    }));
+    assert!(panicked.is_err());
+    for held in [&decoder, &fork] {
+        assert!(held.evaluation_inputs().1.is_dead());
+        assert!(held.evaluation_inputs().1.enter().is_err());
     }
 }

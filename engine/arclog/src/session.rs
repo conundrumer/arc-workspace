@@ -976,6 +976,38 @@ pub struct TaskSession {
     /// The masks that the decodes of the session computed, by the path of
     /// tokens that reached each state.
     pub(crate) path_masks: Arc<Mutex<crate::decode::PathMasks>>,
+    /// Whether a call on this session panicked ([`TaskSession::enter`]). The
+    /// clones of a session, and the sessions that share its intern table or
+    /// its facts, share the flag.
+    dead: Arc<AtomicBool>,
+}
+
+/// The refusal of a call on a dead session ([`TaskSession::is_dead`]).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SessionDead;
+
+impl std::fmt::Display for SessionDead {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the session is dead: an earlier call on it panicked, and the state that the panic left is not read; open a new session")
+    }
+}
+
+impl std::error::Error for SessionDead {}
+
+/// A call in progress on a session ([`TaskSession::enter`]). It owns a share of
+/// the session's flag, so a call holds it beside a mutable borrow of the
+/// decode. It marks the session dead when the call unwinds.
+#[derive(Debug)]
+pub struct SessionEntry {
+    dead: Arc<AtomicBool>,
+}
+
+impl Drop for SessionEntry {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.dead.store(true, Ordering::SeqCst);
+        }
+    }
 }
 
 /// A count of bindings tried and a count of rows held.
@@ -1003,7 +1035,7 @@ impl TaskSession {
     /// A session with an empty intern table and an empty result cache,
     /// whose evaluations run at `caps`.
     pub fn new(bound: SessionBound, caps: Caps) -> Self {
-        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), branches: Arc::default(), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), native_rows: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default(), path_masks: Arc::default() }
+        TaskSession { intern: Arc::new(RwLock::default()), results: Arc::new(ResultCache::default()), branches: Arc::default(), caps, bound, allocated: Arc::new(AtomicUsize::new(0)), largest_bindings: Arc::new(AtomicU64::new(0)), largest_rows: Arc::new(AtomicU64::new(0)), facts: Arc::new(Mutex::default()), native_rows: Arc::new(Mutex::default()), det_probes: Arc::default(), det_domains: Arc::default(), path_masks: Arc::default(), dead: Arc::default() }
     }
 
     /// A session with this session's intern table and fact relations, and
@@ -1030,6 +1062,31 @@ impl TaskSession {
     /// than the session's uses a session from this method.
     pub fn with_own_facts(&self) -> Self {
         TaskSession { facts: Arc::default(), native_rows: Arc::default(), ..self.clone() }
+    }
+
+    /// Whether a call on this session panicked. A panic leaves the state of
+    /// the session as it was at the panic: a lock that the panic poisoned, a
+    /// cache that it left half written. So a dead session serves no call:
+    /// [`TaskSession::enter`] refuses each one, and nothing reads the state.
+    pub fn is_dead(&self) -> bool {
+        self.dead.load(Ordering::SeqCst)
+    }
+
+    /// Marks this session dead ([`TaskSession::is_dead`]), for a panic that a
+    /// caller caught where [`TaskSession::enter`] could not see it unwind.
+    pub fn mark_dead(&self) {
+        self.dead.store(true, Ordering::SeqCst);
+    }
+
+    /// The start of a call on this session: [`SessionDead`] where the session
+    /// is dead, and else an entry that marks the session dead where the call
+    /// ends by a panic, as the entry drops during the unwind. A call holds the
+    /// entry until it ends.
+    pub fn enter(&self) -> Result<SessionEntry, SessionDead> {
+        if self.is_dead() {
+            return Err(SessionDead);
+        }
+        Ok(SessionEntry { dead: Arc::clone(&self.dead) })
     }
 
     /// The domains that the liveness walks of this session's decodes keep.

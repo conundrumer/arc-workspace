@@ -41,6 +41,12 @@ create_exception!(
 );
 create_exception!(
     arclog,
+    SessionDead,
+    EngineFault,
+    "A call on a session whose earlier call panicked. The panic left the session's state as it was at the panic, so the session serves no call: every later call on the session, on its decoders, on their forks and on the tables of those, raises this at once, and the same call raises it again. Open a new session."
+);
+create_exception!(
+    arclog,
     BudgetReached,
     PyException,
     "A call stopped at a bound of its request or of its tables (a budget), and its export left out tables. It is no fault of the engine: its result depends on the call's inputs alone, and the same call stops again. Attributes: `bound`, the `StopKind` of the bound (`RequestWork`, `RequestBytes`, `TableWork`, `Assignments`, ...); `cap`, the bound's cap as an int, or None where it has none; `tables`, the list of the tables left out, each by its relation and the path of its form."
@@ -50,6 +56,11 @@ create_exception!(arclog, RecordedIdentityError, PyValueError, "Native recorded 
 
 fn fault(fault: RunFault) -> PyErr {
     Fault::new_err(fault.message.to_string())
+}
+
+/// The `SessionDead` that a call on a dead session raises.
+pub(crate) fn session_dead(dead: arclog::session::SessionDead) -> PyErr {
+    SessionDead::new_err(dead.to_string())
 }
 
 /// The `BudgetReached` for a call whose export stopped at `bound` and left

@@ -10,6 +10,7 @@ use arclog::stream::{DecodeSettings, Vocabulary};
 use pyo3::prelude::*;
 
 use crate::decoder::PyDecoder;
+use crate::errors::session_dead;
 use crate::settings::PyDecodeSettings;
 use crate::task::{PyTask, TaskData};
 use crate::vocabulary::PyVocabulary;
@@ -61,23 +62,26 @@ impl PySession {
 
     /// The result cache's entries, relations, counted bytes, indexes and
     /// index bytes, and the intern table's bytes.
-    fn cache_stats(&self, py: Python<'_>) -> (usize, usize, usize, usize, usize, usize) {
-        py.detach(|| {
+    fn cache_stats(&self, py: Python<'_>) -> PyResult<(usize, usize, usize, usize, usize, usize)> {
+        let _entry = self.data.session.enter().map_err(session_dead)?;
+        Ok(py.detach(|| {
             let (entries, relations, bytes, indexes, index_bytes) = self.data.session.results.stats();
             (entries, relations, bytes, indexes, index_bytes, self.data.session.intern.read().expect("an intern table outside a panic").bytes())
-        })
+        }))
     }
 
     /// What the walk memos count, as `TaskSession::memo_stats` gives it.
-    fn memo_stats(&self, py: Python<'_>) -> ((usize, usize, usize, usize), (usize, usize)) {
-        py.detach(|| self.data.session.memo_stats())
+    fn memo_stats(&self, py: Python<'_>) -> PyResult<((usize, usize, usize, usize), (usize, usize))> {
+        let _entry = self.data.session.enter().map_err(session_dead)?;
+        Ok(py.detach(|| self.data.session.memo_stats()))
     }
 
     /// The bytes that the session's bound counts, as `TaskSession::ledger`
     /// gives them: the intern table's, the result cache's, and the reserved
     /// bytes of live buffers, such as those that a `CaseTables` holds.
-    fn ledger_stats(&self, py: Python<'_>) -> (usize, usize, usize) {
-        py.detach(|| self.data.session.ledger())
+    fn ledger_stats(&self, py: Python<'_>) -> PyResult<(usize, usize, usize)> {
+        let _entry = self.data.session.enter().map_err(session_dead)?;
+        Ok(py.detach(|| self.data.session.ledger()))
     }
 
     /// End a complete-program round-trip batch. No parsed/checkpoint state
@@ -106,6 +110,7 @@ impl PySession {
     /// (`arclog::decode::Decoder::without_evaluation`).
     #[pyo3(signature = (*, evaluate=true))]
     pub(crate) fn decoder(&self, evaluate: bool) -> PyResult<PyDecoder> {
+        let _entry = self.data.session.enter().map_err(session_dead)?;
         PyDecoder::open(&self.data, evaluate)
     }
 
@@ -117,6 +122,7 @@ impl PySession {
     /// each of them. Raises `ValueError` where `ids` and `model` differ in
     /// length, and `IndexError` for an id outside the vocabulary.
     fn check_stream(&self, py: Python<'_>, ids: Vec<u32>, model: Vec<u8>) -> PyResult<Option<(usize, String)>> {
+        let _entry = self.data.session.enter().map_err(session_dead)?;
         let mut decoder = PyDecoder::open(&self.data, false)?;
         let refused = py.detach(|| decoder.first_refusal(&ids, &model))?;
         Ok(refused.map(|(at, refusal)| (at, crate::decoder::refusal_message(&refusal))))
