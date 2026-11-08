@@ -892,7 +892,7 @@ fn run_term_counts(arguments: &Arguments, pattern: &str, file: &str) -> Result<(
     let empty = Vec::new();
     for item in data["items"].as_array().unwrap_or(&empty) {
         let Some(stored) = Stored::of_json(&item["gold"], train, 0) else { continue };
-        if stored.types.len() > arclog_encoder::generate::MAX_COLUMNS {
+        if stored.types.len() > arclog_encoder::generate::MAX_TABLE_COLUMNS {
             continue;
         }
         let family = families.get(&stored, arguments.size.max(1));
@@ -1140,7 +1140,7 @@ fn run_generate_check(arguments: &Arguments, every: usize, file: &str) -> Result
             break;
         }
         let Some(stored) = Stored::of_json(item, train, 0) else { continue };
-        if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
+        if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_TABLE_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
             continue;
         }
         let task = arclog::task::read_task(&arguments.tasks.join(format!("{task_name}.json"))).map_err(|error| format!("{error:?}"))?;
@@ -1246,7 +1246,7 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
         }
         let Evaluated::Value(value) = host.relation(name, false) else { continue };
         let [at] = value.at.as_slice() else { continue };
-        if value.types.is_empty() || value.types.len() > arclog_encoder::generate::MAX_COLUMNS || value.types.iter().any(|ty| *ty == arclog::types::ValueType::Example) || value.row_names.iter().any(|column| column == "T") {
+        if value.types.is_empty() || value.types.len() > arclog_encoder::generate::MAX_TABLE_COLUMNS || value.types.iter().any(|ty| *ty == arclog::types::ValueType::Example) || value.row_names.iter().any(|column| column == "T") {
             continue;
         }
         let mut rows: Vec<Vec<Vec<Vec<u32>>>> = vec![Vec::new(); train];
@@ -1460,7 +1460,7 @@ fn run_time_heads(arguments: &Arguments, files: &[String]) -> Result<(), String>
                 break;
             }
             let Some(stored) = stored else { continue };
-            if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
+            if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_TABLE_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
                 continue;
             }
             taken += 1;
@@ -1602,7 +1602,7 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
             break;
         }
         let Some(stored) = Stored::of_json(item, train, 0) else { continue };
-        if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
+        if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_TABLE_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
             continue;
         }
         let other = if two_tables {
@@ -1780,7 +1780,7 @@ fn run_shape_count(arguments: &Arguments, files: &[String]) -> Result<(), String
         let mut seen: BTreeSet<u128> = BTreeSet::new();
         for item in data["items"].as_array().unwrap_or(&empty) {
             let Some(stored) = Stored::of_json(&item["gold"], train, 0) else { continue };
-            if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
+            if stored.types.is_empty() || stored.types.len() > arclog_encoder::generate::MAX_TABLE_COLUMNS || !seen.insert(stored.content()) || stored.rows.iter().take(train).any(|models| models.len() != 1) {
                 continue;
             }
             let family = families.get(&stored, arguments.size.max(1));

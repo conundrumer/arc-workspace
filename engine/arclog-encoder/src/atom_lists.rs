@@ -139,7 +139,7 @@ impl Sink {
 }
 
 /// Why `stored_of` can't read a table that has more columns than the generator takes.
-pub const PAST_MAX_COLUMNS: &str = "past MAX_COLUMNS columns";
+pub const PAST_MAX_COLUMNS: &str = "past MAX_TABLE_COLUMNS columns";
 
 /// A file's table as a table of the candidate lists, with each assignment's each model as a model at its example. `Ok(None)` is no table, and `Err` says why a table can't be read.
 pub fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &LookupMap<i64, String>) -> Result<Option<Stored>, &'static str> {
@@ -151,7 +151,7 @@ pub fn stored_of(table: &serde_json::Value, train: usize, test: usize, orient: &
     let part = &parts[0];
     let names: Vec<&str> = part["types"].as_array().ok_or("types")?.iter().filter_map(Value::as_str).collect();
     let types: Vec<ValueType> = names.iter().map(|name| type_of_name(name)).collect::<Option<_>>().ok_or("a type")?;
-    if types.len() > crate::generate::MAX_COLUMNS {
+    if types.len() > crate::generate::MAX_TABLE_COLUMNS {
         return Err(PAST_MAX_COLUMNS);
     }
     let examples = train + test;

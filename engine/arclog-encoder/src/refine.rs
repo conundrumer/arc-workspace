@@ -9,7 +9,7 @@
 use crate::expression::Op;
 
 /// A set of a relation's columns, by place.
-pub type Mask = u32;
+pub type Mask = u64;
 
 const MOST_KEYS: usize = 8;
 
@@ -84,7 +84,7 @@ impl Refined {
     }
 
     pub fn all_columns(&self) -> Mask {
-        if self.arity() >= 32 { Mask::MAX } else { (1 << self.arity()) - 1 }
+        if self.arity() >= Mask::BITS as usize { Mask::MAX } else { (1 << self.arity()) - 1 }
     }
 
     /// Whether `mask` holds a key.

@@ -26,7 +26,10 @@ pub const READS_TABLE: u8 = 4;
 pub const READS_SECOND: u8 = 8;
 const NO_TERM: u32 = u32::MAX;
 const MAX_PROJECTED: usize = 4;
+/// The most columns of a term that a table's family derives. A table's own rows stand whatever its width, up to MAX_TABLE_COLUMNS.
 pub const MAX_COLUMNS: usize = 12;
+/// The most columns of a table: the width of the column mask.
+pub const MAX_TABLE_COLUMNS: usize = crate::refine::Mask::BITS as usize;
 const PAYLOAD: u64 = (1 << 62) - 1;
 /// The leaves that stand first among a family's terms.
 const LEAF_TABLE: u32 = 0;
@@ -207,6 +210,8 @@ pub struct Generated {
     task_wide: bool,
     /// Whether the next term stands whatever a rule says of it: a named feature, whose parts read more than a count.
     force_next: bool,
+    /// Whether the next term stands whatever its width: the table's own rows.
+    any_width_next: bool,
     /// While it holds, the parts of a table are only those keyed by its one Color or Ident column as a group.
     one_group: bool,
     /// The terms that a part of the base tables names.
@@ -360,6 +365,7 @@ impl Generated {
         let constants: Vec<u32> = (FIRST_CONSTANT..family.first_term as u32).filter(|at| parts[(*at - FIRST_CONSTANT) as usize].meets_table).collect();
         // Size 1: over the leaves. The table's own rows give its own count.
         let own_columns = family.terms[LEAF_TABLE as usize].columns.clone();
+        family.any_width_next = true;
         family.push(Step::Part(PartTerm::new(PartStep::Same)), LEAF_TABLE, NO_TERM, own_columns, 0, "T".to_string(), RootKind::Rows);
         let own_rows = family.terms.len() as u32 - 1;
         if one_group {
@@ -756,6 +762,7 @@ impl Generated {
         let lifted: Vec<ValueType> = std::iter::once(ValueType::Example).chain(types.iter().cloned()).collect();
         family.lifted_refinements(&lifted);
         let own_columns = family.terms[LEAF_TABLE as usize].columns.clone();
+        family.any_width_next = true;
         family.push(Step::Part(PartTerm::new(PartStep::Same)), LEAF_TABLE, NO_TERM, own_columns, 0, "T".to_string(), RootKind::Rows);
         let own_rows = family.terms.len() as u32 - 1;
         family.unary_operators(LEAF_TABLE, 1);
@@ -1044,7 +1051,7 @@ impl Generated {
     }
 
     fn empty() -> Generated {
-        Generated { key_columns: Vec::new(), step_ids: std::sync::OnceLock::new(), one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false, bound_heads: Vec::new() }
+        Generated { key_columns: Vec::new(), step_ids: std::sync::OnceLock::new(), one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, any_width_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false, bound_heads: Vec::new() }
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
@@ -1409,10 +1416,11 @@ impl Generated {
     }
 
     fn push(&mut self, step: Step, a: u32, b: u32, mut columns: Vec<Column>, size: u8, text: String, root: RootKind) {
-        if columns.len() > MAX_COLUMNS {
+        if columns.len() > MAX_COLUMNS && !std::mem::take(&mut self.any_width_next) {
             self.force_next = false;
             return;
         }
+        self.any_width_next = false;
         // A derived relation's columns are its labels, each with its first letter in upper case.
         for column in &mut columns {
             if column.name.starts_with(|first: char| first.is_lowercase()) {

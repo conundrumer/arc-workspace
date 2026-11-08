@@ -498,7 +498,7 @@ pub fn lists_from(input: &TablesIn, task_dir: &std::path::Path, families: &Gener
     let mut stored: Vec<Stored> = Vec::new();
     let mut content_at: FastMap<u128, usize> = FastMap::default();
     let mut place = |table: Stored, stored: &mut Vec<Stored>| -> Option<usize> {
-        if table.types.len() > crate::generate::MAX_COLUMNS {
+        if table.types.len() > crate::generate::MAX_TABLE_COLUMNS {
             return None;
         }
         Some(*content_at.entry(table.content()).or_insert_with(|| {

@@ -215,7 +215,8 @@ fn lib_facts(name: &str) -> Option<Arc<Facts>> {
             if let Some(rows) = finite_rows(name, relation.columns.len(), registry) {
                 facts.nonempty = !rows.is_empty();
                 let arity = relation.columns.len();
-                for mask in 0u32..(1 << arity) {
+                let subsets: Mask = 1 << arity;
+                for mask in 0..subsets {
                     let mut seen: Vec<Vec<u32>> = rows.iter().map(|row| (0..arity).filter(|at| mask & (1 << at) != 0).map(|at| row[at]).collect()).collect();
                     seen.sort_unstable();
                     if seen.windows(2).all(|pair| pair[0] != pair[1]) {
@@ -745,9 +746,9 @@ impl Reader<'_> {
         let head_places: Vec<u64> = head_columns.iter().map(|(_, label)| labels.iter().position(|own| own == label).map_or(0, |at| 1u64 << at)).collect();
         let head_mask = head_places.iter().fold(0, |held, one| held | one);
         let mut out = Facts::with_columns(head_columns.iter().map(|(column, _)| column.clone()).collect());
-        let column_mask = |subset: u32| -> u64 { (0..head_places.len()).filter(|at| subset & (1 << at) != 0).fold(0, |held, at| held | head_places[at]) };
+        let column_mask = |subset: Mask| -> u64 { (0..head_places.len()).filter(|at| subset & (1 << at) != 0).fold(0, |held, at| held | head_places[at]) };
         let n = head_places.len().min(16);
-        let mut sets: Vec<u32> = vec![0];
+        let mut sets: Vec<Mask> = vec![0];
         for one in 0..n {
             sets.push(1 << one);
             for two in one + 1..n {
@@ -764,7 +765,7 @@ impl Reader<'_> {
         }
         // One least key by removing columns, for a key of many columns.
         if n > 0 {
-            let mut greedy: u32 = if n >= 32 { u32::MAX } else { (1 << n) - 1 };
+            let mut greedy: Mask = if n >= Mask::BITS as usize { Mask::MAX } else { (1 << n) - 1 };
             for one in 0..n {
                 let less = greedy & !(1 << one);
                 if closure(column_mask(less)) & head_mask == head_mask {
@@ -1252,7 +1253,7 @@ pub fn plan(call: &str, r_arity: usize, s_columns: &[String], native: &[(String,
         let mut plan = PartPlan { forms, export, columns, r_arity, s_columns: s_columns.to_vec(), out, results: Mutex::new(LookupMap::new()), reads_only_holes: false };
         // A column more, that no hole names.
         if let Some((forms, export, _)) = plan_of_text(call, r_arity + 1, s_columns) {
-            let wider = RelationInput { columns: (0..=r_arity).map(|at| format!("C{at}")).collect(), keys: vec![if r_arity + 1 >= 32 { Mask::MAX } else { (1 << (r_arity + 1)) - 1 }], low: vec![None; r_arity + 1], high: vec![None; r_arity + 1], within: Vec::new() };
+            let wider = RelationInput { columns: (0..=r_arity).map(|at| format!("C{at}")).collect(), keys: vec![if r_arity + 1 >= Mask::BITS as usize { Mask::MAX } else { (1 << (r_arity + 1)) - 1 }], low: vec![None; r_arity + 1], high: vec![None; r_arity + 1], within: Vec::new() };
             let facts = read_forms(&forms, &export, &wider, None, s_columns);
             plan.reads_only_holes = !facts.reads.contains(&format!("C{r_arity}")) && !facts.columns.iter().any(|column| *column == format!("C{r_arity}"));
         }
@@ -1272,7 +1273,7 @@ fn read_forms(forms: &[SExpr], export: &str, r: &RelationInput, s: Option<&Relat
     relations.insert("&r".to_string(), r.clone());
     let s_input = s.cloned().unwrap_or_else(|| {
         let arity = s_columns.len();
-        let all = if arity >= 32 { Mask::MAX } else { (1u32 << arity).wrapping_sub(1) };
+        let all = if arity >= Mask::BITS as usize { Mask::MAX } else { (1 << arity).wrapping_sub(1) };
         RelationInput { columns: s_columns.to_vec(), keys: vec![all], low: vec![None; arity], high: vec![None; arity], within: Vec::new() }
     });
     relations.insert("&s".to_string(), s_input);
