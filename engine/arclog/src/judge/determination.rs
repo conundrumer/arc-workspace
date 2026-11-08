@@ -694,11 +694,17 @@ impl Walk<'_, '_> {
         }
     }
 
-    /// Counts the work of one step of the walk in the request: one unit, and
-    /// one for each assignment that the step copies. The step's own work is
-    /// the copy of `assigned` and the loop over a domain, which no join counts.
-    fn charge(&self, at: usize, units: u64) -> Result<(), End> {
-        self.inputs.limits.request.charge(units).map_err(|bound| {
+    /// Counts the work of one step of the walk: one unit, and one for each
+    /// assignment that the step copies. The step's own work is the copy of
+    /// `assigned` and the loop over a domain, which no join counts.
+    ///
+    /// The units of a complete assignment, a leaf, are content: the table of
+    /// the walk is its assignments, and the request counts them. The steps
+    /// that reach a leaf are the search, and their units are effort, since
+    /// the steps to the same leaves follow the order of the `DET`s.
+    fn charge(&self, at: usize, units: u64, content: bool) -> Result<(), End> {
+        let request = &self.inputs.limits.request;
+        (if content { request.charge(units) } else { request.charge_effort(units) }).map_err(|bound| {
             let program = &self.inputs.program.program;
             let form = self.dets.get(at).map_or_else(|| self.dets.last().map_or_else(|| program.form_of(self.root), |det| program.form_of(det.node)), |det| program.form_of(det.node));
             End::Stop(Stop { bound, form: form.clone() })
@@ -706,7 +712,7 @@ impl Walk<'_, '_> {
     }
 
     fn path(&mut self, at: usize, assigned: &mut Vec<Assignment>) -> Result<(), End> {
-        self.charge(at, 1 + assigned.len() as u64)?;
+        self.charge(at, 1 + assigned.len() as u64, at >= self.dets.len())?;
         let parameters = ParameterValues::determined(assigned.clone());
         let scope;
         let inputs = if self.scoped {
@@ -776,9 +782,10 @@ impl Walk<'_, '_> {
             };
             match domain.map_err(End::Fault)? {
                 Domain::Rows(rows) if det.open => {
-                    // `one_row_each` walks each row and compares each with those kept so far.
+                    // `one_row_each` walks each row and compares each with those kept so far: the rows are content, the comparisons are effort.
                     let held = rows.iter().map(|value| value.len()).fold(0u64, u64::saturating_add);
-                    self.charge(at, held.saturating_mul(held))?;
+                    self.charge(at, held, true)?;
+                    self.charge(at, held.saturating_mul(held), false)?;
                     one_row_each(&rows)
                 }
                 Domain::Rows(rows) => rows,

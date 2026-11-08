@@ -209,11 +209,21 @@ pub fn evaluate_input(
     let compute = || {
         let reads = std::slice::from_ref(&read);
         let (groups, per_group) = grouped_inputs(evaluation, &shape, key.as_deref(), reads).map_err(&fault)?;
+        // The content of the input: the rows it reads, and below, the rows it writes.
+        let mut budget = Budget::new(evaluation.limits, evaluation.session);
+        let stopped = |bound| Ok(RelationValue::Stopped(Stop { bound, form: form.clone() }));
+        let read: u64 = per_group.iter().map(|group| group[0].len() as u64).fold(0, u64::saturating_add);
+        if let Err(bound) = budget.charge_content(read) {
+            return stopped(bound);
+        }
         let mut rows = RowSet::empty(shape.arity(&widths) as u16);
         for (key, group) in groups.iter().zip(&per_group) {
             for values in group[0].rows() {
                 rows.insert(laid_out(&widths, key, values));
             }
+        }
+        if let Err(bound) = budget.charge_content(rows.len() as u64) {
+            return stopped(bound);
         }
         Ok(RelationValue::Rows(Arc::new(join::one_part(rows))))
     };

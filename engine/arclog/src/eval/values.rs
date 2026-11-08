@@ -416,7 +416,33 @@ type FaultSink = Mutex<Option<EffortFault>>;
 
 thread_local! {
     /// The sink of the requests begun on this thread ([`RequestWork::begin_with`]).
-    static SINK: Arc<FaultSink> = Arc::default();
+    /// A worker thread takes the sink of the thread that started it
+    /// ([`adopt_fault_sink`]).
+    static SINK: RefCell<Arc<FaultSink>> = RefCell::new(Arc::default());
+}
+
+/// The sink that the requests begun on this thread leave their effort fault
+/// in.
+fn current_sink() -> Arc<FaultSink> {
+    SINK.with(|sink| Arc::clone(&sink.borrow()))
+}
+
+/// The sink of the thread that calls it, for the workers that run its work
+/// to adopt ([`adopt_fault_sink`]).
+#[derive(Clone, Debug)]
+pub struct FaultSinkHandle(Arc<FaultSink>);
+
+/// The sink of the requests begun on this thread, to hand to the workers of a
+/// call on this thread.
+pub fn fault_sink() -> FaultSinkHandle {
+    FaultSinkHandle(current_sink())
+}
+
+/// Makes the requests begun on this thread leave their effort fault in the
+/// sink of `handle`. A worker of a call calls it first, so the fault of a request it
+/// begins reaches the thread that made the call ([`take_effort_fault`]).
+pub fn adopt_fault_sink(handle: &FaultSinkHandle) {
+    SINK.with(|sink| *sink.borrow_mut() = Arc::clone(&handle.0));
 }
 
 /// The effort fault that a request begun on this thread left since the last
@@ -425,7 +451,9 @@ thread_local! {
 /// fault, in place of giving the result of the call: the stop of the effort
 /// guard is a fault, never a result.
 pub fn take_effort_fault() -> Option<EffortFault> {
-    SINK.with(|sink| sink.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take())
+    let sink = current_sink();
+    let fault = sink.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+    fault
 }
 
 /// The bindings tried by the searches of a request, and whether they passed
@@ -1194,7 +1222,7 @@ impl RequestWork {
     /// A count of no work and no bytes, under `cap` and the byte budgets
     /// `byte_caps`.
     pub fn with_byte_caps(cap: u64, byte_caps: ByteCaps) -> Self {
-        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default(), effort: Arc::default(), effort_cap: EFFORT_CAP, sink: Arc::default() }
+        RequestWork { count: Arc::new(AtomicU64::new(0)), cap, bytes: Arc::default(), byte_caps, gauges: Arc::default(), effort: Arc::default(), effort_cap: EFFORT_CAP, sink: current_sink() }
     }
 
     /// This count with the effort guard `effort_cap` in place of
@@ -1212,7 +1240,7 @@ impl RequestWork {
 
     /// [`RequestWork::begin`], under the byte budgets `byte_caps`.
     pub fn begin_with(cap: u64, byte_caps: ByteCaps) -> Self {
-        let work = RequestWork { sink: SINK.with(Arc::clone), ..Self::with_byte_caps(cap, byte_caps) };
+        let work = Self::with_byte_caps(cap, byte_caps);
         ambient::reset();
         tally(|tally| tally.unbilled = 0);
         LATEST.with(|latest| *latest.borrow_mut() = Some(work.clone()));

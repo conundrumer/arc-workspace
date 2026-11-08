@@ -502,7 +502,9 @@ impl<'a> Search<'a> {
                 let functions = found.into_iter().map(|position| this.columns[usize::from(position)].0).collect();
                 self.entries[entry].counted = Some(Counted { count, read, functions });
             }
+            // The content of the read is the part's rows. The rows read before the count passes the cap follow the order of the part's rows, which no content decides, and are effort.
             let read = self.entries[entry].counted.as_ref().map_or(0, |counted| counted.read);
+            self.budgets[relation].charge_content(this.rows.len() as u64)?;
             self.budgets[relation].charge_work(read)?;
             self.entries[entry].counted_by.mark(relation);
         }
@@ -589,6 +591,7 @@ impl<'a> Search<'a> {
         let entry = self.entry(class, positions);
         if !self.entries[entry].built_by.has(relation) {
             if !self.entries[entry].counted_by.has(relation) {
+                self.budgets[relation].charge_content(this.rows.len() as u64)?;
                 self.budgets[relation].charge_work(this.rows.len() as u64)?;
             }
             self.entries[entry].built_by.mark(relation);

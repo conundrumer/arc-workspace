@@ -12,7 +12,7 @@ use arclog::registry::Registry;
 use arclog::stream::corpus::{fault_line, solver_streams, token_ids, StreamLabels, WantedCases};
 use arclog::stream::{DecodeSettings, Emitter, Vocabulary};
 use arclog::task::{JudgedTask, Task};
-use arclog_bindings::{constructions, walk_corpus, Progress, PyConsistencyKind, PyReplayProgress};
+use arclog_bindings::{check_effort, constructions, walk_corpus, Progress, PyConsistencyKind, PyReplayProgress};
 use arclog_tables::columns::case_columns_in;
 use arclog::eval::join::Materializer;
 use arclog_tables::tables::{evidence_tables, Points, Table};
@@ -87,6 +87,7 @@ struct TableCase {
 /// (`arclog::eval::copies`), and each `CaseTables.copies` gives the violations it found; a
 /// construction's run that an earlier run of the call cached is not checked again.
 /// With `prefix`, each solver's files hold a prefix of a solver, read as `corpus_streams` reads them.
+/// `arclog.EffortExhausted` is raised, and no tables are given, where a request of the replay passed its effort guard.
 #[pyfunction]
 #[pyo3(signature = (corpus, tasks, all_cases=false, task_ids=None, bodies=false, projection_cap=None, ended=None, progress=None, step_cap=None, table_work_cap=None, units=None, copies=false, prefix=false, binding_cap=None, row_cap=None))]
 pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases: bool, task_ids: Option<Vec<String>>, bodies: bool, projection_cap: Option<u64>, ended: Option<Py<PyAny>>, progress: Option<Py<PyReplayProgress>>, step_cap: Option<usize>, table_work_cap: Option<u64>, units: Option<usize>, copies: bool, prefix: bool, binding_cap: Option<u64>, row_cap: Option<u64>) -> PyResult<(Vec<PyCaseTables>, Vec<String>)> {
@@ -166,6 +167,8 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
             )
         })
         .into_iter();
+    // A request that passed its effort guard gives no tables.
+    check_effort(py)?;
     let mut tables = Vec::new();
     let mut faults = Vec::new();
     for (task, cases, solver_faults) in &found {

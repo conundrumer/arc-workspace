@@ -545,14 +545,15 @@ impl PyStudyProgram {
 /// `request_work_cap` the request work cap of each evaluation request of the
 /// filter (the settings' default where it is `None`): a request stops at that
 /// work cap alone, with no clock. `ValueError` where the task file does not
-/// read. The call runs with the GIL released.
+/// read. `arclog.EffortExhausted` where a request passed its effort guard. The call runs with the GIL released.
 #[pyfunction]
 #[pyo3(signature = (corpus, tasks, task, request_work_cap=None))]
 pub(crate) fn empty_gold_json(py: Python<'_>, corpus: &str, tasks: &str, task: &str, request_work_cap: Option<u64>) -> PyResult<String> {
     let constructions = crate::constructions()?;
-    py.detach(|| arclog::study::empty_gold::empty_gold(std::path::Path::new(corpus), std::path::Path::new(tasks), task, request_work_cap, constructions))
-        .map(|value| value.to_string())
-        .map_err(PyValueError::new_err)
+    let gold = py.detach(|| arclog::study::empty_gold::empty_gold(std::path::Path::new(corpus), std::path::Path::new(tasks), task, request_work_cap, constructions));
+    // A request that passed its effort guard gives no result, whatever the call found.
+    crate::check_effort(py)?;
+    gold.map(|value| value.to_string()).map_err(PyValueError::new_err)
 }
 
 /// The Name that the tables export (`step_tables`'s `tables["name"]`) gives

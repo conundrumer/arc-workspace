@@ -68,10 +68,13 @@ fn refuse_threads(value: &str) -> ! {
 /// order of `items`. `work` does not panic.
 pub fn run_on_workers<I: Sync, R: Send>(items: &[I], threads: usize, work: impl Fn(&I) -> R + Sync) -> Vec<R> {
     let next = AtomicUsize::new(0);
+    // The requests that the workers begin leave their effort fault with the thread that calls this, which raises it.
+    let sink = crate::eval::fault_sink();
     let mut results: Vec<(usize, R)> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..threads)
             .map(|_| {
                 scope.spawn(|| {
+                    crate::eval::adopt_fault_sink(&sink);
                     let mut done = Vec::new();
                     loop {
                         let index = next.fetch_add(1, Ordering::Relaxed);
