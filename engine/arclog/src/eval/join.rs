@@ -1046,6 +1046,26 @@ fn intersect_values(nodes: &[IndexNode<'_>], budget: &mut Budget<'_>) -> Result<
     intersect_runs(nodes.iter().map(|node| node.values()).collect(), budget)
 }
 
+/// The count of values of `run`, a run in encoding order, whose encodings are
+/// below `target`: where `run.partition_point` puts the first value at or
+/// above it. The search doubles its step from the start of the run, so it
+/// takes a few reads where the run's next value is near, as it is where runs
+/// of many values are intersected.
+fn below(run: &[TermId], target: u32) -> usize {
+    match run.first() {
+        None => return 0,
+        Some(first) if first.encoding() >= target => return 0,
+        Some(_) => {}
+    }
+    // The value at `low` is below `target`, and the value at `high`, if the run has one, is not.
+    let (mut low, mut high) = (0, 1);
+    while high < run.len() && run[high].encoding() < target {
+        low = high;
+        high *= 2;
+    }
+    low + 1 + run[low + 1..high.min(run.len())].partition_point(|value| value.encoding() < target)
+}
+
 fn intersect_runs(mut runs: Vec<&[TermId]>, budget: &mut Budget<'_>) -> Result<Vec<TermId>, ReachedBound> {
     let mut found = Vec::new();
     let Some(mut candidate) = runs.first().and_then(|run| run.first()).copied() else { return Ok(found) };
@@ -1054,7 +1074,7 @@ fn intersect_runs(mut runs: Vec<&[TermId]>, budget: &mut Budget<'_>) -> Result<V
         if steps % BATCH as usize == 0 { budget.charge_work(0)?; }
         steps += 1;
         for run in &mut runs {
-            *run = &run[run.partition_point(|value| value.encoding() < candidate.encoding())..];
+            *run = &run[below(run, candidate.encoding())..];
             let Some(&value) = run.first() else { return Ok(found) };
             if value != candidate {
                 candidate = value;
