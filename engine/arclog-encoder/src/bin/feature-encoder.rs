@@ -12,12 +12,12 @@
 //!   feature-encoder query-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder state-vectors SOLVER [--size D] --out FILE
 //!   feature-encoder candidate-lists OUT_DIR (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-only [--wide-size D] | --parents-only | --state-only]
-//!   feature-encoder all-lists ROOT (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-size D] [--families DIR]
+//!   feature-encoder all-lists ROOT (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-size D] [--families DIR] [--count-bounds]
 //!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
 //!   feature-encoder generate-check TABLES_FILE [--size D] [--tables EVERY]
 //!   feature-encoder generate-check-solver SOLVER [--size D] [--tables EVERY]
 //!   feature-encoder refine-check TABLES_FILE [--size D]
-//!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR]
+//!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR] [--count-bounds]
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
 //!   feature-encoder family-names TYPE,TYPE,... [--size D]
 //!   feature-encoder refine-explain CALL ARITY KEY_BITS
@@ -45,6 +45,15 @@
 //! writing a line per table and element, and on a restart skips those the file
 //! holds. With `--program-compare` it compares each table's stored rows with the
 //! table as its program computes it.
+//!
+//! `--count-bounds` counts the evaluations that a bound stopped, per bound and per term head, and prints
+//! the counts to the standard error when the command ends, with a `term` line for each term that a walk
+//! charges many cells or spends much time on. `all-lists`, `shapes-refresh` and `cap-hits` take it, and `cap-hits` runs
+//! with it always. The progress line of `all-lists` and the summary line of `shapes-refresh` say that the
+//! counts were on, and so does the first line of the file that `cap-hits` writes. A `term` line holds the
+//! term's text, so a run with the counts keeps the text of its terms, and reads and writes no saved family.
+//! The commands that read or print a term's text keep it always: `cap-hits`, `term-counts`,
+//! `generate-check`, `generate-check-solver`, `refine-check` and `term-stats`.
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -96,10 +105,12 @@ struct Arguments {
     sample: usize,
     seed: u64,
     max_tables: usize,
+    /// Whether the evaluations that a bound stopped are counted: `--count-bounds`.
+    count_bounds: bool,
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { kinds: None, families: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false, shapes: None, sample: 0, seed: 1, max_tables: usize::MAX };
+    let mut parsed = Arguments { kinds: None, families: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false, shapes: None, sample: 0, seed: 1, max_tables: usize::MAX, count_bounds: false };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -121,6 +132,7 @@ fn arguments() -> Arguments {
             "--rate" => parsed.rate = args.next().and_then(|text| text.parse().ok()).expect("a count per million after --rate"),
             "--control" => parsed.control = true,
             "--program-compare" => parsed.program_compare = true,
+            "--count-bounds" => parsed.count_bounds = true,
             "--rule" => parsed.rule = true,
             "--relational" => parsed.relational = true,
             "--shapes" => parsed.shapes = Some(args.next().expect("a file after --shapes").into()),
@@ -793,6 +805,8 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
         }
         let mut families = Generators::default();
         families.term_limit = term_limit;
+        // The `term` lines of the counts print a term's text.
+        families.keep_text = arguments.count_bounds;
         if let Some(saved) = &arguments.families {
             let saved = saved.join(format!("{folder}-{d}-{wide}"));
             std::fs::create_dir_all(&saved).map_err(|error| error.to_string())?;
@@ -864,7 +878,8 @@ fn run_all_lists(arguments: &Arguments, root: &str, sources: &[String]) -> Resul
                 }
                 let done = finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                 let rate = done as f64 / begun.elapsed().as_secs_f64();
-                eprintln!("{done}/{to_write} {stem}: {tables_seconds:.1} s of tables, {walks} walks, {left_out} items left out, {:.0} s; ETA {:.0}s", started.elapsed().as_secs_f64(), to_write.saturating_sub(done) as f64 / rate);
+                let counts = if arclog_encoder::bounds::enabled() { ", bound counts on" } else { "" };
+                eprintln!("{done}/{to_write} {stem}: {tables_seconds:.1} s of tables, {walks} walks, {left_out} items left out, {:.0} s; ETA {:.0}s{counts}", started.elapsed().as_secs_f64(), to_write.saturating_sub(done) as f64 / rate);
             });
         }
     });
@@ -887,7 +902,8 @@ fn run_term_counts(arguments: &Arguments, pattern: &str, file: &str) -> Result<(
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
     let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
-    let families = Generators::default();
+    // The walk matches the pattern against a term's text.
+    let families = Generators::keeping_text();
     let empty = Vec::new();
     for item in data["items"].as_array().unwrap_or(&empty) {
         let Some(stored) = Stored::of_json(&item["gold"], train, 0) else { continue };
@@ -1021,7 +1037,7 @@ fn check_family(family: &arclog_encoder::generate::Generated, leaves: &[Vec<arcl
         }
         let (text, columns, _) = family.term_info(at);
         if text.is_empty() {
-            return Err("set GENERATE_KEEP_TEXT, so a family keeps its terms' text".to_string());
+            return Err("a family in this check has no terms' text".to_string());
         }
         let expression = term_expression(text, table_text);
         let head: String = if at < first { format!("base:{}", expression.trim_start_matches('(').split(' ').next().unwrap_or("").trim_end_matches(')')) } else { text.trim_start_matches('(').split(' ').next().unwrap_or("").to_string() };
@@ -1122,7 +1138,8 @@ fn run_generate_check(arguments: &Arguments, every: usize, file: &str) -> Result
     let task_name = data["task"].as_str().ok_or("a file's task")?.to_string();
     let train = data["train"].as_u64().ok_or("a file's train")? as usize;
     let (_, grids) = Grids::of_file(&arguments.tasks, &task_name, None)?;
-    let families = Generators::default();
+    // The check compares each term's text with the expression that the engine reads.
+    let families = Generators::keeping_text();
     let registry = arclog::registry::Registry::get();
     let reader = arclog_encoder::expression::Reader { registry, library: arclog_encoder::library::library(), program_relations: &arclog_encoder::program_relations::is_program_relation };
     let empty = Vec::new();
@@ -1275,8 +1292,8 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
         if std::env::var_os("GENERATE_FAMILY_SIZES").is_some() && std::env::var("GENERATE_ONLY_TABLE").is_ok_and(|only| only != *name) {
             continue;
         }
-        let family = if std::env::var_os("GENERATE_CHECK_ONE_GROUP").is_some() { Generated::one_group_with_names(&stored.types, &names, arguments.size.max(1), &store) } else { Generated::with_column_names(&stored.types, &names, arguments.size.max(1), &store) };
-        // With GENERATE_FAMILY_SIZES, a line of sizes for each table in place of its check. GENERATE_KEEP_TEXT gives the counts of product and project terms.
+        let family = if std::env::var_os("GENERATE_CHECK_ONE_GROUP").is_some() { Generated::one_group_with_names(&stored.types, &names, arguments.size.max(1), &store, true) } else { Generated::with_column_names(&stored.types, &names, arguments.size.max(1), &store, true) };
+        // With GENERATE_FAMILY_SIZES, a line of sizes for each table in place of its check, with the counts of product and project terms.
         // GENERATE_ONLY_TABLE names the one table to size, and GENERATE_FAMILY_WALK also walks its family on the train pairs, for the seconds, the active entries and whether the walk passed its bound.
         if std::env::var_os("GENERATE_FAMILY_SIZES").is_some() {
             let (count, first) = family.counts();
@@ -1322,7 +1339,7 @@ fn run_generate_check_solver(arguments: &Arguments, every: usize, solver: &str) 
                 if tally.out_of_time() {
                     break 'pairs;
                 }
-                let family = Generated::two_tables_with_names(&stored.types, names, &other.types, other_names, other_name, &store);
+                let family = Generated::two_tables_with_names(&stored.types, names, &other.types, other_names, other_name, &store, true);
                 let example_of: Vec<usize> = (0..train).collect();
                 let held: Vec<_> = stored.rows.iter().take(train).map(|models| models.first().cloned()).collect();
                 let mut leaves = leaves_at(&held, &example_of, &grids.inputs, &grids.outputs, &grids.constants);
@@ -1392,6 +1409,8 @@ fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) 
         None => None,
     };
     let mut families = arclog_encoder::generate::Generators::default();
+    // The `term` lines of the counts print a term's text.
+    families.keep_text = arguments.count_bounds;
     if let Some(folder) = &arguments.families {
         // A family's file name holds no size, so the folder does. The records hold no root names, so the names stay in memory and a family read from a file adds none.
         let saved = folder.join(format!("shapes-refresh-{}", arclog_encoder::shapes_refresh::SIZE));
@@ -1400,7 +1419,8 @@ fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) 
         families.saved_limit = arclog_encoder::generate::CACHED_TERMS;
     }
     let summary = arclog_encoder::shapes_refresh::run(std::path::Path::new(rows), std::path::Path::new(out), &arguments.tasks, task, only.as_deref(), arguments.threads, &families)?;
-    eprintln!("{summary}");
+    let counts = if arclog_encoder::bounds::enabled() { "; bound counts on" } else { "" };
+    eprintln!("{summary}{counts}");
     if arclog_encoder::bounds::enabled() {
         eprint!("{}", arclog_encoder::bounds::summary());
     }
@@ -1448,8 +1468,8 @@ fn run_refine_check(arguments: &Arguments, file: &str) -> Result<(), String> {
             None
         };
         let family = match &other {
-            Some(other) => families.entry(format!("{} | {}", stored.key, other.key)).or_insert_with(|| Generated::of_two_tables(&stored.types, &other.types, &store)),
-            None => families.entry(stored.key.clone()).or_insert_with(|| Generated::of(&stored.types, arguments.size.max(1), &store)),
+            Some(other) => families.entry(format!("{} | {}", stored.key, other.key)).or_insert_with(|| Generated::of_two_tables(&stored.types, &other.types, &store, true)),
+            None => families.entry(stored.key.clone()).or_insert_with(|| Generated::of(&stored.types, arguments.size.max(1), &store, true)),
         };
         let (count, first) = family.counts();
         let mut walker = Walker::new(family);
@@ -1649,7 +1669,7 @@ fn run_family_names(arguments: &Arguments, types: &str) -> Result<(), String> {
     use arclog_encoder::generate::{Generated, NameStore};
     let types: Vec<arclog::types::ValueType> = types.split(',').filter(|name| *name != "grids").map(|name| arclog_encoder::schema::type_of_name(name).ok_or_else(|| format!("no type {name}"))).collect::<Result<_, _>>()?;
     let store = NameStore::default();
-    let _family = if types.is_empty() { Generated::of_grids(arguments.size.max(1), &store) } else { Generated::of(&types, arguments.size.max(1), &store) };
+    let _family = if types.is_empty() { Generated::of_grids(arguments.size.max(1), &store, false) } else { Generated::of(&types, arguments.size.max(1), &store, false) };
     for (_, name) in store.all() {
         println!("{name}");
     }
@@ -1661,7 +1681,7 @@ fn run_term_stats(arguments: &Arguments, types: &str) -> Result<(), String> {
     use arclog_encoder::generate::{Generated, NameStore};
     use std::collections::BTreeMap;
     let types: Vec<arclog::types::ValueType> = types.split(',').map(|name| arclog_encoder::schema::type_of_name(name).ok_or_else(|| format!("no type {name}"))).collect::<Result<_, _>>()?;
-    let family = Generated::of(&types, arguments.size.max(1), &NameStore::default());
+    let family = Generated::of(&types, arguments.size.max(1), &NameStore::default(), true);
     let (count, first) = family.counts();
     println!("terms {} leaves {} roots {} by size {:?}", count - first, first, family.roots, family.by_size);
     for (rule, count) in &family.rejected_by_rule {
@@ -1671,7 +1691,7 @@ fn run_term_stats(arguments: &Arguments, types: &str) -> Result<(), String> {
     for at in first..count {
         let (text, _, _) = family.term_info(at);
         if text.is_empty() {
-            return Err("set GENERATE_KEEP_TEXT".to_string());
+            return Err("a family in `term-stats` has no terms' text".to_string());
         }
         let mut words = text.split(' ');
         let head = words.next().unwrap_or("").trim_start_matches('(').to_string();
@@ -1994,21 +2014,21 @@ fn earlier_lines(path: &std::path::Path) -> Vec<serde_json::Value> {
 }
 
 /// For each table of each solver, one full walk at each assignment, and the terms that a bound stopped, with the bound.
-/// A line holds shape texts and bound names, and no value. The run needs `GENERATE_COUNT_BOUNDS=1` and `GENERATE_KEEP_TEXT=1`.
+/// A line holds shape texts and bound names, and no value. The run counts the bounds and keeps the text of every term, which it needs to name the shapes.
+/// The first line of the file, `{"header": true, "count_bounds": true}`, records that the counts were on.
 /// A line `{"task", "table", "start"}` comes before a table's walks and `{"task", "table", "done"}` after them, so that a restart
 /// skips the tables that are done and those that a stopped run began and did not finish.
 fn run_cap_hits(arguments: &Arguments, solvers: &[String]) -> Result<(), String> {
     use arclog_encoder::generate::{Generators, Walker};
     use arclog_encoder::table_vector::{table_vector, Grids};
-    if !arclog_encoder::bounds::enabled() || std::env::var_os("GENERATE_KEEP_TEXT").is_none() {
-        return Err("`cap-hits` needs GENERATE_COUNT_BOUNDS=1 and GENERATE_KEEP_TEXT=1".to_string());
-    }
+    arclog_encoder::bounds::enable();
     let path = arguments.out.clone().ok_or("`cap-hits` writes to --out")?;
     let shapes = arguments.shapes.as_ref().map(|path| read_shape_list(path)).transpose()?;
     let earlier = earlier_lines(&path);
     let started: LookupSet<(String, String)> = earlier.iter().filter(|line| line.get("start").is_some()).map(|line| (line["task"].as_str().unwrap_or("").to_string(), line["table"].as_str().unwrap_or("").to_string())).collect();
     let task_done: LookupSet<String> = earlier.iter().filter(|line| line.get("task_done").is_some()).map(|line| line["task"].as_str().unwrap_or("").to_string()).collect();
     let mut out = arclog_encoder::zio::writer(&path, true)?;
+    writeln!(out, "{}", serde_json::json!({"header": true, "count_bounds": true})).map_err(|error| error.to_string())?;
     let size = arguments.size.max(1);
     let walk_bit = arclog_encoder::bounds::bit_of(arclog_encoder::bounds::Bound::Walk);
     for solver in solvers {
@@ -2024,7 +2044,7 @@ fn run_cap_hits(arguments: &Arguments, solvers: &[String]) -> Result<(), String>
             }
         };
         let examples = grids.inputs.len();
-        let families = Generators::default();
+        let families = Generators::keeping_text();
         let mut skipped = 0usize;
         for (identity, spelled) in host.program_facts().table_names.iter().take(arguments.max_tables) {
             if started.contains(&(solver.clone(), identity.clone())) {
@@ -2095,6 +2115,13 @@ fn run_cap_hits(arguments: &Arguments, solvers: &[String]) -> Result<(), String>
 fn main() {
     let arguments = arguments();
     let command = arguments.positional.first().map(String::as_str).unwrap_or_default();
+    if arguments.count_bounds {
+        if !matches!(command, "all-lists" | "shapes-refresh" | "cap-hits") {
+            eprintln!("`--count-bounds` belongs to `all-lists`, `shapes-refresh` and `cap-hits`");
+            std::process::exit(1);
+        }
+        arclog_encoder::bounds::enable();
+    }
     let result = match (command, &arguments.positional[1.min(arguments.positional.len())..]) {
         ("eval", [solver, text]) => host(&arguments, solver).map(|host| print(&host.feature(text))),
         ("rows", [solver, text]) => host(&arguments, solver).map(|host| print(&host.relation(text, arguments.task_wide))),

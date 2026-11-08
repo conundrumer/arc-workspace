@@ -203,9 +203,8 @@ pub struct Generated {
     /// The terms each rule rejected.
     pub rejected_by_rule: std::collections::BTreeMap<&'static str, u64>,
     pub rejected: Vec<RejectedTerm>,
+    /// Whether the family keeps the text, columns and refinements of its terms once it is built, which a command that reads or prints a term's text needs.
     keep_text: bool,
-    /// Where the family is built with no rule, for a count of what the rules remove.
-    no_rules: bool,
     /// Whether its terms read a table in its lifted form.
     task_wide: bool,
     /// Whether the next term stands whatever a rule says of it: a named feature, whose parts read more than a count.
@@ -302,47 +301,47 @@ fn pairings(from: &[Column], to: &[Column]) -> Vec<Vec<(u16, u16)>> {
 impl Generated {
     /// The family over a table of the column types `types`, up to size `d` in parts. Two Ident
     /// columns of one source can meet, and an Ident column whose source is open meets no other.
-    pub fn of(types: &[ValueType], d: usize, names: &NameStore) -> Generated {
+    pub fn of(types: &[ValueType], d: usize, names: &NameStore, keep_text: bool) -> Generated {
         let columns: Vec<String> = (0..types.len()).map(|at| format!("T{at}")).collect();
-        Generated::with_column_names(types, &columns, d, names)
+        Generated::with_column_names(types, &columns, d, names, keep_text)
     }
 
     /// As [`Generated::of`], with the columns under the names a program gives them, so a term's text
     /// reads that program's table. A shape's name reads the names of [`Generated::of`].
-    pub fn with_column_names(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore) -> Generated {
-        Generated::with_column_names_of(types, column_names, d, names, false)
+    pub fn with_column_names(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore, keep_text: bool) -> Generated {
+        Generated::with_column_names_of(types, column_names, d, names, false, keep_text)
     }
 
     /// The second pass's terms: a table's parts keyed by its one Color or Ident column as a group, whose shapes are those of a table with several such columns,
     /// and each of its columns of cells against the cells of a grid's parts.
-    pub fn one_group(types: &[ValueType], d: usize, names: &NameStore) -> Generated {
+    pub fn one_group(types: &[ValueType], d: usize, names: &NameStore, keep_text: bool) -> Generated {
         let columns: Vec<String> = (0..types.len()).map(|at| format!("T{at}")).collect();
-        Generated::with_column_names_of(types, &columns, d, names, true)
+        Generated::with_column_names_of(types, &columns, d, names, true, keep_text)
     }
 
     /// As [`Generated::one_group`], with the columns under the names a program gives them.
-    pub fn one_group_with_names(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore) -> Generated {
-        Generated::with_column_names_of(types, column_names, d, names, true)
+    pub fn one_group_with_names(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore, keep_text: bool) -> Generated {
+        Generated::with_column_names_of(types, column_names, d, names, true, keep_text)
     }
 
-    fn with_column_names_of(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore, one_group: bool) -> Generated {
-        Generated::keyed_with_column_names_of(types, &[], column_names, d, names, one_group)
+    fn with_column_names_of(types: &[ValueType], column_names: &[String], d: usize, names: &NameStore, one_group: bool, keep_text: bool) -> Generated {
+        Generated::keyed_with_column_names_of(types, &[], column_names, d, names, one_group, keep_text)
     }
 
     /// As [`Generated::of`], where `keys` says which columns are key columns, which group a table's cells beside its Ident and Color columns.
-    pub fn of_keyed(types: &[ValueType], keys: &[bool], d: usize, names: &NameStore) -> Generated {
+    pub fn of_keyed(types: &[ValueType], keys: &[bool], d: usize, names: &NameStore, keep_text: bool) -> Generated {
         let columns: Vec<String> = (0..types.len()).map(|at| format!("T{at}")).collect();
-        Generated::keyed_with_column_names_of(types, keys, &columns, d, names, false)
+        Generated::keyed_with_column_names_of(types, keys, &columns, d, names, false, keep_text)
     }
 
     /// As [`Generated::one_group`], where `keys` says which columns are key columns.
-    pub fn one_group_keyed(types: &[ValueType], keys: &[bool], d: usize, names: &NameStore) -> Generated {
+    pub fn one_group_keyed(types: &[ValueType], keys: &[bool], d: usize, names: &NameStore, keep_text: bool) -> Generated {
         let columns: Vec<String> = (0..types.len()).map(|at| format!("T{at}")).collect();
-        Generated::keyed_with_column_names_of(types, keys, &columns, d, names, true)
+        Generated::keyed_with_column_names_of(types, keys, &columns, d, names, true, keep_text)
     }
 
-    fn keyed_with_column_names_of(types: &[ValueType], keys: &[bool], column_names: &[String], d: usize, names: &NameStore, one_group: bool) -> Generated {
-        let mut family = Generated::empty();
+    fn keyed_with_column_names_of(types: &[ValueType], keys: &[bool], column_names: &[String], d: usize, names: &NameStore, one_group: bool, keep_text: bool) -> Generated {
+        let mut family = Generated::empty(keep_text);
         family.key_columns = column_names.iter().zip(keys).filter(|(_, key)| **key).map(|(name, _)| name.clone()).collect();
         let source_of = |at: usize| -> u16 {
             let first = types.iter().position(|other| *other == types[at] && *other != ValueType::OPEN_IDENT).unwrap_or(at);
@@ -433,7 +432,7 @@ impl Generated {
             // A ratio with a relation of at most one row follows from the other relation's count.
             let bases: Vec<u32> = [LEAF_OUTPUT, LEAF_INPUT].into_iter().chain(constants.iter().copied().filter(|at| {
                 let term = &family.terms[*at as usize];
-                term.flags & (READS_INPUT | READS_OUTPUT) != 0 && !term.columns.is_empty() && (family.no_rules || !family.refined[*at as usize].one_row())
+                term.flags & (READS_INPUT | READS_OUTPUT) != 0 && !term.columns.is_empty() && !family.refined[*at as usize].one_row()
             })).collect();
             let tops: Vec<u32> = (family.first_term as u32..family.by_size[0] as u32).filter(|at| {
                 let term = &family.terms[*at as usize];
@@ -455,25 +454,25 @@ impl Generated {
 
     /// The family of two tables of a state, T and U: how the rows, values and cells of one stand to the
     /// other's, and what the two say together of the output.
-    pub fn of_two_tables(t_types: &[ValueType], u_types: &[ValueType], names: &NameStore) -> Generated {
-        Generated::of_two_tables_keyed(t_types, &[], u_types, &[], names)
+    pub fn of_two_tables(t_types: &[ValueType], u_types: &[ValueType], names: &NameStore, keep_text: bool) -> Generated {
+        Generated::of_two_tables_keyed(t_types, &[], u_types, &[], names, keep_text)
     }
 
     /// As [`Generated::of_two_tables`], where `t_keys` and `u_keys` say which columns of each table are key columns, which group its cells beside its Ident and Color columns.
-    pub fn of_two_tables_keyed(t_types: &[ValueType], t_keys: &[bool], u_types: &[ValueType], u_keys: &[bool], names: &NameStore) -> Generated {
+    pub fn of_two_tables_keyed(t_types: &[ValueType], t_keys: &[bool], u_types: &[ValueType], u_keys: &[bool], names: &NameStore, keep_text: bool) -> Generated {
         let t_names: Vec<String> = (0..t_types.len()).map(|at| format!("T{at}")).collect();
         let u_names: Vec<String> = (0..u_types.len()).map(|at| format!("T{}", t_types.len() + at)).collect();
-        Generated::two_tables_keyed_with_names(t_types, t_keys, &t_names, u_types, u_keys, &u_names, "U", names)
+        Generated::two_tables_keyed_with_names(t_types, t_keys, &t_names, u_types, u_keys, &u_names, "U", names, keep_text)
     }
 
     /// As [`Generated::of_two_tables`], with the columns under the names a program gives them, and U's text.
-    pub fn two_tables_with_names(t_types: &[ValueType], t_names: &[String], u_types: &[ValueType], u_names: &[String], u_text: &str, names: &NameStore) -> Generated {
-        Generated::two_tables_keyed_with_names(t_types, &[], t_names, u_types, &[], u_names, u_text, names)
+    pub fn two_tables_with_names(t_types: &[ValueType], t_names: &[String], u_types: &[ValueType], u_names: &[String], u_text: &str, names: &NameStore, keep_text: bool) -> Generated {
+        Generated::two_tables_keyed_with_names(t_types, &[], t_names, u_types, &[], u_names, u_text, names, keep_text)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn two_tables_keyed_with_names(t_types: &[ValueType], t_keys: &[bool], t_names: &[String], u_types: &[ValueType], u_keys: &[bool], u_names: &[String], u_text: &str, names: &NameStore) -> Generated {
-        let mut family = Generated::empty();
+    fn two_tables_keyed_with_names(t_types: &[ValueType], t_keys: &[bool], t_names: &[String], u_types: &[ValueType], u_keys: &[bool], u_names: &[String], u_text: &str, names: &NameStore, keep_text: bool) -> Generated {
+        let mut family = Generated::empty(keep_text);
         family.two_tables = true;
         let all: Vec<ValueType> = t_types.iter().chain(u_types).cloned().collect();
         let source_of = |at: usize| -> u16 {
@@ -639,8 +638,8 @@ impl Generated {
     }
 
     /// The family of a pair's own numbers: each part that reads a grid, and what stands over it, with no table.
-    pub fn of_grids(d: usize, names: &NameStore) -> Generated {
-        let mut family = Generated::empty();
+    pub fn of_grids(d: usize, names: &NameStore, keep_text: bool) -> Generated {
+        let mut family = Generated::empty(keep_text);
         family.over_grids = true;
         let grid = || vec![Column { name: "P".to_string(), ty: ValueType::Position, source: 0 }, Column { name: "Col".to_string(), ty: ValueType::Color, source: 0 }];
         family.push_leaf("T", Vec::new(), READS_TABLE, 0);
@@ -744,8 +743,8 @@ impl Generated {
     /// The family of a table's task-wide terms, as the specification's section on them gives: the
     /// table in its lifted form, with `E` as a column like any other, and the grids with theirs. A
     /// pair of operators reads `E` only where its pairs list it, so one example meets another.
-    pub fn task_wide(types: &[ValueType], d: usize, names: &NameStore) -> Generated {
-        let mut family = Generated::empty();
+    pub fn task_wide(types: &[ValueType], d: usize, names: &NameStore, keep_text: bool) -> Generated {
+        let mut family = Generated::empty(keep_text);
         family.task_wide = true;
         let source_of = |at: usize| -> u16 {
             let first = types.iter().position(|other| *other == types[at] && *other != ValueType::OPEN_IDENT).unwrap_or(at);
@@ -1050,8 +1049,8 @@ impl Generated {
         }
     }
 
-    fn empty() -> Generated {
-        Generated { key_columns: Vec::new(), step_ids: std::sync::OnceLock::new(), one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text: std::env::var_os("GENERATE_KEEP_TEXT").is_some(), no_rules: std::env::var_os("GENERATE_NO_RULES").is_some(), task_wide: false, force_next: false, any_width_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false, bound_heads: Vec::new() }
+    fn empty(keep_text: bool) -> Generated {
+        Generated { key_columns: Vec::new(), step_ids: std::sync::OnceLock::new(), one_group: false, terms: Vec::new(), first_term: 0, by_size: Vec::new(), roots: 0, refined: Vec::new(), forms: Vec::new(), rejected_by_rule: Default::default(), rejected: Vec::new(), keep_text, task_wide: false, force_next: false, any_width_next: false, diff_terms: Vec::new(), over_grids: false, two_tables: false, bound_heads: Vec::new() }
     }
 
     fn push_leaf(&mut self, text: &str, columns: Vec<Column>, flags: u8, size: u8) {
@@ -1433,7 +1432,7 @@ impl Generated {
             let mut refined = Refined::with_arity(columns.len());
             refined.add_key(refined.all_columns());
             Ok((refined, Form::default(), None))
-        } else if is_pair { Ok((Refined::with_arity(0), Form::default(), None)) } else if self.no_rules { let mut refined = Refined::with_arity(columns.len()); refined.add_key(refined.all_columns()); Ok((refined, Form::default(), None)) } else { self.judge(&step, a, b, &columns) };
+        } else if is_pair { Ok((Refined::with_arity(0), Form::default(), None)) } else { self.judge(&step, a, b, &columns) };
         let (refined, form, plan) = match judged {
             Ok(held) => held,
             Err((rejected, partner)) => {
@@ -3825,9 +3824,17 @@ pub struct Generators {
     pub one_group: bool,
     /// The terms that the cache holds at most where families stand on file, where it is not 0, in place of [`SAVED_CACHED_TERMS`]. Threads share what the cache holds, and each holds its own copy of what it read after the cache let it go.
     pub saved_limit: usize,
+    /// Whether the families keep the text of their terms, which a command that reads or prints a term's text needs. A family that keeps its text is neither read from `saved` nor written to it,
+    /// so a folder of saved families holds only families without text, and a run that keeps text never takes a family from it.
+    pub keep_text: bool,
 }
 
 impl Generators {
+    /// Generators whose families keep the text of their terms.
+    pub fn keeping_text() -> Generators {
+        Generators { keep_text: true, ..Generators::default() }
+    }
+
     /// The family under `hash`, built where the cache does not hold it. Past the bound, the oldest families leave.
     fn family_of(&self, hash: u128, build: impl FnOnce() -> Generated) -> Arc<Generated> {
         {
@@ -3866,11 +3873,11 @@ impl Generators {
 
     fn read_saved(&self, hash: u128) -> Option<Generated> {
         let path = self.saved_path(hash)?;
-        let mut family = Generated::empty();
-        // A family built to keep its text, or with no rule, is not the one that a file holds.
-        if family.keep_text || family.no_rules {
+        // A family built to keep its text is not the one that a file holds.
+        if self.keep_text {
             return None;
         }
+        let mut family = Generated::empty(false);
         let packed = std::fs::read(path).ok()?;
         let held: SavedFamily = serde_json::from_slice(&zstd::stream::decode_all(&packed[..]).ok()?).ok()?;
         family.terms = held.terms.into_iter().map(|SavedTerm(step, a, b, flags, size, root, roots, used)| Term {
@@ -3897,7 +3904,7 @@ impl Generators {
 
     fn save(&self, hash: u128, family: &Generated) {
         let Some(path) = self.saved_path(hash) else { return };
-        if family.keep_text || family.no_rules {
+        if self.keep_text {
             return;
         }
         // Its roots' names reach their file before the family that no later run would name them for.
@@ -3932,25 +3939,25 @@ impl Generators {
     /// The task-wide family of a table's schema.
     pub fn get_task_wide(&self, stored: &crate::stored::Stored, d: usize) -> Arc<Generated> {
         let hash = hash_words(format!("task-wide {d} {}", stored.key).bytes().map(u64::from));
-        self.family_of(hash, || Generated::task_wide(&stored.types, d, &self.names))
+        self.family_of(hash, || Generated::task_wide(&stored.types, d, &self.names, self.keep_text))
     }
 
     /// The family of two tables of a state.
     pub fn get_two_tables(&self, t: &crate::stored::Stored, u: &crate::stored::Stored) -> Arc<Generated> {
         let all: Vec<ValueType> = t.types.iter().chain(&u.types).cloned().collect();
         let hash = hash_words(format!("two {} {} {:?} {:?}", t.types.len(), crate::stored::schema_key(&all), t.keys, u.keys).bytes().map(u64::from));
-        self.family_of(hash, || Generated::of_two_tables_keyed(&t.types, &t.keys, &u.types, &u.keys, &self.names))
+        self.family_of(hash, || Generated::of_two_tables_keyed(&t.types, &t.keys, &u.types, &u.keys, &self.names, self.keep_text))
     }
 
     /// The family of a pair's own numbers.
     pub fn get_grids(&self, d: usize) -> Arc<Generated> {
         let hash = hash_words(format!("grids {d}").bytes().map(u64::from));
-        self.family_of(hash, || Generated::of_grids(d, &self.names))
+        self.family_of(hash, || Generated::of_grids(d, &self.names, self.keep_text))
     }
 
     pub fn get(&self, stored: &crate::stored::Stored, d: usize) -> Arc<Generated> {
         let hash = hash_words(format!("{} {:?}", stored.key, stored.keys).bytes().map(u64::from));
-        self.family_of(hash, || if self.one_group { Generated::one_group_keyed(&stored.types, &stored.keys, d, &self.names) } else { Generated::of_keyed(&stored.types, &stored.keys, d, &self.names) })
+        self.family_of(hash, || if self.one_group { Generated::one_group_keyed(&stored.types, &stored.keys, d, &self.names, self.keep_text) } else { Generated::of_keyed(&stored.types, &stored.keys, d, &self.names, self.keep_text) })
     }
 }
 

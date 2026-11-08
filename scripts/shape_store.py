@@ -10,7 +10,7 @@ the least, the mean and the most over the examples of one shape of one table of 
 did not stop, under the build's value version, and a refresh walks only the tables and shapes that the store lacks. The store keeps
 nothing of a walk that stopped at the cell budget, and of a table that has too many columns: the encoder walks such a table with the
 whole request, and its record goes to OUT as the encoder writes it. A refresh with an environment variable set that changes the
-encoder's values (see VALUE_VARIABLES) is refused. With `--header`, OUT's first line is
+encoder's values (see VALUE_VARIABLES and VALUE_PREFIXES) is refused. With `--header`, OUT's first line is
 `{"record":"header","value_version":V,"binary":SHA256}`: the build's value version and the hash of its binary. With `--families DIR`,
 the encoder saves each family it builds under DIR and reads it there in a later run of the same binary (`shapes-refresh --families`).
 
@@ -48,8 +48,8 @@ TASKS = ROOT / 'data' / 'tasks'
 # The bytes of one shape's values: the least, the mean and the most, each a little-endian f32.
 VALUE_BYTES = 12
 ZERO = bytes(VALUE_BYTES)
-# The encoder's environment variables that change its values, and the prefixes of such variables.
-VALUE_VARIABLES = ('GENERATE_NO_RULES',)
+# The environment variables, by name and by prefix, that change the values of a build.
+VALUE_VARIABLES = ()
 VALUE_PREFIXES = ('GOLD_PRUNE_',)
 # The most encoder calls a refresh makes for the tables that the store holds in part. Past it, those tables are walked in one call,
 # with each shape that one of them lacks.

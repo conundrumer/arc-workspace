@@ -1,7 +1,7 @@
 //! Counts of the evaluations that a bound stopped, per bound and per term head.
 //!
-//! The counts run only where the environment variable `GENERATE_COUNT_BOUNDS` is set to a
-//! value other than empty or `0`. With it unset, each call here returns at once and no list changes.
+//! The counts run only after [`enable`] has been called, which `feature-encoder` does for `--count-bounds`
+//! and for `cap-hits`. Until then, each call here returns at once and no list changes.
 //!
 //! A walker calls [`begin`] before an evaluation and [`end`] after it. A bound that stops the
 //! evaluation calls [`mark`] in between, and the evaluation then counts once for that bound, however
@@ -9,6 +9,7 @@
 //! of the thread to the totals that [`summary`] prints. A write of the cells of `inside` calls [`wrote`], and the summary lists the cells and the seconds of the writes per head.
 
 use std::cell::{Cell, RefCell};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use crate::lookup::LookupMap;
@@ -142,10 +143,16 @@ pub fn take_term_hits() -> (Vec<(u32, u32)>, Vec<(u32, u64)>) {
     (TERM_HITS.with(|hits| std::mem::take(&mut *hits.borrow_mut())), TERM_CELLS.with(|held| std::mem::take(&mut *held.borrow_mut())))
 }
 
+static ON: AtomicBool = AtomicBool::new(false);
+
+/// Turns the counts on, before any walk. A program calls it once, from its arguments.
+pub fn enable() {
+    ON.store(true, Ordering::Relaxed);
+}
+
 /// Whether the counts run.
 pub fn enabled() -> bool {
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("GENERATE_COUNT_BOUNDS").is_ok_and(|value| !value.is_empty() && value != "0"))
+    ON.load(Ordering::Relaxed)
 }
 
 /// The number of a term head, from the text of a term: its first word without the opening parentheses.
