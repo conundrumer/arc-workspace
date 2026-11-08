@@ -48,6 +48,7 @@ POPPED = ('WRITER_TREE', 'WRITER_PLAN', 'SEARCH_STATE_SCORE')
 ARMS = {'tree': {'WRITER_TREE': None}, 'tok': {'WRITER_TREE': None}, 'fast': {'WRITER_TREE': None}, 'base': {'WRITER_TREE': None}}  # WRITER_TREE None: --tree; tok and fast: tree under other names, so that two runs of different kits or sites pair by reach.py's --arms
 RSS_LIMIT_MIB = 2888
 STOP_AFTER = 4  # the run stops where its first STOP_AFTER jobs all die with no draw
+WORK_GUARD = 4  # with --budget work, a worker's CPU seconds past this times --seconds end it, whatever its work
 LOCK = threading.Lock()
 RUNNING = [0]  # the jobs running now
 CPU_MODE = [False]  # --budget cpu, where a worker's clock is its CPU time
@@ -91,6 +92,13 @@ def effort(w):
     return draws, round(cpu + seg)
 
 
+def work_of(w):
+    """The engine work of the job's worker: the sum of the `clock: work W cpu S` lines of its logs, which the worker writes at its end and at each renewal (arclog.work_total), or None
+    where an engine build or a worker writes none."""
+    found = [int(m.group(1)) for p in (w / 'work').glob('*.log') for l in p.read_text(errors='replace').splitlines() if (m := re.match(r'clock: work (\d+) cpu', l))]
+    return sum(found) if found else None
+
+
 def gate(out, a):
     """Waits until fewer jobs run than the limit in the file <out>/limit (default --jobs), which can be changed while the run goes on."""
     while True:
@@ -123,7 +131,8 @@ def cpu_job(a, w, task, seed, env, samp, sup):
     ends the job. The submission is the supervisor's: its candidates best first, two attempts per test input. Gives (rc, log text, submission)."""
     work = w / 'work'
     work.mkdir()
-    env = dict(env, ARC_CPU_CLOCK='1', PYTHONPATH='%s:%s' % (Path(__file__).resolve().parent / 'cpu_clock', env['PYTHONPATH']))
+    clock = dict(ARC_WORK_CLOCK=str(a.work_rate), ARC_WORK_GUARD=str(WORK_GUARD * a.seconds)) if a.budget == 'work' else dict(ARC_CPU_CLOCK='1')
+    env = dict(env, **clock, PYTHONPATH='%s:%s' % (Path(__file__).resolve().parent / 'cpu_clock', env['PYTHONPATH']))
     out = work / (task + '.out.jsonl')
     (work / (task + '.beat')).touch()
     cmd = [str(PY), '-u', str(samp / 'kaggle_worker.py'), '--task', str(MAIN_ROOT / 'data/tasks' / (task + '.json')), '--out', str(out),
@@ -225,7 +234,7 @@ def run_job(a, out, task, arm, seed):
     sup = Path(a.code) / 'supervisor.py'
     sup = sup if sup.exists() else DATASET / 'supervisor.py'
     t0 = time.time()
-    if a.budget == 'cpu':
+    if a.budget in ('cpu', 'work'):
         rc, text, sub = cpu_job(a, w, task, seed, env, samp, sup)
     else:
         cmd = [str(PY), '-u', str(sup), '--challenges', str(w / 'challenges.json'),
@@ -241,7 +250,7 @@ def run_job(a, out, task, arm, seed):
     cands = sum(1 for p in (w / 'work').glob('*.out.jsonl') for l in open(p) if l.strip())
     draws, cpu = effort(w)
     draw_file.compress(w)
-    rec = dict(task=task, arm=arm, seed=seed, job=w.name, budget=a.budget, solved=ok, tests=ntest, candidates=cands, draws=draws, cpu=cpu, rc=rc, seconds=round(time.time() - t0, 1),
+    rec = dict(task=task, arm=arm, seed=seed, job=w.name, budget=a.budget, solved=ok, tests=ntest, candidates=cands, draws=draws, cpu=cpu, work=work_of(w), rc=rc, seconds=round(time.time() - t0, 1),
                deaths=int(dk.group(1)) if dk else None, kills=int(dk.group(2)) if dk else None,
                tracebacks=sum(p.read_text(errors='replace').count('Traceback') for p in (w / 'work').glob('*.log')))
     with LOCK:
@@ -309,9 +318,13 @@ def main():
     ap.add_argument('--split', default='dev')
     ap.add_argument('--record', action='store_true', help='each worker writes its draw records')
     ap.add_argument('--no-parity', action='store_true', help='runs with no check that a worker gives the model the rows it was fit on (parity_gate)')
-    ap.add_argument('--budget', choices=('cpu', 'wall'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor')
+    ap.add_argument('--budget', choices=('cpu', 'wall', 'work'), default='cpu', help='cpu: --seconds of the worker\'s own CPU time; wall: --seconds of wall-clock time, under the kernel supervisor; '
+                    'work: --seconds of the engine\'s work at --work-rate units a second (arclog.work_total), the same on any machine, with WORK_GUARD times --seconds of CPU as the outer guard')
+    ap.add_argument('--work-rate', type=float, help='with --budget work: the engine work units that one second of the budget is')
     ap.add_argument('--wall-cap', type=int, default=1800, help='with --budget cpu, the wall-clock seconds after which a job is killed')
     a = ap.parse_args()
+    if a.budget == 'work' and not a.work_rate:
+        ap.error('--budget work needs --work-rate')
     a.plan = run_plan(a)
     check_priors(a)
     CPU_MODE[0] = a.budget == 'cpu'
@@ -328,7 +341,7 @@ def main():
         random.Random(a.shuffle).shuffle(tasks)
     tasks = tasks[:a.tasks or None]
     todo = [(t, arm, int(s)) for t in tasks for s in a.seeds.split(',') for arm in a.arms.split(',') if (t, arm, int(s)) not in done]
-    if not a.no_parity and a.budget == 'cpu':
+    if not a.no_parity and a.budget in ('cpu', 'work'):
         for arm in a.arms.split(','):
             parity_gate(a, out, arm, tasks)
     print('%d %s tasks, %d jobs to run, %d done' % (len(tasks), a.split, len(todo), len(done)), flush=True)
