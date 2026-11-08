@@ -247,10 +247,13 @@ def leaves_of(kind: str, text: str, name: str, tab: Any) -> tuple[list[column_ma
     types, labels, example = column_names.without_example(types_full, list(tab.labels))
     tree = canon_text.parse(text)[0]
     assert isinstance(tree, list)
+    if kind == 'DET' and len(tree) > 3 and isinstance(tree[2], str) and all(isinstance(x, list) and len(x) == 1 and isinstance(x[0], str) and x[0].isupper() for x in tree[3:]):
+        tree = tree[:3]  # a proposer with modifiers, such as `(DET &r0 ScaleRatio (SET) (ONE))`, has the proposer's columns; column_map.leaves reads only the bare form
     with registry_without_frames():
         got = column_map.leaves(kind, tree, {}, name, types, labels, example)
     if got is None:
-        raise NoStandIn('the columns of a table have no names that a read can use')
+        what = f'INIT {tree[2]}.{name}' if kind == 'INIT' and len(tree) > 2 else f'{kind} with labels {"all named" if all(labels) else "some empty"}'
+        raise NoStandIn(f'the columns of a table ({what}) have no names that a read can use')
     plain = got[:len(types)]
     ex = got[len(types)] if len(got) > len(types) else None
     out: list[column_map.Leaf | None] = []
