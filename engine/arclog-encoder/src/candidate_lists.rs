@@ -214,15 +214,21 @@ fn pooled(owner: String, pairs: &[&PairValues]) -> Written {
     Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded: pool_values(pairs), pairs: 0, at_pairs: Vec::new() }
 }
 
-/// A shape over several tables of a state, at each example: its greatest value over the tables, where a table with no value, or an example past the shape's scope, counts as 0.
+/// A shape over several tables of a state, at each example: its greatest value over the tables that have a value there. A table with no value at an example, with the example past the
+/// shape's scope, or without the shape, takes no part, and an example where no table has a value has none, which is NaN. The shape is listed where some example has a value other than 0.
+/// Its least, mean and greatest are over the examples that have a value.
 fn pooled_each(owner: String, pairs: &[&PairValues], examples: usize) -> Written {
     let mut held: BTreeMap<u64, Vec<f32>> = BTreeMap::new();
     for pair in pairs {
         for (place, shape) in pair.shapes.iter().enumerate() {
-            for (example, value) in pair.at[place * examples..(place + 1) * examples].iter().enumerate() {
-                if !value.is_nan() && *value != 0.0 {
-                    let entry = held.entry(*shape).or_insert_with(|| vec![0.0; examples]);
-                    entry[example] = entry[example].max(*value);
+            let at = &pair.at[place * examples..(place + 1) * examples];
+            if at.iter().all(|value| value.is_nan()) {
+                continue;
+            }
+            let entry = held.entry(*shape).or_insert_with(|| vec![f32::NAN; examples]);
+            for (pooled, value) in entry.iter_mut().zip(at) {
+                if !value.is_nan() && (pooled.is_nan() || *value > *pooled) {
+                    *pooled = *value;
                 }
             }
         }
@@ -230,9 +236,17 @@ fn pooled_each(owner: String, pairs: &[&PairValues], examples: usize) -> Written
     let mut graded = Vec::with_capacity(held.len());
     let mut at_pairs = Vec::with_capacity(held.len() * examples);
     for (shape, values) in held {
-        let least = values.iter().copied().fold(f32::INFINITY, f32::min);
-        let most = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        graded.push((shape, least, values.iter().sum::<f32>() / examples.max(1) as f32, most));
+        if !values.iter().any(|value| !value.is_nan() && *value != 0.0) {
+            continue;
+        }
+        let (mut least, mut most, mut sum, mut count) = (f32::INFINITY, f32::NEG_INFINITY, 0.0f32, 0usize);
+        for value in values.iter().filter(|value| !value.is_nan()) {
+            least = least.min(*value);
+            most = most.max(*value);
+            sum += *value;
+            count += 1;
+        }
+        graded.push((shape, least, sum / count as f32, most));
         at_pairs.extend(values);
     }
     Written { owner: owner.into(), ids: Vec::new(), values: Vec::new(), graded, pairs: examples, at_pairs }
