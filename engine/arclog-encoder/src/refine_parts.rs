@@ -1177,18 +1177,26 @@ fn apply_port_items(facts: &mut Facts, refines: &[SExpr], instance: &Instance, c
     }
 }
 
-/// A call's forms, read once.
-pub struct PartPlan {
+/// A call's expansion over a relation `&r` of `r_arity` columns and a second relation of the columns `s_columns`, read once. It follows from those three alone: the call's text, the column
+/// names that [`PlanTables`] gives, and the registry and the lib, which are texts the program holds. Every plan of one call over those relations shares it.
+struct Expansion {
     forms: Vec<SExpr>,
     export: String,
     /// The columns the call gives, by the names of its expansion.
     columns: Vec<String>,
-    /// The names of its relation holes' columns, by hole.
     r_arity: usize,
     s_columns: Vec<String>,
-    /// For each column of the native term, its place in `columns`.
+    /// Whether the part reads only the columns its holes name: a column more changes nothing.
+    reads_only_holes: OnceLock<bool>,
+    /// What the forms give where the native term's places are `out` and the relation holes hold `r` and `s`. Given the forms, the result follows from those three alone.
+    results: Mutex<LookupMap<(Vec<Option<usize>>, RelationInput, Option<RelationInput>), Arc<PartResult>>>,
+}
+
+/// A call's forms, read once.
+pub struct PartPlan {
+    expansion: Arc<Expansion>,
+    /// For each column of the native term, its place in the expansion's columns.
     out: Vec<Option<usize>>,
-    results: Mutex<LookupMap<(RelationInput, Option<RelationInput>), Arc<PartResult>>>,
     /// Whether the part reads only the columns its holes name: a column more changes nothing.
     pub reads_only_holes: bool,
 }
@@ -1238,6 +1246,27 @@ fn plan_of_text(call: &str, r_arity: usize, s_columns: &[String]) -> Option<(Vec
     Some((parse_forms(&expanded.forms), expanded.export, expanded.columns))
 }
 
+/// The expansion of the call `call` over a relation `&r` of `r_arity` columns and a second relation of the columns `s_columns`.
+fn expansion(call: &str, r_arity: usize, s_columns: &[String]) -> Option<Arc<Expansion>> {
+    static HELD: OnceLock<Mutex<LookupMap<String, Option<Arc<Expansion>>>>> = OnceLock::new();
+    // The arity, the columns and the call, each but the last ended by a NUL. The arity is digits and the columns' debug text holds no NUL, so no two inputs have one key.
+    let key = format!("{r_arity}\0{s_columns:?}\0{call}");
+    let held = HELD.get_or_init(Default::default);
+    if let Some(found) = held.lock().expect("no panic").get(&key) {
+        return found.clone();
+    }
+    let built = plan_of_text(call, r_arity, s_columns).map(|(forms, export, columns)| {
+        Arc::new(Expansion { forms, export, columns, r_arity, s_columns: s_columns.to_vec(), reads_only_holes: OnceLock::new(), results: Mutex::new(LookupMap::new()) })
+    });
+    let mut expansions = held.lock().expect("no panic");
+    // A long run meets many schemas, and this is a cache.
+    if expansions.len() >= 40_000 {
+        expansions.clear();
+    }
+    expansions.insert(key, built.clone());
+    built
+}
+
 /// The plan of the call `call` over a relation `&r` of the columns `C0..`, and a second relation
 /// `&s` of the columns `s_columns`. `native` gives the term's columns: for each, the name it has in the
 /// expansion where its relation gives it, and the name it has where it is a new column.
@@ -1248,16 +1277,16 @@ pub fn plan(call: &str, r_arity: usize, s_columns: &[String], native: &[(String,
     if let Some(found) = held.lock().expect("no panic").get(&key) {
         return found.clone();
     }
-    let built = plan_of_text(call, r_arity, s_columns).map(|(forms, export, columns)| {
-        let out = native.iter().map(|(name, other)| columns.iter().position(|own| own == name).or_else(|| columns.iter().position(|own| own == other))).collect();
-        let mut plan = PartPlan { forms, export, columns, r_arity, s_columns: s_columns.to_vec(), out, results: Mutex::new(LookupMap::new()), reads_only_holes: false };
+    let built = expansion(call, r_arity, s_columns).map(|read| {
+        let out = native.iter().map(|(name, other)| read.columns.iter().position(|own| own == name).or_else(|| read.columns.iter().position(|own| own == other))).collect();
         // A column more, that no hole names.
-        if let Some((forms, export, _)) = plan_of_text(call, r_arity + 1, s_columns) {
+        let reads_only_holes = *read.reads_only_holes.get_or_init(|| {
+            let Some(more) = expansion(call, r_arity + 1, s_columns) else { return false };
             let wider = RelationInput { columns: (0..=r_arity).map(|at| format!("C{at}")).collect(), keys: vec![if r_arity + 1 >= Mask::BITS as usize { Mask::MAX } else { (1 << (r_arity + 1)) - 1 }], low: vec![None; r_arity + 1], high: vec![None; r_arity + 1], within: Vec::new() };
-            let facts = read_forms(&forms, &export, &wider, None, s_columns);
-            plan.reads_only_holes = !facts.reads.contains(&format!("C{r_arity}")) && !facts.columns.iter().any(|column| *column == format!("C{r_arity}"));
-        }
-        Arc::new(plan)
+            let facts = read_forms(&more.forms, &more.export, &wider, None, s_columns);
+            !facts.reads.contains(&format!("C{r_arity}")) && !facts.columns.iter().any(|column| *column == format!("C{r_arity}"))
+        });
+        Arc::new(PartPlan { expansion: read, out, reads_only_holes })
     });
     let mut plans = held.lock().expect("no panic");
     // A long run meets many schemas, and this is a cache.
@@ -1352,13 +1381,13 @@ fn finite_clause(atoms: &[SExpr], columns: &[(String, String)], registry: &'stat
 impl PartPlan {
     /// What the call gives where its relation holes hold `r` and `s`.
     pub fn result(&self, r: &RelationInput, s: Option<&RelationInput>) -> Arc<PartResult> {
-        let key = (r.clone(), s.cloned());
-        if let Some(found) = self.results.lock().expect("no panic").get(&key) {
+        let key = (self.out.clone(), r.clone(), s.cloned());
+        if let Some(found) = self.expansion.results.lock().expect("no panic").get(&key) {
             return found.clone();
         }
-        let facts = read_forms(&self.forms, &self.export, r, s, &self.s_columns);
+        let facts = read_forms(&self.expansion.forms, &self.expansion.export, r, s, &self.expansion.s_columns);
         let result = Arc::new(self.judge(&facts));
-        let mut held = self.results.lock().expect("no panic");
+        let mut held = self.expansion.results.lock().expect("no panic");
         // A long run meets many relations, and this is a cache.
         if held.len() >= 256 {
             held.clear();
@@ -1373,7 +1402,7 @@ impl PartPlan {
         let mut out = PartResult { refined: Refined::with_arity(arity), ..PartResult::default() };
         // The native term's place of each of the expansion's columns.
         let place_of = |column: usize| -> Option<u16> { self.out.iter().position(|held| *held == Some(column)).map(|at| at as u16) };
-        let name_place = |name: &str| -> Option<usize> { self.columns.iter().position(|own| own == name) };
+        let name_place = |name: &str| -> Option<usize> { self.expansion.columns.iter().position(|own| own == name) };
         for key in &facts.keys {
             let mut mapped = Some(0);
             for (column, name) in facts.columns.iter().enumerate() {
@@ -1409,12 +1438,13 @@ impl PartPlan {
             }
         }
         // How the output stands to its relation.
-        let r_names: Vec<String> = (0..self.r_arity).map(|at| format!("C{at}")).collect();
+        let r_arity = self.expansion.r_arity;
+        let r_names: Vec<String> = (0..r_arity).map(|at| format!("C{at}")).collect();
         let own_columns = facts.columns.iter().filter(|column| r_names.contains(column)).count();
         let extra_constant = facts.columns.iter().enumerate().filter(|(_, column)| !r_names.contains(column)).all(|(at, _)| facts.constant & bit(at as u16) != 0);
         out.adds_columns = own_columns < facts.columns.len();
         let is_rowwise = facts.rowwise_on.as_deref() == Some("&r");
-        let whole_relation = own_columns == self.r_arity && self.r_arity > 0;
+        let whole_relation = own_columns == r_arity && r_arity > 0;
         out.row_wise = is_rowwise && whole_relation;
         out.total = false;
         if facts.empty {

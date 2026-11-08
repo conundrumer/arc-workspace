@@ -17,7 +17,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// The size of the shapes, as the candidate lists build them.
-const SIZE: usize = 2;
+pub const SIZE: usize = 2;
 
 /// The hashes and the numbers of a vector's shapes: the listed shapes, or each shape of the vector. A shape that the vector lacks is at its default at every example.
 fn numbers_of(vector: &TableVector, only: Option<&[u64]>) -> (Vec<u64>, Vec<f32>) {

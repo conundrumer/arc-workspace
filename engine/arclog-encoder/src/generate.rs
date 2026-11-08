@@ -3811,7 +3811,7 @@ fn build_id() -> &'static str {
 }
 
 /// The terms that the cache of families holds at most; past it, the oldest families leave.
-const CACHED_TERMS: usize = 3_000_000;
+pub const CACHED_TERMS: usize = 3_000_000;
 const SAVED_CACHED_TERMS: usize = 400_000;
 
 /// The families of each schema, kept in a bounded cache, and the name of each root.
@@ -3868,9 +3868,14 @@ impl Generators {
     }
 
     fn read_saved(&self, hash: u128) -> Option<Generated> {
-        let packed = std::fs::read(self.saved_path(hash)?).ok()?;
-        let held: SavedFamily = serde_json::from_slice(&zstd::stream::decode_all(&packed[..]).ok()?).ok()?;
+        let path = self.saved_path(hash)?;
         let mut family = Generated::empty();
+        // A family built to keep its text, or with no rule, is not the one that a file holds.
+        if family.keep_text || family.no_rules {
+            return None;
+        }
+        let packed = std::fs::read(path).ok()?;
+        let held: SavedFamily = serde_json::from_slice(&zstd::stream::decode_all(&packed[..]).ok()?).ok()?;
         family.terms = held.terms.into_iter().map(|SavedTerm(step, a, b, flags, size, root, roots, used)| Term {
             step, a, b, columns: Vec::new(), flags, size, root,
             roots: roots.into_iter().map(|(low, high, of)| (u128::from(high) << 64 | u128::from(low), of)).collect(),
@@ -3895,7 +3900,7 @@ impl Generators {
 
     fn save(&self, hash: u128, family: &Generated) {
         let Some(path) = self.saved_path(hash) else { return };
-        if family.keep_text {
+        if family.keep_text || family.no_rules {
             return;
         }
         // Its roots' names reach their file before the family that no later run would name them for.
