@@ -78,7 +78,7 @@ A fit's feature vectors are a normalized store. Each fact stands once, at the gr
 
 - The catalog takes 80 to 115 microseconds per table at one pair, on tables of a mean of 292 table rows.
 - A parameterized table at one assignment on a task of 4 train pairs takes under half a millisecond.
-- The search computes each `TableVector` once, when that parameterized table is first made. The export adds no cache.
+- The search computes each `TableVector` once, when that parameterized table is first made.
 
 ## Checks
 

@@ -119,7 +119,7 @@ A term is **entailed** where its value follows from smaller terms on every table
     - A `project` that keeps a key leaves the row count as it was.
     - A group count over a key of `T` is 1 at each group.
 - **Normal forms:** where two orders of operators are equal by their rules, as a `select` and a `semijoin` over columns it does not change are, one order is generated.
-- **Soundness:** a rule's claim is tested against evaluation on tables of the train ARC examples, and a counterexample is a fault in the rule. No rule is taken from a corpus.
+- **Soundness:** no rule is taken from a corpus.
 
 A rule need not be complete, since equivalence over negation and aggregates is undecidable, so a term that no rule rejects stays.
 
