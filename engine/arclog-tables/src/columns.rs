@@ -133,12 +133,17 @@ pub enum ValueKind {
 pub struct StopColumns {
     pub bound: Vec<Option<String>>,
     pub form: Vec<Option<String>>,
+    /// Whether the bound rejects one assignment alone
+    /// ([`arclog::eval::ReachedBound::is_assignment`]); false where there is
+    /// no bound.
+    pub assignment: Vec<bool>,
 }
 
 impl StopColumns {
     fn push(&mut self, stop: Option<&Stop>) {
         self.bound.push(stop.map(|stop| format!("{:?}", stop.bound)));
         self.form.push(stop.map(|stop| form_path(&stop.form)));
+        self.assignment.push(stop.is_some_and(|stop| stop.bound.is_assignment()));
     }
 }
 
@@ -315,7 +320,7 @@ pub struct TableColumns {
     /// The TableHash, and whether the assignment has one (1) or not (0, with the hash 0).
     pub hash: Vec<u128>,
     pub hashed: Vec<u8>,
-    /// Why the assignment has no TableHash (`hashed` 0): the name of a machine-dependent bound that stopped an example (`Models`, `Nodes`, `Assignments`, `TableWork`, `SessionBytes`, `RequestWork`, `Cancelled`), or of the bound that stopped the summary, `RunFault`, `NoEntry`, `NoExamples` or `TableFault`. Empty where `hashed` is 1.
+    /// Why the assignment has no TableHash (`hashed` 0): the name of a machine-dependent bound that stopped an example (`Models`, `Nodes`, `Assignments`, `TableWork`, `RequestWork`, `RequestBytes`, `Cancelled`), or of the bound that stopped the summary, `RunFault`, `NoEntry`, `NoExamples` or `TableFault`. Empty where `hashed` is 1.
     pub unhashed_reason: Vec<String>,
     /// Whether the walk of the table stopped at the assignment cap.
     pub capped: Vec<u8>,
@@ -566,6 +571,23 @@ impl CaseColumns {
             bytes=bytes.saturating_sub(held.min(bytes));
         }
         allocations
+    }
+    /// The bytes that the reservations of these columns keep, as [`CaseColumns::take_allocations`] would take them.
+    pub fn allocated_bytes(&self)->usize {
+        self.allocations.iter().fold(0usize,|bytes,allocation|bytes.saturating_add(allocation.bytes()))
+    }
+    /// The cells of these columns, taken out of them for an owner that keeps them elsewhere. The reservations give back the bytes the cells took.
+    pub fn take_values(&mut self)->Vec<i32> {
+        let values=std::mem::take(&mut self.values);
+        let mut keep=self.allocated_bytes().saturating_sub(values.capacity().saturating_mul(std::mem::size_of::<i32>()));
+        for allocation in &mut self.allocations {
+            let held=allocation.bytes();
+            if let Some(allocation)=Arc::get_mut(allocation) {
+                allocation.shrink_to(keep);
+            }
+            keep=keep.saturating_sub(held.min(keep));
+        }
+        values
     }
     /// These columns with a row for each of `violations`, the declared rows
     /// that the replay of the case found its constructions' outputs break.
@@ -979,7 +1001,7 @@ fn summary_query(query:StableHash,table:&Table,det_queries:&StableHashMap<&str,O
 
 impl StopColumns {
     fn picked(&self,at:&[usize])->StopColumns {
-        StopColumns {bound:at.iter().map(|&entry|self.bound[entry].clone()).collect(),form:at.iter().map(|&entry|self.form[entry].clone()).collect()}
+        StopColumns {bound:at.iter().map(|&entry|self.bound[entry].clone()).collect(),form:at.iter().map(|&entry|self.form[entry].clone()).collect(),assignment:at.iter().map(|&entry|self.assignment[entry]).collect()}
     }
 }
 
@@ -2005,7 +2027,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
         starts.push(out.entries.table.len());
         let (kind, index) = crate::tables::example_axis(example.example, train);
         let index = u32::try_from(index).expect("fewer than 2^32 examples");
-        let push = |out: &mut CaseColumns, runs: &mut Runs, settled: &mut Settled, at_assignment:usize, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
+        let push = |materializer: &Materializer<'_>, out: &mut CaseColumns, runs: &mut Runs, settled: &mut Settled, at_assignment:usize, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
             let count_only=matches!(value,Some(RelationValue::Rows(rows)) if row_export.count_only(rows,contents.projections.is_some()));
             let (values_from,allocations_from,runs_from)=(out.values.len(),out.allocations.len(),runs.1.len());
             let heap_from=values_heap(out.values.capacity());
@@ -2097,19 +2119,23 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
         };
         let entry_extents = |at: usize, model: usize| contents.extents.as_ref().and_then(|extents| extents.entry(place, at, model));
         match &example.rows {
-            Err(fault) => push(out, runs, &mut settled, 0, 0, None, None, Some(fault_spelled(fault)), None),
+            Err(fault) => push(materializer, out, runs, &mut settled, 0, 0, None, None, Some(fault_spelled(fault)), None),
             Ok(rows) => {
                 if rows.at.is_empty() {
-                    push(out, runs, &mut settled, 0, 0, None, rows.stop.as_ref(), None, None);
+                    push(materializer, out, runs, &mut settled, 0, 0, None, rows.stop.as_ref(), None, None);
                 }
                 // A stop that ended the walk marks the entries it held. A stop
                 // of one assignment stands at that assignment's own entry.
                 let ended = rows.stop.as_ref().filter(|stop| !stop.bound.is_assignment());
                 for (at, (assigned, models)) in rows.at.iter().enumerate() {
                     let first = out.entries.table.len();
+                    // The export of an assignment holds its bytes under the byte budget of an assignment too: an assignment whose rows do not fit
+                    // it has its entries stopped, and the other assignments go on.
+                    let scope = materializer.limits().for_assignment();
+                    let materializer = &Materializer::new(materializer.session(), &scope);
                     for (model, value) in models.iter().enumerate() {
                         let stopped = out.packing_stop.clone().map(RelationValue::Stopped);
-                        push(out, runs, &mut settled, at, model as u32, Some(stopped.as_ref().unwrap_or(value)), ended, None, entry_extents(at, model));
+                        push(materializer, out, runs, &mut settled, at, model as u32, Some(stopped.as_ref().unwrap_or(value)), ended, None, entry_extents(at, model));
                     }
                     let mut assigned_runs = Vec::new();
                     for (position, ((_, det_rows), det)) in assigned.iter().zip(contents.dets.iter()).enumerate().filter(|_| !row_export.skips_dets()) {
@@ -2127,6 +2153,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
                                     out.entries.kind[entry]=ValueKind::Stopped as u8;
                                     out.entries.value_stop.bound[entry]=Some(format!("{:?}",stop.bound));
                                     out.entries.value_stop.form[entry]=Some(form_path(form));
+                                    out.entries.value_stop.assignment[entry]=bound.is_assignment();
                                 }
                             }
                         }
@@ -2351,7 +2378,7 @@ macro_rules! scalar_heap {($($ty:ty),*)=>{$(
     impl HeapBytes for $ty {fn heap_bytes(&self)->usize {0}}
     impl ColumnGrowth for $ty {fn growth_bytes(&self,_additional:usize)->usize {0}}
 )*};}
-scalar_heap!(u8,u32,i32,u64,i64,usize);
+scalar_heap!(u8,u32,i32,u64,i64,usize,bool);
 impl HeapBytes for String {fn heap_bytes(&self)->usize {self.capacity()+usize::from(self.capacity()>0)*32}}
 impl ColumnGrowth for String {fn growth_bytes(&self,_additional:usize)->usize {0}}
 impl<T> ColumnGrowth for Vec<T> {
@@ -2377,7 +2404,7 @@ macro_rules! fields_heap {
         impl ColumnGrowth for $ty {fn growth_bytes(&self,additional:usize)->usize {0usize $(.saturating_add(self.$field.growth_bytes(additional)))*}}
     };
 }
-fields_heap!(StopColumns;bound,form);
+fields_heap!(StopColumns;bound,form,assignment);
 fields_heap!(TableColumns;token,form,point,conjuncts,sites,relation,fact,column_names,column_types,column_ident_sources,column_frames,extent_columns,column_slots,column_labels,column_source_labels,width,column_widths,det_relations,det_types,det_frames,det_slots,det_labels,det_source_labels,det_widths,det_columns,projections,projections_stop,fault,depth,keys,output_position,output_color);
 fields_heap!(EntryColumns;table,clause_index,example_kind,example_index,model,kind,rows,offset,stop,value_stop,fault,extent_offset,extent_stop,extent_fault,extent_status,assignment);
 fields_heap!(AssignedColumns;entry,det,rows,offset);

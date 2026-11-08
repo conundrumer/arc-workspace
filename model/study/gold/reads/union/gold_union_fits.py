@@ -44,7 +44,7 @@ def engine():
     import arclog
     import numpy as np
     settings, evaluator = arclog.DecodeSettings, arclog.StudyTaskEvaluator
-    arclog.DecodeSettings = lambda *a, **k: settings(*a, **{'table_work_cap': WORK_CAP, 'deadline_seconds': DEADLINE, **k})
+    arclog.DecodeSettings = lambda *a, **k: settings(*a, **{'table_work_cap': WORK_CAP, **k})
     arclog.StudyTaskEvaluator = lambda *a, **k: evaluator(*a, **{'session_bytes': SESSION_BYTES, **k})
     return cli, arclog, np
 
@@ -154,7 +154,7 @@ class StopMemo:
 
 def run_program(cli, arclog, np, text, task, tasks, task_json, deadline=None):
     """(tables, why, stop): what cli.run_case gives for a program text, and `stop`, the index of the form that the engine stopped in where its replay stopped and says so, else None. run_case does not return the engine's status, which says it. `deadline` is the engine's deadline in seconds, in place of DEADLINE."""
-    settings = arclog.DecodeSettings(**({'deadline_seconds': deadline} if deadline else {}))
+    settings = arclog.DecodeSettings()
     try:
         program = arclog.StudyProgram.from_sexp(text, settings)
     except ValueError as e:

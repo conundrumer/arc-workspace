@@ -35,8 +35,8 @@ for t in sorted(os.listdir(arm)):
 print('tasks', len(tasks), 'proposals', draws)
 for k, v in total.most_common():
     print('%-42s %7d  %6.2f per 1,000 proposals  on %2d tasks' % (k, v, 1000 * v / max(draws, 1), sum(k in c for c in tasks.values())))
-print('per task, TableWork and SessionBytes table stops:')
+print('per task, TableWork and byte budget (RequestBytes, AssignmentBytes) table stops:')
 for t, c in sorted(tasks.items()):
     tw = sum(v for k, v in c.items() if k.startswith('table:') and 'TableWork' in k)
-    sb = sum(v for k, v in c.items() if k.startswith('table:') and 'SessionBytes' in k)
-    print(' ', t, tw, sb, 'OUT stops', c['out:Stopped'], {k[12:]: v for k, v in c.items() if k.startswith('out:Stopped:')})
+    bb = sum(v for k, v in c.items() if k.startswith('table:') and ('RequestBytes' in k or 'AssignmentBytes' in k))
+    print(' ', t, tw, bb, 'OUT stops', c['out:Stopped'], {k[12:]: v for k, v in c.items() if k.startswith('out:Stopped:')})

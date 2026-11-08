@@ -144,7 +144,7 @@ class Programs:
         if hasattr(self.engine,'study_component_tables') and self.settings is None:
             from pathlib import Path
             config=json.loads((source.parent.parent/'run.json').read_text())
-            self.settings=self.engine.DecodeSettings(deadline_seconds=config['deadline'],table_work_cap=config['work_cap'],rule_tests=False)
+            self.settings=self.engine.DecodeSettings(table_work_cap=config['work_cap'],rule_tests=False)
             self.evaluator=self.engine.StudyTaskEvaluator(record['task'],config['tasks'],self.settings,session_bytes=config.get('session_mib',64)*1024*1024,compact=True)
             self.task=record['task']
         if self.task is not None:require(self.task==record['task'],'task evaluator cannot cross task namespaces')

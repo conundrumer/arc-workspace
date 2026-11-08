@@ -2785,7 +2785,7 @@ def steer_model():
 
 
 def settings():
-    kw = dict(deadline_seconds=float(os.environ.get('DEADLINE', 10.0)), rule_tests=False,
+    kw = dict(rule_tests=False,
               table_work_cap=int(os.environ.get('WORK_CAP', 1048576 * 2)))  # gold passes at every dev point (runG2)
     if STATIC_MASK:
         kw['static_pruning'] = True

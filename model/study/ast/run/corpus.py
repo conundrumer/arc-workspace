@@ -343,7 +343,7 @@ def worker(args):
         names,offsets,ids,flags=inventory(args.export,task,True);names=names[:args.case_limit]
         state['total']=len(names)
         tasktext=(args.tasks/(task+'.json')).read_text();ntrain=len(json.loads(tasktext)['train'])
-        settings=arclog.DecodeSettings(deadline_seconds=args.deadline,table_work_cap=args.work_cap,rule_tests=False)
+        settings=arclog.DecodeSettings(table_work_cap=args.work_cap,rule_tests=False)
         evaluator=arclog.StudyTaskEvaluator(task,str(args.tasks),settings,session_bytes=args.session_mib*1024*1024,compact=True)
         gold_observations=GoldObservations()
         source_hashes={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in ROOT.glob('*.py')}

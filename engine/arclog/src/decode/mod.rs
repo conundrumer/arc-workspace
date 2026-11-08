@@ -230,6 +230,12 @@ pub(crate) struct PathMasks {
 }
 
 impl PathMasks {
+    /// Drops every mask, as a session does where it evicts its caches.
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+        self.older.clear();
+    }
+
     fn get(&mut self, key: u128) -> Option<Hit<TokenMask>> {
         if let Some((mask, cost)) = self.entries.get(&key) {
             return Some(Hit::new(mask.clone(), *cost));
@@ -361,7 +367,7 @@ impl<'a> Decoder<'a> {
         }
         let mut active = self.requests.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if active.depth == 0 {
-            active.work = Some(RequestWork::begin(self.context.settings.request_work_cap));
+            active.work = Some(RequestWork::begin_with(self.context.settings.request_work_cap, self.context.settings.byte_caps()));
         }
         active.depth += 1;
         RequestGuard(Some(Arc::clone(&self.requests.0)))
@@ -377,7 +383,7 @@ impl<'a> Decoder<'a> {
         let active = self.requests.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match &active.work {
             Some(work) => work.clone(),
-            None => RequestWork::begin(self.context.settings.request_work_cap),
+            None => RequestWork::begin_with(self.context.settings.request_work_cap, self.context.settings.byte_caps()),
         }
     }
 

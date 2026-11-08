@@ -319,7 +319,7 @@ class Engine:
         repo = str(REPO)
         env = os.environ
         code, site = cfg['code'], cfg['site']
-        env.update(ARC_MAIN_ROOT=repo, ARC_ROOT=repo, WRITER_ROW_DEADLINE='3600', WRITER_ROW_ORDER_SECONDS=str(order_seconds), WRITER_ROW_TEST_SECONDS='60',
+        env.update(ARC_MAIN_ROOT=repo, ARC_ROOT=repo, WRITER_ROW_ORDER_SECONDS=str(order_seconds), WRITER_ROW_TEST_SECONDS='60',
                    WRITER_BODY_NO_ROWS='1', WRITER_VECTOR_OFF='cand', KIT_MODELS=str(Path(code) / 'models-current'), ARCLOG_IDENT_SOURCE='value',
                    RAYON_NUM_THREADS='1', OMP_NUM_THREADS='1', ARCLOG_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1', PYTHONDONTWRITEBYTECODE='1',
                    ARC_MODELS=cfg['models'], ARC_POLICY=str(Path(code) / 'model/study/policy'), POOL_CLAUSES='search', WRITER='1', WRITER_TREE=cfg['tree'],

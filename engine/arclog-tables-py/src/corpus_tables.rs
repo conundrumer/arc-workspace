@@ -53,7 +53,7 @@ struct TableCase {
 /// `<task> <case>: the program holds a DEMONSTRATED form` otherwise), and for
 /// each case whose last `RULE` end before the stream's end gives `Stopped`
 /// the line `<task> <case>: ended Stopped at token <index>` of `stream_tables`, with that case's tables kept. The replay runs under no
-/// deadline and computes no token mask.
+/// clock and computes no token mask.
 /// The call runs on the threads of the corpus harness with the GIL released,
 /// but for the build of each `CaseTables`, in phases. The first reads each
 /// solver, its streams and its task. The second cuts the streams of each

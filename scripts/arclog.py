@@ -170,6 +170,8 @@ class Tables:
                 v = self.E[field][e] if field in self.E else None
                 if v is not None and not (isinstance(v, (int,)) and v < 0):
                     stop = '%s %s' % (field, v)
+                    if field == 'value_stop_bound' and 'value_stop_assignment' in self.E and self.E['value_stop_assignment'][e]:
+                        stop = 'assignment stop %s' % v  # rejects this assignment alone; the other entries are not stopped
             rows = self.raw_rows(self.E['offset'][e], int(self.E['rows'][e]), types) if not stop and ('kind' not in self.E or int(self.E['kind'][e]) == 0) else []
             out.append((ex, int(self.E['model'][e]), tuple(key), rows, stop))
         return out

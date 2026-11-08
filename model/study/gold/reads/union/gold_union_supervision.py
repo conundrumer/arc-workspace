@@ -18,7 +18,7 @@ OUT = '/Users/davidlu/code/arc-workspace/work/lm/data-study/gold/gold-union/'
 
 def reason(t):
     why = t.get('kit_unreachable_reason') or ''
-    return 'reason not recorded' if not why else 'not collected' if why.startswith('not collected') else 'not finished, work cap' if 'TableWork' in why else 'not finished, no cap'
+    return 'reason not recorded' if not why else 'not collected' if why.startswith('not collected') else 'not finished, work cap' if any(kind in why for kind in ('TableWork', 'RequestWork', 'RequestBytes', 'AssignmentBytes')) else 'not finished, no cap'
 
 
 def dist(xs):

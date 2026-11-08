@@ -27,7 +27,7 @@ def worker(args):
     import arclog
     names, offsets, ids, flags = inventory(args.export, args.worker, True)
     selected = set(args.cases or names)
-    settings = arclog.DecodeSettings(deadline_seconds=args.draw_seconds, rule_tests=False)
+    settings = arclog.DecodeSettings(mutation_node_cap=args.draw_nodes, rule_tests=False)
     task = arclog.Task.from_json((args.tasks / (args.worker + ".json")).read_text(), arclog.World.Closed)
     session = arclog.Session(task, settings, session_bytes=arclog.STUDY_SESSION_BYTES)
     def deadline(*_):
@@ -73,7 +73,7 @@ def main():
     parser.add_argument("--tasks", type=Path, required=True)
     parser.add_argument("--current", type=Path, default=Path("run/CURRENT.json"))
     parser.add_argument("--runtime-manifest", type=Path, help="explicit immutable candidate ready.json; otherwise use CURRENT")
-    parser.add_argument("--draw-seconds", type=float, default=2)
+    parser.add_argument("--draw-nodes", type=int, default=1 << 14)
     parser.add_argument("--pairs", type=Path)
     parser.add_argument("--only", nargs="+")
     parser.add_argument("--ks", type=int, nargs="+", default=[1, 2, 3])
@@ -103,7 +103,7 @@ def main():
         worker(args)
         return
     budget = int(os.environ.get("ARC_HEAVY_CPUS", "1"))
-    if not 1 <= args.workers <= budget or min(args.ks) < 1 or args.count < 1 or args.case_seconds <= 0 or args.draw_seconds <= 0:
+    if not 1 <= args.workers <= budget or min(args.ks) < 1 or args.count < 1 or args.case_seconds <= 0 or args.draw_nodes <= 0:
         parser.error("positive counts/deadlines required; workers must fit run_heavy CPU budget")
     selected = defaultdict(set)
     if args.pairs:
@@ -134,7 +134,7 @@ def main():
                       export=str(args.export.resolve()), tasks=str(args.tasks.resolve()),
                       reference_policy=REFERENCE, production_policy=POLICY,
                       ks=args.ks, seed=args.seed, requested=args.count,
-                      draw_seconds=args.draw_seconds, case_seconds=args.case_seconds)
+                      draw_nodes=args.draw_nodes, case_seconds=args.case_seconds)
     with args.output.with_suffix(".jsonl").open("w", buffering=1) as records:
         records.write(json.dumps(dict(event="start", provenance=provenance, total=len(tasks))) + "\n")
         records.flush()
@@ -142,7 +142,7 @@ def main():
             nonlocal draws
             command = [sys.executable, "-B", str(Path(__file__).resolve()), "--worker", task,
                 "--export", str(args.export), "--tasks", str(args.tasks),
-                "--current", str(args.current.resolve()), "--draw-seconds", str(args.draw_seconds),
+                "--current", str(args.current.resolve()), "--draw-nodes", str(args.draw_nodes),
                 "--ks", *map(str,args.ks),
                 "--count", str(args.count), "--seed", str(args.seed), "--case-seconds", str(args.case_seconds),
                 "--output", str(args.output)]

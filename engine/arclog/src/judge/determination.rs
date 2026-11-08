@@ -578,7 +578,24 @@ pub(crate) fn descend_with(
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
     domains: Option<&dyn Domains>,
 ) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
-    walk_dets(inputs, dets, None, root, cap, &mut |evaluation, assigned, _| leaf(evaluation, assigned), domains)
+    walk_dets(inputs, dets, None, root, cap, &mut |evaluation, assigned, _| leaf(evaluation, assigned), domains, false)
+}
+
+/// [`descend_with`] for a walk of a table, where each step of the walk, a
+/// domain or a leaf, is evaluated under limits of its own
+/// ([`Limits::for_assignment`]): a step that reaches the table work cap of its
+/// own count, or its byte budget, is rejected alone
+/// ([`ReachedBound::is_assignment`]), and the other steps go on with counts
+/// that start from none.
+pub(crate) fn descend_scoped(
+    inputs: EvaluationInputs<'_>,
+    dets: &[Det],
+    root: GraphNodeIndex,
+    cap: u64,
+    leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment]) -> Result<(), End>,
+    domains: Option<&dyn Domains>,
+) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
+    walk_dets(inputs, dets, None, root, cap, &mut |evaluation, assigned, _| leaf(evaluation, assigned), domains, true)
 }
 
 /// [`descend_with`] for a walk whose `leaf` reads the values that it holds
@@ -608,7 +625,7 @@ pub(crate) fn descend_unread(
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment], usize) -> Result<(), End>,
     domains: Option<&dyn Domains>,
 ) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
-    walk_dets(inputs, dets, Some(readers), root, cap, leaf, domains)
+    walk_dets(inputs, dets, Some(readers), root, cap, leaf, domains, false)
 }
 
 /// For each of `dets`, whether no later `DET` of `dets` and none of `readers`
@@ -627,6 +644,7 @@ fn walk_dets(
     cap: u64,
     leaf: &mut dyn FnMut(&Evaluation<'_>, &[Assignment], usize) -> Result<(), End>,
     domains: Option<&dyn Domains>,
+    scoped: bool,
 ) -> (Vec<ProgramRelation>, Result<(), End>, Option<Stop>) {
     let _timed = stats::span(Phase::TableWalk);
     stats::seen(Phase::TableWalk, || {
@@ -634,7 +652,7 @@ fn walk_dets(
         stats::digest(&(program.stats_finished_id(), program.program.value().forms.len(), dets.iter().map(|det| &det.relation).collect::<Vec<_>>()))
     });
     let unread = readers.map(|readers| unread_dets(inputs.program, dets, readers)).unwrap_or_default();
-    let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf, domains, unread, skipped: 0, stop: None };
+    let mut walk = Walk { inputs, dets, root, cap, count: 0, branching: Vec::new(), leaf, domains, unread, skipped: 0, stop: None, scoped };
     let end = walk.descend(0, &mut Vec::new());
     (walk.branching, end, walk.stop)
 }
@@ -657,6 +675,8 @@ struct Walk<'w, 'a> {
     /// The count of `DET`s that the walk has left out of the values it holds.
     skipped: usize,
     stop: Option<Stop>,
+    /// Whether each step is evaluated under limits of its own ([`descend_scoped`]).
+    scoped: bool,
 }
 
 impl Walk<'_, '_> {
@@ -688,8 +708,23 @@ impl Walk<'_, '_> {
     fn path(&mut self, at: usize, assigned: &mut Vec<Assignment>) -> Result<(), End> {
         self.charge(at, 1 + assigned.len() as u64)?;
         let parameters = ParameterValues::determined(assigned.clone());
+        let scope;
+        let inputs = if self.scoped {
+            scope = self.inputs.limits.for_assignment();
+            EvaluationInputs {
+                program: self.inputs.program,
+                concept: self.inputs.concept,
+                task: self.inputs.task,
+                session: self.inputs.session,
+                registry: self.inputs.registry,
+                constructions: self.inputs.constructions,
+                limits: &scope,
+            }
+        } else {
+            self.inputs
+        };
         let Some(det) = self.dets.get(at) else {
-            let evaluation = self.inputs.at(&parameters);
+            let evaluation = inputs.at(&parameters);
             self.count += 1;
             stats::units(Phase::TableWalk, 1);
             let cap = self.cap;
@@ -708,7 +743,7 @@ impl Walk<'_, '_> {
                 return Err(End::Fault(fault));
             }
         }
-        let evaluation = self.inputs.at(&parameters);
+        let evaluation = inputs.at(&parameters);
         stats::units(Phase::TableWalk, 1);
         if self.unread.get(at).copied().unwrap_or(false) {
             return self.descend_counted(at, assigned, &evaluation);

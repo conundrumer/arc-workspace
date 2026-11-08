@@ -110,7 +110,7 @@ def reason(value,phase):
         if not table.get('complete'):reasons.append(table.get('reason') or table.get('status','incomplete'))
     text='; '.join(str(x) for x in reasons) or str(value.get('reason') or value.get('status') or 'incomplete')
     text=text[:2000]
-    bound=re.search(r'\b(Deadline|TableWork|SessionBytes|AssignmentCount|Assignments|MaxAssignments)\b',text)
+    bound=re.search(r'\b(Deadline|TableWork|RequestWork|RequestBytes|AssignmentBytes|SessionBytes|AssignmentCount|Assignments|MaxAssignments)\b',text)
     kind=re.search(r'kind=(\d+)',text)
     normalized=re.sub(r'[0-9a-f]{16,}','<hash>',text)
     normalized=re.sub(r'\d+','N',normalized)

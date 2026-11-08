@@ -67,6 +67,8 @@ def entries_as_arrays(tb, t):
             v = tb.E[field][e] if field in tb.E else None
             if v is not None and not (isinstance(v, (int,)) and v < 0):
                 stop = '%s %s' % (field, v)
+                if field == 'value_stop_bound' and 'value_stop_assignment' in tb.E and tb.E['value_stop_assignment'][e]:
+                    stop = 'assignment stop %s' % v  # rejects this assignment alone; the other entries are not stopped
         if not stop and ('kind' not in tb.E or int(tb.E['kind'][e]) == 0):
             rows, offset = int(tb.E['rows'][e]), int(tb.E['offset'][e])
             raw = tb.values[offset:offset + rows * stride].reshape(rows, stride)

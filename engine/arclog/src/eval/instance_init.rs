@@ -139,7 +139,14 @@ pub fn evaluate_instance<'a>(
         let outputs = construct(budget, &groups, &group_inputs)?;
         record_whole(budget, outputs.iter().map(|(_, value)| value));
         // Each output's entry costs what the construction charged: a request that reads one output makes the others.
-        let cost = if store { evaluation.limits.request.spent() } else { Default::default() };
+        // The cost holds no bytes at its end: the other outputs' rows are held by the value of the output that was asked.
+        let cost = if store {
+            let mut spent = evaluation.limits.request.spent();
+            spent.bytes.net = 0;
+            spent
+        } else {
+            Default::default()
+        };
         let mut found = None;
         for (output, value) in outputs {
             if output == *asked {

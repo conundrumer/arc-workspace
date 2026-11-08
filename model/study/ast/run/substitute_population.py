@@ -154,7 +154,7 @@ def main():
             streams_digest=arclog.streams_digest(), historical_draw_policy=arclog.StudyProgram.mutation_policy()))
     for task in selected:
         names, offsets, ids, flags = inventory(args.export, task, True)
-        native_settings = arclog.DecodeSettings(deadline_seconds=args.deadline, rule_tests=False)
+        native_settings = arclog.DecodeSettings(rule_tests=False)
         evaluator = arclog.StudyTaskEvaluator(task, str(args.tasks), native_settings, session_bytes=128<<20, compact=True)
         for index, case in enumerate(names):
             if case not in selected[task]:

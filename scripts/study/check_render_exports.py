@@ -34,7 +34,7 @@ def worker(args):
     if args.continuation or args.component_tables:
         require(hasattr(arclog,"study_component_tables"), "rebuild required: study_component_tables")
         if args.continuation:require(hasattr(arclog,"study_continuation"), "rebuild required: study_continuation")
-        settings=arclog.DecodeSettings(deadline_seconds=args.native_seconds,rule_tests=False)
+        settings=arclog.DecodeSettings(rule_tests=False)
         evaluator=arclog.StudyTaskEvaluator(job["task"],str(args.tasks),settings,compact=False)
     def alarm(*_):
         raise TimeoutError("per-pair deadline")
@@ -152,7 +152,6 @@ def main():
     parser.add_argument("--limit",type=int,default=0)
     parser.add_argument("--tasks",type=Path,default=Path(__file__).resolve().parents[2]/"data/tasks")
     parser.add_argument("--pair-seconds",type=float,default=10)
-    parser.add_argument("--native-seconds",type=float,default=1)
     parser.add_argument("--continuation",action="store_true")
     parser.add_argument("--component-tables",action="store_true",help="check native component output tables independently of OUT")
     parser.add_argument("--worker",action="store_true",help=argparse.SUPPRESS)
@@ -182,7 +181,7 @@ def main():
         def task_worker(task,files):
             nonlocal done
             command=[sys.executable,"-B",str(Path(__file__).resolve()),"--worker","--tasks",str(args.tasks),
-                "--pair-seconds",str(args.pair_seconds),"--native-seconds",str(args.native_seconds)]
+                "--pair-seconds",str(args.pair_seconds)]
             if args.continuation:command.append("--continuation")
             if args.component_tables:command.append("--component-tables")
             with subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1) as process:

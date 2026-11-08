@@ -741,18 +741,6 @@ fn models_of_body(rows: &Assigned<BodyValue>) -> Assigned<Vec<RelationValue>> {
 /// enumeration as a last, stopped model.
 fn models_at(evaluation: &Evaluation<'_>, relation: &GraphRelation, example: Option<Example>) -> Result<Vec<RelationValue>, End> {
     let mut values = Vec::new();
-    // Where the operation's export reserves bytes for each row, the evaluation
-    // of this relation stops once its rows would take a reservation past the
-    // room ([`arclog::eval::join::Budget::charge_rows`]).
-    let limits;
-    let exporting;
-    let evaluation = if evaluation.limits.row_reserve.is_some() {
-        limits = evaluation.limits.clone().exporting(&evaluation.program.program, relation.node);
-        exporting = Evaluation { limits: &limits, ..*evaluation };
-        &exporting
-    } else {
-        evaluation
-    };
     let end = evaluation
         .models(relation, example, &mut |value| {
             values.push(value.clone());

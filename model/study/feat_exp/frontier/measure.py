@@ -210,7 +210,7 @@ class Env:
     def __init__(self, deadline, seed):
         from evaluator import ReplayEvaluator
         self.ev = ReplayEvaluator(deadline=deadline)
-        self.settings = arclog.DecodeSettings(deadline_seconds=deadline, table_work_cap=1048576 * 64, rule_tests=False)
+        self.settings = arclog.DecodeSettings(table_work_cap=1048576 * 64, rule_tests=False)
         self.sessions = {}
         self.seed = seed
 

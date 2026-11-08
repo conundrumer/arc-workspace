@@ -193,7 +193,7 @@ impl<T> std::ops::Deref for Materialized<T> {
     fn deref(&self)->&T {&self.value}
 }
 
-/// An entry's extent matrix admitted under the session byte bound. Cloning
+/// An entry's extent matrix, whose bytes the session reserves. Cloning
 /// its Arc shares both the cells and their byte reservation.
 ///
 /// The matrix is held as blocks: one block with a row for each row of the

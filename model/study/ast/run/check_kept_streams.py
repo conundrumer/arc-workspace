@@ -123,7 +123,7 @@ def main():
                     if manifest['provenance'][key] != corpus_build[key]:
                         raise ValueError('task runtime differs: ' + key)
                 task_obj = arclog.Task.from_json((tasks_dir / (task + '.json')).read_text(), arclog.World.Closed)
-                settings = arclog.DecodeSettings(deadline_seconds=config['deadline'], rule_tests=False)
+                settings = arclog.DecodeSettings(rule_tests=False)
                 session = arclog.Session(task_obj, settings, session_bytes=arclog.STUDY_SESSION_BYTES)
                 stage = 'read_pairs'
                 with gzip.open(taskdir / 'pairs.jsonl.gz', 'rt') as source:

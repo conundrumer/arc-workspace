@@ -103,8 +103,8 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, Dynami
 
 MAX_TOKENS = 4096   # train.py's default --max-len
 MAX_STEPS = 10_000  # the export's step cap
-SETTINGS = ("proposer_tokens", "type_domain_proposers", "relations", "columns", "labels", "deadline_seconds",
-            "projection_cap", "table_work_cap", "rule_tests")   # the fields of arclog.DecodeSettings
+SETTINGS = ("proposer_tokens", "type_domain_proposers", "relations", "columns", "labels", "mutation_node_cap",
+            "projection_cap", "table_work_cap", "request_work_cap", "request_byte_cap", "assignment_byte_cap", "candidate_byte_cap", "spill_resident_bytes", "rule_tests")   # the fields of arclog.DecodeSettings
 
 
 def load_model(run, device):

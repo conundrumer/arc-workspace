@@ -18,6 +18,7 @@ mod corpus_tables;
 mod orientation;
 mod record;
 mod shapes;
+mod spill;
 mod step_tables;
 mod stream_tables;
 

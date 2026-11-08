@@ -59,7 +59,7 @@ def check_task(args):
                               (args.corpus / f"{args.worker}.arcdata").read_text(), str(args.corpus))
     files = {case.case: case for case in files}
     task = arclog.Task.from_json((args.tasks / f"{args.worker}.json").read_text(), arclog.World.Closed)
-    settings = arclog.DecodeSettings(deadline_seconds=2, rule_tests=False)
+    settings = arclog.DecodeSettings(rule_tests=False)
     vocab = json.loads((args.export / "vocab.json").read_text())
     session = arclog.Session(task, settings, session_bytes=256 * 1024 * 1024)
     v = session.vocabulary

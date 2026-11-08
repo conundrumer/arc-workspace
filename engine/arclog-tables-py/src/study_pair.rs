@@ -291,11 +291,10 @@ impl PyStudyTaskEvaluator {
     /// product of parts over the projection cap gives its count and its parts,
     /// and every other entry its rows. Native evaluation is cached once per gold
     /// handle. Returns (status_json, CaseTables); stops and faults retain their
-    /// native reason. The rows do not depend on machine load: no deadline of the
-    /// settings applies, and a table stops at caps that its program alone
-    /// decides. A `ValueError` is raised where the evaluation or the packing
-    /// reached the byte bound (`study_pair::TABLE_BYTES`), in place of tables
-    /// that leave out rows for that reason.
+    /// native reason. The rows do not depend on machine load: no clock applies,
+    /// and a table stops at caps that its program alone decides. The session's
+    /// byte bound (`study_pair::TABLE_BYTES` for the evaluation) only makes the
+    /// session evict its caches: no table is cut at it.
     ///
     /// With `form`, the index of a top-level form of the program, the result
     /// holds the tables of that form alone, with no evidence, and the rows that
@@ -322,9 +321,6 @@ impl PyStudyTaskEvaluator {
                 }
             };
             report["form_cache"]=cache.form_cache_stats();
-            if let Some(stop)=study_pair::stopped_at_bytes(&tables) {
-                return Err(format!("the tables of the program stopped at {:?}",stop.bound));
-            }
             let started=arclog::clock::Stopwatch::start();
             let materializer=Materializer::new(&self.session,&limits);
             let columns=if held_rows {
@@ -342,9 +338,6 @@ impl PyStudyTaskEvaluator {
             report["packed_correspondence"]["program_sexp"]=gold.program.sexp(Registry::get()).into();
             report["program_sexp"]=gold.program.sexp(Registry::get()).into();
             report["native_columns_seconds"]=started.elapsed().seconds().into();
-            if let Some(stop)=columns.packing_stop().filter(|stop|matches!(stop.bound,arclog::eval::ReachedBound::SessionBytes(_))) {
-                return Err(format!("the packing of the tables stopped at {:?}",stop.bound));
-            }
             Ok((report,columns))
         })).map_err(PyValueError::new_err)?;
         Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?))
@@ -476,6 +469,7 @@ fn packing_status<'a>(report:&mut serde_json::Value,columns:impl IntoIterator<It
     let columns: Vec<_> = columns.into_iter().collect();
     packing_stops(report,columns.iter().filter_map(|c|c.packing_stop()));
     let mut entry_stops = report["entry_stops"].as_array().cloned().unwrap_or_default();
+    let mut assignment_stops = report["assignment_stops"].as_array().cloned().unwrap_or_default();
     let mut extent_stops = report["extent_stops"].as_array().cloned().unwrap_or_default();
     for columns in columns {
         for (entry, bound) in columns.entries.extent_stop.bound.iter().enumerate() {
@@ -485,11 +479,19 @@ fn packing_status<'a>(report:&mut serde_json::Value,columns:impl IntoIterator<It
         }
         for (entry, bound) in columns.entries.value_stop.bound.iter().enumerate() {
             if let Some(bound) = bound {
-                entry_stops.push(serde_json::json!({"entry":entry,"table":columns.entries.table[entry],"bound":bound,"form":columns.entries.value_stop.form[entry]}));
+                if columns.entries.value_stop.assignment[entry] {
+                    // A stop that rejects one assignment alone leaves the status as the other assignments give it.
+                    assignment_stops.push(serde_json::json!({"entry":entry,"table":columns.entries.table[entry],"example_kind":columns.entries.example_kind[entry],"example":columns.entries.example_index[entry],"assignment":columns.entries.assignment[entry],"model":columns.entries.model[entry],"reason":bound,"form":columns.entries.value_stop.form[entry],"source":"packing"}));
+                } else {
+                    entry_stops.push(serde_json::json!({"entry":entry,"table":columns.entries.table[entry],"bound":bound,"form":columns.entries.value_stop.form[entry]}));
+                }
             }
         }
     }
     report["extent_stops"] = extent_stops.into();
+    if !assignment_stops.is_empty() {
+        report["assignment_stops"] = assignment_stops.into();
+    }
     if !entry_stops.is_empty() {
         if report["status"]!="fault" {report["status"]="stopped".into();}
         report["entry_stops"] = entry_stops.into();

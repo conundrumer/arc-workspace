@@ -19,7 +19,7 @@ def acquire(request):
     ready=request['runtime_ready']
     build=load_build(arclog,SimpleNamespace(build_receipt=None,
         engine_commit=ready['revision'],wheel=Path(ready['wheel'])))
-    settings = arclog.DecodeSettings(deadline_seconds=None, rule_tests=False)
+    settings = arclog.DecodeSettings(rule_tests=False)
     gold = arclog.StudyProgram.from_sexp(record['programs']['gold'], settings).decode_source()
     mutant = stored_metadata_program(arclog,record['programs']['mutant'],settings)
     exports = dict(gold=json.loads(arclog.study_program_export_json(gold,source_program=gold)),

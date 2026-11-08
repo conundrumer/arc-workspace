@@ -8,6 +8,7 @@ use arclog_tables::columns::{CaseColumns, StopColumns, StreamTables, TableColumn
 use arclog_tables::shape_rows::ShapeRows;
 
 use crate::shapes::{PyTableShapes, ShapeRuntime};
+use crate::spill::Spilled;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyCapsule, PyInt, PyList, PyModule, PyTuple};
 use pyo3::sync::PyOnceLock;
@@ -229,8 +230,10 @@ pub(crate) struct PyCaseTables {
     flows: Py<PyDict>,
     #[pyo3(get)]
     copies: Py<PyDict>,
-    #[pyo3(get)]
+    /// The cells of every row. Empty where `spilled` holds them.
     values: Py<PyBytes>,
+    /// Where the cells wait on disk, in a call that kept the exports of several candidates (`successor_tables`) past its resident bound; `values` then reads them from the file at each access.
+    spilled: Option<Spilled>,
     #[pyo3(get)]
     dtypes: Py<PyDict>,
     /// What the next call of `step_tables` takes from this `CaseTables` as its `before`, for a `CaseTables` of `step_tables`; Python reads none of it.
@@ -512,6 +515,7 @@ impl PyCaseTables {
         e.ints("offset", &c.offset)?;
         e.stop("stop", &c.stop)?;
         e.stop("value_stop", &c.value_stop)?;
+        e.list("value_stop_assignment", &c.value_stop.assignment)?;
         e.list("fault", &c.fault)?;
         e.ints("extent_offset", &c.extent_offset)?;
         e.stop("extent_stop", &c.extent_stop)?;
@@ -604,6 +608,7 @@ impl PyCaseTables {
             flows: f.dict.unbind(),
             copies: k.dict.unbind(),
             values,
+            spilled: None,
             dtypes: dtypes.unbind(),
             step: None,
             materialization_stop,
@@ -615,6 +620,12 @@ impl PyCaseTables {
     /// This `CaseTables` as one whose `shapes` read the session's `runtime`.
     pub(crate) fn with_shapes(mut self, runtime: Arc<ShapeRuntime>) -> Self {
         self.shape_runtime = Some(runtime);
+        self
+    }
+
+    /// This `CaseTables` with its cells on disk, as `spilled` has them; the columns it was made of held none.
+    pub(crate) fn with_spilled(mut self, spilled: Spilled) -> Self {
+        self.spilled = Some(spilled);
         self
     }
 
@@ -632,6 +643,18 @@ impl PyCaseTables {
 
 #[pymethods]
 impl PyCaseTables {
+    /// The `int32` cells of every row, as native bytes. Where the cells wait on disk, each access reads them from the file and gives them as they were written.
+    #[getter]
+    fn values(&self, py: Python<'_>) -> PyResult<Py<PyBytes>> {
+        match &self.spilled {
+            None => Ok(self.values.clone_ref(py)),
+            Some(spilled) => {
+                let bytes = py.detach(|| spilled.read()).map_err(|error| pyo3::exceptions::PyOSError::new_err(format!("the cells of the export are lost from their spill file: {error}")))?;
+                Ok(PyBytes::new(py, &bytes).unbind())
+            }
+        }
+    }
+
     /// The shapes of the table at row `row` of `tables`, a `TableShapes`, or `None` where the row's summary holds no rows (a table with no TableHash, or a result of a call
     /// that gives no summary) or `row` is past the rows. The walk of the shapes runs at the first `vector` call that needs it.
     fn shapes(&self, row: usize) -> Option<PyTableShapes> {

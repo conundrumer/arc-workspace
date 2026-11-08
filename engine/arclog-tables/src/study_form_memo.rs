@@ -21,7 +21,7 @@
 //! differs, the walk runs.
 //!
 //! The memo takes and keeps a walk only where its result is a function of the
-//! content: no stop at the deadline, a cancellation or the byte bound, no
+//! content: no stop at a cancellation or a request budget, no
 //! fault, no eviction by the result cache during the walk, and no stop of the
 //! program's [`TooLarge`] that the walk could read.
 use super::*;
@@ -532,7 +532,7 @@ impl FormMemo {
 /// no kept walk may hold: a request cap stop depends on the work the request
 /// did before the walk.
 fn machine_bound(bound:ReachedBound)->bool {
-    matches!(bound,ReachedBound::RequestWork{..}|ReachedBound::Cancelled|ReachedBound::SessionBytes(_))
+    matches!(bound,ReachedBound::RequestWork{..}|ReachedBound::RequestBytes{..}|ReachedBound::Cancelled)
 }
 
 /// The top-level forms that the stops of `examples` and `delta` stand at, or

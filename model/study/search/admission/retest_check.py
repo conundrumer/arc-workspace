@@ -18,7 +18,7 @@ os.environ['ADMISSION_RETEST'] = '1'
 import live  # noqa: E402
 
 arclog = live.arclog
-SETTINGS = dict(deadline_seconds=10.0, rule_tests=False, table_work_cap=1 << 21, static_pruning=True)
+SETTINGS = dict(rule_tests=False, table_work_cap=1 << 21, static_pruning=True)
 bank = PA.load_bank(sys.argv[1])
 forms = bank['forms']
 task = json.load(open(sys.argv[2]))

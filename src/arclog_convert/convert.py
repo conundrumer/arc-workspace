@@ -589,7 +589,7 @@ EQUALITY_REFUSAL = "static prune: use the admitted equality binding"
 """The refusal of the decoder with static pruning at an alias or constant atom whose equality binding the checker
 admits (`check_static_prune` in `engine/arclog/src/decode/mod.rs`)."""
 
-SAMPLER_DECODE = dict(deadline_seconds=120.0, rule_tests=False, table_work_cap=1 << 21, static_pruning=True)
+SAMPLER_DECODE = dict(rule_tests=False, table_work_cap=1 << 21, static_pruning=True)
 """The decode settings of the sampler (`model/study/sampler/live_try.py`), with a deadline that a loaded machine does
 not reach."""
 

@@ -1,13 +1,20 @@
 //! The decode settings of `docs/engine/synthesis.md#decode-settings`, each
-//! with its default. [`DecodeSettings::default`] holds no deadline, the
-//! settings of a replay of the corpus; [`DecodeSettings::synthesis`] gives
-//! the settings of the synthesis decode. A decode always offers the proposers
+//! with its default. [`DecodeSettings::default`] gives the settings of a
+//! replay of the corpus; [`DecodeSettings::synthesis`] gives the settings of
+//! the synthesis decode. A decode always offers the proposers
 //! and the type-domain proposers as tokens, always applies the static prune
 //! and always gives the grids at the model cap: `docs/engine/synthesis.md#switches`.
 
-use std::time::Duration;
+use crate::eval::values::{ByteCaps, Caps, ASSIGNMENT_BYTES_CAP, CANDIDATE_BYTES_CAP, REQUEST_BYTES_CAP, REQUEST_WORK_CAP};
 
-use crate::eval::values::{Caps, REQUEST_WORK_CAP};
+/// The mutation node cap of [`DecodeSettings::synthesis`]. Provisional: the
+/// nodes that a draw's search reaches on the gold programs set it.
+pub const MUTATION_NODE_CAP: u64 = 1 << 17;
+
+/// The mutation node cap of [`DecodeSettings::default`], the settings of a
+/// replay of the corpus, whose search runs to the end of its finite domain
+/// where the cap allows: a cap that no feasible search reaches.
+pub const MUTATION_NODE_CAP_CORPUS: u64 = 1 << 30;
 
 /// The relation, column and label slots of the vocabulary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -33,12 +40,12 @@ pub struct DecodeSettings {
     pub vocabulary: VocabularyCaps,
     /// The caps a prefix runs under.
     pub caps: Caps,
-    /// The deadline of the mutation draw's search, from its start, or `None`
-    /// for none. No query, mask, step, table or walk of a decode reads it: each
-    /// of those stops at a work cap, so that a stop does not depend on the
-    /// machine's speed (`docs/engine/synthesis.md#decode-settings`). A job's
+    /// The search nodes of one mutation draw's search, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it. No query, mask,
+    /// step, table or walk of a decode reads it: each of those stops at a work
+    /// cap, so that a stop does not depend on the machine's speed. A job's
     /// outer deadline lives in the job runner.
-    pub deadline: Option<Duration>,
+    pub mutation_node_cap: u64,
     /// The rows a projection may hold on one example at one assignment, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub projection_cap: u64,
@@ -48,6 +55,22 @@ pub struct DecodeSettings {
     /// The work of one request, summed over every query and walk of it, as
     /// `docs/engine/synthesis.md#decode-settings` gives it.
     pub request_work_cap: u64,
+    /// The bytes one request may hold at a time, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it.
+    pub request_byte_cap: u64,
+    /// The bytes one assignment of a table walk may hold at a time, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it.
+    pub assignment_byte_cap: u64,
+    /// The bytes the request of one candidate of a call that evaluates several
+    /// (`successor_tables`) may hold at a time, as
+    /// `docs/engine/synthesis.md#decode-settings` gives it. It is the same for
+    /// every candidate, whatever the order or the count of the candidates.
+    pub candidate_byte_cap: u64,
+    /// The bytes of exported rows that a call keeps in memory at once for its
+    /// candidates, as `docs/engine/synthesis.md#decode-settings` gives it: the
+    /// rows of a candidate past it wait on disk, compressed, until read. It
+    /// changes no result.
+    pub spill_resident_bytes: u64,
     /// Whether the evaluations check the rows that the outputs of a
     /// construction declare they copy ([`crate::eval::copies`]), and report
     /// the violations to [`crate::decode::Decoder::take_copy_violations`].
@@ -66,15 +89,23 @@ impl DecodeSettings {
     /// thread until another request begins on it.
     pub fn operation_limits(&self)->crate::eval::Limits {
         let mut limits=crate::eval::Limits::new(Some(self.request_work_cap),crate::eval::Cancellation::default());
-        limits.request=crate::eval::RequestWork::begin(self.request_work_cap);
+        limits.request=crate::eval::RequestWork::begin_with(self.request_work_cap,self.byte_caps());
         limits
     }
-    /// The default settings with the deadline of the synthesis decode, 10 s,
-    /// which only the mutation draw's search reads.
+    /// The byte budgets of a request and of each assignment in it.
+    pub fn byte_caps(&self)->ByteCaps {
+        ByteCaps { request: self.request_byte_cap, assignment: self.assignment_byte_cap, candidate: self.candidate_byte_cap }
+    }
+    /// The default settings with the mutation node cap of the synthesis
+    /// decode, which only the mutation draw's search reads.
     pub fn synthesis() -> DecodeSettings {
-        DecodeSettings { deadline: Some(Duration::from_secs(10)), ..DecodeSettings::default() }
+        DecodeSettings { mutation_node_cap: MUTATION_NODE_CAP, ..DecodeSettings::default() }
     }
 }
+
+/// The default bytes of exported rows that a call keeps in memory at once for
+/// its candidates ([`DecodeSettings::spill_resident_bytes`]).
+pub const SPILL_RESIDENT_BYTES: u64 = 1 << 30;
 
 /// The settings of a replay of the corpus and of the writer: the table work cap
 /// is the writer's, so a stop at it is the same in a check and in the writer.
@@ -83,10 +114,14 @@ impl Default for DecodeSettings {
         DecodeSettings {
             vocabulary: VocabularyCaps::CORPUS,
             caps: Caps::CORPUS,
-            deadline: None,
+            mutation_node_cap: MUTATION_NODE_CAP_CORPUS,
             projection_cap: 10_000,
             table_work_cap: 1 << 21,
             request_work_cap: REQUEST_WORK_CAP,
+            request_byte_cap: REQUEST_BYTES_CAP,
+            assignment_byte_cap: ASSIGNMENT_BYTES_CAP,
+            candidate_byte_cap: CANDIDATE_BYTES_CAP,
+            spill_resident_bytes: SPILL_RESIDENT_BYTES,
             check_copies: false,
             rule_tests: false,
         }

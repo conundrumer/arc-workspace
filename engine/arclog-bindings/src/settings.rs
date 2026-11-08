@@ -1,15 +1,15 @@
 //! The decode settings, as Python gives them.
 
-use std::time::Duration;
-
 use arclog::stream::{DecodeSettings, VocabularyCaps};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 /// What a decode reads: the settings of `docs/engine/synthesis.md#decode-settings`.
-/// A setting left out takes the engine's default. `deadline_seconds` is read
-/// by the search of the mutation draw alone; every other request stops at a
-/// work cap, `request_work_cap` among them.
+/// A setting left out takes the engine's default. No setting is a clock: the
+/// search of the mutation draw stops at `mutation_node_cap`, and every other
+/// request at a work cap, `request_work_cap` among them, or at a byte budget,
+/// `request_byte_cap`, `assignment_byte_cap` and `candidate_byte_cap`.
+/// `spill_resident_bytes` moves rows to disk and changes no result.
 ///
 /// `proposer_tokens`, `type_domain_proposers`, `static_pruning` and
 /// `grids_at_model_cap` are no settings: each decode has them on
@@ -22,10 +22,14 @@ pub struct PyDecodeSettings {
     relations: u32,
     columns: u32,
     labels: u32,
-    deadline_seconds: Option<f64>,
+    mutation_node_cap: u64,
     projection_cap: u64,
     table_work_cap: u64,
     request_work_cap: u64,
+    request_byte_cap: u64,
+    assignment_byte_cap: u64,
+    candidate_byte_cap: u64,
+    spill_resident_bytes: u64,
     binding_cap: u64,
     row_cap: u64,
     rule_tests: bool,
@@ -37,25 +41,32 @@ impl PyDecodeSettings {
             relations: settings.vocabulary.relations,
             columns: settings.vocabulary.columns,
             labels: settings.vocabulary.labels,
-            deadline_seconds: settings.deadline.map(|deadline| deadline.as_secs_f64()),
+            mutation_node_cap: settings.mutation_node_cap,
             projection_cap: settings.projection_cap,
             table_work_cap: settings.table_work_cap,
             request_work_cap: settings.request_work_cap,
+            request_byte_cap: settings.request_byte_cap,
+            assignment_byte_cap: settings.assignment_byte_cap,
+            candidate_byte_cap: settings.candidate_byte_cap,
+            spill_resident_bytes: settings.spill_resident_bytes,
             binding_cap: settings.caps.bindings,
             row_cap: settings.caps.rows,
             rule_tests: settings.rule_tests,
         }
     }
 
-    /// The engine settings these give, or `ValueError` for a deadline that is no duration.
+    /// The engine settings these give.
     pub fn engine(&self) -> PyResult<DecodeSettings> {
-        let deadline = self.deadline_seconds.map(|seconds| Duration::try_from_secs_f64(seconds).map_err(|error| PyValueError::new_err(format!("deadline_seconds: {error}")))).transpose()?;
         Ok(DecodeSettings {
             vocabulary: VocabularyCaps { relations: self.relations, columns: self.columns, labels: self.labels },
-            deadline,
+            mutation_node_cap: self.mutation_node_cap,
             projection_cap: self.projection_cap,
             table_work_cap: self.table_work_cap,
             request_work_cap: self.request_work_cap,
+            request_byte_cap: self.request_byte_cap,
+            assignment_byte_cap: self.assignment_byte_cap,
+            candidate_byte_cap: self.candidate_byte_cap,
+            spill_resident_bytes: self.spill_resident_bytes,
             caps: arclog::eval::Caps {bindings:self.binding_cap,rows:self.row_cap,..arclog::eval::Caps::CORPUS},
             rule_tests: self.rule_tests,
             ..DecodeSettings::default()
@@ -75,7 +86,7 @@ fn only_on(name: &str, given: Option<bool>) -> PyResult<()> {
 #[pymethods]
 impl PyDecodeSettings {
     /// Corpus verification has finite supplied programs and no wall-clock
-    /// search deadline. Its verdict must not depend on competing machine load.
+    /// limit. Its verdict must not depend on competing machine load.
     #[staticmethod]
     fn corpus() -> Self {
         Self::of(&DecodeSettings::default())
@@ -102,17 +113,21 @@ impl PyDecodeSettings {
     }
 
     #[new]
-    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, deadline_seconds=None, projection_cap=None, table_work_cap=None, request_work_cap=None, binding_cap=None, row_cap=None, rule_tests=None, static_pruning=None, grids_at_model_cap=None))]
+    #[pyo3(signature = (*, proposer_tokens=None, type_domain_proposers=None, relations=None, columns=None, labels=None, mutation_node_cap=None, projection_cap=None, table_work_cap=None, request_work_cap=None, request_byte_cap=None, assignment_byte_cap=None, candidate_byte_cap=None, spill_resident_bytes=None, binding_cap=None, row_cap=None, rule_tests=None, static_pruning=None, grids_at_model_cap=None))]
     fn new(
         proposer_tokens: Option<bool>,
         type_domain_proposers: Option<bool>,
         relations: Option<u32>,
         columns: Option<u32>,
         labels: Option<u32>,
-        deadline_seconds: Option<f64>,
+        mutation_node_cap: Option<u64>,
         projection_cap: Option<u64>,
         table_work_cap: Option<u64>,
         request_work_cap: Option<u64>,
+        request_byte_cap: Option<u64>,
+        assignment_byte_cap: Option<u64>,
+        candidate_byte_cap: Option<u64>,
+        spill_resident_bytes: Option<u64>,
         binding_cap: Option<u64>,
         row_cap: Option<u64>,
         rule_tests: Option<bool>,
@@ -128,10 +143,14 @@ impl PyDecodeSettings {
             relations: relations.unwrap_or(base.relations),
             columns: columns.unwrap_or(base.columns),
             labels: labels.unwrap_or(base.labels),
-            deadline_seconds: deadline_seconds.or(base.deadline_seconds),
+            mutation_node_cap: mutation_node_cap.unwrap_or(base.mutation_node_cap),
             projection_cap: projection_cap.unwrap_or(base.projection_cap),
             table_work_cap: table_work_cap.unwrap_or(base.table_work_cap),
             request_work_cap: request_work_cap.unwrap_or(base.request_work_cap),
+            request_byte_cap: request_byte_cap.unwrap_or(base.request_byte_cap),
+            assignment_byte_cap: assignment_byte_cap.unwrap_or(base.assignment_byte_cap),
+            candidate_byte_cap: candidate_byte_cap.unwrap_or(base.candidate_byte_cap),
+            spill_resident_bytes: spill_resident_bytes.unwrap_or(base.spill_resident_bytes),
             binding_cap: binding_cap.unwrap_or(base.binding_cap),
             row_cap: row_cap.unwrap_or(base.row_cap),
             rule_tests: rule_tests.unwrap_or(base.rule_tests),

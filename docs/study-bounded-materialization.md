@@ -19,7 +19,7 @@ not measurements of a rebuilt candidate.
 
 `join::Materializer` borrows the native task session and the current operation's
 `Limits`. It delegates to `Budget`, using the existing product, held-row,
-TableWork, SessionBytes, deadline and cancellation checks. Admission precedes
+TableWork, request and assignment byte budget and cancellation checks. Admission precedes
 vector reservation or product traversal. Flat input rows do not pay their
 binding work twice; new output buffers pay for newly held rows. Periodic
 zero-work budget checks interrupt traversals without inventing binding work.

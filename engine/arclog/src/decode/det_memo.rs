@@ -49,7 +49,7 @@
 //! session, and a value kept from another walk can hold its rows apart from
 //! a value that a computation would build on them, so a walk's session
 //! holds at least the bytes that a session of its own would hold. A walk
-//! that stops at the byte bound, or whose cache evicts, runs again in a
+//! whose cache evicts, runs again in a
 //! session of its own with no kept domain ([`super::det_admission`]).
 //!
 //! A walk that computes a domain that no kept domain stands for evaluates the

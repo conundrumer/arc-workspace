@@ -360,9 +360,6 @@ impl StudyProgram {
             "domain_primitive_values".into(),
             sites.iter().map(|v| v.len() as u64).sum(),
         );
-        // The wall-clock deadline of the search runs from here.
-        #[allow(clippy::disallowed_methods)]
-        let started = std::time::Instant::now();
         let mut domain = CompletionDomain {
             gold: self,
             point,
@@ -377,12 +374,12 @@ impl StudyProgram {
             requested: count,
             deletion_only: operation == "delete",
             expanded,
-            started,
+            nodes: 0,
             stopped: false,
         };
         domain.fair_visit(k, &mut rng)?;
         if domain.stopped {
-            domain.stats.count("domain_search_stopped:Deadline");
+            domain.stats.count("domain_search_stopped:NodeCap");
         } else if domain.output.len() < count {
             domain.stats.count("domain_exhausted");
         }
@@ -422,7 +419,8 @@ struct CompletionDomain<'a> {
     requested: usize,
     deletion_only: bool,
     expanded: bool,
-    started: std::time::Instant,
+    /// The search nodes visited, under `settings.mutation_node_cap`.
+    nodes: u64,
     stopped: bool,
 }
 
@@ -440,8 +438,6 @@ struct ChoiceFrame {
 }
 
 impl CompletionDomain<'_> {
-    // The search stops at the wall-clock deadline of its settings.
-    #[allow(clippy::disallowed_methods)]
     fn fair_visit(&mut self, k: usize, rng: &mut Rng) -> Result<(), String> {
         // V6 schedules one argument bucket: every distinct variable or zero
         // replacement gets one ticket within it. Giving all variables one
@@ -494,14 +490,11 @@ impl CompletionDomain<'_> {
             // bucket exhausted. Failures are search constraints, not draws.
             while let Some(mut cursor) = roots.pop_front() {
                 while self.output.len() == before && !cursor.frames.is_empty() {
-                    if self
-                        .settings
-                        .deadline
-                        .is_some_and(|d| self.started.elapsed() >= d)
-                    {
+                    if self.nodes >= self.settings.mutation_node_cap {
                         self.stopped = true;
                         return Ok(());
                     }
+                    self.nodes += 1;
                     self.stats.count("domain_search_nodes");
                     let frame = cursor.frames.last_mut().unwrap();
                     if frame.remaining == 0 {

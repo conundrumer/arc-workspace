@@ -604,7 +604,7 @@ impl<'e, 'p> Assembly<'e, 'p> {
         let mut rows = RowSet::empty((self.key_width() + 1 + part_types.len()) as u16);
         for (key, frame) in &solution.frames {
             let reading = &frame[part];
-            if let Err(bound) = budget.charge_rows((elements.len() * reading.len()) as u64) {
+            if let Err(bound) = budget.charge_rows_of((elements.len() * reading.len()) as u64, usize::from(rows.arity())) {
                 return Ok(Err(self.stopped(bound)));
             }
             for &element in elements {

@@ -37,7 +37,7 @@ pub use names::Names;
 pub use results::PyConsistencyKind;
 pub use settings::PyDecodeSettings;
 pub use study::PyStudyProgram;
-pub use errors::RecordedIdentityError;
+pub use errors::{budget_reached, BudgetReached, RecordedIdentityError};
 pub use mutation::{PyMutationPoint, PyMutationSpec, PyValidMutant};
 
 use arclog::eval::instance::Constructions;
@@ -75,6 +75,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.value("Refusal", module.py().get_type::<errors::Refusal>().into_any())?;
     names.value("RecordedIdentityError", module.py().get_type::<errors::RecordedIdentityError>().into_any())?;
     names.value("Fault", module.py().get_type::<errors::Fault>().into_any())?;
+    names.value("BudgetReached", module.py().get_type::<errors::BudgetReached>().into_any())?;
     names.function(wrap_pyfunction!(decoder::step_batch_py, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::engine_stats, module)?)?;
     names.function(wrap_pyfunction!(engine_stats::request_stats, module)?)?;

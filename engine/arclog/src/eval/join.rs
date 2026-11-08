@@ -45,11 +45,17 @@ const BATCH: u64 = 1024;
 /// the next batch's check can miss, and nearly every build is under it.
 pub const BUILD_CHECK_MIN: usize = 1 << 20;
 
-/// The stop at the session's byte bound that `reached` gives, counted as a hit
-/// of the request's gauge of the session's bytes.
-fn session_stop(limits: &Limits, reached: crate::session::ReachedSessionBound) -> ReachedBound {
-    limits.request.gauges().hit(Gauge::SessionBytes, reached.bytes as u64, reached.bound.bytes as u64);
-    ReachedBound::SessionBytes(reached)
+/// The bytes that the build of an index over `rows` rows in an order of
+/// `columns` columns holds: a cell for each column of each row, and a place
+/// for each row.
+pub fn index_bytes(rows: u64, columns: usize) -> u64 {
+    rows.saturating_mul(columns.saturating_mul(std::mem::size_of::<TermId>()).saturating_add(std::mem::size_of::<u32>()) as u64)
+}
+
+/// The bytes that a row of `width` columns takes in a set of rows that an
+/// evaluation holds: its cells, and its slot in the table that finds it.
+pub fn row_bytes(width: usize) -> u64 {
+    (width.saturating_mul(std::mem::size_of::<TermId>()) as u64).saturating_add(16)
 }
 
 /// The rows that the build of the index of `relation` in `order` walks, where
@@ -88,36 +94,26 @@ pub struct Budget<'a> {
     nested_rows: u64,
     /// The charges made since [`Budget::logged`] began a log.
     log: Option<Charges>,
-    /// The reservation that the rows of this evaluation will take, where it
-    /// feeds an export ([`Budget::with_row_floor`]).
-    floor: Option<RowFloor>,
-}
-
-/// What [`Budget::charge_rows`] checks as rows accrue: the reservation of
-/// at least `bytes_per_row` for each of `multiplier` copies of the rows, which
-/// the next check of rows follows at `next` rows.
-#[derive(Clone, Copy, Debug)]
-struct RowFloor {
-    bytes_per_row: usize,
-    multiplier: u64,
-    next: u64,
+    /// The rows charged since the last check of the session's bytes in
+    /// [`Budget::charge_rows`].
+    unchecked: u64,
+    /// The bytes of the rows that [`Budget::charge_rows_of`] counted and no
+    /// charge of bytes has taken yet: [`Budget::charge_work`] takes them once
+    /// per batch.
+    pending_bytes: u64,
+    /// The bytes that this budget holds in the request: those it charged and
+    /// has not credited.
+    held: u64,
+    /// The most that `held` and the bytes held for a moment reached, since a
+    /// log began ([`Budget::logged`]).
+    high: u64,
 }
 
 impl<'a> Budget<'a> {
     /// A budget with no work and no rows counted, under `limits` and the
     /// caps of `session`.
     pub fn new(limits: &'a Limits, session: &'a TaskSession) -> Self {
-        Budget { limits, session, bindings: 0, rows: 0, nested_rows: 0, log: None, floor: None }
-    }
-
-    /// This budget for an evaluation whose rows feed an export that reserves
-    /// `bytes_per_row` at the least for each row of the relation, where the
-    /// relation's rows are those of this evaluation, `multiplier` times: the
-    /// product of the other parts' rows, each of which holds a row. The
-    /// evaluation then stops as [`Budget::charge_rows`] gives.
-    pub fn with_row_floor(mut self, bytes_per_row: usize, multiplier: u64) -> Self {
-        self.floor = Some(RowFloor { bytes_per_row, multiplier, next: 1 });
-        self
+        Budget { limits, session, bindings: 0, rows: 0, nested_rows: 0, log: None, unchecked: 0, pending_bytes: 0, held: 0, high: 0 }
     }
 
     /// The caps of the session.
@@ -126,20 +122,22 @@ impl<'a> Budget<'a> {
     }
 
     /// Counts a batch of `bindings` tried, and checks the caps, the request's
-    /// work cap, the session's byte bound and the cancellation.
+    /// work cap and the cancellation, and has the session evict its caches
+    /// where it is past its byte bound.
     ///
     /// The bindings add to the request's work ([`Limits::request`]) as well
     /// as to this evaluation's count and to the observation's, so the stop
     /// at the request's cap stands at the batch that passes it.
     ///
-    /// The byte bound is checked here as [`TaskSession::within_bound`] gives,
-    /// once per call. A caller charges once per [`BATCH`] bindings, and a
-    /// walk of rows once per [`BATCH`] rows, so a check follows at most a
+    /// The bytes of the rows counted since the last batch are charged here
+    /// ([`Budget::flush_bytes`]). The session's byte bound is checked here as
+    /// [`TaskSession::relieve`] gives, once per call, and the session evicts
+    /// where it is past: that stops nothing and changes no result. A
+    /// caller charges once per [`BATCH`] bindings, and a walk of rows once per
+    /// [`BATCH`] rows, so a check follows at most a
     /// batch of work, and its cost, a few loads and two short locks, stands
-    /// against that work. The bytes that one batch can add are far under the
-    /// bound, so while the session is far from it no stop comes from here.
-    /// A build that adds bytes in one piece, an index, is checked before it
-    /// starts: [`Budget::charge_index_build`].
+    /// against that work. A build that adds bytes in one piece, an index, is
+    /// checked before it starts: [`Budget::charge_index_build`].
     pub fn charge_work(&mut self, bindings: u64) -> Result<(), ReachedBound> {
         if let Some(log) = &mut self.log {
             log.bindings = log.bindings.saturating_add(bindings);
@@ -158,7 +156,8 @@ impl<'a> Budget<'a> {
         gauges.note(Gauge::Bindings, self.bindings, caps.bindings);
         gauges.note(Gauge::Rows, self.rows, caps.rows);
         self.limits.request.charge(bindings)?;
-        let bytes = self.session.within_bound(&self.limits.heap_starts, self.limits.byte_bound).map_err(|reached| session_stop(self.limits, reached))?;
+        self.flush_bytes()?;
+        let bytes = self.session.relieve(&self.limits.heap_starts, self.limits.byte_bound, 0);
         gauges.note(Gauge::SessionBytes, bytes as u64, self.limits.byte_bound.unwrap_or(self.session.bound).bytes as u64);
         if self.limits.cancellation.is_cancelled() {
             return Err(ReachedBound::Cancelled);
@@ -169,6 +168,66 @@ impl<'a> Budget<'a> {
             Some(work) => work.charge(bindings),
             None => Ok(()),
         }
+    }
+
+    /// Charges `bytes` that an evaluation allocates and holds: to the cost of
+    /// the measurement open, which a hit on its entry charges again, to the
+    /// request's byte budget ([`RequestWork::charge_bytes`]) and to the byte
+    /// budget of the assignment, where the evaluation is one assignment's own
+    /// ([`TableWork::charge_bytes`]). The evaluation holds the bytes until it
+    /// credits them ([`Budget::credit_bytes`]) or the measurement around it
+    /// ends. The bytes held depend on the sites that charge and credit alone,
+    /// and not on what the session held.
+    pub fn charge_bytes(&mut self, bytes: u64) -> Result<(), ReachedBound> {
+        self.held = self.held.saturating_add(bytes);
+        self.high = self.high.max(self.held);
+        let request = &self.limits.request;
+        let charged = request.charge_bytes(bytes).and_then(|()| match &self.limits.table_work {
+            Some(work) => work.charge_bytes(bytes).inspect_err(|_| request.credit_bytes(bytes)),
+            None => Ok(()),
+        });
+        if charged.is_err() {
+            self.held = self.held.saturating_sub(bytes);
+        }
+        charged
+    }
+
+    /// Charges `bytes` that an evaluation holds for a moment: the check of
+    /// [`Budget::charge_bytes`], with the bytes freed again.
+    pub fn charge_bytes_transient(&mut self, bytes: u64) -> Result<(), ReachedBound> {
+        self.high = self.high.max(self.held.saturating_add(bytes));
+        self.limits.request.charge_bytes_transient(bytes)?;
+        match &self.limits.table_work {
+            Some(work) => work.charge_bytes_transient(bytes),
+            None => Ok(()),
+        }
+    }
+
+    /// Frees `bytes` that [`Budget::charge_bytes`] held.
+    pub fn credit_bytes(&mut self, bytes: u64) {
+        self.held = self.held.saturating_sub(bytes);
+        self.limits.request.credit_bytes(bytes);
+        if let Some(work) = &self.limits.table_work {
+            work.credit_bytes(bytes);
+        }
+    }
+
+    /// Charges the bytes of the rows that [`Budget::charge_rows_of`] counted
+    /// since the last charge. The rows are held by the evaluation that found
+    /// them, and by the value that it gives.
+    fn flush_bytes(&mut self) -> Result<(), ReachedBound> {
+        match std::mem::take(&mut self.pending_bytes) {
+            0 => Ok(()),
+            bytes => self.charge_bytes(bytes),
+        }
+    }
+
+    /// Counts `rows` more rows held, of `width` columns each, as
+    /// [`Budget::charge_rows`] does, and counts their bytes for the next
+    /// batch's charge ([`Budget::charge_work`]).
+    pub fn charge_rows_of(&mut self, rows: u64, width: usize) -> Result<(), ReachedBound> {
+        self.pending_bytes = self.pending_bytes.saturating_add(rows.saturating_mul(row_bytes(width)));
+        self.charge_rows(rows)
     }
 
     /// Counts `units` of work in the request alone: the rows that a walk, a
@@ -194,37 +253,42 @@ impl<'a> Budget<'a> {
         }
     }
 
-    /// Stops where the index of `relation` in `order`, which this call finds
-    /// not yet built, would take the session past its byte bound. `work` is
-    /// what [`Relation::index_work`] gives for `order`.
+    /// Charges the index of `relation` in `order`, which this call finds not
+    /// yet built, and has the session evict its caches where the build would
+    /// take it past its byte bound. `work` is what [`Relation::index_work`]
+    /// gives for `order`.
     ///
     /// A build walks the rows of the parts of `relation` that hold a column
     /// of `order`, as many as `work` counts where it reads several parts, and
     /// holds, until it ends, a cell for each column of
-    /// `order` for each row, and a place for each row. No check stands inside
-    /// the build, so the check stands before it, and the stop gives the bytes
-    /// that the session would hold at the build's peak at the least.
+    /// `order` for each row, and a place for each row. The request and the
+    /// assignment hold those bytes while the build runs
+    /// ([`Budget::charge_bytes_transient`]), at each use, whether or not the
+    /// relation held the index, so the bytes held do not depend on what an
+    /// earlier use built.
     ///
     /// The call costs a sum of a few terms where the build is under
     /// [`BUILD_CHECK_MIN`] bytes, which are most builds. A larger build takes
-    /// the check of [`TaskSession::within_room`] and a read of the relation's
+    /// the check of [`TaskSession::relieve`] and a read of the relation's
     /// count of indexes, against the build's work of at least
     /// [`BUILD_CHECK_MIN`] bytes of writes. The call checks only while the
     /// relation holds no index, since a caller cannot read which orders it
     /// holds an index for.
     pub fn charge_index_build(&mut self, relation: &Relation, order: &ColumnOrder, work: u64) -> Result<(), ReachedBound> {
-        let bytes = index_rows(relation, order, work).saturating_mul(order.0.len().saturating_mul(std::mem::size_of::<TermId>()).saturating_add(std::mem::size_of::<u32>()) as u64);
+        let bytes = index_bytes(index_rows(relation, order, work), order.0.len());
+        self.charge_bytes_transient(bytes)?;
         let bytes = usize::try_from(bytes).unwrap_or(usize::MAX);
-        if bytes < BUILD_CHECK_MIN || relation.index_bytes().0 != 0 {
-            return Ok(());
+        if bytes >= BUILD_CHECK_MIN && relation.index_bytes().0 == 0 {
+            self.session.relieve(&self.limits.heap_starts, self.limits.byte_bound, bytes);
         }
-        self.session.within_room(&self.limits.heap_starts, self.limits.byte_bound, bytes).map(|_| ()).map_err(|reached| session_stop(self.limits, reached))
+        Ok(())
     }
 
-    /// Admits a new full-row buffer before it reserves memory. The compact
-    /// parts of a relation have not paid for their Cartesian product; flat
-    /// rows pay no binding work again. Output rows and their conservative
-    /// byte size count as new held data, under the existing session bound.
+    /// Admits a new full-row buffer. The compact parts of a relation have not
+    /// paid for their Cartesian product; flat rows pay no binding work again.
+    /// Output rows and their conservative byte size count as new held data:
+    /// the request and the assignment hold the bytes until the returned
+    /// allocation drops.
     pub fn materialize(&mut self, relation: &Relation, bytes_per_row: usize) -> Result<crate::session::SessionAllocation, ReachedBound> {
         self.charge_work(0)?;
         self.charge_product(relation)?;
@@ -234,7 +298,15 @@ impl<'a> Budget<'a> {
         }
         self.charge_rows(relation.len())?;
         let bytes = usize::try_from(relation.len()).unwrap_or(usize::MAX).saturating_mul(bytes_per_row);
-        self.session.reserve(bytes.saturating_add(128), self.limits.byte_bound).map_err(|reached| session_stop(self.limits, reached))
+        self.own(bytes.saturating_add(128))
+    }
+
+    /// An allocation of `bytes` of the session, which the request and the
+    /// assignment hold until it drops. The session reserves the bytes whether
+    /// or not it has room: it evicts its caches where it is past its bound.
+    fn own(&mut self, bytes: usize) -> Result<crate::session::SessionAllocation, ReachedBound> {
+        let owner = self.limits.hold_bytes_owned(u64::try_from(bytes).unwrap_or(u64::MAX))?;
+        Ok(self.session.reserve(bytes, &self.limits.heap_starts, self.limits.byte_bound).owned_by(owner))
     }
 
     /// Walks admitted rows, checking the request's work, the cancellation and
@@ -259,19 +331,9 @@ impl<'a> Budget<'a> {
         self.charge_request(count - charged)
     }
 
-    /// Counts `rows` more rows held, and checks the row cap.
-    ///
-    /// Where the budget has a row floor ([`Budget::with_row_floor`]), it also
-    /// checks, at the first row and then once per [`BATCH`] rows, that
-    /// [`TaskSession::reserve`] of the floor's bytes for the rows held so far
-    /// would pass. The export of the relation reserves at least that for its
-    /// rows, and the rows only grow, so the evaluation that gets a stop here
-    /// would give a relation whose export stops at the same bound. The stop
-    /// gives the bytes that the reservation would bring the ledger to, and
-    /// comes before the rest of the rows are found. The check costs the loads
-    /// and two short locks of [`TaskSession::would_reserve`] once per [`BATCH`]
-    /// rows, each of which took at least one binding; a budget with no floor
-    /// pays one comparison.
+    /// Counts `rows` more rows held, and checks the row cap. Once per
+    /// [`BATCH`] rows it has the session evict its caches where it is past its
+    /// byte bound ([`TaskSession::relieve`]).
     pub fn charge_rows(&mut self, rows: u64) -> Result<(), ReachedBound> {
         self.rows += rows;
         let cap = self.session.caps.rows;
@@ -279,12 +341,11 @@ impl<'a> Budget<'a> {
             self.limits.request.gauges().hit(Gauge::Rows, self.rows, cap);
             return Err(ReachedBound::Rows { cap });
         }
-        if let Some(floor) = self.floor
-            && self.rows >= floor.next
-        {
-            self.floor = Some(RowFloor { next: self.rows.saturating_add(BATCH), ..floor });
-            let held = usize::try_from(self.rows.saturating_mul(floor.multiplier)).unwrap_or(usize::MAX);
-            self.session.would_reserve(held.saturating_mul(floor.bytes_per_row), self.limits.byte_bound).map_err(|reached| session_stop(self.limits, reached))?;
+        // Rows accrue one at a time between the checks of a batch of bindings, so the bytes are checked here too.
+        self.unchecked = self.unchecked.saturating_add(rows);
+        if self.unchecked >= BATCH {
+            self.unchecked = 0;
+            self.session.relieve(&self.limits.heap_starts, self.limits.byte_bound, 0);
         }
         Ok(())
     }
@@ -298,10 +359,7 @@ impl<'a> Budget<'a> {
     /// evaluation around it.
     pub fn nested<T>(&mut self, evaluate: impl FnOnce(&mut Self) -> Result<T, ReachedBound>) -> Result<T, ReachedBound> {
         let outer = std::mem::take(&mut self.rows);
-        // The rows of a nested evaluation are no rows of the export.
-        let floor = self.floor.take();
         let result = evaluate(self);
-        self.floor = floor;
         let held = std::mem::replace(&mut self.rows, outer);
         if result.is_ok() {
             self.nested_rows = self.nested_rows.max(held);
@@ -310,13 +368,29 @@ impl<'a> Budget<'a> {
     }
 
     /// Runs `evaluate` as a nested evaluation ([`Budget::nested`]) and gives
-    /// its result with the bindings it charged, so that [`Budget::replay`]
-    /// charges them again. The bindings also stand in the log of an enclosing
-    /// call.
+    /// its result with the work it charged and the most bytes it held, so
+    /// that [`Budget::replay`] charges them again. The bindings also stand in
+    /// the log of an enclosing call. The nested evaluation holds its bytes
+    /// while it runs: those it still holds at its end are freed, and a replay
+    /// holds the most it held for a moment.
     fn logged<T>(&mut self, evaluate: impl FnOnce(&mut Self) -> Result<T, ReachedBound>) -> Result<(T, Charges), ReachedBound> {
+        // The bytes of rows counted before belong to the charges around, and those counted inside to the log.
+        self.flush_bytes()?;
         let outer = self.log.replace(Charges::default());
+        let base = self.held;
+        let outer_high = std::mem::replace(&mut self.high, base);
         let result = self.nested(evaluate);
-        let inner = std::mem::replace(&mut self.log, outer).expect("the log this call began");
+        let result = match result {
+            Ok(value) => self.flush_bytes().map(|()| value),
+            Err(bound) => Err(bound),
+        };
+        let peak = self.high.saturating_sub(base);
+        self.high = self.high.max(outer_high);
+        if result.is_ok() {
+            self.credit_bytes(self.held.saturating_sub(base));
+        }
+        let mut inner = std::mem::replace(&mut self.log, outer).expect("the log this call began");
+        inner.bytes = peak;
         if let Some(outer) = &mut self.log {
             *outer = outer.saturating_add(inner);
         }
@@ -352,7 +426,8 @@ impl<'a> Budget<'a> {
     /// where it stops at a cap, are those of the search with no memo.
     fn replay(&mut self, charges: Charges) -> Result<(), ReachedBound> {
         self.charge_work(charges.bindings)?;
-        self.charge_request(charges.request)
+        self.charge_request(charges.request)?;
+        self.charge_bytes_transient(charges.bytes)
     }
 
     /// Whether [`Budget::replay`] of `charges` stays within the caps that its
@@ -363,7 +438,8 @@ impl<'a> Budget<'a> {
         let request = &self.limits.request;
         self.bindings.saturating_add(charges.bindings) <= self.session.caps.bindings
             && request.count().saturating_add(charges.bindings).saturating_add(charges.request) <= request.cap()
-            && self.limits.table_work.as_ref().is_none_or(|work| work.fits(charges.bindings))
+            && request.fits_bytes(charges.bytes)
+            && self.limits.table_work.as_ref().is_none_or(|work| work.fits(charges.bindings) && work.fits_bytes(charges.bytes))
     }
 
     /// Records the budget's counts in its session, as
@@ -379,6 +455,8 @@ impl Drop for Budget<'_> {
     /// that a batch had not yet shown, and the most that a nested evaluation
     /// held.
     fn drop(&mut self) {
+        // The bytes of the rows not yet charged belong to this evaluation; a stop at a budget shows at the next charge.
+        let _ = self.flush_bytes();
         let gauges = self.limits.request.gauges();
         let caps = self.session.caps;
         gauges.note(Gauge::Bindings, self.bindings, caps.bindings);
@@ -412,6 +490,11 @@ impl<'a> Materializer<'a> {
         self.session
     }
 
+    /// The limits this operation runs under.
+    pub fn limits(&self) -> &'a Limits {
+        self.limits
+    }
+
     /// Conservative per-row owned storage, including hash/vector headers and
     /// allocator slack. Callers supply their actual scalar payload layout.
     /// The row's slot (a boxed slice or vector header, or a hash bucket at
@@ -421,7 +504,8 @@ impl<'a> Materializer<'a> {
         payload.saturating_add(32).saturating_add(allocations.saturating_mul(32))
     }
 
-    /// Admits all rows and returns the owner of their retained bytes.
+    /// Admits all rows and returns the owner of their retained bytes. The
+    /// request and the assignment hold those bytes until the owner drops.
     pub fn admit(&self,rows:&Relation,bytes_per_row:usize)->Result<Arc<crate::session::SessionAllocation>,ReachedBound> {
         Budget::new(self.limits,self.session).materialize(rows,bytes_per_row).map(Arc::new)
     }
@@ -434,13 +518,14 @@ impl<'a> Materializer<'a> {
         budget.charge_work(0)?;
         budget.charge_request(rows)?;
         budget.charge_rows(rows)?;
-        self.session.reserve(bytes.saturating_add(128), self.limits.byte_bound).map(Arc::new).map_err(|reached| session_stop(self.limits, reached))
+        budget.own(bytes.saturating_add(128)).map(Arc::new)
     }
 
     /// Admits a genuine copy of an existing buffer before cloning it.
     pub fn copy(&self,bytes:usize)->Result<Arc<crate::session::SessionAllocation>,ReachedBound> {
-        self.check()?;
-        self.session.reserve(bytes, self.limits.byte_bound).map(Arc::new).map_err(|reached| session_stop(self.limits, reached))
+        let mut budget=Budget::new(self.limits,self.session);
+        budget.charge_work(0)?;
+        budget.own(bytes).map(Arc::new)
     }
 
     /// A zero-work check under this operation's existing request work and caps.
@@ -456,8 +541,16 @@ impl<'a> Materializer<'a> {
 /// `evaluation`, in a budget of its own under the evaluation's limits, as
 /// [`Budget::charge_product`] gives, and gives the stop where the count
 /// passes a bound.
+///
+/// The walk also holds the bytes of the rows it makes, as [`row_bytes`] gives
+/// them, while it runs: a caller of this function holds the rows of the product
+/// it walks.
 pub fn charge_walk(evaluation: &Evaluation<'_>, relation: &Relation, form: &NodePath) -> Result<(), Stop> {
-    Budget::new(evaluation.limits, evaluation.session).charge_product(relation).map_err(|bound| Stop { bound, form: form.clone() })
+    let mut budget = Budget::new(evaluation.limits, evaluation.session);
+    budget
+        .charge_product(relation)
+        .and_then(|()| budget.charge_bytes_transient(relation.len().saturating_mul(row_bytes(usize::from(relation.arity())))))
+        .map_err(|bound| Stop { bound, form: form.clone() })
 }
 
 /// The bindings one search has tried and not yet charged to its budget.
@@ -842,7 +935,7 @@ fn union_rows(
         };
         for row in found.rows() {
             if rows.insert_slice(row) {
-                if let Err(bound) = budget.charge_rows(1) {
+                if let Err(bound) = budget.charge_rows_of(1, projected.len()) {
                     return Some(Err(bound));
                 }
             }
@@ -1142,6 +1235,10 @@ impl Plan {
             // The rows count at each use, whether or not the relation held the index, so the count does not depend on what an earlier use built.
             if work == 0 {
                 budget.charge_request(index.walked())?;
+                // The bytes of a build that reads the part by its distinct projections are known when it ends.
+                if index_rows(relation, &order, work) == 0 {
+                    budget.charge_bytes(index_bytes(index.walked(), order.0.len()))?;
+                }
             }
             Ok(AtomTrie { index, levels: columns.into_iter().map(|(_, a)| a).collect(), empty: relation.is_empty() })
         };
@@ -1221,17 +1318,21 @@ struct ClausePlan {
 /// new entry. A provisional bound, which changes no output.
 const MEMO_BYTES: usize = 256 << 20;
 
-/// What an evaluation charged: the bindings it charged to its budget, and the
-/// units it charged to the request alone ([`Budget::charge_request`]).
+/// What an evaluation charged: the bindings it charged to its budget, the
+/// units it charged to the request alone ([`Budget::charge_request`]), and the
+/// most bytes it held.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 struct Charges {
     bindings: u64,
     request: u64,
+    /// The most bytes it held at a time, from where it began
+    /// ([`Budget::charge_bytes`]).
+    bytes: u64,
 }
 
 impl Charges {
     fn saturating_add(self, other: Charges) -> Charges {
-        Charges { bindings: self.bindings.saturating_add(other.bindings), request: self.request.saturating_add(other.request) }
+        Charges { bindings: self.bindings.saturating_add(other.bindings), request: self.request.saturating_add(other.request), bytes: self.bytes.max(other.bytes) }
     }
 }
 
@@ -1458,7 +1559,7 @@ impl<'c> Search<'c> {
                 self.flat.clear();
             }
             if rows.insert_slice(&self.row) {
-                budget.charge_rows(1)?;
+                budget.charge_rows_of(1, projected.len())?;
             }
             return Ok(true);
         };

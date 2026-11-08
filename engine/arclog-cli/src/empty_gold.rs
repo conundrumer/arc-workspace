@@ -1,6 +1,6 @@
 //! `empty-gold <corpus-dir> <tasks-dir> <task_id> ...`: prints, for each
 //! task, one line of the JSON that `arclog::study::empty_gold::empty_gold`
-//! gives, with no deadline, as the gold publisher's native call does.
+//! gives, under the default request work cap, as the gold publisher's native call does.
 
 use std::path::Path;
 use std::process::ExitCode;

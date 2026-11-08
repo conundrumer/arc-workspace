@@ -77,7 +77,7 @@ impl Decoder<'_> {
         match self.walked(program, &dets, &picks, root).1 {
             // These budgets bound the walk's time. Reaching one establishes
             // no property of the program.
-            Err(DetRefusal::Bound(ReachedBound::TableWork { .. } | ReachedBound::RequestWork { .. })) => Ok(()),
+            Err(DetRefusal::Bound(ReachedBound::TableWork { .. } | ReachedBound::RequestWork { .. } | ReachedBound::RequestBytes { .. })) => Ok(()),
             verdict => verdict,
         }
     }
@@ -162,14 +162,14 @@ impl Decoder<'_> {
         // Keep this probe independent of prior cache contents, byte reservations,
         // cancellation, held stops and elapsed time. Its values never escape.
         // The probes of the task session share an intern table and the domains
-        // they computed (`det_memo`). A probe whose session evicted or reached
-        // the byte bound runs again in a session of its own.
+        // they computed (`det_memo`). A probe whose session evicted runs again
+        // in a session of its own.
         let scope = self.det_scope();
         let memo = self.session.det_probes().get_or_init(|| ProbeMemo::new(scope, self.session));
         if let Some(probe) = memo.probe(scope, self.session) {
             let domains = probe.domains(program, dets);
             let walked = self.live(program, dets, picks, root, &probe.session, Some(&domains), Some(probe.carry()));
-            if !probe.session.results.evicted() && !matches!(walked.1, Err(DetRefusal::Bound(ReachedBound::SessionBytes(_)))) {
+            if !probe.session.results.evicted() {
                 return walked;
             }
         }
@@ -229,7 +229,7 @@ impl Decoder<'_> {
             Err(End::Stop(found)) if matches!(found.bound, ReachedBound::Assignments { .. }) => Err(DetRefusal::Bound(found.bound)),
             _ if live => Ok(()),
             Ok(()) if stop.is_some() => Err(DetRefusal::Bound(stop.expect("a recorded stop").bound)),
-            Err(End::Stop(found)) => Err(DetRefusal::Bound(if matches!(found.bound, ReachedBound::TableWork {..} | ReachedBound::RequestWork {..}) {found.bound} else {stop.as_ref().map_or(found.bound, |stop|stop.bound)})),
+            Err(End::Stop(found)) => Err(DetRefusal::Bound(if matches!(found.bound, ReachedBound::TableWork {..} | ReachedBound::RequestWork {..} | ReachedBound::RequestBytes {..}) {found.bound} else {stop.as_ref().map_or(found.bound, |stop|stop.bound)})),
             Ok(()) => Err(DetRefusal::NoLiveAssignment),
         };
         (leaves, verdict)

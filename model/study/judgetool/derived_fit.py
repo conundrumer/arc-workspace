@@ -63,7 +63,7 @@ def _code():
 
 
 def _operation(ev, operations, name, path, invoke):
-    item=dict(operation=name,deadline_seconds=ev.deadline,table_work_cap=ev.work_cap,
+    item=dict(operation=name,table_work_cap=ev.work_cap,
               session_bytes=ev.receipt['session_bytes'],native_calls=1,artifact=str(path))
     operations.append(item);start=time.monotonic()
     try:

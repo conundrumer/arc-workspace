@@ -186,7 +186,7 @@ def main():
         try:
             if task != current_task:
                 evaluator = None
-                native_settings = arclog.DecodeSettings(deadline_seconds=args.deadline, rule_tests=False)
+                native_settings = arclog.DecodeSettings(rule_tests=False)
                 evaluator = arclog.StudyTaskEvaluator(task,str(args.tasks),native_settings,session_bytes=128<<20,compact=True)
                 current_task = task
             gold = evaluator.from_stream(source['stream']['ids'],source['stream']['model'])

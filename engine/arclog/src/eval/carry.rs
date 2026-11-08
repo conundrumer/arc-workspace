@@ -81,7 +81,7 @@
 //! share a key: its lookups are the reads of the walk's cache that the
 //! replay checks, and the counts of the walk's cache, such as its bytes, do
 //! not change a computation that ends with no stop. A walk whose cache
-//! evicts, or that reaches the session's byte bound, runs again in a
+//! evicts runs again in a
 //! session of its own with no kept computation
 //! ([`crate::decode::det_admission`]).
 //!
@@ -144,7 +144,7 @@ impl Carry {
             let crossing = carried.crossing;
             let table = crossing.is_none().then_some(work);
             let admit = || crossing.is_none_or(|crossing| crossing.at(work)) && cache::replay_recorded(session, &carried.events);
-            let charged = Hit::new(&carried.value, carried.cost).charge_if(request, table, session, admit);
+            let charged = Hit::new(&carried.value, carried.cost).charge_if_in(request, table, Some(work), session, admit);
             if matches!(charged, Charged::Misfit) {
                 continue;
             }
@@ -155,7 +155,7 @@ impl Carry {
                 self.store.promote(key, &carried);
             }
             let value = match charged {
-                Charged::Value(value) => given(value.clone(), form),
+                Charged::Value(value) => given_in(value.clone(), form, work),
                 Charged::Stopped(_, bound) => RelationValue::Stopped(Stop { bound, form: form.clone() }),
                 Charged::Misfit => unreachable!("a misfit continues the loop"),
             };
@@ -173,7 +173,7 @@ impl Carry {
         let Some(work) = limits.table_work.as_ref() else { return compute() };
         let capture = session.results.begin_capture();
         let before = work.count();
-        let (found, cost) = limits.request.measure(compute);
+        let (found, cost) = limits.request.measure_holding(compute, |found| found.as_ref().map_or(0, cache::held_by));
         let (events, _) = session.results.end_capture(capture);
         let Ok(value) = &found else { return found };
         let kept = match value {
@@ -200,6 +200,18 @@ impl Carry {
 /// stands at `form`.
 fn given(value: CachedValue, form: &NodePath) -> RelationValue {
     value.map_stop(|bound| Stop { bound, form: form.clone() })
+}
+
+/// [`given`], for an entry made under the count `work`: a stop at the table
+/// work cap rejects one assignment alone only where `work` is one assignment's own.
+fn given_in(value: CachedValue, form: &NodePath, work: &TableWork) -> RelationValue {
+    value.map_stop(|bound| {
+        let bound = match bound {
+            ReachedBound::TableWork { cap, .. } => ReachedBound::TableWork { cap, assignment: work.is_scoped() },
+            other => other,
+        };
+        Stop { bound, form: form.clone() }
+    })
 }
 
 /// The table work, from the start of a computation, at the two sides of the

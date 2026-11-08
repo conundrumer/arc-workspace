@@ -422,7 +422,7 @@ def publish(args):
     native = getattr(arclog, 'empty_gold_json', None)
     if native is None:
         raise SystemExit('native exhaustive empty-gold operation not installed; '
-                         'requires empty_gold_json(corpus, tasks, task, deadline_seconds=None). No kept-table fallback.')
+                         'requires empty_gold_json(corpus, tasks, task, request_work_cap=None). No kept-table fallback.')
     from types import SimpleNamespace
     sys.path.insert(0, str(CODE_ROOT / 'ast/run'))
     from provenance import load_build
@@ -447,7 +447,8 @@ def publish(args):
                 prior[row['task']] = row
         for task in chosen:
             request = dict(schema='arclog-empty-gold-request-v1', policy=POLICY, task=task,
-                           deadline_seconds=args.deadline_seconds,
+                           deadline_seconds=None,
+                           **({} if args.request_work_cap is None else dict(request_work_cap=args.request_work_cap)),
                            source=source_ref(corpus, tasks, task), runtime=runtime)
             # Checkout location is provenance, not a result dependency. Identical
             # code in a newly pinned worktree must reuse committed tasks.
@@ -460,7 +461,7 @@ def publish(args):
                 continue
             try:
                 result = validate_report(json.loads(native(
-                    str(corpus), str(tasks), task, deadline_seconds=args.deadline_seconds)), request)
+                    str(corpus), str(tasks), task, request_work_cap=args.request_work_cap)), request)
             except Exception as error:
                 # A transport/native failure keeps the entire original task;
                 # no incomplete candidate can enter a downstream consumer.
@@ -510,8 +511,8 @@ def main():
     run.add_argument('--output', type=Path, required=True)
     run.add_argument('--lint-output', type=Path, help='Framed finding journal; defaults beside gold output')
     run.add_argument('--task', action='append')
-    run.add_argument('--deadline-seconds', type=float, default=None,
-                     help='Per-native-evaluation deadline; default is no deadline')
+    run.add_argument('--request-work-cap', type=int, default=None,
+                     help='Request work cap of each native evaluation request; default is the settings default')
     run.add_argument('--check-set', type=Path, action='append')
     run.add_argument('--audit-output', type=Path)
     check = commands.add_parser('audit')
@@ -531,8 +532,8 @@ def main():
     if args.command == 'audit':
         audit_check_set(args.publication, args.check_set, args.output)
     else:
-        if args.deadline_seconds is not None and args.deadline_seconds <= 0:
-            parser.error('--deadline-seconds must be positive')
+        if args.request_work_cap is not None and args.request_work_cap <= 0:
+            parser.error('--request-work-cap must be positive')
         if args.output.suffix != '.zst': parser.error('output must be .jsonl.zst')
         if args.check_set and args.audit_output is None: parser.error('--check-set requires --audit-output')
         if args.lint_output is None:

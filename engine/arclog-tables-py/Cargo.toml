@@ -17,4 +17,5 @@ arclog-tables = { path = "../arclog-tables" }
 arclog-features = { path = "../arclog-features" }
 # The shape values of a table, which `TableShapes` gives.
 arclog-encoder = { path = "../arclog-encoder" }
+zstd = "0.13"
 pyo3 = { version = "0.27.2", features = ["abi3-py312"] }

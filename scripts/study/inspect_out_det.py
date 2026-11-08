@@ -116,7 +116,7 @@ def inspect(record, base, args, context):
                   term_decode='pass')
     if hasattr(arclog.StudyProgram, 'choice_evidence_json'):
         context['phase'] = 'program_reconstruction'
-        settings = arclog.DecodeSettings(deadline_seconds=args.native_seconds, rule_tests=False)
+        settings = arclog.DecodeSettings(rule_tests=False)
         key = r['programs']['gold']
         if key not in context['gold']:
             context['gold'][key] = arclog.StudyProgram.from_sexp(key, settings).decode_source()
@@ -264,7 +264,6 @@ def main():
     p.add_argument('--limit', type=int, default=2, help='maximum records per task')
     p.add_argument('--workers', type=int, default=4)
     p.add_argument('--seconds', type=float, default=10, help='per-record wall bound')
-    p.add_argument('--native-seconds', type=float, default=1)
     p.add_argument('--continuation', action='store_true')
     p.add_argument('--components', action='store_true')
     p.add_argument('--output', type=Path)
@@ -301,8 +300,7 @@ def main():
     def task(job):
         command = [sys.executable, '-B', str(Path(__file__).resolve()), '--worker',
                    '--corpus', str(args.corpus), '--native-storage', str(args.native_storage.resolve()),
-                   '--tasks', str(args.tasks.resolve()), '--seconds', str(args.seconds),
-                   '--native-seconds', str(args.native_seconds)]
+                   '--tasks', str(args.tasks.resolve()), '--seconds', str(args.seconds)]
         if args.body_kind: command.extend(['--body-kind', args.body_kind])
         if args.continuation: command.append('--continuation')
         if args.components: command.append('--components')

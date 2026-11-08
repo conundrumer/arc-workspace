@@ -37,20 +37,20 @@ pub mod form_memo;
 /// alert allowance. Callers can explicitly choose another session bound.
 pub const STUDY_SESSION_BYTES:usize=512*1024*1024;
 
-/// The bindings that the rows of one table of [`gold_tables_cached_in`] may
-/// count. The count depends on the program alone, so this cap stops a table at
-/// one place at any machine load.
+/// The bindings that the rows of one assignment of one table of
+/// [`gold_tables_cached_in`] may count. The count depends on the program alone,
+/// so this cap stops an assignment at one place at any machine load, and the
+/// stop rejects that assignment alone.
 pub const TABLE_ROW_WORK:u64=1<<28;
 
-/// The bytes at which [`table_limits`] stops an evaluation. No table of a
-/// program is meant to reach it: it guards the machine, and a caller takes a
-/// stop at it as a failure of the program ([`stopped_at_bytes`]), since the
-/// heap count it reads depends on the session's history.
+/// The bytes of the session at which [`table_limits`] has the session evict its
+/// caches. It stops no evaluation and cuts no table: the heap count it reads
+/// depends on the session's history, so no result may depend on it.
 pub const TABLE_BYTES:usize=4<<30;
 
 /// The limits of [`gold_tables_cached_in`]: a request that begins now, under the
-/// request work cap of `settings`, with no clock, whatever deadline the
-/// settings hold, so that the rows of a table do not depend on machine load.
+/// request work cap of `settings`, with no clock, so that the rows of a table
+/// do not depend on machine load.
 /// The request's work sums the queries, the walks and the packing of the
 /// call, so the call stops at the cap where the work of its tables passes it,
 /// on whatever table that is.
@@ -82,11 +82,6 @@ fn stopped_where(tables:&[(usize,Table)],at:impl Fn(arclog::eval::ReachedBound)-
         }
     }
     None
-}
-
-/// A stop at the byte bound in `tables`, in rows, projections or extents.
-pub fn stopped_at_bytes(tables:&[(usize,Table)])->Option<arclog::eval::Stop> {
-    stopped_where(tables,|bound|matches!(bound,arclog::eval::ReachedBound::SessionBytes(_)))
 }
 
 /// The text of each top-level form of `text`, a program's S-expression.
@@ -485,7 +480,36 @@ fn table_status(tables: &[(usize, Table)]) -> Value {
         }
     }
     status["extent_stops"] = json!(extent_stops);
+    status["assignment_stops"] = json!(assignment_stops(tables));
     status
+}
+
+/// The stops that reject one assignment alone ([`arclog::eval::ReachedBound::is_assignment`]),
+/// each with its table, example and assignment, in the order of the tables: a
+/// stopped model at an assignment, and a stop of the walk of an example that
+/// has no assignment of its own (`assignment` and `model` null). They leave the
+/// status of the table and of the result as the other assignments give it.
+fn assignment_stops(tables: &[(usize, Table)]) -> Vec<Value> {
+    let mut stops = Vec::new();
+    for (_, table) in tables {
+        let Ok(c) = &table.contents else { continue };
+        for (e, example) in c.examples.iter().enumerate() {
+            let Ok(rows) = &example.rows else { continue };
+            if let Some(stop) = rows.stop.as_ref().filter(|stop| stop.bound.is_assignment()) {
+                stops.push(json!({"table_form":format!("{:?}",table.form),"example":e,"assignment":null,"model":null,"reason":format!("{:?}",stop.bound),"form":format!("{:?}",stop.form)}));
+            }
+            for (a, (_, models)) in rows.at.iter().enumerate() {
+                for (m, model) in models.iter().enumerate() {
+                    if let RelationValue::Stopped(stop) = model {
+                        if stop.bound.is_assignment() {
+                            stops.push(json!({"table_form":format!("{:?}",table.form),"example":e,"assignment":a,"model":m,"reason":format!("{:?}",stop.bound),"form":format!("{:?}",stop.form)}));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    stops
 }
 
 fn rows_status(tables: &[(usize, Table)]) -> Value {
@@ -499,13 +523,17 @@ fn rows_status(tables: &[(usize, Table)]) -> Value {
                 Ok(r) => r,
                 Err(f) => return faulted(f),
             };
-            if let Some(stop) = &rows.stop {
+            // A stop that rejects one assignment alone leaves the status as the others give it
+            // ([`assignment_stops`] lists it); a stop that ended the walk gives the status.
+            if let Some(stop) = rows.stop.as_ref().filter(|stop| !stop.bound.is_assignment()) {
                 return stopped(stop);
             }
             for (_, models) in &rows.at {
                 for value in models {
                     if let RelationValue::Stopped(stop) = value {
-                        return stopped(stop);
+                        if !stop.bound.is_assignment() {
+                            return stopped(stop);
+                        }
                     }
                 }
             }
@@ -918,7 +946,8 @@ fn gold_observation_report(gold:&StudyProgram,session:&TaskSession,settings:&Dec
         "kept_assignment_count":0,"gold_fits":null,"assignment_coverage_complete":false,
         "kept_assignment_missing_dets":[],"held_det_relations":[],
         "fits_contract":"native closed-world TRAIN candidate-set comparison; no TEST Fit verdict",
-        "settings":{"deadline_seconds":settings.deadline.map(|d|d.as_secs_f64()),
+        "settings":{"mutation_node_cap":settings.mutation_node_cap,
+            "request_byte_cap":settings.request_byte_cap,"assignment_byte_cap":settings.assignment_byte_cap,
             "table_work_cap":settings.table_work_cap,"projection_cap":settings.projection_cap,
             "rule_tests":settings.rule_tests,"check_copies":settings.check_copies,
             "vocabulary":{"relations":settings.vocabulary.relations,"columns":settings.vocabulary.columns,"labels":settings.vocabulary.labels},
@@ -1291,7 +1320,7 @@ pub fn form_tables(program:&StudyProgram,form:usize,task:&Task,session:&TaskSess
             }
         }
         session.results.end_view();
-        let near_a_cap=stopped_where(&made,|bound|matches!(bound,arclog::eval::ReachedBound::TableWork {..}|arclog::eval::ReachedBound::SessionBytes(_))).is_some();
+        let near_a_cap=stopped_where(&made,|bound|matches!(bound,arclog::eval::ReachedBound::TableWork {..}|arclog::eval::ReachedBound::RequestBytes {..}|arclog::eval::ReachedBound::AssignmentBytes {..})).is_some();
         if result.is_ok() && !near_a_cap && session.results.evictions()==evictions {
             return finish(Ok(of_form(made)),"reused",form+1-same);
         }

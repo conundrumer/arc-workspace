@@ -125,8 +125,9 @@ pub enum Stop {
     Assignments,
     TableWork,
     Margin,
-    SessionBytes,
     RequestWork,
+    RequestBytes,
+    AssignmentBytes,
     Cancelled,
     NoValues,
 }
@@ -141,8 +142,9 @@ impl From<ReachedBound> for Stop {
             ReachedBound::Assignments { .. } => Stop::Assignments,
             ReachedBound::TableWork { .. } => Stop::TableWork,
             ReachedBound::Margin(_) => Stop::Margin,
-            ReachedBound::SessionBytes(_) => Stop::SessionBytes,
             ReachedBound::RequestWork { .. } => Stop::RequestWork,
+            ReachedBound::RequestBytes { .. } => Stop::RequestBytes,
+            ReachedBound::AssignmentBytes { .. } => Stop::AssignmentBytes,
             ReachedBound::Cancelled => Stop::Cancelled,
             ReachedBound::NoValues => Stop::NoValues,
         }
