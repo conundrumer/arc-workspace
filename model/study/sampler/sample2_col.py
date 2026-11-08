@@ -117,7 +117,7 @@ Changes from sample.py (v1):
 - STEER_REL_GROUPS=1 (default unset: off) keeps P's split between the derived relations and the other options at an atom start under STEER_REL: each group's steered
   weights are scaled to that group's total before the steer, so the steer moves weight only within a group (Drawer.group_steer). Unset, the steer multiplies each option's weight;
 - SEED_TAG (default v2) seeds each point's draws, so a run with another tag draws other programs at the same points; with
-  ARCLOG_STATS set, a point's info gives its CPU ms per engine phase (`engine`);
+  --engine-stats, a point's info gives its CPU ms per engine phase (`engine`);
 - a DET's value in an assignment is its value hash (the engine's), so a point's tables repeat the same assignments at no cost.
 - --split holdout draws the holdout tasks' points; the prior and the hazards are dev's either way.
 - ROW_ORDERS=n gives REL_ROWS and CHOICE_ROWS for n random valid orders of gold's clause in place of the written one, and each row has `order`
@@ -290,7 +290,6 @@ STEER_ONLINE = os.environ.get('STEER_ONLINE', '')  # with STEER_M > 1, a cut is 
 STEER_GROUPS = [g for g in os.environ.get('STEER_GROUPS', '').split(',') if g]  # the point groups where STEER_M applies; empty: every group
 STEER_GQ_R = int(os.environ.get('STEER_GQ_R', '8'))  # GOLD_Q with STEER_M > 1: replicates of the other candidates per steered gold atom
 STEER_FLOOR = -10.0  # the score of a cut that the score cannot read (no table or no clause)
-ENGINE_STATS = os.environ.get('ARCLOG_STATS', '') not in ('', '0')  # info['engine'] gets the point's CPU ms per engine phase
 EMPTY_ATOM = os.environ.get('EMPTY_ATOM', '1') == '1'  # an atom is redrawn where it makes the prefix's X empty on every train entry
 STEER_REL = os.environ.get('STEER_REL', '')  # path of relcheap's pickle (relsteer.Scorer): at a root-phase atom start each option's weight is multiplied by exp(STEER_REL_BETA * f); unset: off
 STEER_REL_BETA = float(os.environ.get('STEER_REL_BETA', '1'))
@@ -2841,11 +2840,11 @@ class Prefix:
         self.pos = max(self.pos, first)
 
 
-def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samples=False):
+def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samples=False, engine_stats=False):
     task, case, point = spec['task'], spec['case'], spec['point']
     t0, c0 = time.time(), time.process_time()
-    if ENGINE_STATS:
-        arclog.engine_stats(reset=True)
+    if engine_stats:  # info['engine'] gets the point's CPU ms per engine phase; the collection costs time
+        arclog.engine_stats(reset=True, collect=True)
     pre = pre or Prefix(spec)
     rc = RuleCheck(spec['point_dir'], warm=False)  # the feature study's checks at this point; each call names its functions
     if spec.get('written_sexp'):  # the checks read the same prefix as the decoder
@@ -4615,7 +4614,7 @@ def run_point(spec, draws, seconds, counts, hazard, regcols, pre=None, make_samp
     return dict(task=task, case=case, point=fp, point_group=spec.get('point_group'), seconds=round(time.time() - t0, 2), cpu=round(time.process_time() - c0, 2), setup_cpu=setup_cpu, draws=len(rows) - 1,
                 tries=dict(tries), lookahead_forks=dr.lookahead_forks, reach_stats=dict(dr.reach_stats), reach_drops=dr.reach_drops, complete_drops=dr.complete_drops, rc_errors=dict(rc.errors),
                 names=names, sample_error=sample_error, gold_line=gold_line, samples=samples, samples_left_out=left_out, prefix_rows=prefix_rows, rel_rows=rel_rows, choice_rows=choice_rows, valcut_rows=valcut_rows, prefcut_rows=prefcut_rows, cutopt_rows=cutopt_rows, cutopts_truncated=cut_info['truncated'] if CUT_OPTS or VAL_CUTS else None,
-                engine={k: round(v['ns'] / 1e6, 1) for k, v in arclog.engine_stats().items() if v['ns']} if ENGINE_STATS else None,
+                engine={k: round(v['ns'] / 1e6, 1) for k, v in arclog.engine_stats().items() if v['ns']} if engine_stats else None,
                 rel_steer={k: round(v, 3) for k, v in dr.rel_stats.items()} if STEER_REL else None,
                 choice_steer={k: round(v, 3) for k, v in dr.choice_stats.items()} if STEER_CHOICE else None,
                 maxrss_mb=round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2 ** 20)), rows
@@ -4853,7 +4852,7 @@ def pick_points(n, dev, kind='RULE'):
 
 def worker(args):
     """[(info, rows)] of points of one gold program, in program order, sharing one Prefix."""
-    jobs, draws, seconds, regcols, samples = args
+    jobs, draws, seconds, regcols, samples, engine_stats = args
     out, pre = [], None
     prof = None
     if os.environ.get('PROFILE'):  # PROFILE=path: each job's cProfile stats go to path.<pid>.<n>
@@ -4869,7 +4868,7 @@ def worker(args):
         try:
             if pre is not None and pre.pos > pre.first(spec['point']):
                 pre = None
-            out.append(run_point(spec, draws, seconds, counts, hazard, regcols, pre, samples))
+            out.append(run_point(spec, draws, seconds, counts, hazard, regcols, pre, samples, engine_stats))
         except Exception as e:  # noqa: BLE001
             out.append((dict(task=spec['task'], case=spec['case'], point=spec.get('fstore_point', spec['point']),
                              point_group=spec.get('point_group'), error='%s: %s' % (type(e).__name__, e),
@@ -4919,6 +4918,7 @@ def main():
     ap.add_argument('--samples', action='store_true', help='also write the study-sample-v1 records (samples.jsonl.zst, golds.jsonl.zst)')
     ap.add_argument('--per-task', type=int, default=1, help='points of a task in a point group, at most')
     ap.add_argument('--split', default='dev', choices=('dev', 'holdout'), help="the tasks whose points are drawn; the prior and hazards are always dev's")
+    ap.add_argument('--engine-stats', action='store_true', help="each point's info gives its CPU ms per engine phase (`engine`); the engine's collection of them costs time")
     a = ap.parse_args()
     if ANCESTOR_PREFIX and a.samples:
         ap.error('--samples writes records in the slots of the written program, so it does not take ANCESTOR_PREFIX=1')
@@ -4994,7 +4994,7 @@ def main():
             progs[s['task'], s['case'], s['gold_sexp']].append((s, counts_of(s['task'], s.get('kind', a.kind)), ghaz.get((s.get('point_group') or {}).get('point_group')) if s.get('kind', a.kind) == 'RULE' and ghaz.get((s.get('point_group') or {}).get('point_group')) else hazard[s.get('kind', a.kind)]))
         chunks = [v[k:k + PROG_CHUNK] for v in progs.values() for k in range(0, len(v), PROG_CHUNK)]
         chunks.sort(key=lambda c: -sum(j[0]['point'][0] + a.seconds for j in c))  # the longest first, for a short tail
-        futs = {ex.submit(worker, (c, a.draws, a.seconds, regcols, a.samples)) for c in chunks}
+        futs = {ex.submit(worker, (c, a.draws, a.seconds, regcols, a.samples, a.engine_stats)) for c in chunks}
 
         def done_points():  # a finished job's future leaves futs, so its rows are freed once written
             for fu in cf.as_completed(futs):

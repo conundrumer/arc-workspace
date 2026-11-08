@@ -379,8 +379,8 @@ def one_size(sampler, spec, target, before, a, relations, tell):
     sess, st = session_of(task, relations)
     t0 = time.monotonic()
     run = PoolRun(sampler.pri, sess, int(digest((a.seed, task, target, time.time_ns()), 8), 16), t0 + a.seconds, live.Limits())
-    if S.ENGINE_STATS:
-        arclog.engine_stats(reset=True)
+    if a.engine_stats:
+        arclog.engine_stats(reset=True, collect=True)
     resume = os.path.exists(state_p)
     if not resume:
         for q in (nodes_p, nodes_p + '.idx.jsonl'):
@@ -427,7 +427,7 @@ def one_size(sampler, spec, target, before, a, relations, tell):
     added = len(pool.nodes) - n0
     done = dict(task=task, target=target, pool_n=len(pool.nodes), rows=rows, added=added, grow_seconds=round(spent, 2), seconds_per_node=round(spent / max(added, 1), 4),
                 table_seconds=round(run.table_seconds, 2), parse_seconds=round(run.parse_seconds, 2), draws=pool.draws, relations=relations, declared=pg.ndecl,
-                peak_rss_mib=round(rss_mib()), info=dict(info, det_cap_at=pool.det_cap_at), counts=dict(run.c), engine_ms={k: round(v['ns'] / 1e6) for k, v in arclog.engine_stats().items() if v['ns']} if S.ENGINE_STATS else None)
+                peak_rss_mib=round(rss_mib()), info=dict(info, det_cap_at=pool.det_cap_at), counts=dict(run.c), engine_ms={k: round(v['ns'] / 1e6) for k, v in arclog.engine_stats().items() if v['ns']} if a.engine_stats else None)
     finished = len(pool.nodes) >= target
     write_json(done_p if finished else done_p + '.last', done)
     return done, finished
@@ -460,6 +460,7 @@ def main():
     ap.add_argument('--only', nargs='*', default=None, help='only these tasks')
     ap.add_argument('--shard', default='0/1', help='K/N: this run takes every Nth size from the Kth, so N runs share the sizes')
     ap.add_argument('--models', default=P.SAMPLER_DATA + '/models')
+    ap.add_argument('--engine-stats', action='store_true', help="each size's done file gives the engine's ms per phase (`engine_ms`); the engine's collection of them costs time")
     a = ap.parse_args()
     specs = points(a)
     if a.only:

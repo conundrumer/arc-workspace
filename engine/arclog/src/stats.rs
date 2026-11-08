@@ -1,5 +1,6 @@
-//! Counters and timers for the phases of a decode, off unless the environment
-//! variable `ARCLOG_STATS` is set (to anything but the empty string and `0`).
+//! Counters and timers for the phases of a decode, off until a caller turns
+//! them on with [`set_enabled`] (the Python binding `engine_stats` does, with
+//! its `collect` argument).
 //!
 //! Each timing point is one call of this module. While the statistics are
 //! off, a call costs one relaxed load of an atomic flag and one branch: no clock is
@@ -23,40 +24,25 @@
 //! its value is freed, so a `repeated` count may be too high by such a reuse.
 
 use std::hash::Hash;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use crate::clock::Stopwatch;
 
 use crate::hash::{StableHashSet, StableHasher};
 
-/// Whether the statistics are on: `UNSET` until the first call reads the
-/// environment.
-static STATE: AtomicU8 = AtomicU8::new(UNSET);
-const UNSET: u8 = 0;
-const OFF: u8 = 1;
-const ON: u8 = 2;
+/// Whether the statistics are on.
+static ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Whether the statistics are on.
 #[inline(always)]
 pub fn enabled() -> bool {
-    match STATE.load(Ordering::Relaxed) {
-        OFF => false,
-        ON => true,
-        _ => read_environment(),
-    }
+    ENABLED.load(Ordering::Relaxed)
 }
 
-#[cold]
-fn read_environment() -> bool {
-    let on = std::env::var_os("ARCLOG_STATS").is_some_and(|value| !value.is_empty() && value != "0");
-    STATE.store(if on { ON } else { OFF }, Ordering::Relaxed);
-    on
-}
-
-/// Turns the statistics on or off, whatever the environment says. For tests
-/// and tools; the counters keep their values.
+/// Turns the statistics on or off, for the whole process; the counters keep
+/// their values.
 pub fn set_enabled(on: bool) {
-    STATE.store(if on { ON } else { OFF }, Ordering::Relaxed);
+    ENABLED.store(on, Ordering::Relaxed);
 }
 
 macro_rules! phases {

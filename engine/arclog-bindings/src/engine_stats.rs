@@ -1,5 +1,5 @@
 //! `engine_stats`: the counters of the engine's phases, which
-//! [`arclog::stats`] keeps while the environment variable `ARCLOG_STATS` is set.
+//! [`arclog::stats`] keeps while the collection is on.
 
 use arclog::stats;
 use pyo3::prelude::*;
@@ -7,12 +7,20 @@ use pyo3::types::PyDict;
 
 /// The counters of each phase of the engine, as a dict from the phase's name
 /// to a dict of `calls`, `new`, `repeated`, `ns` and `units`, as
-/// [`arclog::stats`] defines them. The counters are all 0 unless the
-/// environment variable `ARCLOG_STATS` is set when the first phase runs.
-/// With `reset` true, the counters start again from zero after they are read.
+/// [`arclog::stats`] defines them. The collection is off at the start of the
+/// process, so the counters are all 0 until a call gives `collect=True`, which
+/// turns it on for the whole process; `collect=False` turns it off, and
+/// `collect=None` leaves it as it is. The collection costs time: each timed
+/// phase reads the clock twice and adds to counters that every thread shares,
+/// and the keys it counts are held in one locked set until a reset. It changes
+/// no result and no work count of the engine. With `reset` true, the counters
+/// start again from zero after they are read.
 #[pyfunction]
-#[pyo3(signature = (reset=false))]
-pub(crate) fn engine_stats<'py>(py: Python<'py>, reset: bool) -> PyResult<Bound<'py, PyDict>> {
+#[pyo3(signature = (reset=false, collect=None))]
+pub(crate) fn engine_stats<'py>(py: Python<'py>, reset: bool, collect: Option<bool>) -> PyResult<Bound<'py, PyDict>> {
+    if let Some(on) = collect {
+        stats::set_enabled(on);
+    }
     let phases = PyDict::new(py);
     for stat in stats::snapshot(reset) {
         let counters = PyDict::new(py);

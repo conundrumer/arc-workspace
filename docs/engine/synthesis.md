@@ -87,7 +87,6 @@ The step ends when each of these holds, or the difference is reported as a fault
     - Check copies: a diagnosis that reports the rows that a construction does not copy. It changes no token.
 - Environment variables that remain:
     - `ARCLOG_THREADS`: the thread count of a corpus run.
-    - `ARCLOG_STATS`: the switch of the per-phase timing and counters that `engine_stats` gives. It costs time and changes no result and no work count of the engine.
     - `GENERATE_SPILL_DIR` and `GENERATE_RESIDENT_CELLS`: the folder of the `feature-encoder` tool's copies on disk and the cells that its walks keep in memory. Neither changes what the tool builds or prints.
     - `ARCLOG_MAP_SEED`: seeds the hashers of the engine's maps and sets, so that a run iterates them in another order. Equal outputs with and without it show that no output follows the bucket order of a map. The `feature-encoder` check runs it.
     - `ARC_ROOT`: the default of the `--repo` option of the shape check scripts in `engine/arclog-py/`, the folder that holds `data/tasks`.
@@ -96,6 +95,7 @@ The step ends when each of these holds, or the difference is reported as a fault
     - `step_cap`, `max_work`, `limit`: bounds.
     - `bodies`, `rows`, `summaries`, `by_assignment`, `by_program`, `before`, `top_k`, `compact`, `observation_start`, `max_assignments`, `units`, `task_ids`, `all_cases`, `started`, `ended`, `progress`: choose what a call builds, reports or runs over, and so its cost.
     - `copies`: the check copies diagnosis, for the table exports.
+    - `collect` of `engine_stats`: turns the per-phase timing and counters on or off for the process; they are off at its start. Collecting costs time, as each timed phase reads the clock twice and adds to counters that every thread shares, and the keys it counts go in one locked set. It changes no result and no work count.
     - `evaluate` of `Session.decoder`: with `False` the decode runs the grammar, the checks and the static prune and evaluates nothing, so a stream check costs less. It refuses no token for want of an evaluation, so it admits streams that the full decode refuses, and a verdict about a model's stream comes from the full decode.
     - `reference` of `Decoder.atoms`: runs the reference walk that checks the candidate atoms.
     - `prefix`: reads the files as a prefix of a solver.

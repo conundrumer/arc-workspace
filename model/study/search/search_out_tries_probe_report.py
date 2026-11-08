@@ -307,7 +307,7 @@ def main():
     print('`sr:scope_seconds` is the replay in `Run` of the Runs that the searches hold.\n')
 
     print('## Engine calls and ns per call by age\n')
-    print('From `eng` of each prof line (calls and ms of its own span, whole ms, so a phase under 1 ms a span reads low). Needs ARCLOG_STATS=1. ns per call is pooled ms over pooled calls.\n')
+    print('From `eng` of each prof line (calls and ms of its own span, whole ms, so a phase under 1 ms a span reads low). Needs a probe run that collected the engine statistics (`arclog.engine_stats(collect=True)`). ns per call is pooled ms over pooled calls.\n')
     out = []
     for name in ENGINE:
         row = [name]

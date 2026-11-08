@@ -1,5 +1,5 @@
 //! Timers for the parts of the export by assignment that
-//! [`arclog::stats`] has no phase for. They are on while `ARCLOG_STATS` is set
+//! [`arclog::stats`] has no phase for. They are on while the statistics are on
 //! (`arclog::stats::enabled`), cost one atomic load otherwise, and change no
 //! result. A part's time includes the parts called inside it.
 
