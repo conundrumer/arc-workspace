@@ -52,12 +52,21 @@ def file_ref(path):
     return dict(path=str(path), sha256=h.hexdigest())
 
 
+def read_current(path):
+    """The text of the file `path` of the corpus (a gen/ directory), through `arclog_convert.readback.read_checked`: it raises `Stale` where the file is not current."""
+    source_path = str(REPO_ROOT / 'src')
+    if source_path not in sys.path: sys.path.insert(0, source_path)
+    from arclog_convert.readback import read_checked
+    return read_checked(Path(path))
+
+
 def source_ref(corpus, tasks, task):
     paths = [corpus / (task + suffix) for suffix in ('.arclog', '.arcdata')]
-    paths += [tasks / (task + '.json')]
     directory = corpus / 'cases' / task
     if directory.exists():
         paths += sorted(p for p in directory.rglob('*') if p.is_file())
+    for p in paths: read_current(p)
+    paths += [tasks / (task + '.json')]
     # Includes explicit case-file inventory, so additions/deletions invalidate it.
     return dict(task=task, corpus=str(corpus), tasks=str(tasks),
                 files=[file_ref(p) for p in paths])
@@ -232,7 +241,7 @@ def materialize_sources(corpus, task):
     source_path = str(REPO_ROOT / 'src')
     if source_path not in sys.path: sys.path.insert(0, source_path)
     from arclog_convert.train_replay import solver_files
-    return {str(p.relative_to(corpus)): file_ref(p)['sha256']
+    return {str(p.relative_to(corpus)): (read_current(p), file_ref(p)['sha256'])[1]
             for p in solver_files(corpus, task) if p.is_file()}
 
 
@@ -291,8 +300,8 @@ def materialize_task(arclog, corpus, gen, control, row, build):
             copy_exact(corpus / relative, stage_gen / relative)
         case_records = []
         if report['selection'] == 'filtered':
-            catalog = arclog.case_files(task, (corpus / (task + '.arclog')).read_text(),
-                                       (corpus / (task + '.arcdata')).read_text(), str(corpus))
+            catalog = arclog.case_files(task, read_current(corpus / (task + '.arclog')),
+                                       read_current(corpus / (task + '.arcdata')), str(corpus))
             by_case = {c.case: c for c in catalog}
             if len(by_case) != len(catalog): raise ValueError('native case filename catalog duplicated')
             for case in report['cases']:
@@ -300,7 +309,7 @@ def materialize_task(arclog, corpus, gen, control, row, build):
                 if Path(source.file).name != source.file or source.file in ('', '.', '..'):
                     raise ValueError('unsafe native case filename')
                 original_data = corpus / 'cases' / task / (source.file + '.arcdata')
-                data = original_data.read_text() if original_data.exists() else source.arcdata
+                data = read_current(original_data) if original_data.exists() else source.arcdata
                 if data is None: raise ValueError('native case has no stored arcdata: ' + name)
                 # Native case writer selects exactly the retained DET params;
                 # Python does not trim param records or invent case filenames.
