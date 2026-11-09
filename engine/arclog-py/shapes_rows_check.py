@@ -4,7 +4,8 @@ MUTANTS.json.zst is the task's file of the feature corpus (`all-merged/<set>/mut
 closed-world session of the task, and `step_tables` is called at each model step. For each chosen table (one for each distinct TableHash):
 - `TableShapes.rows()` is called twice and must give the same bytes. With `--digest-out FILE` the sha256 of each table's bytes is written, and with `--digest-in FILE` each is compared with
   the digest of an earlier run, which is how a run under `ARCLOG_MAP_SEED=1` is held to the bytes of one without.
-- The tables' rows go to a rows file, and `feature-encoder shapes-refresh` reads them and writes the `shapes` records of the full vector, and of a list of shapes.
+- The tables' rows go to a rows file, whose header names the producers of the engine in use, and `feature-encoder shapes-refresh` reads them and writes the `shapes` records of the full
+  vector, and of a list of shapes. The encoder reads the file only where the producers are its own, so the site and the encoder must come from one build.
 - Each record must have the shape hashes, the f32 least, mean and most (`values[:, 0:3]`) and the `stopped` flag of `TableShapes.vector()` for the full vector and `vector(only=LIST)`, byte for byte.
 
 Options:
@@ -85,6 +86,21 @@ def known_pick(shapes_of, known):
     return best, hashes
 
 
+def rows_header(task):
+    """The first line of a rows file: the format that `shapes-refresh` reads and the producers of the engine in use, its hash versions and the commit and flags of its
+    build record (`engine-record.json` beside the loaded arclog). The encoder reads the file only where they are its own, so the check also holds the encoder and the
+    site to one build. Stops where the site has no record."""
+    path = os.path.join(os.path.dirname(arclog.__file__), 'engine-record.json')
+    try:
+        record = json.load(open(path))
+    except OSError:
+        print(f'no engine record at {path}: the site must be a build of scripts/engine_build.sh that writes one')
+        sys.exit(2)
+    header = {'record': 'header', 'schema': 'table-rows-1', 'task': task, 'table_hash_version': arclog.table_hash_version(),
+              'query_hash_version': arclog.query_hash_version(), 'engine': {'commit': record['commit'], 'flags': dict(sorted(record['flags'].items()))}}
+    return json.dumps(header, separators=(',', ':')).encode() + b'\n'
+
+
 def encoder(binary, rows_file, task, out_file, tasks_dir, threads, list_file=None):
     args = [binary, 'shapes-refresh', rows_file, task, out_file, '--tasks', tasks_dir, '--threads', str(threads)]
     if list_file:
@@ -142,7 +158,7 @@ def main():
         wanted = set(a.export_hashes.split(',')) if a.export_hashes else None
         kept = [(key, ts.rows()) for _, key, ts in sized if wanted is None or key.hex() in wanted]
         with open(a.export, 'wb') as sink:
-            sink.write(zstandard.ZstdCompressor(level=3).compress(b''.join(b'{"hash":"' + key.hex().encode() + b'","table":' + rows + b'}\n' for key, rows in kept)))
+            sink.write(zstandard.ZstdCompressor(level=3).compress(rows_header(a.task) + b''.join(b'{"hash":"' + key.hex().encode() + b'","table":' + rows + b'}\n' for key, rows in kept)))
         print(f'wrote {len(kept)} tables to {a.export}')
         return
     if not a.encoder:
@@ -175,7 +191,7 @@ def main():
             picked.append((how, key, ts))
 
     rows_file, digests = os.path.join(work, 'rows.jsonl.zst'), {}
-    lines = []
+    lines = [rows_header(a.task)]
     for how, key, ts in picked:
         first, second = ts.rows(), ts.rows()
         assert first == second, 'rows() differs between two calls'
